@@ -1,0 +1,28 @@
+# Gradle and Android Studio
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+*.iml
+.idea/
+.kotlin/
+
+# Build outputs and signing
+*.apk
+*.aab
+*.ap_
+*.dex
+*.jks
+*.keystore
+keystore.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local-only files
+.local/
+CLAUDE.local.md
+.claude/settings.local.json
