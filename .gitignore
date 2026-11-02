@@ -26,3 +26,4 @@ Thumbs.db
 .local/
 CLAUDE.local.md
 .claude/settings.local.json
+.claude/worktrees/
