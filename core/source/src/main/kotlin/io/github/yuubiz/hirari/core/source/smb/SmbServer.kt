@@ -17,6 +17,7 @@ import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -112,7 +113,7 @@ class SmbServer internal constructor(
         }
     }
 
-    /** Closes the connection without waiting on the server and forgets the password. */
+    /** Forgets the password and drops the connection on a background thread, so it never blocks the caller. */
     override fun close() {
         val last = synchronized(lock) {
             if (closed) return
@@ -121,7 +122,7 @@ class SmbServer internal constructor(
             link.also { link = null }
         }
         job.cancel()
-        last?.connection?.closeNow()
+        if (last != null) thread(isDaemon = true, name = "smb-close") { last.connection.closeNow() }
         (login as? SmbLogin.Password)?.wipe()
     }
 

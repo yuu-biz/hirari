@@ -201,8 +201,10 @@ class SmbServerTest {
         val inFlight = AtomicInteger()
         val most = AtomicInteger()
         val release = CountDownLatch(1)
+        val full = CountDownLatch(MAX_REQUESTS_PER_SERVER)
         val connector = FakeConnector(mapOf("book.zip" to bytes)) {
             most.accumulateAndGet(inFlight.incrementAndGet(), ::maxOf)
+            full.countDown()
             release.await(10, TimeUnit.SECONDS)
             inFlight.decrementAndGet()
         }
@@ -210,7 +212,8 @@ class SmbServerTest {
         val server = SmbServer(connector, SmbLogin.Guest, scope, emptyFlow(), kotlinx.coroutines.Dispatchers.IO, 10.seconds)
         val pool = Executors.newFixedThreadPool(8)
         val reads = List(8) { pool.submit { server.open("book.zip").use { it.readAt(0, 10) } } }
-        Thread.sleep(500)
+        assertTrue("four reads are in flight", full.await(10, TimeUnit.SECONDS))
+        Thread.sleep(200)
         release.countDown()
         reads.forEach { it.get(10, TimeUnit.SECONDS) }
         pool.shutdown()
