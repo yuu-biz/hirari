@@ -34,7 +34,9 @@ data class GlobalSettings(
     fun normalized(): GlobalSettings = copy(
         turnDurationMs = turnDurationMs.snapTo(TURN_DURATION_MS),
         stopMaxStepPercent = stopMaxStepPercent.snapTo(STOP_MAX_STEP_PERCENT),
-        tapBandPercent = tapBandPercent.snapTo(TAP_BAND_PERCENT),
+        tapBandPercent = tapBandPercent.snapTo(
+            if (tapLayout == TapLayout.BothSideBands || tapLayout == TapLayout.TopAndBottomBands) TAP_TWO_BAND_PERCENT else TAP_BAND_PERCENT,
+        ),
         barHeightDp = barHeightDp.snapTo(BAR_HEIGHT_DP),
     )
 
@@ -42,6 +44,9 @@ data class GlobalSettings(
         val TURN_DURATION_MS = 0..1000 step 50
         val STOP_MAX_STEP_PERCENT = 5..100 step 5
         val TAP_BAND_PERCENT = 10..90 step 10
+
+        /** Each of two bands stays at or under 45% (docs/spec.md section 4.10). */
+        val TAP_TWO_BAND_PERCENT = 10..40 step 10
         val BAR_HEIGHT_DP = 40..120 step 4
     }
 }

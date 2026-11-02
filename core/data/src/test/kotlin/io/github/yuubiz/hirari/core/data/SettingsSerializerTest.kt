@@ -59,6 +59,13 @@ class SettingsSerializerTest {
     }
 
     @Test
+    fun `two tap bands stay at or under 45 percent each`() {
+        val wide = GlobalSettings(tapLayout = TapLayout.BothSideBands, tapBandPercent = 90).normalized()
+        assertEquals(40, wide.tapBandPercent)
+        assertEquals(90, GlobalSettings(tapBandPercent = 90).normalized().tapBandPercent)
+    }
+
+    @Test
     fun `missing settings take their defaults`() = runTest {
         assertEquals(GlobalSettings(), read("{}"))
         assertEquals(GlobalSettings(coverAlone = false), read("""{"coverAlone":false}"""))

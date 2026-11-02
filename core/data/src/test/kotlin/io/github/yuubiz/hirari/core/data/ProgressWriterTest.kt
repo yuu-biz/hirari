@@ -95,6 +95,21 @@ class ProgressWriterTest {
     }
 
     @Test
+    fun `a submit after a flush waits a full window of its own`() = writerTest { writer, repository ->
+        writer.submit(progress("a", 1))
+        advanceTimeBy(200)
+        writer.flush().join()
+        advanceTimeBy(100)
+        writer.submit(progress("a", 2))
+        advanceTimeBy(450)
+        runCurrent()
+        assertEquals(listOf(200L), repository.writes.map { it.atMs })
+
+        settle()
+        assertEquals(listOf(200L, 800L), repository.writes.map { it.atMs })
+    }
+
+    @Test
     fun `flush with nothing pending stores nothing`() = writerTest { writer, repository ->
         writer.flush().join()
         settle()

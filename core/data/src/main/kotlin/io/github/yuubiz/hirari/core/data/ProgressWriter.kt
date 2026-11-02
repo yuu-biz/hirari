@@ -26,36 +26,40 @@ class ProgressWriter(
 ) {
     private val pending = LinkedHashMap<BookId, BookProgress>()
     private var windowOpen = false
+    private var generation = 0
     private val writing = Mutex()
 
     fun submit(progress: BookProgress) {
-        val opens = synchronized(pending) {
+        val opened = synchronized(pending) {
             pending[progress.book] = progress
-            !windowOpen.also { windowOpen = true }
+            if (windowOpen) null else generation.also { windowOpen = true }
         }
-        if (opens) {
+        if (opened != null) {
             scope.launch {
                 delay(window)
-                write()
+                write(window = opened)
             }
         }
     }
 
     /** Stores the pending progress now. Call it from `onStop`: the write finishes even if the caller is gone. */
-    fun flush(): Job = scope.launch { write() }
+    fun flush(): Job = scope.launch { write(window = null) }
 
-    private suspend fun write() = writing.withLock {
+    /** [window] is the generation of the window whose timer calls this, or null for a flush. */
+    private suspend fun write(window: Int?) = writing.withLock {
         val batch = synchronized(pending) {
+            // A flush already wrote this window; the next submit opens a new one with its own timer.
+            if (window != null && window != generation) return@withLock
             windowOpen = false
+            generation++
             pending.values.toList().also { pending.clear() }
         }
         if (batch.isEmpty()) return@withLock
         try {
             repository.save(batch)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             synchronized(pending) { batch.forEach { pending.putIfAbsent(it.book, it) } }
+            if (e is CancellationException) throw e
         }
     }
 }
