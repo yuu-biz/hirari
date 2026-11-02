@@ -20,11 +20,21 @@ val allowedLicenses = listOf(
     "Unicode-3.0",
 )
 
+/**
+ * License URLs in POMs that Licensee does not map to an SPDX id, and the id of the text they carry. Both the
+ * check and the license screen use this table (docs/spec.md section 8.5).
+ */
+val licenseUrlIds = mapOf(
+    "https://www.bouncycastle.org/licence.html" to "MIT",
+    "https://opensource.org/license/mit" to "MIT",
+)
+
 /** Checks the Maven licenses and bundles the license screen's data as the asset `licenses.json`. */
 internal fun Project.checkAndBundleLicenses() {
     pluginManager.apply("app.cash.licensee")
     extensions.configure<LicenseeExtension> {
         allowedLicenses.forEach { allow(it) }
+        licenseUrlIds.forEach { (url, id) -> allowUrl(url) { because("the text at this URL is $id") } }
         unusedAction(UnusedAction.IGNORE)
     }
     extensions.configure<ApplicationAndroidComponentsExtension> {

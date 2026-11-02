@@ -83,4 +83,24 @@ class LicenseReportTest {
             report.libraries.filter { it.name == "Annotation" }.map { it.id },
         )
     }
+
+    @Test
+    fun `a known license URL without an SPDX id gets the id of its text`() {
+        val json = temp.newFile("url.json").apply {
+            writeText(
+                """[{"groupId":"org.bouncycastle","artifactId":"bcprov-jdk18on","version":"1.85.2","name":"Bouncy Castle",""" +
+                    """"unknownLicenses":[{"name":"Bouncy Castle Licence","url":"https://www.bouncycastle.org/licence.html"}]}]""",
+            )
+        }
+        val report = buildLicenseReport(json, thirdParty(), spdxTexts("MIT", "Zlib"))
+        assertEquals(listOf("MIT"), report.libraries.single { it.id == "org.bouncycastle:bcprov-jdk18on" }.licenses)
+    }
+
+    @Test
+    fun `an unknown license URL fails the build`() {
+        val json = temp.newFile("unknown.json").apply {
+            writeText("""[{"groupId":"g","artifactId":"a","version":"1","unknownLicenses":[{"name":"X","url":"https://example.org/x"}]}]""")
+        }
+        assertFailsWith<GradleException> { buildLicenseReport(json, thirdParty(), spdxTexts("Zlib")) }
+    }
 }

@@ -59,10 +59,13 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
     @Suppress("UNCHECKED_CAST")
     val artifacts = JsonSlurper().parse(licenseeJson) as List<Map<String, Any?>>
     val maven = artifacts.map { artifact ->
-        val ids = (artifact["spdxLicenses"] as List<Map<String, Any?>>?).orEmpty().map { it["identifier"] as String }
-        val unknown = (artifact["unknownLicenses"] as List<*>?).orEmpty()
         val coordinates = "${artifact["groupId"]}:${artifact["artifactId"]}"
-        if (ids.isEmpty() || unknown.isNotEmpty()) throw GradleException("$coordinates has no SPDX license in the Licensee report")
+        val spdx = (artifact["spdxLicenses"] as List<Map<String, Any?>>?).orEmpty().map { it["identifier"] as String }
+        val unknown = (artifact["unknownLicenses"] as List<Map<String, Any?>>?).orEmpty().map {
+            licenseUrlIds[it["url"]] ?: throw GradleException("$coordinates has a license without an SPDX id in the Licensee report")
+        }
+        val ids = (spdx + unknown).distinct()
+        if (ids.isEmpty()) throw GradleException("$coordinates has no SPDX license in the Licensee report")
         ids.forEach { id ->
             val file = spdxTextsDir.resolve("$id.txt")
             if (file.isFile) texts[id] = file.readText() else missingTexts += id
