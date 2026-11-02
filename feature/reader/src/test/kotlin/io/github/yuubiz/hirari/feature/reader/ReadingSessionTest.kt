@@ -116,4 +116,13 @@ class ReadingSessionTest {
         advanceUntilIdle()
         assertEquals(listOf("history b1 1000 100"), log)
     }
+
+    @Test
+    fun aStopBeforeTheSessionExistsIsWrittenWhenItArrives() = runTest {
+        val stops = StopRelay()
+        stops.stop()
+        stops.attach(session())
+        advanceUntilIdle()
+        assertEquals(listOf("book b1 3", "history b1 1000 100"), log)
+    }
 }

@@ -120,6 +120,7 @@ class ReaderViewModel(
 
     /** Holds the book from the moment it opens, so leaving the screen closes it whatever the open was waiting on. */
     @OptIn(ExperimentalCoroutinesApi::class)
+    private val stops = StopRelay()
     private val bookOwner = Ownership<OpenBook> { book -> services.getCompleted().appScope.launch { book.close() } }
     private var viewport: Viewport? = null
 
@@ -142,7 +143,6 @@ class ReaderViewModel(
         val prefetcher: Prefetcher<Bitmap>,
         val services: ReaderServices,
         val progress: ProgressLog,
-        val session: ReadingSession,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -240,7 +240,7 @@ class ReaderViewModel(
 
     /** The reader left the screen. The process may end before [onCleared], so the history is written now. */
     fun onStop() {
-        opened?.session?.stop()
+        stops.stop()
     }
 
     override fun onCleared() {
@@ -248,9 +248,9 @@ class ReaderViewModel(
         thumbnails.clear()
         opened?.let {
             it.prefetcher.close()
-            it.session.stop()
             it.services.progress.flush()
         }
+        stops.stop()
         bookOwner.release()
     }
 
@@ -291,7 +291,8 @@ class ReaderViewModel(
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), session)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved))
+        stops.attach(session)
         phase = ReaderPhase.Reading
         start()
     }

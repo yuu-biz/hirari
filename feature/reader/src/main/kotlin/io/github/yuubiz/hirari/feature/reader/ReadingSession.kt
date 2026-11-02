@@ -45,3 +45,22 @@ internal class ReadingSession(
         }
     }
 }
+
+/**
+ * Hands a stop to the session even when it comes first: the reader can stop while the book is still opening, and the
+ * process may die before the next stop. Main thread only.
+ */
+internal class StopRelay {
+    private var stopped = false
+    private var session: ReadingSession? = null
+
+    fun stop() {
+        stopped = true
+        session?.stop()
+    }
+
+    fun attach(session: ReadingSession) {
+        this.session = session
+        if (stopped) session.stop()
+    }
+}
