@@ -115,7 +115,7 @@ internal class Extraction(
                 changes.first { it != seen }
             }
         } finally {
-            synchronized(lock) { waiting[index]-- }
+            if (synchronized(lock) { --waiting[index] == 0 }) trimLater()
         }
     }
 
@@ -228,6 +228,14 @@ internal class Extraction(
     private fun failed(failure: ArchiveFailure): Slot = when (failure) {
         ArchiveFailure.Corrupt, ArchiveFailure.Truncated -> Slot.Settled(EntryResult.Failed(failure))
         ArchiveFailure.ReadError, ArchiveFailure.ConnectionLost -> Slot.Retry(EntryResult.Failed(failure))
+    }
+
+    /**
+     * Deletes the files over the limit on the session thread, once the last read waiting for a file has it. A
+     * shut-down session thread rejects the dispatch, which then runs on [Dispatchers.IO].
+     */
+    private fun trimLater() {
+        dispatcher.dispatch(EmptyCoroutineContext) { change { evictOverLimit() } }
     }
 
     private fun evict(index: Int, slot: Slot.Cached) {

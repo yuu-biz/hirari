@@ -23,6 +23,7 @@ class ExtractionTest {
     private val dispatcher = executor.asCoroutineDispatcher()
 
     private val pages = listOf("001.jpg" to letters(3000, 1), "002.jpg" to letters(500, 2), "003.jpg" to letters(800, 3))
+    private val tallLast = listOf("001.jpg" to letters(500, 1), "002.jpg" to letters(400, 2), "003.jpg" to letters(3000, 3))
 
     @After
     fun stop() {
@@ -35,13 +36,16 @@ class ExtractionTest {
 
     private fun extraction(
         dir: File,
+        pages: List<Pair<String, ByteArray>> = this.pages,
         source: MemorySource = MemorySource(pages.flatMap { it.second.toList() }.toByteArray()),
         maxCacheBytes: Long = 1L shl 30,
     ) = Extraction(FakeArchive(source, pages), dispatcher, entries(pages), dir, maxCacheBytes = maxCacheBytes)
 
-    private fun Extraction.readNow(index: Int): EntryResult = runBlocking {
+    private fun Extraction.readNow(index: Int, pages: List<Pair<String, ByteArray>> = this@ExtractionTest.pages): EntryResult = runBlocking {
         withTimeout(5_000) { read(entries(pages)[index], ArchiveSession.MAX_ENTRY_BYTES) }
     }
+
+    private fun cachedBytes(dir: File) = dir.listFiles()!!.sumOf { it.length() }
 
     private fun assertData(expected: ByteArray, result: EntryResult) {
         assertTrue("reads the data: $result", result is EntryResult.Data)
@@ -56,6 +60,31 @@ class ExtractionTest {
         assertData(pages[1].second, extraction.readNow(1))
         assertData(pages[0].second, extraction.readNow(0))
         extraction.close()
+    }
+
+    @Test
+    fun `the cache returns under the limit once a page larger than it is handed over`() {
+        val dir = temp.newFolder("book")
+        val extraction = extraction(dir, tallLast, maxCacheBytes = 1000)
+
+        assertData(tallLast[2].second, extraction.readNow(2, tallLast))
+        executor.submit {}.get(5, TimeUnit.SECONDS)
+
+        assertTrue("cached ${cachedBytes(dir)} bytes", cachedBytes(dir) <= 1000)
+        extraction.close()
+    }
+
+    @Test
+    fun `closing after a page larger than the limit leaves the cache under the limit`() {
+        val dir = temp.newFolder("book")
+        val extraction = extraction(dir, tallLast, maxCacheBytes = 1000)
+
+        assertData(tallLast[2].second, extraction.readNow(2, tallLast))
+        extraction.close()
+        executor.shutdown()
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+
+        assertTrue("cached ${cachedBytes(dir)} bytes", cachedBytes(dir) <= 1000)
     }
 
     @Test
@@ -80,7 +109,7 @@ class ExtractionTest {
             reading.countDown()
             resume.await()
         }
-        val extraction = extraction(dir, source)
+        val extraction = extraction(dir, source = source)
         assertTrue(reading.await(5, TimeUnit.SECONDS))
         assertEquals(1, dir.listFiles()!!.count { it.name.endsWith(".part") })
 
