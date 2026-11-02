@@ -194,13 +194,13 @@ private fun source(bytes: ByteArray): ImageDecoder.Source = ImageDecoder.createS
  * already [to] and ARGB_8888.
  */
 internal fun scaledInSteps(source: Bitmap, part: Rect?, to: PixelSize, recycleSource: Boolean, turn: Orientation = Orientation.Normal): Bitmap {
-    val from = part?.let { PixelSize(it.width(), it.height()) } ?: PixelSize(source.width, source.height)
-    val steps = downscaleSteps(from, to, turn).ifEmpty {
-        if (part == null && source.config == Bitmap.Config.ARGB_8888) return source else listOf(ScaleStep.Bilinear(to))
-    }
     var current = source
     var currentPart = part
     try {
+        val from = part?.let { PixelSize(it.width(), it.height()) } ?: PixelSize(source.width, source.height)
+        val steps = downscaleSteps(from, to, turn).ifEmpty {
+            if (part == null && source.config == Bitmap.Config.ARGB_8888) return source else listOf(ScaleStep.Bilinear(to))
+        }
         for (step in steps) {
             val next = drawn(step.size) { canvas ->
                 when (step) {

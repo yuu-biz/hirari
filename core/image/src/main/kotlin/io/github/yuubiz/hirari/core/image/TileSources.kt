@@ -62,6 +62,8 @@ internal abstract class CachedTiles(override val size: PixelSize, private val de
         } catch (_: CancellationException) {
             currentCoroutineContext().ensureActive()
             readError
+        } catch (_: OutOfMemoryError) {
+            readError
         } catch (_: Exception) {
             corrupt
         }
