@@ -35,7 +35,9 @@ class LicenseReportTest {
             """.trimIndent(),
         )
         resolve("zlib").mkdirs()
-        resolve("zlib/LICENSE").writeText("Copyright zlib authors")
+        resolve("zlib/LICENSE").writeText("License template <author>")
+        resolve("zlib/a.c").writeText("/*\n * Copyright (c) 1993\n *\tThe Regents of the University of California.\n */\n")
+        resolve("zlib/b.h").writeText("// Copyright (c) 2020 Someone\n// Copyright (c) 2020 Someone\n")
     }
 
     private fun spdxTexts(vararg ids: String): File = temp.newFolder("spdx").apply {
@@ -43,11 +45,19 @@ class LicenseReportTest {
     }
 
     @Test
-    fun `maven artifacts get the SPDX text and native libraries their own license file`() {
-        val report = buildLicenseReport(licensee("Apache-2.0"), thirdParty(), spdxTexts("Apache-2.0"))
+    fun `maven artifacts get the SPDX text and native libraries also their notices`() {
+        val report = buildLicenseReport(licensee("Apache-2.0"), thirdParty(), spdxTexts("Apache-2.0", "Zlib"))
         assertEquals(listOf("Lib 0", "zlib"), report.libraries.map { it.name })
-        assertEquals("text of Apache-2.0", report.texts.getValue(report.libraries[0].texts.single()))
-        assertEquals("Copyright zlib authors", report.texts.getValue(report.libraries[1].texts.single()))
+        assertEquals(listOf("text of Apache-2.0"), report.libraries[0].texts.map(report.texts::getValue))
+        assertEquals(
+            listOf(
+                "License template <author>\n\nCopyright notices in the source files:\n\n" +
+                    "Copyright (c) 1993 The Regents of the University of California.\n" +
+                    "Copyright (c) 2020 Someone",
+                "text of Zlib",
+            ),
+            report.libraries[1].texts.map(report.texts::getValue),
+        )
     }
 
     @Test

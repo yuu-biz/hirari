@@ -25,10 +25,27 @@ data class LicenseReportEntry(
 
 data class LicenseReport(val libraries: List<LicenseReportEntry>, val texts: Map<String, String>)
 
+private val COMMENT_PREFIX = Regex("""^[\s/*#]*""")
+private val ENDS_WITH_YEAR = Regex("""\d{4},?$""")
+
+/**
+ * The distinct copyright lines of the files under [dir]. BSD-style licenses require the notices of
+ * every file, and a library's license file often carries only a template. A line that ends with the
+ * year continues on the next line, as in "Copyright (c) 1993" followed by the holder.
+ */
+fun copyrightNotices(dir: File, exclude: File): List<String> =
+    dir.walkTopDown().filter { it.isFile && it != exclude }.flatMap { file ->
+        val lines = file.readLines().map { it.replace(COMMENT_PREFIX, "").trim() }
+        lines.indices.filter { lines[it].startsWith("Copyright") }.map { i ->
+            val line = lines[i]
+            if (ENDS_WITH_YEAR.containsMatchIn(line) && i + 1 < lines.size) "$line ${lines[i + 1]}" else line
+        }
+    }.toSortedSet().toList()
+
 /**
  * Joins the Licensee report of the Maven dependencies with third_party/manifest.toml.
- * Maven artifacts get the canonical text of each SPDX id from [spdxTextsDir]; native libraries
- * get their own license file, which carries the copyright notice.
+ * Every SPDX id gets its canonical text from [spdxTextsDir]. Native libraries also get their own
+ * license file followed by the copyright notices of their sources.
  */
 fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: File): LicenseReport {
     val texts = sortedMapOf<String, String>()
@@ -37,7 +54,7 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
     @Suppress("UNCHECKED_CAST")
     val artifacts = JsonSlurper().parse(licenseeJson) as List<Map<String, Any?>>
     val maven = artifacts.map { artifact ->
-        val ids = (artifact["spdxLicenses"] as List<Map<String, Any?>>? ).orEmpty().map { it["identifier"] as String }
+        val ids = (artifact["spdxLicenses"] as List<Map<String, Any?>>?).orEmpty().map { it["identifier"] as String }
         val unknown = (artifact["unknownLicenses"] as List<*>?).orEmpty()
         val coordinates = "${artifact["groupId"]}:${artifact["artifactId"]}"
         if (ids.isEmpty() || unknown.isNotEmpty()) throw GradleException("$coordinates has no SPDX license in the Licensee report")
@@ -53,20 +70,27 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
             texts = ids,
         )
     }
-    if (missingTexts.isNotEmpty()) {
-        throw GradleException("Add the license text for ${missingTexts.joinToString()} to ${spdxTextsDir.path}/<SPDX id>.txt")
-    }
-
     val native = readThirdPartyManifest(thirdPartyDir).map { library ->
         val key = "third_party/${library.directory}"
-        texts[key] = thirdPartyDir.resolve(library.directory).resolve(library.licenseFile).readText()
+        val dir = thirdPartyDir.resolve(library.directory)
+        val notices = copyrightNotices(dir, exclude = dir.resolve(library.licenseFile))
+        texts[key] = dir.resolve(library.licenseFile).readText().trimEnd() +
+            notices.joinToString("\n", prefix = "\n\nCopyright notices in the source files:\n\n")
+        val ids = library.spdx.split(" AND ")
+        ids.forEach { id ->
+            val file = spdxTextsDir.resolve("$id.txt")
+            if (file.isFile) texts[id] = file.readText() else missingTexts += id
+        }
         LicenseReportEntry(
             name = library.name,
             version = library.version,
             url = library.url,
-            licenses = library.spdx.split(" AND "),
-            texts = listOf(key),
+            licenses = ids,
+            texts = listOf(key) + ids,
         )
+    }
+    if (missingTexts.isNotEmpty()) {
+        throw GradleException("Add the license text for ${missingTexts.joinToString()} to ${spdxTextsDir.path}/<SPDX id>.txt")
     }
 
     return LicenseReport((maven + native).sortedBy { it.name.lowercase() }, texts)
