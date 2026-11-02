@@ -1729,7 +1729,7 @@ M0 の時点で手元にある実機は、検証用の端末 A と 検証用の�
 | P3 | 先読みしていないページへの移動（ローカル） | サムネイルの仮表示は 1 フレーム以内。本来の画質の表示は 150 ms 以内 | トレース区間。100 ページ先へ移動を 50 回 |
 | P4 | 本を開いてから最初のページ | ローカルの標準コーパスで 500 ms 以内。基準 NAS で 1500 ms 以内 (要検証) | Macrobenchmark の `TraceSectionMetric`。一覧のタップから最初のページの描画まで |
 | P5 | solid の RAR を開く | 先頭のページが最初のエントリなら 1000 ms 以内。RAR 5 の solid は一覧を作るだけで全体を 1 度展開する（3.3 節）ので、大きな書庫では満たせないおそれがある (要検証)。RAR 4 の solid は読めない | 同上 |
-| P6 | アプリの起動 | コールドスタートからホームの表示まで 600 ms 以内 | `StartupTimingMetric`。Baseline Profile を適用した状態 |
+| P6 | アプリの起動 | コールドスタートからホームの表示まで 600 ms 以内 | `StartupTimingMetric`。Baseline Profile を適用した状態（8.6 節）。`CompilationMode.None` との差も同じテストクラスで計る |
 | P7 | 1000 項目のフォルダの一覧 | 最初の項目まで 300 ms、全項目まで 1 s（ローカルの SAF） | トレース区間 |
 | P8 | サムネイル | 見えている約 15 項目が、キャッシュからは 1 s、ローカルでの生成では 3 s で埋まる | トレース区間 |
 | P9 | テキストを開く | 1 MB の青空文庫テキストで最初のページまで 300 ms。全体の組版は 3 s | トレース区間 |
@@ -2003,6 +2003,8 @@ RAR、7z、tar の書庫は次のように作る。
 
 `feature` のモジュールどうしは互いに依存しない。
 
+`:app` は `:benchmark` が作る Baseline Profile を、Baseline Profile の Gradle プラグインの設定（`baselineProfile(project(":benchmark"))`）で受け取る。表の依存（`:benchmark` から `:app`）とは逆向きだが、コードの依存ではなく、生成した `baseline-prof.txt` の受け渡しだけである。8.6 節に書く。
+
 `:core:image` は `:core:data` に依存できないので、サムネイルの生成（`Thumbnails`）は、ディスクキャッシュを自分の口（`ThumbnailStore`、鍵は `ThumbnailKey`）の向こうに置く。`:app` が `:core:data` の `ThumbnailCache` を、鍵を項目ごとに写して、この口に合わせる。
 
 ### 8.3 スレッドモデル
@@ -2073,6 +2075,8 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit、kotlinx-coroutines-test、AndroidX Test（runner、core、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
 | Compose の ui-test-junit4 と ui-test-manifest（BOM 2026.09.00 で 1.12.1）、espresso-core 3.7.0 | `:app` の端末上の UI 試験。ui-test-manifest は試験用の空の画面を宣言し、デバッグ版にだけ入る。espresso-core は、ui-test が持ち込む 3.5.0 が API 37 で動かないので直接上げる | Apache-2.0。ui-test、espresso-core と espresso-idling-resource、AndroidX Test の ext-junit と services の storage、javawriter、jsr305、javax.inject、listenablefuture（Apache-2.0）、hamcrest-library と hamcrest-integration 1.3（BSD-3-Clause。親 POM の New BSD License）を伴う。推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | Macrobenchmark（benchmark-macro-junit4、benchmark-traceprocessor）、UiAutomator | `:benchmark` の計測。benchmark-traceprocessor は、トレースを SQL で読む独自の計測（`TurnMetric`）のために直接使う | Apache-2.0。benchmark-traceprocessor は Wire の実行時ライブラリと Okio（どちらも Apache-2.0）を伴う | 計測時だけ。`:benchmark` の APK に入り、アプリの配布物に入らない |
+| Baseline Profile の Gradle プラグイン `androidx.baselineprofile` 1.5.0 | `:benchmark` の生成と `:app` への取り込み（8.6 節） | Apache-2.0。androidx.benchmark の benchmark-baseline-profile-gradle-plugin、benchmark-gradle-plugin など（Apache-2.0）、com.google.testing.platform の core-proto（Apache-2.0）、protobuf-java（BSD-3-Clause）、kotlin-stdlib（Apache-2.0）を伴う。1.5.0 のプラグインマーカーと各 POM で確かめた | ビルド時だけ。Gradle のプラグインの classpath に入り、アプリの配布物に入らない |
+| profileinstaller 1.4.1 | 初回起動のときに、APK の `baseline.prof` を ART に渡す | Apache-2.0。annotation、concurrent-futures、startup-runtime、listenablefuture（どれも Apache-2.0）を伴う。1.4.1 の POM で確かめた | Maven。`:app` が直接依存する。Activity などがすでに 1.4.0 を推移的に持ち込んでいたので、直接の依存で 1.4.1 に上げる。新しい推移的依存はない（`releaseRuntimeClasspath` の `dependencyInsight` で確かめた）。release の APK に入る |
 | Robolectric 4.17 | `:core:data` の DB の JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | XZ for Java 1.12（`org.tukaani:xz`） | `tools/corpus` で 7z と tar のコーパスを LZMA、LZMA2、x86 の分岐フィルタ、xz で圧縮する | 0BSD。推移的な依存はない（1.12 の POM で確かめた） | コーパスの生成時だけ。配布物に入らない |
 | Apache Commons Compress 1.28.0 | `tools/corpus` で BZip2 に圧縮する。JVM の試験で、コーパスの 7z と tar を独立に読んで確かめる | Apache-2.0。commons-codec、commons-io、commons-lang3（どれも Apache-2.0）を伴う。zstd-jni、brotli の dec、XZ for Java、asm は任意の依存で、XZ for Java だけを上の行のとおり直接使う（1.28.0 の POM で確かめた） | コーパスの生成時と試験時だけ。配布物に入らない |
@@ -2123,6 +2127,17 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - Maven の依存は Licensee で検査し、許可リストの外のライセンスでビルドを失敗にする。
 - ネイティブの依存は `third_party/manifest.toml` に名前、版、取得元の URL、SHA-256、SPDX 識別子を書く。CI のスクリプトで、`third_party/` の下のすべてのディレクトリが目録に載り、ライセンスファイルを持つことを確かめる。
 - ライセンス画面の内容は、Licensee の出力と `third_party/manifest.toml` からビルド時に生成する。Maven の依存には、SPDX 識別子ごとの正規の全文（`build-logic/spdx/<識別子>.txt`）を付ける。全文のない識別子が出てきたらビルドを失敗にする。ネイティブの依存には、目録の `license_file` の全文を付ける。著作権の表示はこちらに含まれる。
+
+### 8.6 Baseline Profile
+
+- **生成**。`:benchmark` の `BaselineProfileGenerator` が、AndroidX の `BaselineProfileRule` で重要な経路を動かし、使われたクラスとメソッドを集める。経路は 2 つある。1 つ目は、コールドスタートからホームの表示まで（スタートアッププロファイルにも入れる）。2 つ目は、システムのフォルダ選択画面で端末のフォルダを場所に加え、場所のファイル一覧（P7 の経路）を開き、コーパスの ZIP を一覧から開いて（P4 の経路）、ページを前後にめくり、閉じて戻るまで。
+- **コーパスの本**。`:benchmark` は `:tools:corpus` の出力を `:app` の端末上の試験と同じやり方（`evaluationDependsOn` とタスクの依存。モジュールの依存は足さない）で APK のアセットに入れる。テストはその `zip/images.zip` を共有ストレージの直下の `hirari-bench` フォルダに置いてから流す。デバッグ用の `book` extra は、release と同じ形の `nonMinifiedRelease` にはないので使わず、利用者と同じ経路で開く。
+- **生成の実行**。`./gradlew :app:generateBaselineProfile`。接続した端末かエミュレータで動く。API 33 以上では root は要らない。生成のたびにアプリのデータを消し、場所を加えるところから始める。1 回の試験は最大 6 回まで繰り返し、2 回続けて安定したら終える。
+- **置き場所**。`app/src/main/generated/baselineProfiles/` に `baseline-prof.txt` と `startup-prof.txt` が出る。プラグインの `mergeIntoMain` を使うので、release、`benchmark`、`debug` のどのビルドにも入る。コミットする。生成物はクラスとメソッドの一覧で、端末の速さに依らないので、エミュレータで作ったものをコミットしてよい。アプリの構成を大きく変えたら作り直す。
+- **取り込み**。`:app` は `baselineProfile(project(":benchmark"))` で受け取り、`androidx.profileinstaller:profileinstaller` を `implementation` で持つ。release の APK に `assets/dexopt/baseline.prof` が入り、初回起動のときに profileinstaller が ART に渡す。
+- **計測**。`StartupBenchmark` の `coldStart` は `CompilationMode.Partial()`（プロファイルあり。入っていなければ失敗する）、`coldStartWithoutProfile` は `CompilationMode.None()` で、差を見る。`connectedBenchmarkAndroidTest` は生成の試験を流さないよう、`androidx.benchmark.enabledRules=macrobenchmark` を付けて流す（AGENTS.md）。エミュレータの値は判定に使えない（5.1 節）。
+- **エミュレータでの結果**。API 37 の x86_64 のエミュレータ（`FeedDeck_API37`）で、`coldStart` の `timeToInitialDisplayMs` の中央値は 1224 ms（最小 903、最大 1590、10 回）、`coldStartWithoutProfile` は 1246 ms（最小 928、最大 1900、10 回）だった。差は回ごとのばらつきの中にある。エミュレータの値は判定に使えず、5.2 節の P6 は実機で計り直す (要検証)。エミュレータでは、プロファイルで事前にコンパイルした効果が見えるとは限らない。
+- **既知の制約**。生成は、端末のフォルダ選択画面が AOSP か Google のもの（パッケージ名が `documentsui` で終わる）であることを前提にする。ボタンは `android:id/button1` で探し、場所の名前は `hirari-bench` で探すので、端末の言語には依らない。Windows では、`build` の下の生成物のパスが 260 文字を超えると、プラグインが生成物を取り出せない。リポジトリは浅いパスに置く。端末が複数つながっているときは、`ANDROID_SERIAL` で 1 台に絞る。
 
 ## 9. マイルストーン
 
@@ -2207,6 +2222,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - 余白トリミングの試験画像で、切りすぎを防ぐ 4.8 節の規則がすべて働く。
 - 息での操作は既定でオフであり、オンにするときだけ `RECORD_AUDIO` を求める。静かな部屋で短く 10 回吹くと 9 回以上めくれる (要検証)。リーダーが背面に回るとマイクが止まる。
 - モンキー試験で、落ちる回数と ANR がともに 0 件である。
+- Baseline Profile が `app/src/main/generated/baselineProfiles/` にあり、release と `benchmark` の APK に `assets/dexopt/baseline.prof` が入る（8.6 節）。実機で `StartupBenchmark` の `coldStart` が 600 ms 以内に収まる (要検証)。
 - この文書の (要検証) がすべて解消しているか、課題として登録されている。
 
 ## 10. 未決事項

@@ -2,6 +2,7 @@ plugins {
     id("hirari.android.application")
     id("hirari.android.compose")
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.baselineprofile)
 }
 
 android {
@@ -26,6 +27,18 @@ android {
     }
 }
 
+// The profile goes to src/main, so the benchmark build and the release build both carry it.
+baselineProfile {
+    mergeIntoMain = true
+    // The AndroidX libraries ship their own profiles, which the build merges in. Keeping only the rest holds the
+    // file to a size that diffs.
+    filter {
+        include("io.github.yuubiz.hirari.**")
+        include("kotlin.**")
+        include("kotlinx.**")
+    }
+}
+
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:data"))
@@ -38,6 +51,8 @@ dependencies {
     implementation(project(":feature:text"))
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":benchmark"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.core)
