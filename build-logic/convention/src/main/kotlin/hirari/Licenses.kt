@@ -2,8 +2,10 @@ package hirari
 
 import app.cash.licensee.LicenseeExtension
 import app.cash.licensee.UnusedAction
+import com.android.build.api.variant.ApplicationAndroidComponentsExtension
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.register
 
 /** Licenses allowed in the distributed app (docs/spec.md section 8.5). Fonts may also use OFL-1.1. */
 val allowedLicenses = listOf(
@@ -18,11 +20,23 @@ val allowedLicenses = listOf(
     "Unicode-3.0",
 )
 
-internal fun Project.checkMavenLicenses() {
+/** Checks the Maven licenses and bundles the license screen's data as the asset `licenses.json`. */
+internal fun Project.checkAndBundleLicenses() {
     pluginManager.apply("app.cash.licensee")
     extensions.configure<LicenseeExtension> {
         allowedLicenses.forEach { allow(it) }
         unusedAction(UnusedAction.IGNORE)
-        bundleAndroidAsset.set(true)
+    }
+    extensions.configure<ApplicationAndroidComponentsExtension> {
+        onVariants { variant ->
+            val name = variant.name.replaceFirstChar { it.uppercase() }
+            val task = tasks.register<GenerateLicenseReportTask>("generate${name}LicenseReport") {
+                dependsOn("licenseeAndroid$name")
+                licenseeReport.set(layout.buildDirectory.file("reports/licensee/android$name/artifacts.json"))
+                thirdPartyDir.set(rootProject.layout.projectDirectory.dir("third_party"))
+                spdxTextsDir.set(rootProject.layout.projectDirectory.dir("build-logic/spdx"))
+            }
+            variant.sources.assets?.addGeneratedSourceDirectory(task, GenerateLicenseReportTask::outputDir)
+        }
     }
 }

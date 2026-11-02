@@ -15,6 +15,8 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:ui"))
     implementation(project(":feature:library"))
+    implementation(project(":feature:settings"))
+    implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
 }

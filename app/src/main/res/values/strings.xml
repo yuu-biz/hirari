@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hirari</string>
+    <string name="menu">メニュー</string>
+    <string name="menu_licenses">ライセンス</string>
 </resources>

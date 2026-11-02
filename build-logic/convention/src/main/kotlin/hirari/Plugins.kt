@@ -19,7 +19,7 @@ class AndroidApplicationPlugin : Plugin<Project> {
             defaultConfig.targetSdk = Sdk.TARGET
         }
         enforceModuleRules()
-        checkMavenLicenses()
+        checkAndBundleLicenses()
     }
 }
 
