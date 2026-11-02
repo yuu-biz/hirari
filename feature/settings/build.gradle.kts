@@ -13,6 +13,7 @@ android {
 
 dependencies {
     implementation(project(":core:data"))
+    implementation(project(":core:archive"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

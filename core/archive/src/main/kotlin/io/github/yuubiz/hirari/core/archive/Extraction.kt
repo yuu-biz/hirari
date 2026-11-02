@@ -186,9 +186,7 @@ internal class Extraction(
             change { slots[index] = Slot.Settled(it) }
             return Status.OK
         }
-        // Another book's session deletes the directory when this one stays open for a day (docs/spec.md 3.3).
-        dir.mkdirs()
-        val part = File.createTempFile("entry-$index-", PART, dir)
+        val part = createPart(index)
         var complete = false
         try {
             val sink = FileSink(part, ArchiveSession.MAX_ENTRY_BYTES.toLong())
@@ -217,6 +215,21 @@ internal class Extraction(
             return status
         } finally {
             if (!complete) part.delete()
+        }
+    }
+
+    /**
+     * Another book's session deletes the directory when this one stays open for a day, and clearing the cache
+     * deletes it once it is empty (docs/spec.md section 3.3), so it is made again, and once more when the
+     * directory goes between making it and the file.
+     */
+    private fun createPart(index: Int): File {
+        dir.mkdirs()
+        return try {
+            File.createTempFile("entry-$index-", PART, dir)
+        } catch (_: IOException) {
+            dir.mkdirs()
+            File.createTempFile("entry-$index-", PART, dir)
         }
     }
 
@@ -308,10 +321,10 @@ internal class Extraction(
         override fun close() = channel.close()
     }
 
-    private companion object {
+    internal companion object {
         /** The size limit is the smaller of this and a tenth of the free space (docs/spec.md section 3.3). */
-        const val MAX_CACHE_BYTES = 2L shl 30
-        const val IDLE_MILLIS = 24L * 60 * 60 * 1000
+        private const val MAX_CACHE_BYTES = 2L shl 30
+        private const val IDLE_MILLIS = 24L * 60 * 60 * 1000
         const val PART_MILLIS = 60L * 60 * 1000
         const val PART = ".part"
     }

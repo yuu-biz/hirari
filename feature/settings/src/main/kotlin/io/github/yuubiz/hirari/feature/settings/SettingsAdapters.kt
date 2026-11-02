@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.settings
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import io.github.yuubiz.hirari.core.archive.ExtractionCache
 import io.github.yuubiz.hirari.core.data.ImportPreparation
 import io.github.yuubiz.hirari.core.data.SettingsTransfer
 import io.github.yuubiz.hirari.core.data.Storage
@@ -14,12 +15,16 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 
 /** Connects the settings screen to the app's [storage]. */
-fun settingsServices(storage: Storage, context: Context): SettingsServices = SettingsServices(
-    settings = storage.settings,
-    transfer = StorageTransfer(storage.transfer),
-    documents = ContentResolverDocuments(context.applicationContext.contentResolver),
-    clearThumbnails = storage.thumbnails::clear,
-)
+fun settingsServices(storage: Storage, context: Context): SettingsServices {
+    val application = context.applicationContext
+    return SettingsServices(
+        settings = storage.settings,
+        transfer = StorageTransfer(storage.transfer),
+        documents = ContentResolverDocuments(application.contentResolver),
+        clearThumbnails = storage.thumbnails::clear,
+        clearExtraction = { ExtractionCache.under(application.cacheDir).clear() },
+    )
+}
 
 internal class StorageTransfer(private val transfer: SettingsTransfer) : SettingsFileTransfer {
     override suspend fun export(includeReading: Boolean): String = transfer.export(includeReading)

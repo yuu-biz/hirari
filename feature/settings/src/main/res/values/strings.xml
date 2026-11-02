@@ -18,6 +18,8 @@
     <string name="settings_import_summary">書き出した設定のファイルを選びます。</string>
     <string name="settings_clear_thumbnails">サムネイルのキャッシュを消す</string>
     <string name="settings_clear_thumbnails_summary">サムネイルは必要になったときに作り直します。</string>
+    <string name="settings_clear_extraction">展開キャッシュを消す</string>
+    <string name="settings_clear_extraction_summary">RAR や 7z などの書庫を読むために一時的に展開したファイルを消します。開いている本は、必要になったときに展開し直します。</string>
     <string name="settings_licenses">ライセンス</string>
 
     <string name="settings_custom_color">任意の色</string>
@@ -55,6 +57,8 @@
     <string name="import_done">設定を読み込みました。</string>
 
     <string name="clear_thumbnails_done">サムネイルのキャッシュを消しました。</string>
+    <string name="clear_extraction_done">展開キャッシュを消しました。%1$s を空けました。</string>
+    <string name="clear_extraction_nothing">消す展開キャッシュはありませんでした。</string>
 
     <string name="problem_cannot_write">書き出せませんでした。保存先を変えて、もう一度試してください。</string>
     <string name="problem_cannot_read">ファイルを読めませんでした。</string>

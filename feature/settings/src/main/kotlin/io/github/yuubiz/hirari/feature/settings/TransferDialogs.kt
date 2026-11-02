@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.settings
 
+import android.text.format.Formatter
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -101,22 +103,31 @@ internal fun WorkingDialog() {
 internal fun ResultDialog(result: ActionResult, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        text = { Text(stringResource(result.messageRes())) },
+        text = { Text(result.message()) },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_close)) } },
     )
 }
 
-private fun ActionResult.messageRes(): Int = when (this) {
-    is ActionResult.Exported -> if (includedReading) R.string.export_done_with_reading else R.string.export_done
-    is ActionResult.Imported -> R.string.import_done
-    ActionResult.ThumbnailsCleared -> R.string.clear_thumbnails_done
-    is ActionResult.Failed -> when (problem) {
-        Problem.CannotWrite -> R.string.problem_cannot_write
-        Problem.CannotRead -> R.string.problem_cannot_read
-        Problem.TooLarge -> R.string.problem_too_large
-        Problem.NotASettingsFile -> R.string.problem_not_a_settings_file
-        Problem.ApplyFailed -> R.string.problem_apply_failed
-        Problem.CannotClear -> R.string.problem_cannot_clear
-        Problem.CannotSave -> R.string.problem_cannot_save
-    }
+@Composable
+private fun ActionResult.message(): String = when (this) {
+    is ActionResult.Exported -> stringResource(if (includedReading) R.string.export_done_with_reading else R.string.export_done)
+    is ActionResult.Imported -> stringResource(R.string.import_done)
+    ActionResult.ThumbnailsCleared -> stringResource(R.string.clear_thumbnails_done)
+    is ActionResult.ExtractionCleared ->
+        if (freedBytes == 0L) {
+            stringResource(R.string.clear_extraction_nothing)
+        } else {
+            stringResource(R.string.clear_extraction_done, Formatter.formatShortFileSize(LocalContext.current, freedBytes))
+        }
+    is ActionResult.Failed -> stringResource(
+        when (problem) {
+            Problem.CannotWrite -> R.string.problem_cannot_write
+            Problem.CannotRead -> R.string.problem_cannot_read
+            Problem.TooLarge -> R.string.problem_too_large
+            Problem.NotASettingsFile -> R.string.problem_not_a_settings_file
+            Problem.ApplyFailed -> R.string.problem_apply_failed
+            Problem.CannotClear -> R.string.problem_cannot_clear
+            Problem.CannotSave -> R.string.problem_cannot_save
+        },
+    )
 }

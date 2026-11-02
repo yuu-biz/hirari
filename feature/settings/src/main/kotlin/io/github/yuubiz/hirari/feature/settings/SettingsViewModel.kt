@@ -55,6 +55,9 @@ class SettingsServices(
     val transfer: SettingsFileTransfer,
     val documents: DocumentStore,
     val clearThumbnails: suspend () -> Unit,
+
+    /** Deletes the extraction cache (docs/spec.md section 3.3) and returns the bytes freed. */
+    val clearExtraction: suspend () -> Long,
 )
 
 sealed interface SettingsLoad {
@@ -66,7 +69,7 @@ sealed interface SettingsLoad {
     data class Ready(val settings: GlobalSettings) : SettingsLoad
 }
 
-enum class Step { Exporting, Reading, Applying, ClearingThumbnails }
+enum class Step { Exporting, Reading, Applying, ClearingThumbnails, ClearingExtraction }
 
 enum class Problem { CannotWrite, CannotRead, TooLarge, NotASettingsFile, ApplyFailed, CannotClear, CannotSave }
 
@@ -76,6 +79,8 @@ sealed interface ActionResult {
     data class Imported(val changes: ImportChanges) : ActionResult
 
     data object ThumbnailsCleared : ActionResult
+
+    data class ExtractionCleared(val freedBytes: Long) : ActionResult
 
     data class Failed(val problem: Problem) : ActionResult
 }
@@ -201,6 +206,17 @@ class SettingsViewModel(
                 attempt(Problem.CannotClear) {
                     withContext(io) { services.clearThumbnails() }
                     ActionResult.ThumbnailsCleared
+                },
+            )
+        }
+    }
+
+    fun clearExtraction() {
+        if (!begin(Step.ClearingExtraction)) return
+        viewModelScope.launch {
+            finish(
+                attempt(Problem.CannotClear) {
+                    ActionResult.ExtractionCleared(withContext(io) { services.clearExtraction() })
                 },
             )
         }

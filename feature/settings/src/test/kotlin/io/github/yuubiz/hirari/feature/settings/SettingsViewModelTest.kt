@@ -93,6 +93,8 @@ class SettingsViewModelTest {
     private val transfer = FakeTransfer()
     private var thumbnailsCleared = 0
     private var thumbnailFailure: Exception? = null
+    private var extractionFreed = 0L
+    private var extractionFailure: Exception? = null
 
     @Before
     fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -108,6 +110,10 @@ class SettingsViewModelTest {
             clearThumbnails = {
                 thumbnailFailure?.let { throw it }
                 thumbnailsCleared++
+            },
+            clearExtraction = {
+                extractionFailure?.let { throw it }
+                extractionFreed
             },
         ),
         io = UnconfinedTestDispatcher(scope.testScheduler),
@@ -130,7 +136,7 @@ class SettingsViewModelTest {
 
             override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = Unit
         }
-        val vm = SettingsViewModel(SettingsServices(broken, transfer, documents) {}, UnconfinedTestDispatcher(testScheduler))
+        val vm = SettingsViewModel(SettingsServices(broken, transfer, documents, clearThumbnails = {}, clearExtraction = { 0L }),UnconfinedTestDispatcher(testScheduler))
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertEquals(SettingsLoad.Failed, vm.state.value.load)
     }
@@ -260,7 +266,7 @@ class SettingsViewModelTest {
     @Test
     fun `a second action waits while one is running`() = runTest {
         val vm = SettingsViewModel(
-            SettingsServices(settings, transfer, documents) { thumbnailsCleared++ },
+            SettingsServices(settings, transfer, documents, clearThumbnails = { thumbnailsCleared++ }, clearExtraction = { 0L }),
             StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
@@ -293,5 +299,36 @@ class SettingsViewModelTest {
         thumbnailFailure = IOException("busy")
         vm.clearThumbnails()
         assertEquals(ActionState.Done(ActionResult.Failed(Problem.CannotClear)), vm.state.value.action)
+    }
+
+    @Test
+    fun `clearing the extraction cache reports the bytes freed and a failure`() = runTest {
+        val vm = viewModel(this)
+        extractionFreed = 4_096
+        vm.clearExtraction()
+        assertEquals(ActionState.Done(ActionResult.ExtractionCleared(4_096)), vm.state.value.action)
+        vm.dismissResult()
+
+        extractionFailure = IOException("busy")
+        vm.clearExtraction()
+        assertEquals(ActionState.Done(ActionResult.Failed(Problem.CannotClear)), vm.state.value.action)
+    }
+
+    @Test
+    fun `clearing the extraction cache shows a working state and ignores a second request`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val vm = SettingsViewModel(
+            SettingsServices(settings, transfer, documents, clearThumbnails = {}, clearExtraction = { gate.await(); 7L }),
+            StandardTestDispatcher(testScheduler),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
+        vm.clearExtraction()
+        vm.clearExtraction()
+        advanceUntilIdle()
+        assertEquals(ActionState.Working(Step.ClearingExtraction), vm.state.value.action)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(ActionState.Done(ActionResult.ExtractionCleared(7)), vm.state.value.action)
     }
 }
