@@ -76,7 +76,13 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
     // Kept out of saved state, so the password never reaches a bundle (docs/spec.md section 7).
     val password = remember { TextFieldState() }
     val gate = rememberLocalNetworkGate()
-    LaunchedEffect(state) { if (state == SmbFormUi.Saved) onClose() }
+    // A save the form rejects keeps the typed password for the next try; only a saved one is cleared.
+    LaunchedEffect(state) {
+        if (state == SmbFormUi.Saved) {
+            password.clearText()
+            onClose()
+        }
+    }
 
     fun typed(): CharArray = password.text.let { text -> CharArray(text.length) { text[it] } }
 
@@ -98,12 +104,7 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
                 onEdit = model::edit,
                 onRemovePassword = model::setRemovePassword,
                 onTest = { gate { model.test(typed()) } },
-                onSave = {
-                    gate {
-                        model.save(typed())
-                        password.clearText()
-                    }
-                },
+                onSave = { gate { model.save(typed()) } },
             )
         }
     }

@@ -107,6 +107,21 @@ class SmbServerViewModelTest {
     }
 
     @Test
+    fun `a rejected save stays on the form, so the password typed for it is saved once the form is fixed`() = runTest {
+        val id = fixture.locations.addSmbShare(ServerForm("NAS", "nas.local", share = "books", user = "reader"), "pw-7Qx".toCharArray())
+        val model = form(id)
+        model.edit(model.editing().fields.copy(share = ""))
+        model.save("new".toCharArray())
+        assertEquals(mapOf(SmbField.Share to SmbFieldError.Required), model.editing().errors)
+        assertTrue(fixture.locations.changes.isEmpty())
+
+        model.edit(model.editing().fields.copy(share = "books"))
+        model.save("new".toCharArray())
+        assertEquals(SmbFormUi.Saved, model.state.value)
+        assertEquals("new", fixture.locations.secrets[CredentialRef("ref-${id.value}")])
+    }
+
+    @Test
     fun `a new password leaves the books of the server where they were`() = runTest {
         val id = fixture.locations.addSmbShare(ServerForm("NAS", "nas.local", share = "books", user = "reader"), "pw-7Qx".toCharArray())
         val before = locationBookId(fixture.locations.get(id)!!, "1巻.zip")
