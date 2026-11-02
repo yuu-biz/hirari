@@ -89,8 +89,8 @@ private class ParagraphStyles(paragraph: Paragraph) {
                     rubyAt[span.start] = span
                     for (i in span.start until span.end) inRuby[i] = true
                 }
-                is Span.Emphasis -> if (span.side == Side.Right) for (i in span.start until span.end) rightMarks[i] = true
-                is Span.SideLine -> if (span.side == Side.Right) for (i in span.start until span.end) rightMarks[i] = true
+                is Span.Emphasis -> if (span.side == MarkSide.Right) for (i in span.start until span.end) rightMarks[i] = true
+                is Span.SideLine -> if (span.side == MarkSide.Right) for (i in span.start until span.end) rightMarks[i] = true
             }
         }
     }
@@ -127,6 +127,7 @@ class VerticalLayout(
      */
     fun pages(from: Int = 0, to: Int = document.blocks.size): Sequence<TextPage> = sequence {
         val blocks = document.blocks
+        require(from in 0..to && to <= blocks.size) { "blocks $from until $to of ${blocks.size}" }
         val rangeStart = when {
             from == 0 -> 0
             from >= blocks.size -> document.sourceLength
@@ -302,8 +303,8 @@ class VerticalLayout(
             }
         }
         val marks = emphasis.map { it.side } + sideLines.map { it.side }
-        val rightBand = if (rubies.isNotEmpty() || Side.Right in marks) params.rubySize else 0f
-        val leftBand = if (Side.Left in marks) params.rubySize else 0f
+        val rightBand = if (rubies.isNotEmpty() || MarkSide.Right in marks) params.rubySize else 0f
+        val leftBand = if (MarkSide.Left in marks) params.rubySize else 0f
         return TextLine(
             0f, glyphs.maxOf { it.size }, rightBand, leftBand, glyphs, rubies, emphasis, sideLines,
             units[range.first].start, units[range.last].end,

@@ -2,8 +2,8 @@ package io.github.yuubiz.hirari.core.text
 
 /** The styles a notation applies to a stretch of text, by the name 青空文庫 notation gives them. */
 private sealed interface Style {
-    data class Emphasis(val mark: EmphasisMark, val side: Side) : Style
-    data class Line(val style: LineStyle, val side: Side) : Style
+    data class Emphasis(val mark: EmphasisMark, val side: MarkSide) : Style
+    data class Line(val style: LineStyle, val side: MarkSide) : Style
     data object Bold : Style
     data object TateChuYoko : Style
     data class Heading(val level: HeadingLevel) : Style
@@ -31,10 +31,10 @@ private val lineNames = mapOf(
 private val headingNames = mapOf("大見出し" to HeadingLevel.Large, "中見出し" to HeadingLevel.Medium, "小見出し" to HeadingLevel.Small)
 
 /** A style word such as `白丸傍点` or `中見出し`, with `左に` already split off into [side]. */
-private fun styleOf(word: String, side: Side): Style? {
+private fun styleOf(word: String, side: MarkSide): Style? {
     emphasisNames[word]?.let { return Style.Emphasis(it, side) }
     lineNames[word]?.let { return Style.Line(it, side) }
-    if (side == Side.Left) return null
+    if (side == MarkSide.Left) return null
     return when (word) {
         "太字" -> Style.Bold
         "縦中横" -> Style.TateChuYoko
@@ -98,14 +98,14 @@ private fun parseCommand(rawNote: String): Command {
     raiseBlock.matchEntire(note)?.let { return Command.BottomBlock(number(it.groupValues[1])) }
     reference.matchEntire(rawNote)?.let { match ->
         val (target, particle, word) = match.destructured
-        val style = styleOf(word, if (particle == "の左に") Side.Left else Side.Right)
+        val style = styleOf(word, if (particle == "の左に") MarkSide.Left else MarkSide.Right)
         return if (style == null) Command.Ignored else Command.Reference(target, style)
     }
     picture.find(note)?.let { return Command.Picture(it.groupValues[1].substringBefore('、')) }
     val body = note.removePrefix("ここから").removePrefix("ここで")
     val isEnd = body.endsWith("終わり")
     val word = body.removeSuffix("終わり")
-    val side = if (word.startsWith("左に")) Side.Left else Side.Right
+    val side = if (word.startsWith("左に")) MarkSide.Left else MarkSide.Right
     val style = styleOf(word.removePrefix("左に"), side) ?: return Command.Ignored
     return if (isEnd) Command.RangeEnd(style) else Command.RangeStart(style)
 }

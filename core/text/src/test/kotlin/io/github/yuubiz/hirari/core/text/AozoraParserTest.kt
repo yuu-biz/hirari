@@ -68,15 +68,15 @@ class AozoraParserTest {
 
     @Test
     fun `emphasis marks by reference and by range, on either side`() {
-        assertEquals(listOf(Span.Emphasis(0, 1, EmphasisMark.Sesame, Side.Right)), paragraph("猫である［＃「猫」に傍点］").spans)
-        assertEquals(listOf(Span.Emphasis(0, 1, EmphasisMark.WhiteCircle, Side.Left)), paragraph("猫である［＃「猫」の左に白丸傍点］").spans)
-        assertEquals(listOf(Span.Emphasis(1, 3, EmphasisMark.Fisheye, Side.Right)), paragraph("我［＃蛇の目傍点］輩は［＃蛇の目傍点終わり］猫").spans)
+        assertEquals(listOf(Span.Emphasis(0, 1, EmphasisMark.Sesame, MarkSide.Right)), paragraph("猫である［＃「猫」に傍点］").spans)
+        assertEquals(listOf(Span.Emphasis(0, 1, EmphasisMark.WhiteCircle, MarkSide.Left)), paragraph("猫である［＃「猫」の左に白丸傍点］").spans)
+        assertEquals(listOf(Span.Emphasis(1, 3, EmphasisMark.Fisheye, MarkSide.Right)), paragraph("我［＃蛇の目傍点］輩は［＃蛇の目傍点終わり］猫").spans)
     }
 
     @Test
     fun `side lines, bold, and tate-chu-yoko`() {
-        assertEquals(listOf(Span.SideLine(0, 1, LineStyle.Wavy, Side.Right)), paragraph("猫［＃「猫」に波線］").spans)
-        assertEquals(listOf(Span.SideLine(0, 2, LineStyle.Double, Side.Left)), paragraph("［＃左に二重傍線］猫だ［＃左に二重傍線終わり］").spans)
+        assertEquals(listOf(Span.SideLine(0, 1, LineStyle.Wavy, MarkSide.Right)), paragraph("猫［＃「猫」に波線］").spans)
+        assertEquals(listOf(Span.SideLine(0, 2, LineStyle.Double, MarkSide.Left)), paragraph("［＃左に二重傍線］猫だ［＃左に二重傍線終わり］").spans)
         assertEquals(listOf(Span.Bold(0, 1)), paragraph("猫［＃「猫」は太字］").spans)
         assertEquals(listOf(Span.TateChuYoko(1, 3)), paragraph("第12話［＃「12」は縦中横］").spans)
     }

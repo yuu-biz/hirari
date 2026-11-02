@@ -73,7 +73,7 @@ data class CenterPage(override val start: Int, override val end: Int) : Block
 /** A 挿絵 on a line of its own. [path] is relative to the text file. */
 data class Figure(val path: String, override val start: Int, override val end: Int) : Block
 
-enum class Side { Right, Left }
+enum class MarkSide { Right, Left }
 
 enum class EmphasisMark(val glyph: String) {
     Sesame("﹅"),
@@ -94,8 +94,8 @@ sealed interface Span {
     val end: Int
 
     data class Ruby(override val start: Int, override val end: Int, val text: String) : Span
-    data class Emphasis(override val start: Int, override val end: Int, val mark: EmphasisMark, val side: Side) : Span
-    data class SideLine(override val start: Int, override val end: Int, val style: LineStyle, val side: Side) : Span
+    data class Emphasis(override val start: Int, override val end: Int, val mark: EmphasisMark, val side: MarkSide) : Span
+    data class SideLine(override val start: Int, override val end: Int, val style: LineStyle, val side: MarkSide) : Span
     data class Bold(override val start: Int, override val end: Int) : Span
     data class HeadingText(override val start: Int, override val end: Int, val level: HeadingLevel) : Span
     data class TateChuYoko(override val start: Int, override val end: Int) : Span

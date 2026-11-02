@@ -84,9 +84,9 @@ data class Glyph(
 data class RubyRun(val text: String, val y: Float, val length: Float, val size: Float)
 
 /** Emphasis marks, one centered on each of [centers]. */
-data class EmphasisRun(val mark: EmphasisMark, val side: Side, val centers: List<Float>, val size: Float)
+data class EmphasisRun(val mark: EmphasisMark, val side: MarkSide, val centers: List<Float>, val size: Float)
 
-data class SideLineRun(val style: LineStyle, val side: Side, val y0: Float, val y1: Float)
+data class SideLineRun(val style: LineStyle, val side: MarkSide, val y0: Float, val y1: Float)
 
 /**
  * One column. [x] is the center of its body; ruby and right-side marks sit in a band of [rightBand] beyond
