@@ -16,6 +16,7 @@ import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.ScreenOrientation
 import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.StopOrder
+import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.core.model.TurnEffect
 import io.github.yuubiz.hirari.core.model.VolumeKeys
 import kotlin.math.roundToLong
@@ -49,6 +50,8 @@ data class ReaderConfig(
     val loupeFrame: LoupeFrame = LoupeFrame.Small,
     val loupeHoldMs: Long = 800,
     val atBookEnd: BookEndAction = BookEndAction.Ask,
+    /** 余白トリミング. */
+    val trim: TrimStrength = TrimStrength.Off,
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -81,9 +84,21 @@ data class ReaderConfig(
             loupeFrame = settings.loupeFrame,
             loupeHoldMs = settings.loupeHoldMs.toLong(),
             atBookEnd = settings.atBookEnd,
+            trim = overrides.trim ?: settings.trimStrength,
         )
     }
 }
+
+/**
+ * These overrides with what the reader changed from [before] to [after] that 2.9 of docs/spec.md keeps for the
+ * book: the rotation, 画像補正, and 余白トリミング. A value changed back to what [global] has is stored as no
+ * override, so the book follows the global setting again.
+ */
+fun BookOverrides.changedBy(before: ReaderConfig, after: ReaderConfig, global: ReaderConfig): BookOverrides = copy(
+    rotation = if (after.rotation == before.rotation) rotation else after.rotation.takeUnless { it == global.rotation },
+    adjust = if (after.adjust == before.adjust) adjust else after.adjust.takeUnless { it == global.adjust },
+    trim = if (after.trim == before.trim) trim else after.trim.takeUnless { it == global.trim },
+)
 
 /** The global `adjust*` settings as one value. */
 val GlobalSettings.adjust: ImageAdjust

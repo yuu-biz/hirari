@@ -55,10 +55,11 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.ShiftPairing -> CommandEffect.ShiftForward
     ReaderCommand.Orientation -> CommandEffect.Configure(copy(orientation = orientation.next()))
     ReaderCommand.Rotate -> CommandEffect.Configure(copy(rotation = rotation.next()))
+    ReaderCommand.Trim -> CommandEffect.Configure(copy(trim = trim.next()))
     ReaderCommand.ImageAdjust -> CommandEffect.Show(ReaderSheet.Adjust)
     ReaderCommand.AutoPlay -> CommandEffect.StartAutoPlay
     ReaderCommand.SharePage -> CommandEffect.SharePage
-    ReaderCommand.Trim, ReaderCommand.AddBookmark, ReaderCommand.Bookmarks,
+    ReaderCommand.AddBookmark, ReaderCommand.Bookmarks,
     ReaderCommand.ReverseOrder, ReaderCommand.EditCommandBar, ReaderCommand.Breath,
     ReaderCommand.BookSettings, ReaderCommand.SetCover, ReaderCommand.Settings,
     -> CommandEffect.NotYet

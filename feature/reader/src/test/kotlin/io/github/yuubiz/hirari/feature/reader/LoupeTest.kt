@@ -177,6 +177,6 @@ class LoupeTest {
         val source = assertNotNull(state.loupeSource())
         assertEquals(PixelSize(2000, 2000), source.size)
         assertEquals(Rotation.Quarter, source.steps.rotation)
-        assertEquals(Side.Right, source.steps.crop)
+        assertEquals(PagePart.Whole.half(Side.Right), source.steps.part)
     }
 }

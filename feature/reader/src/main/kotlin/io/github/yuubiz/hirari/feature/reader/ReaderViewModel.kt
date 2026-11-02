@@ -20,6 +20,7 @@ import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.Books
 import io.github.yuubiz.hirari.core.image.ImageDecoding
+import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
@@ -40,7 +41,6 @@ import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingPosition
-import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.documentBookId
@@ -164,7 +164,8 @@ class ReaderViewModel(
         val services: ReaderServices,
         val progress: ProgressLog,
         val overrides: BookOverridesStore.OverridesWriter,
-        val globalAdjust: ImageAdjust,
+        /** The reader as the global settings alone set it up, which a change back to stores as no override. */
+        val global: ReaderConfig,
         val shareDir: File,
         val loader: BookPageLoader,
     )
@@ -306,7 +307,7 @@ class ReaderViewModel(
     }
 
     /** The global `adjust*` settings, where 全体の設定に戻す of the 画像補正 sheet goes back to. */
-    val globalAdjust: ImageAdjust get() = opened?.globalAdjust ?: ImageAdjust()
+    val globalAdjust: ImageAdjust get() = opened?.global?.adjust ?: ImageAdjust()
 
     /** The reader left the screen. The process may end before [onCleared], so the history is written now. */
     fun onStop() {
@@ -368,11 +369,13 @@ class ReaderViewModel(
             override fun onChanged() {
                 prepared++
             }
+
+            override fun onMargins(page: Int, scan: MarginScan) = dispatch(ReaderEvent.MarginsLearned(page, scan))
         }
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, settings.adjust, shareDir, loader)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader)
         stops.attach(session)
         phase = ReaderPhase.Reading
         start()
@@ -419,17 +422,14 @@ class ReaderViewModel(
     private fun changed(before: ReaderState?, after: ReaderState) {
         val book = opened ?: return
         if (before == null || before.pagination !== after.pagination || before.shownViews != after.shownViews ||
-            before.viewport != after.viewport || before.config != after.config
+            before.viewport != after.viewport || before.config != after.config || before.margins !== after.margins
         ) {
             book.prefetcher.update(after.prefetchInput(paused = stripShown))
         }
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
         orientation = after.config.orientation
-        if (before != null && before.config.rotation != after.config.rotation) {
-            book.overrides.update { it.copy(rotation = after.config.rotation.takeUnless { r -> r == Rotation.None }) }
-        }
-        if (before != null && before.config.adjust != after.config.adjust) {
-            book.overrides.update { it.copy(adjust = after.config.adjust.takeUnless { a -> a == book.globalAdjust }) }
+        if (before != null && before.config !== after.config) {
+            book.overrides.update { it.changedBy(before.config, after.config, book.global) }
         }
         readForLoupe(book.loader, after.loupeSource())
         val hit = after.edgeHit
@@ -461,7 +461,7 @@ class ReaderViewModel(
         if (wanted == null || loupeDetail != null) return
         loupeRead = viewModelScope.launch {
             val result = loader.prepare(wanted.page, wanted.size, wanted.steps, opened?.prefetcher?.raw(wanted.page))
-            val bitmap = (result as? PageResult.Ready)?.image ?: return@launch
+            val bitmap = (result as? PageResult.Ready)?.image?.image ?: return@launch
             if (loupeWanted == wanted) loupeDetail = LoupeDetail(wanted, bitmap) else bitmap.recycle()
         }
     }

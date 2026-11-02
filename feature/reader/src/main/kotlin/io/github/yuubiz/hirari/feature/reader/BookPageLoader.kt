@@ -8,15 +8,17 @@ import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.image.RawPage
 import io.github.yuubiz.hirari.core.image.RawResult
+import io.github.yuubiz.hirari.core.image.scanMargins
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.Rotation
-import io.github.yuubiz.hirari.core.model.Side
+import io.github.yuubiz.hirari.feature.reader.prefetch.MadePage
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageLoader
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageSteps
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlin.math.roundToInt
 
 /**
  * Pages of [book] as HARDWARE bitmaps (Q2 in docs/spec.md section 10). The steps after scaling and the upload to
@@ -36,37 +38,44 @@ class BookPageLoader(private val book: OpenBook, private val dispatcher: Corouti
 
     override suspend fun shape(page: Int, raw: RawPage?): PageResult<PageShape.Known> = book.shape(page, raw)
 
-    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: RawPage?): PageResult<Bitmap> =
-        smallerOnOutOfMemory(size) { prepareAt(page, it, steps, raw) }
+    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: RawPage?, readMargins: Boolean): PageResult<MadePage<Bitmap>> =
+        smallerOnOutOfMemory(size) { prepareAt(page, it, steps, raw, readMargins) }
 
-    /** Throws [OutOfMemoryError] when the steps after scaling run out of memory, with every bitmap released. */
-    private suspend fun prepareAt(page: Int, size: PixelSize, steps: PageSteps, raw: RawPage?): PageResult<Bitmap> {
-        val shown = if (steps.crop == null) size else PixelSize(size.width * 2, size.height)
+    /**
+     * The whole page is decoded at the scale where its part matches [size], so a trimmed page keeps the detail of
+     * the screen. Throws [OutOfMemoryError] when the steps after scaling run out of memory, with every bitmap
+     * released.
+     */
+    private suspend fun prepareAt(page: Int, size: PixelSize, steps: PageSteps, raw: RawPage?, readMargins: Boolean): PageResult<MadePage<Bitmap>> {
+        val part = steps.part
+        val shown = PixelSize((size.width / part.width).roundToInt().coerceAtLeast(1), (size.height / part.height).roundToInt().coerceAtLeast(1))
         val decoded = if (steps.rotation.swapsSides) PixelSize(shown.height, shown.width) else shown
         return when (val result = book.page(page, decoded, raw)) {
             is PageResult.Ready -> handOff(
                 dispatcher,
                 result.image,
                 releaseInput = { (it as PreparedImage.Whole).bitmap.recycle() },
-                releaseOutput = { (it as? PageResult.Ready)?.image?.recycle() },
-            ) { finish(it, steps) }
+                releaseOutput = { (it as? PageResult.Ready)?.image?.image?.recycle() },
+            ) { finish(it, steps, readMargins) }
             is PageResult.Failed -> result
             is PageResult.Unsupported -> result
         }
     }
 
-    private fun finish(image: PreparedImage, steps: PageSteps): PageResult<Bitmap> {
+    /** The reader asks for whole pages only, never tiles, so every page it shows can be trimmed. */
+    private fun finish(image: PreparedImage, steps: PageSteps, readMargins: Boolean): PageResult<MadePage<Bitmap>> {
         var bitmap = (image as PreparedImage.Whole).bitmap
         return try {
             bitmap = bitmap.replacedBy { rotated(it, steps.rotation) }
-            bitmap = bitmap.replacedBy { cropped(it, steps.crop) }
+            val margins = if (readMargins) scanMargins(bitmap) else null
+            bitmap = bitmap.replacedBy { cropped(it, steps.part) }
             if (steps.sharpen) bitmap = bitmap.replacedBy(::sharpenedBitmap)
             val hardware = bitmap.copy(Bitmap.Config.HARDWARE, false)
             if (hardware == null) {
-                PageResult.Ready(bitmap)
+                PageResult.Ready(MadePage(bitmap, margins))
             } else {
                 bitmap.recycle()
-                PageResult.Ready(hardware)
+                PageResult.Ready(MadePage(hardware, margins))
             }
         } catch (e: OutOfMemoryError) {
             bitmap.recycle()
@@ -105,10 +114,10 @@ private fun rotated(bitmap: Bitmap, rotation: Rotation): Bitmap {
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 }
 
-private fun cropped(bitmap: Bitmap, crop: Side?): Bitmap {
-    if (crop == null) return bitmap
-    val width = (bitmap.width / 2).coerceAtLeast(1)
-    return Bitmap.createBitmap(bitmap, if (crop == Side.Left) 0 else bitmap.width - width, 0, width, bitmap.height)
+private fun cropped(bitmap: Bitmap, part: PagePart): Bitmap {
+    if (part == PagePart.Whole) return bitmap
+    val rect = part.pixelsOf(PixelSize(bitmap.width, bitmap.height))
+    return Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width, rect.height)
 }
 
 /**

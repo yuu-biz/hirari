@@ -2,8 +2,9 @@ package io.github.yuubiz.hirari.feature.reader.prefetch
 
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageView
-import io.github.yuubiz.hirari.core.model.side
+import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.feature.reader.ReaderState
+import io.github.yuubiz.hirari.feature.reader.shownParts
 import kotlin.math.roundToInt
 
 /**
@@ -13,7 +14,7 @@ import kotlin.math.roundToInt
 fun ReaderState.prefetchTarget(view: PageView): ViewTarget? {
     val geometry = preparedGeometry(view) ?: return null
     val sizes = geometry.pages.map { PixelSize(it.width.roundToInt().coerceAtLeast(1), it.height.roundToInt().coerceAtLeast(1)) }
-    return ViewTarget(view, sizes, PageSteps((view as? PageView.Half)?.part?.side(config.direction), config.rotation, config.adjust.sharpen))
+    return ViewTarget(view, sizes, shownParts(view).map { PageSteps(it, config.rotation, config.adjust.sharpen) })
 }
 
 /** Every view on screen: the current one, both views of a turn or a return, and the neighbor a finger pulls in. */
@@ -27,12 +28,17 @@ val ReaderState.shownViews: Set<PageView>
         pull?.neighbor?.let(::add)
     }
 
-fun ReaderState.prefetchInput(paused: Boolean = false): PrefetchInput = PrefetchInput(
-    views = pagination.views,
-    current = pagination.currentIndex,
-    shapes = pagination.shapes,
-    travel = travelDirection(recentTurns),
-    targets = ::prefetchTarget,
-    shown = shownViews,
-    paused = paused,
-)
+fun ReaderState.prefetchInput(paused: Boolean = false): PrefetchInput {
+    val trimmed = config.trim != TrimStrength.Off
+    val margins = margins
+    return PrefetchInput(
+        views = pagination.views,
+        current = pagination.currentIndex,
+        shapes = pagination.shapes,
+        travel = travelDirection(recentTurns),
+        targets = ::prefetchTarget,
+        shown = shownViews,
+        paused = paused,
+        readsMargins = { trimmed && it !in margins },
+    )
+}

@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader.prefetch
 
+import io.github.yuubiz.hirari.core.image.MarginScan
+import io.github.yuubiz.hirari.core.image.PixelRect
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.ImageAdjust
@@ -9,7 +11,9 @@ import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
+import io.github.yuubiz.hirari.feature.reader.DEEP_BOTTOM
 import io.github.yuubiz.hirari.feature.reader.LANDSCAPE
 import io.github.yuubiz.hirari.feature.reader.PORTRAIT
 import io.github.yuubiz.hirari.feature.reader.ReaderAction
@@ -17,6 +21,7 @@ import io.github.yuubiz.hirari.feature.reader.ReaderConfig
 import io.github.yuubiz.hirari.feature.reader.ReaderEvent
 import io.github.yuubiz.hirari.feature.reader.ReaderState
 import io.github.yuubiz.hirari.feature.reader.TALL
+import io.github.yuubiz.hirari.feature.reader.scanOf
 import io.github.yuubiz.hirari.feature.reader.Turn
 import io.github.yuubiz.hirari.feature.reader.Viewport
 import io.github.yuubiz.hirari.feature.reader.spreadConfig
@@ -67,7 +72,12 @@ private class FakeLoader(
 
     override suspend fun shape(page: Int, raw: String?): PageResult<PageShape.Known> = shapes[page] ?: PageResult.Ready(TALL)
 
-    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: String?): PageResult<String> {
+    /** The margins each page reads as, and how many times each was read. */
+    val margins = mutableMapOf<Int, MarginScan>()
+    val marginReads = mutableMapOf<Int, Int>()
+    val prepares = mutableMapOf<Int, Int>()
+
+    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: String?, readMargins: Boolean): PageResult<MadePage<String>> {
         preparedFrom[page] = raw
         try {
             gate?.await()
@@ -77,7 +87,10 @@ private class FakeLoader(
             cancelled += page
             throw e
         }
-        return failing[page] ?: PageResult.Ready("$page@${size.width}x${size.height}")
+        prepares[page] = (prepares[page] ?: 0) + 1
+        failing[page]?.let { return it }
+        if (readMargins) marginReads[page] = (marginReads[page] ?: 0) + 1
+        return PageResult.Ready(MadePage("$page@${size.width}x${size.height}", margins[page]?.takeIf { readMargins }))
     }
 }
 
@@ -102,10 +115,12 @@ private class Reader(
 
     override fun onChanged() = Unit
 
+    override fun onMargins(page: Int, scan: MarginScan) = apply(ReaderEvent.MarginsLearned(page, scan))
+
     fun apply(event: ReaderEvent) {
         state = state.reduce(event)
         val input = state.prefetchInput()
-        prefetcher.update(PrefetchInput(input.views, input.current, input.shapes, input.travel, input.targets, input.shown + alsoShown))
+        prefetcher.update(PrefetchInput(input.views, input.current, input.shapes, input.travel, input.targets, input.shown + alsoShown, readsMargins = input.readsMargins))
     }
 
     fun turn(turn: Turn) {
@@ -320,6 +335,45 @@ class PrefetcherTest {
         advanceUntilIdle()
         assertIs<PreparedPage.Image<String>>(reader.prefetcher[PageView.One(1)]!!.pages.single())
         assertEquals("raw1", loader.preparedFrom[1])
+    }
+
+    @Test
+    fun eachPageReadsItsMarginsOnceAndIsPreparedAgainAsTheTrimKeepsIt() = runTest {
+        val loader = FakeLoader().apply { (0 until 4).forEach { margins[it] = DEEP_BOTTOM } }
+        val reader = reader(pages = 4, config = SINGLE.copy(trim = TrimStrength.Strongest), loader = loader)
+        advanceUntilIdle()
+        assertEquals(setOf(0, 1, 2), reader.preparedPages())
+        assertEquals(mapOf(0 to 1, 1 to 1, 2 to 1), loader.marginReads)
+        val prepared = reader.prefetcher[PageView.One(0)]!!
+        assertEquals(reader.state.prefetchTarget(PageView.One(0)), prepared.target)
+        assertEquals(0.8f, prepared.target.steps.single().part.bottom, 0.002f)
+
+        reader.apply(ReaderEvent.ConfigChanged(reader.state.config.copy(trim = TrimStrength.Weak)))
+        advanceUntilIdle()
+        assertEquals(mapOf(0 to 1, 1 to 1, 2 to 1), loader.marginReads)
+        assertEquals(0.88f, reader.prefetcher[PageView.One(0)]!!.target.steps.single().part.bottom, 0.002f)
+    }
+
+    @Test
+    fun turningTrimOnReadsTheMarginsOfTheViewsAlreadyPrepared() = runTest {
+        val loader = FakeLoader().apply { (0 until 3).forEach { margins[it] = DEEP_BOTTOM } }
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        assertTrue(loader.marginReads.isEmpty())
+        reader.apply(ReaderEvent.ConfigChanged(reader.state.config.copy(trim = TrimStrength.Strongest)))
+        advanceUntilIdle()
+        assertEquals(mapOf(0 to 1, 1 to 1, 2 to 1), loader.marginReads)
+        assertEquals(0.8f, reader.prefetcher[PageView.One(0)]!!.target.steps.single().part.bottom, 0.002f)
+    }
+
+    @Test
+    fun aPageWithNothingToCutIsNotPreparedAgainOnceItsMarginsAreRead() = runTest {
+        val bleeding = scanOf(PixelSize(300, 450), PixelRect(0, 0, 300, 450))
+        val loader = FakeLoader().apply { margins[0] = bleeding }
+        val reader = reader(pages = 1, config = SINGLE.copy(trim = TrimStrength.Strongest), loader = loader)
+        advanceUntilIdle()
+        assertEquals(mapOf(0 to 1), loader.marginReads)
+        assertEquals(1, loader.prepares[0])
     }
 
     @Test

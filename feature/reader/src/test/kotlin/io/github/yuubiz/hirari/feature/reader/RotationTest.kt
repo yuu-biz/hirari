@@ -47,8 +47,8 @@ class RotationTest {
         val before = state.prefetchTarget(state.current)!!
         val turned = state.run(ReaderCommand.Rotate)
         val after = turned.prefetchTarget(turned.current)!!
-        assertEquals(Rotation.None, before.steps.rotation)
-        assertEquals(Rotation.Quarter, after.steps.rotation)
+        assertEquals(Rotation.None, before.steps.first().rotation)
+        assertEquals(Rotation.Quarter, after.steps.single().rotation)
         val size = after.sizes.single()
         assertEquals(true, size.width > size.height, "a turned tall page is prepared wide: $size")
     }

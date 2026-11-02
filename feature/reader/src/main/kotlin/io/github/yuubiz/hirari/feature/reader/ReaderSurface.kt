@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
@@ -231,12 +232,18 @@ private const val LOUPE_EDGE_DP = 2f
 private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, layer: Layer, colorFilter: ColorFilter?, detail: LoupeDetail? = null) {
     val geometry = state.geometry(layer.view) ?: return
     val prepared = viewModel.preparedView(layer.view)
+    val wanted = state.shownParts(layer.view)
     geometry.pages.forEachIndexed { i, rect ->
         val left = rect.left - layer.position.x + layer.shift
         val top = rect.top - layer.position.y
-        val sharper = detail?.takeIf { it.source.index == i }?.bitmap
+        val sharper = detail?.takeIf { it.source.index == i }
         when (val page = prepared?.pages?.getOrNull(i)) {
-            is PreparedPage.Image<*> -> drawPage(sharper ?: page.image as Bitmap, left, top, rect, layer.alpha, colorFilter)
+            is PreparedPage.Image<*> -> {
+                val bitmap = sharper?.bitmap ?: page.image as Bitmap
+                val covered = sharper?.source?.steps?.part ?: prepared.target.steps[i].part
+                val shown = Rect(left, top, left + rect.width, top + rect.height)
+                drawPage(bitmap, wanted[i], covered, shown, layer.alpha, colorFilter)
+            }
             is PreparedPage.Error -> drawRect(CardBackground, Offset(left, top), androidx.compose.ui.geometry.Size(rect.width, rect.height), layer.alpha)
             null -> Unit
         }
@@ -260,12 +267,21 @@ private fun DrawScope.drawSeamShadow(seamX: Float, fadeX: Float, top: Float, hei
     drawRect(brush, Offset(minOf(seamX, fadeX), top), androidx.compose.ui.geometry.Size(kotlin.math.abs(fadeX - seamX), height), alpha)
 }
 
-private fun DrawScope.drawPage(bitmap: Bitmap, left: Float, top: Float, rect: Rect, alpha: Float, colorFilter: ColorFilter?) {
+/**
+ * [bitmap], which shows [covered] of its page, into [rect], which shows [wanted]. A page prepared for another trim
+ * keeps drawing at the right scale until its replacement is ready.
+ */
+private fun DrawScope.drawPage(bitmap: Bitmap, wanted: PagePart, covered: PagePart, rect: Rect, alpha: Float, colorFilter: ColorFilter?) {
     if (bitmap.isRecycled) return
+    val draw = pageDraw(wanted, covered, PixelSize(bitmap.width, bitmap.height), rect) ?: return
+    val source = draw.source
+    val destination = draw.destination
     drawImage(
         bitmap.asImageBitmap(),
-        dstOffset = IntOffset(left.roundToInt(), top.roundToInt()),
-        dstSize = IntSize(rect.width.roundToInt().coerceAtLeast(1), rect.height.roundToInt().coerceAtLeast(1)),
+        srcOffset = IntOffset(source.left, source.top),
+        srcSize = IntSize(source.width, source.height),
+        dstOffset = IntOffset(destination.left.roundToInt(), destination.top.roundToInt()),
+        dstSize = IntSize(destination.width.roundToInt().coerceAtLeast(1), destination.height.roundToInt().coerceAtLeast(1)),
         alpha = alpha,
         colorFilter = colorFilter,
         filterQuality = FilterQuality.Low,

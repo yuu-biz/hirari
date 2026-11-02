@@ -1,8 +1,8 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageShape
-import io.github.yuubiz.hirari.core.model.side
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageSteps
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Pagination
@@ -62,6 +62,8 @@ data class ReaderState(
     val loupe: Loupe? = null,
     /** The last turn that ran into an edge of the book, for 本の端での動作 and its bounce. */
     val edgeHit: EdgeHit? = null,
+    /** What 余白トリミング read from each page, in the shown orientation, for every strength at once. */
+    val margins: Map<Int, MarginScan> = emptyMap(),
 ) {
     val current: PageView get() = pagination.current
     /**
@@ -72,10 +74,10 @@ data class ReaderState(
         get() = pagination.currentIndex == pagination.views.lastIndex && current.pages.all { pagination.shapes[it] is PageShape.Known }
 
     fun geometry(view: PageView = current): ViewGeometry? =
-        ViewGeometry.of(view, pagination.shapes, config, viewport, zoom.factor)
+        ViewGeometry.of(view, pagination.shapes, keptParts(view), config, viewport, zoom.factor)
 
     /** The geometry of [view] at the zoom of its scale mode, which sets the size of its prepared pages. */
-    fun preparedGeometry(view: PageView): ViewGeometry? = ViewGeometry.of(view, pagination.shapes, config, viewport, 1f)
+    fun preparedGeometry(view: PageView): ViewGeometry? = ViewGeometry.of(view, pagination.shapes, keptParts(view), config, viewport, 1f)
 
     /** The stop index the screen rests on, or `null` while the geometry is unknown or the view was panned. */
     fun stopIndex(): Int? {
@@ -120,7 +122,7 @@ data class ReaderState(
     /** Screen pixels for each pixel of the image of the page at [index] of the current view, as it is turned. */
     private fun displayScale(geometry: ViewGeometry, index: Int): Float {
         val shape = pagination.shapes[current.pages[index]] as PageShape.Known
-        return geometry.pages[index].height / shape.height
+        return geometry.pages[index].height / (shape.height * keptParts(current)[index].height)
     }
 
     /** What the loupe shows at [nowMs] (docs/spec.md section 4.8, ルーペ), or `null` without one. */
@@ -141,12 +143,9 @@ data class ReaderState(
         val index = loupePage(Long.MAX_VALUE) ?: return null
         val geometry = preparedGeometry(current) ?: return null
         if (displayScale(geometry, index) >= 1f) return null
-        val page = current.pages[index]
-        val shape = pagination.shapes[page] as PageShape.Known
-        val half = current is PageView.Half
-        val size = PixelSize(if (half) (shape.width / 2).coerceAtLeast(1) else shape.width, shape.height)
-        val crop = (current as? PageView.Half)?.part?.side(config.direction)
-        return LoupeSource(current, index, size, PageSteps(crop, config.rotation, config.adjust.sharpen))
+        val shape = pagination.shapes[current.pages[index]] as PageShape.Known
+        val part = shownParts(current)[index]
+        return LoupeSource(current, index, part.sizeOf(PixelSize(shape.width, shape.height)), PageSteps(part, config.rotation, config.adjust.sharpen))
     }
 
     /** The neighbor a turn toward [turn] reaches, or `null` at the edge of the book. */
@@ -157,6 +156,7 @@ data class ReaderState(
         is ReaderEvent.Act -> byHand().act(event.action, event.nowMs)
         is ReaderEvent.GoTo -> byHand().moved(PaginationEvent.GoTo(event.page))
         is ReaderEvent.ShapeLearned -> relaid(pagination.reduce(PaginationEvent.ShapeLearned(event.page, event.shape.rotated(config.rotation))))
+        is ReaderEvent.MarginsLearned -> copy(margins = margins.learned(event.page, event.scan, current.pages.first()))
         is ReaderEvent.ViewportChanged ->
             if (event.viewport == viewport) {
                 this
@@ -296,6 +296,7 @@ data class ReaderState(
         return settled().copy(
             pagination = layout,
             config = next,
+            margins = if (turned) emptyMap() else margins,
             zoom = if (modeChanged) zoom.reduce(ZoomEvent.ModeChanged, ZoomLimits(Scale(1f, 1f), 1f, false)) else zoom,
             place = if (modeChanged || viewChanged || next.direction != config.direction) Place.Entered(Turn.Forward) else place,
         )
@@ -351,6 +352,9 @@ sealed interface ReaderEvent {
     /** A jump to [page] from the page bar, which anchors the layout there. */
     data class GoTo(val page: Int) : ReaderEvent
     data class ShapeLearned(val page: Int, val shape: PageShape.Known) : ReaderEvent
+
+    /** The margins of [page], read from it as turned when it was prepared. */
+    data class MarginsLearned(val page: Int, val scan: MarginScan) : ReaderEvent
     data class ViewportChanged(val viewport: Viewport) : ReaderEvent
     data class ConfigChanged(val config: ReaderConfig) : ReaderEvent
 

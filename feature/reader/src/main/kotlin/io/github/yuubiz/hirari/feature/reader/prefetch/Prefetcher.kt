@@ -1,11 +1,12 @@
 package io.github.yuubiz.hirari.feature.reader.prefetch
 
+import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Rotation
-import io.github.yuubiz.hirari.core.model.Side
+import io.github.yuubiz.hirari.feature.reader.PagePart
 import io.github.yuubiz.hirari.feature.reader.Turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -30,21 +31,25 @@ sealed interface PreparedPage<out T> {
 }
 
 /**
- * What is done to a page after it is scaled, in the order of docs/spec.md section 4.8: the [rotation], for a half
- * the side of the turned page it shows ([crop]), then シャープ when [sharpen]. The colour steps of 画像補正 are
- * drawn, not prepared.
+ * What is done to a page after it is scaled, in the order of docs/spec.md section 4.8: the [rotation], the [part]
+ * of the turned page it shows (what 余白トリミング keeps, and for a half its half of that), then シャープ when
+ * [sharpen]. The colour steps of 画像補正 are drawn, not prepared.
  */
-data class PageSteps(val crop: Side? = null, val rotation: Rotation = Rotation.None, val sharpen: Boolean = false)
+data class PageSteps(val part: PagePart = PagePart.Whole, val rotation: Rotation = Rotation.None, val sharpen: Boolean = false)
 
 /**
- * The pixel size of each page of [view] in reading order, as shown, and the [steps] that make it. A view prepared
- * for other sizes or steps, before the screen turned or the scale mode or the rotation changed, is stale.
+ * The pixel size of each page of [view] in reading order, as shown, and the [steps] that make each. A view
+ * prepared for other sizes or steps, before the screen turned or the scale mode, the rotation, or the trim
+ * changed, is stale.
  */
-data class ViewTarget(val view: PageView, val sizes: List<PixelSize>, val steps: PageSteps = PageSteps()) {
+data class ViewTarget(val view: PageView, val sizes: List<PixelSize>, val steps: List<PageSteps> = sizes.map { PageSteps() }) {
     val bytes: Long get() = sizes.sumOf { it.width.toLong() * it.height * 4 }
 }
 
 class PreparedView<out T>(val target: ViewTarget, val pages: List<PreparedPage<T>>)
+
+/** The pixels [PageLoader.prepare] made, and the margins it read from the whole turned page when asked to. */
+class MadePage<out T>(val image: T, val margins: MarginScan? = null)
 
 /**
  * Reads the pages of an open book. Each call returns a result and throws nothing but cancellation. [R] is the
@@ -62,8 +67,11 @@ interface PageLoader<R, T> {
 
     suspend fun shape(page: Int, raw: R?): PageResult<PageShape.Known>
 
-    /** The pixels of [page] at [size] as shown, made by [steps]. With a crop, [size] is that half of the page. */
-    suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: R?): PageResult<T>
+    /**
+     * The pixels of [page] at [size] as shown, made by [steps]; [size] is that of the part shown. With
+     * [readMargins], the margins of the whole turned page come back with them (docs/spec.md section 4.8).
+     */
+    suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: R?, readMargins: Boolean = false): PageResult<MadePage<T>>
 }
 
 /** What the reader shows, for the next plan. [targets] gives `null` for a view whose shapes are not known. */
@@ -76,6 +84,8 @@ class PrefetchInput(
     /** Every view on screen, including both views of a turn. None of them is evicted. */
     val shown: Set<PageView>,
     val paused: Boolean = false,
+    /** Pages whose margins 余白トリミング wants and does not hold yet. A view of one is prepared again to read them. */
+    val readsMargins: (Int) -> Boolean = { false },
 )
 
 /**
@@ -99,6 +109,9 @@ class Prefetcher<R, T>(
 
         /** A view was prepared or dropped, or a page failed. */
         fun onChanged()
+
+        /** The margins of [page] were read while it was prepared. */
+        fun onMargins(page: Int, scan: MarginScan)
     }
 
     private val cache = HashMap<PageView, PreparedView<T>>()
@@ -110,7 +123,7 @@ class Prefetcher<R, T>(
     private val failedRaws = HashSet<Int>()
     private val raws = HashMap<Int, R>()
 
-    /** The steps, with no crop, a page failed to prepare with. A page made with other steps is read again. */
+    /** The steps, with the whole page as the part, a page failed to prepare with. Other steps read it again. */
     private val failedSteps = HashMap<Int, PageSteps>()
     private var last: PrefetchInput? = null
 
@@ -128,7 +141,11 @@ class Prefetcher<R, T>(
     fun update(input: PrefetchInput) {
         last = input
         if (trimmedOn != input.views[input.current]) trimmedOn = null
-        val resident = Resident(views = cache.filter { (view, prepared) -> prepared.target == input.targets(view) }.keys)
+        val resident = Resident(
+            views = cache.filter { (view, prepared) ->
+                prepared.target == input.targets(view) && view.pages.none { it !in failures && input.readsMargins(it) }
+            }.keys,
+        )
         val plan = planPrefetch(
             PrefetchRequest(
                 views = input.views,
@@ -248,11 +265,18 @@ class Prefetcher<R, T>(
         }
     }
 
+    /**
+     * Prepares [target] and puts it in the cache, then reports the margins read on the way. A report changes the
+     * target of the view, so it comes after this job is done with it.
+     */
     private fun launchPrepare(target: ViewTarget): Job = scope.launch {
         val pages = arrayOfNulls<PreparedPage<T>>(target.view.pages.size)
+        val margins = arrayOfNulls<MarginScan>(target.view.pages.size)
         try {
             coroutineScope {
-                target.view.pages.forEachIndexed { i, page -> launch { pages[i] = preparePage(page, target.sizes[i], target.steps) } }
+                target.view.pages.forEachIndexed { i, page ->
+                    launch { pages[i] = preparePage(page, target.sizes[i], target.steps[i]) { margins[i] = it } }
+                }
             }
         } catch (e: CancellationException) {
             pages.forEach { if (it is PreparedPage.Image) release(it.image) }
@@ -263,14 +287,17 @@ class Prefetcher<R, T>(
             old.pages.forEach { if (it is PreparedPage.Image) release(it.image) }
         }
         listener.onChanged()
+        margins.forEachIndexed { i, scan -> if (scan != null) listener.onMargins(target.view.pages[i], scan) }
     }
 
-    private suspend fun preparePage(page: Int, size: PixelSize, steps: PageSteps): PreparedPage<T> {
-        val made = steps.copy(crop = null)
+    private suspend fun preparePage(page: Int, size: PixelSize, steps: PageSteps, read: (MarginScan) -> Unit): PreparedPage<T> {
+        val made = steps.copy(part = PagePart.Whole)
         val raw = rawFor(page)
         failures[page]?.let { if (page in failedShapes || page in failedRaws || failedSteps[page] == made) return PreparedPage.Error(it) }
-        return when (val result = loader.prepare(page, size, steps, raw)) {
-            is PageResult.Ready -> PreparedPage.Image(result.image).also {
+        val readMargins = last?.readsMargins?.invoke(page) == true
+        return when (val result = loader.prepare(page, size, steps, raw, readMargins)) {
+            is PageResult.Ready -> PreparedPage.Image(result.image.image).also {
+                result.image.margins?.let(read)
                 failures.remove(page)
                 failedSteps.remove(page)
             }

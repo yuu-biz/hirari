@@ -41,16 +41,20 @@ data class ViewGeometry(
         if (content <= screen) (content - screen) / 2f else at.coerceIn(0f, content - screen)
 
     companion object {
-        /** `null` until the shape of every page of [view] is known. */
+        /**
+         * `null` until the shape of every page of [view] is known. Each page is laid out as the part of it that
+         * [kept] names in reading order, so what 余白トリミング keeps fills the screen.
+         */
         fun of(
             view: PageView,
             shapes: List<PageShape>,
+            kept: List<PagePart>,
             config: ReaderConfig,
             viewport: Viewport,
             factor: Float,
         ): ViewGeometry? {
             if (view.pages.any { shapes[it] !is PageShape.Known }) return null
-            val shape = { page: Int -> shapes[page] as PageShape.Known }
+            val shape = { page: Int -> (shapes[page] as PageShape.Known).kept(kept[view.pages.indexOf(page)]) }
             val screen = viewport.size
             val bare = viewContent(view, shape, config.direction)
             val bareScale = modeScale(config.scaleMode, bare.size, screen, config.capAtOriginal)
