@@ -93,15 +93,64 @@ class DecodePlanTest {
         assertTrue(plan(1 shl 14, 1 shl 14) is DecodePlan.Decode)
     }
 
+    private fun sizes(from: PixelSize, to: PixelSize) = downscaleSteps(from, to).map { it.size }
+
     @Test
     fun downscalingHalvesUntilTheLastStepIsUnderTwoTimes() {
-        assertEquals(
-            listOf(PixelSize(2000, 3000), PixelSize(1000, 1500), PixelSize(700, 1050)),
-            downscaleSteps(PixelSize(4000, 6000), PixelSize(700, 1050)),
-        )
-        assertEquals(listOf(PixelSize(1000, 1500)), downscaleSteps(PixelSize(2000, 3000), PixelSize(1000, 1500)))
-        assertEquals(emptyList<PixelSize>(), downscaleSteps(PixelSize(100, 100), PixelSize(100, 100)))
-        assertEquals(listOf(PixelSize(90, 100)), downscaleSteps(PixelSize(100, 100), PixelSize(90, 100)))
+        val steps = downscaleSteps(PixelSize(4000, 6000), PixelSize(700, 1050))
+        assertEquals(listOf(PixelSize(2000, 3000), PixelSize(1000, 1500), PixelSize(700, 1050)), steps.map { it.size })
+        assertEquals(ScaleStep.Halve(PixelSize(2000, 3000), SideStep.Halved, SideStep.Halved), steps.first())
+        assertEquals(ScaleStep.Bilinear(PixelSize(700, 1050)), steps.last())
+        assertEquals(listOf(PixelSize(1000, 1500)), sizes(PixelSize(2000, 3000), PixelSize(1000, 1500)))
+        assertEquals(emptyList<ScaleStep>(), downscaleSteps(PixelSize(100, 100), PixelSize(100, 100)))
+        assertEquals(listOf(ScaleStep.Bilinear(PixelSize(90, 100))), downscaleSteps(PixelSize(100, 100), PixelSize(90, 100)))
+        assertEquals(emptyList<ScaleStep>(), downscaleSteps(PixelSize(1, 1), PixelSize(1, 1)))
+    }
+
+    @Test
+    fun anOddSideHalvesRoundingUpSoThatTheEdgeTileEndsAtItsOutput() {
+        assertEquals(listOf(PixelSize(320, 163), PixelSize(160, 82), PixelSize(80, 41)), sizes(PixelSize(640, 325), PixelSize(80, 41)))
+        assertEquals(listOf(PixelSize(1065, 1065), PixelSize(1064, 1064)), sizes(PixelSize(2129, 2129), PixelSize(1064, 1064)))
+    }
+
+    @Test
+    fun aSideAlreadyAtItsOutputStaysWhileTheOtherKeepsHalving() {
+        val steps = downscaleSteps(PixelSize(640, 1), PixelSize(80, 1))
+        assertEquals(listOf(PixelSize(320, 1), PixelSize(160, 1), PixelSize(80, 1)), steps.map { it.size })
+        assertTrue(steps.all { it == ScaleStep.Halve(it.size, SideStep.Halved, SideStep.Kept) })
+        assertEquals(listOf(PixelSize(40, 1000), PixelSize(20, 500), PixelSize(20, 250)), sizes(PixelSize(80, 2000), PixelSize(20, 250)))
+    }
+
+    /** One side of [pixels] after a halving [step], as docs/spec.md section 5.3 defines it. */
+    private fun halved(pixels: DoubleArray, step: SideStep): DoubleArray {
+        val last = pixels.size - 1
+        return when (step) {
+            SideStep.Kept -> pixels
+            SideStep.Halved -> DoubleArray((pixels.size + 1) / 2) { (pixels[2 * it] + pixels[minOf(2 * it + 1, last)]) / 2 }
+            SideStep.HalvedFromEnd -> DoubleArray((pixels.size + 1) / 2) { (pixels[maxOf(2 * it - 1, 0)] + pixels[2 * it]) / 2 }
+        }
+    }
+
+    /** A row of [pixels] at 1/[sample], halved in the steps a stored row read for [turn] takes. */
+    private fun averaged(pixels: DoubleArray, sample: Int, turn: Orientation): DoubleArray =
+        downscaleSteps(PixelSize(pixels.size, 1), PixelSize(sampled(pixels.size, sample), 1), turn)
+            .fold(pixels) { row, step -> halved(row, (step as ScaleStep.Halve).across) }
+
+    @Test
+    fun tilesHalvedOnTheirOwnStitchIntoTheWholeRowHalvedAtOnce() {
+        val random = java.util.Random(7)
+        for (sample in listOf(2, 4, 8)) for (length in listOf(3 * 64, 3 * 64 + 1, 3 * 64 + 5, 3 * 64 + 13)) {
+            val shown = DoubleArray(length) { random.nextDouble() }
+            val whole = averaged(shown, sample, Orientation.Normal)
+            val span = 64
+            for (turn in listOf(Orientation.Normal, Orientation.FlipHorizontal)) {
+                val stitched = (0 until length step span).flatMap { left ->
+                    val tile = shown.copyOfRange(left, minOf(left + span, length))
+                    if (turn.reversesStoredX) averaged(tile.reversedArray(), sample, turn).reversed() else averaged(tile, sample, turn).toList()
+                }
+                assertEquals("$length at 1/$sample stored for $turn", whole.toList(), stitched)
+            }
+        }
     }
 
     @Test

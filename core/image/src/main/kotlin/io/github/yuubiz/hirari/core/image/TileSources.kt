@@ -106,7 +106,7 @@ internal class RegionTiles private constructor(
             if (decoder.isRecycled) return null
             decoder.decodeRegion(Rect(source.left, source.top, source.right, source.bottom), options)
         } ?: return null
-        val scaled = scaledInSteps(region, null, shrinkToFit(read.output, PixelSize(region.width, region.height)), recycleSource = true)
+        val scaled = scaledInSteps(region, null, shrinkToFit(read.output, PixelSize(region.width, region.height)), recycleSource = true, orientation)
         val matrix = orientation.matrix() ?: return scaled
         return try {
             Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, matrix, true)

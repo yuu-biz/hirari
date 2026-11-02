@@ -105,17 +105,56 @@ internal fun sampled(side: Int, sample: Int): Int = ((side + sample - 1) / sampl
 internal fun shrinkToFit(size: PixelSize, bound: PixelSize): PixelSize =
     PixelSize(min(size.width, bound.width), min(size.height, bound.height))
 
+/** One step of [downscaleSteps]. */
+internal sealed interface ScaleStep {
+    val size: PixelSize
+
+    /** Each side halved by [SideStep] or kept, which 2 x 2 averages do exactly (docs/spec.md section 5.3). */
+    data class Halve(override val size: PixelSize, val across: SideStep, val down: SideStep) : ScaleStep
+
+    /** The last step, bilinear and less than 2x on each side. */
+    data class Bilinear(override val size: PixelSize) : ScaleStep
+}
+
+/** What a [ScaleStep.Halve] does to one side of n pixels. A halved side has (n + 1) / 2 pixels. */
+internal enum class SideStep {
+    Kept,
+
+    /** Pixel i averages pixels 2i and 2i + 1. On an odd side the last pixel averages with itself. */
+    Halved,
+
+    /**
+     * Pixel i averages pixels 2i - 1 and 2i, and the first pixel averages with itself, so that the pairs of an
+     * odd side line up with its far end.
+     */
+    HalvedFromEnd,
+}
+
 /**
- * The sizes to scale [from] through to reach [to]. Each step but the last halves both sides, which a bilinear
- * filter does as a 2 x 2 average. The last step is bilinear and less than 2x (docs/spec.md section 5.3).
+ * The steps to scale [from] down to [to]. Each side is halved while half of it, rounded up, is still at least
+ * its side of [to], so that k halvings give the size a decoder gives at 1/2^k; a side that reaches [to] first
+ * stays while the other halves. A last bilinear step of less than 2x makes up the rest (docs/spec.md section
+ * 5.3). The pairs line up with the image as [turn] will show it: on a stored side that [turn] reverses, they
+ * count from the far end, which is where the image as shown starts.
  */
-internal fun downscaleSteps(from: PixelSize, to: PixelSize): List<PixelSize> = buildList {
+internal fun downscaleSteps(from: PixelSize, to: PixelSize, turn: Orientation = Orientation.Normal): List<ScaleStep> = buildList {
     var current = from
-    while (current.width / 2 >= to.width && current.height / 2 >= to.height) {
-        current = PixelSize(current.width / 2, current.height / 2)
-        add(current)
+    while (true) {
+        val across = halvedSide(current.width, to.width, turn.reversesStoredX)
+        val down = halvedSide(current.height, to.height, turn.reversesStoredY)
+        if (across == SideStep.Kept && down == SideStep.Kept) break
+        current = PixelSize(if (across == SideStep.Kept) current.width else half(current.width), if (down == SideStep.Kept) current.height else half(current.height))
+        add(ScaleStep.Halve(current, across, down))
     }
-    if (current != to) add(to)
+    if (current != to) add(ScaleStep.Bilinear(to))
+}
+
+private fun half(side: Int): Int = (side + 1) / 2
+
+private fun halvedSide(side: Int, target: Int, reversed: Boolean): SideStep = when {
+    side <= target || half(side) < target -> SideStep.Kept
+    reversed && side % 2 == 1 -> SideStep.HalvedFromEnd
+    else -> SideStep.Halved
 }
 
 private fun highestPowerOfTwoAtMost(value: Int): Int = if (value <= 1) 1 else Integer.highestOneBit(value)

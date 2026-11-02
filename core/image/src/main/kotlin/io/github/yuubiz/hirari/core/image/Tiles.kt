@@ -101,6 +101,12 @@ enum class Orientation(val exif: Int, val swapsSides: Boolean) {
     /** The size the stored [source] shows at. */
     fun shown(source: PixelSize): PixelSize = if (swapsSides) PixelSize(source.height, source.width) else source
 
+    /** Whether stored x runs the other way from the axis of the image as shown that it becomes. */
+    internal val reversesStoredX: Boolean get() = toStored(PixelRect(0, 0, 1, 1), PixelSize(2, 2)).left == 1
+
+    /** Whether stored y runs the other way from the axis of the image as shown that it becomes. */
+    internal val reversesStoredY: Boolean get() = toStored(PixelRect(0, 0, 1, 1), PixelSize(2, 2)).top == 1
+
     /** The rectangle of the stored image of [source] pixels that shows as [shown]. */
     fun toStored(shown: PixelRect, source: PixelSize): PixelRect {
         val w = source.width

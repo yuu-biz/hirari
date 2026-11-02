@@ -75,6 +75,80 @@ class TileScalingTest {
         assertTrue("the tile differs from the whole-image path by up to $worst gray levels", worst <= 2)
     }
 
+    /** A PNG of [rows] x [columns] whose row y is the color [rowColor] gives it. */
+    private fun pngOfRows(columns: Int, rows: Int, rowColor: (Int) -> Int): ByteArray =
+        compressed(Bitmap.createBitmap(columns, rows, Bitmap.Config.ARGB_8888).apply { for (y in 0 until rows) setPixels(IntArray(columns) { rowColor(y) }, 0, columns, 0, y, columns, 1) }, Bitmap.CompressFormat.PNG)
+
+    private fun compressed(bitmap: Bitmap, format: Bitmap.CompressFormat): ByteArray =
+        ByteArrayOutputStream().also { bitmap.compress(format, 100, it) }.toByteArray().also { bitmap.recycle() }
+
+    /** [jpeg] with an EXIF segment that holds only the orientation [exif]. */
+    private fun withOrientation(jpeg: ByteArray, exif: Int): ByteArray {
+        val tiff = ByteBuffer.allocate(26).order(ByteOrder.BIG_ENDIAN)
+            .put('M'.code.toByte()).put('M'.code.toByte()).putShort(42).putInt(8)
+            .putShort(1).putShort(0x0112).putShort(3).putInt(1).putShort(exif.toShort()).putShort(0)
+            .putInt(0)
+        val payload = "Exif\u0000\u0000".toByteArray(Charsets.ISO_8859_1) + tiff.array()
+        val segment = ByteBuffer.allocate(4 + payload.size).put(0xFF.toByte()).put(0xE1.toByte()).putShort((2 + payload.size).toShort()).put(payload).array()
+        return jpeg.copyOfRange(0, 2) + segment + jpeg.copyOfRange(2, jpeg.size)
+    }
+
+    /** The tiles of the one column of tiles of [bytes] at [sample], stitched top to bottom. */
+    private fun stitchedColumn(bytes: ByteArray, sample: Int, target: PixelSize): Bitmap {
+        val page = decodePage(bytes, target, decoding, Tiling.AsPlanned) { true }
+        val tiled = (page as PageResult.Ready).image as PreparedImage.Tiled
+        try {
+            val rows = (tiled.source.size.height + TILE_SIDE * sample - 1) / (TILE_SIDE * sample)
+            val tiles = (0 until rows).map { row -> (runBlocking { tiled.source.tile(TileKey(sample, 0, row)) } as PageResult.Ready).image }
+            val out = Bitmap.createBitmap(tiles.first().width, tiles.sumOf { it.height }, Bitmap.Config.ARGB_8888)
+            var top = 0
+            for (tile in tiles) {
+                assertEquals(out.width, tile.width)
+                val pixels = IntArray(tile.width * tile.height).also { tile.getPixels(it, 0, tile.width, 0, 0, tile.width, tile.height) }
+                out.setPixels(pixels, 0, tile.width, 0, top, tile.width, tile.height)
+                top += tile.height
+            }
+            return out
+        } finally {
+            tiled.source.close()
+        }
+    }
+
+    private fun wholePage(bytes: ByteArray, target: PixelSize): Bitmap =
+        ((decodePage(bytes, target, decoding, Tiling.Never) { true } as PageResult.Ready).image as PreparedImage.Whole).bitmap
+
+    /** That every row of [bitmap] but the last is the gray of black and white averaged. */
+    private fun assertGrayAboveTheLastRow(bitmap: Bitmap) {
+        val out = IntArray(bitmap.width * (bitmap.height - 1)).also { bitmap.getPixels(it, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height - 1) }
+        val row = out.indices.maxBy { abs(Color.red(out[it]) - 127.5) } / bitmap.width
+        val worst = out.maxOf { abs(Color.red(it) - 127.5) }
+        assertTrue("row $row of ${bitmap.height} is ${worst + 127.5}", worst <= 3)
+    }
+
+    @Test
+    fun theOddEdgeTileOfAlternateLinesAveragesAndStitchesOntoTheWholeImage() {
+        val bytes = pngOfRows(640, 8517) { y -> if (y % 2 == 0) Color.BLACK else Color.WHITE }
+        val target = PixelSize(80, 1065)
+        val stitched = stitchedColumn(bytes, sample, target)
+        assertGrayAboveTheLastRow(stitched)
+        assertSameAs(wholePage(bytes, target), stitched)
+    }
+
+    @Test
+    fun theTilesOfARotatedJpegLineUpWithTheImageAsShown() {
+        val shownHeight = 8 * 2089
+        val shownWidth = width
+        val row = IntArray(shownHeight) { x -> if ((shownHeight - 1 - x) / 8 % 2 == 0) Color.BLACK else Color.WHITE }
+        val stored = Bitmap.createBitmap(shownHeight, shownWidth, Bitmap.Config.ARGB_8888)
+        for (y in 0 until shownWidth) stored.setPixels(row, 0, shownHeight, 0, y, shownHeight, 1)
+        val bytes = withOrientation(compressed(stored, Bitmap.CompressFormat.JPEG), Orientation.Rotate270.exif)
+        val target = PixelSize(width / 16, 1045)
+        val stitched = stitchedColumn(bytes, 16, target)
+        assertEquals(target, PixelSize(stitched.width, stitched.height))
+        assertGrayAboveTheLastRow(stitched)
+        assertSameAs(wholePage(bytes, target), stitched)
+    }
+
     @Test
     fun aRegionTileOfAPngAveragesTheDotsLikeTheWholeImage() {
         val bytes = png()

@@ -92,6 +92,18 @@ class TilesTest {
     }
 
     @Test
+    fun theStoredSidesAnOrientationReversesAreThoseItsPixelsRunBackwardsOn() {
+        val source = PixelSize(3, 5)
+        for (orientation in Orientation.entries) {
+            val (x0, y0) = orientation.shownPixel(0, 0, source)
+            val (x1, y1) = orientation.shownPixel(1, 0, source)
+            val (x2, y2) = orientation.shownPixel(0, 1, source)
+            assertEquals("$orientation along stored x", x1 + y1 < x0 + y0, orientation.reversesStoredX)
+            assertEquals("$orientation along stored y", x2 + y2 < x0 + y0, orientation.reversesStoredY)
+        }
+    }
+
+    @Test
     fun aRectangleMapsToTheBoundsOfItsPixels() {
         val source = PixelSize(4000, 3000)
         val stored = Orientation.Rotate90.toStored(PixelRect(0, 0, 1024, 1024), source)

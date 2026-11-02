@@ -1,9 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Rect
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
@@ -68,20 +65,5 @@ private fun JxlFailure.pageResult(width: Int, height: Int): PageResult<Nothing> 
 }
 
 /** [decoded] brought down to [output] by halving and one last bilinear step (docs/spec.md section 5.3). */
-private fun scaledToOutput(decoded: Bitmap, output: PixelSize): Bitmap {
-    var bitmap = decoded
-    try {
-        val from = PixelSize(decoded.width, decoded.height)
-        for (step in downscaleSteps(from, shrinkToFit(output, from))) {
-            val next = Bitmap.createBitmap(step.width, step.height, Bitmap.Config.ARGB_8888)
-            Canvas(next).drawBitmap(bitmap, null, Rect(0, 0, step.width, step.height), Paint(Paint.FILTER_BITMAP_FLAG))
-            bitmap.recycle()
-            bitmap = next
-        }
-        bitmap.prepareToDraw()
-    } catch (e: Throwable) {
-        bitmap.recycle()
-        throw e
-    }
-    return bitmap
-}
+private fun scaledToOutput(decoded: Bitmap, output: PixelSize): Bitmap =
+    scaledInSteps(decoded, null, shrinkToFit(output, PixelSize(decoded.width, decoded.height)), recycleSource = true).also { it.prepareToDraw() }

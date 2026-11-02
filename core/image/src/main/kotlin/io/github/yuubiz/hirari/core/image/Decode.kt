@@ -1,11 +1,14 @@
 package io.github.yuubiz.hirari.core.image
 
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Shader
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
@@ -185,20 +188,26 @@ private fun decodeOnce(
 private fun source(bytes: ByteArray): ImageDecoder.Source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
 
 /**
- * [source], or its [part], scaled to [to] in ARGB_8888 by the steps of [downscaleSteps] (docs/spec.md section
- * 5.3). Intermediate bitmaps are recycled; [source] is recycled only with [recycleSource]. The result is
- * [source] itself when [part] is null, it is already [to] and ARGB_8888.
+ * [source], or its [part], scaled to [to] in ARGB_8888 by the steps of [downscaleSteps] for [turn], the
+ * orientation the result is shown in afterwards (docs/spec.md section 5.3). Intermediate bitmaps are recycled;
+ * [source] is recycled only with [recycleSource]. The result is [source] itself when [part] is null, it is
+ * already [to] and ARGB_8888.
  */
-internal fun scaledInSteps(source: Bitmap, part: Rect?, to: PixelSize, recycleSource: Boolean): Bitmap {
+internal fun scaledInSteps(source: Bitmap, part: Rect?, to: PixelSize, recycleSource: Boolean, turn: Orientation = Orientation.Normal): Bitmap {
     val from = part?.let { PixelSize(it.width(), it.height()) } ?: PixelSize(source.width, source.height)
-    val steps = downscaleSteps(from, to).ifEmpty {
-        if (part == null && source.config == Bitmap.Config.ARGB_8888) return source else listOf(to)
+    val steps = downscaleSteps(from, to, turn).ifEmpty {
+        if (part == null && source.config == Bitmap.Config.ARGB_8888) return source else listOf(ScaleStep.Bilinear(to))
     }
     var current = source
     var currentPart = part
     try {
         for (step in steps) {
-            val next = scaled(current, currentPart, step)
+            val next = drawn(step.size) { canvas ->
+                when (step) {
+                    is ScaleStep.Halve -> canvas.drawPaint(halving(current, currentPart, step))
+                    is ScaleStep.Bilinear -> canvas.drawBitmap(current, currentPart, Rect(0, 0, step.size.width, step.size.height), Paint(Paint.FILTER_BITMAP_FLAG))
+                }
+            }
             if (current !== source || recycleSource) current.recycle()
             current = next
             currentPart = null
@@ -210,17 +219,36 @@ internal fun scaledInSteps(source: Bitmap, part: Rect?, to: PixelSize, recycleSo
     return current
 }
 
-/** [part] of [bitmap], or all of it, scaled to [size] with a bilinear filter, in ARGB_8888. */
-private fun scaled(bitmap: Bitmap, part: Rect?, size: PixelSize): Bitmap {
+/** A bitmap of [size] in ARGB_8888 that [draw] draws. */
+private inline fun drawn(size: PixelSize, draw: (Canvas) -> Unit): Bitmap {
     val out = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
     try {
-        Canvas(out).drawBitmap(bitmap, part, Rect(0, 0, size.width, size.height), Paint(Paint.FILTER_BITMAP_FLAG))
+        draw(Canvas(out))
     } catch (e: Throwable) {
         out.recycle()
         throw e
     }
     return out
 }
+
+/**
+ * The paint that fills the output of [step] from [part] of [bitmap], or all of it. A bilinear filter that
+ * samples on the edge between the two pixels of a pair averages them exactly, and past the end of an odd side
+ * the clamped edge repeats the end pixel.
+ */
+private fun halving(bitmap: Bitmap, part: Rect?, step: ScaleStep.Halve): Paint {
+    val toOutput = Matrix().apply {
+        setTranslate(step.across.lead - (part?.left ?: 0), step.down.lead - (part?.top ?: 0))
+        postScale(step.across.factor, step.down.factor)
+    }
+    val shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply { setLocalMatrix(toOutput) }
+    return Paint(Paint.FILTER_BITMAP_FLAG).apply { this.shader = shader }
+}
+
+/** The pixels this side is padded by before its first pixel. */
+private val SideStep.lead: Float get() = if (this == SideStep.HalvedFromEnd) 1f else 0f
+
+private val SideStep.factor: Float get() = if (this == SideStep.Kept) 1f else 0.5f
 
 /** Thrown from the header listener to stop before any pixel is allocated. */
 private class Refused(val kind: UnsupportedKind.TooLarge) : RuntimeException(null, null, false, false)
