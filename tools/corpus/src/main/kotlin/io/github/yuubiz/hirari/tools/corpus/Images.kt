@@ -178,7 +178,7 @@ internal fun imageCases(): List<ImageCase> {
         ImageCase("flat-lossless.jpg", flatJpeg(64, 96, JpegProcess.Lossless), ExpectedPage.ImageFeature("lossless JPEG")),
         ImageCase("lossless.webp", losslessWebp(120, 180, 0x3366cc), ExpectedPage.Ready(120, 180)),
         ImageCase("animated.webp", animatedWebp(120, 180, listOf(0xcc3333, 0x3333cc)), ExpectedPage.Ready(120, 180)),
-        ImageCase("codestream.jxl", byteArrayOf(0xff.toByte(), 0x0a) + ByteArray(64), ExpectedPage.ImageFeature("JPEG XL")),
+        ImageCase("codestream.jxl", byteArrayOf(0xff.toByte(), 0x0a) + ByteArray(64), ExpectedPage.OneOf(listOf(ExpectedPage.Fails(Failure.Corrupt), ExpectedPage.Fails(Failure.Truncated)))),
         ImageCase("tall.png", tallPng(800, 50_000), ExpectedPage.Ready(800, 50_000)),
         // BitmapRegionDecoder does not read GIF, so its tiles are cut from one bitmap.
         ImageCase("tall.gif", encode(indexed(200, 1000), "gif"), ExpectedPage.Ready(200, 1000)),

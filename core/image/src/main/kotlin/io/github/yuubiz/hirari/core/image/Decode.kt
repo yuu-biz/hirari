@@ -26,6 +26,7 @@ internal fun decodePage(
     tiling: Tiling,
     isActive: () -> Boolean,
 ): PageResult<PreparedImage> {
+    if (sniffImage(bytes) == ImageType.JpegXl) return decodeJxlPage(bytes, target, decoding.budgetBytes, isActive)
     val (type, codec) = when (val found = platformCodec(bytes)) {
         is Found.Decodable -> found
         is Found.Undecodable -> return found.result
@@ -45,6 +46,7 @@ internal fun decodePage(
 
 /** The size of the image in [bytes] from its header alone. */
 internal fun decodeShape(bytes: ByteArray): PageResult<PageShape.Known> {
+    if (sniffImage(bytes) == ImageType.JpegXl) return decodeJxlShape(bytes)
     val (type, codec) = when (val found = platformCodec(bytes)) {
         is Found.Decodable -> found
         is Found.Undecodable -> return found.result
