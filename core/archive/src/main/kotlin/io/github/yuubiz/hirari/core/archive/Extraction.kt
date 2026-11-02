@@ -37,6 +37,7 @@ internal class Extraction(
     private val entries: List<ArchiveEntry>,
     private val dir: File,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val maxCacheBytes: Long = MAX_CACHE_BYTES,
 ) : ArchiveSession.EntryReader {
     private sealed interface Slot {
         /** The pass has not reached the entry yet. */
@@ -54,8 +55,11 @@ internal class Extraction(
     private val lock = Any()
     private val slots = Array<Slot>(entries.size) { Slot.Pending }
     private var anchor = 0
+
+    /** The reads waiting for each entry. Eviction spares their files, which may be larger than the limit. */
+    private val waiting = IntArray(entries.size)
     private var cachedBytes = 0L
-    private var limit = MAX_CACHE_BYTES
+    private var limit = maxCacheBytes
 
     /** Counts the changes to [slots], so that a read can wait for the next one. */
     private val changes = MutableStateFlow(0L)
@@ -86,17 +90,24 @@ internal class Extraction(
 
     override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult {
         val index = entry.entryIndex
-        synchronized(lock) { anchor = index }
-        while (true) {
-            val seen = changes.value
-            if (!scope.isActive) throw CancellationException("the session is closed")
-            when (val slot = synchronized(lock) { slots[index] }) {
-                is Slot.Settled -> return slot.result
-                is Slot.Cached -> readFile(slot, maxBytes)?.let { return it } ?: evict(index, slot)
-                Slot.Evicted -> passes.trySend(Unit)
-                Slot.Pending -> Unit
+        synchronized(lock) {
+            anchor = index
+            waiting[index]++
+        }
+        try {
+            while (true) {
+                val seen = changes.value
+                if (!scope.isActive) throw CancellationException("the session is closed")
+                when (val slot = synchronized(lock) { slots[index] }) {
+                    is Slot.Settled -> return slot.result
+                    is Slot.Cached -> readFile(slot, maxBytes)?.let { return it } ?: evict(index, slot)
+                    Slot.Evicted -> passes.trySend(Unit)
+                    Slot.Pending -> Unit
+                }
+                changes.first { it != seen }
             }
-            changes.first { it != seen }
+        } finally {
+            synchronized(lock) { waiting[index]-- }
         }
     }
 
@@ -124,7 +135,7 @@ internal class Extraction(
             if (other != dir && other.isDirectory && now - other.lastModified() > IDLE_MILLIS) other.deleteRecursively()
         }
         dir.listFiles()?.forEach { if (it.name.endsWith(PART) && now - it.lastModified() > PART_MILLIS) it.delete() }
-        limit = min(dir.usableSpace / 10, MAX_CACHE_BYTES)
+        limit = min(dir.usableSpace / 10, maxCacheBytes)
         change {
             for (i in slots.indices) {
                 val file = File(dir, i.toString())
@@ -166,32 +177,39 @@ internal class Extraction(
             change { slots[index] = Slot.Settled(it) }
             return Status.OK
         }
+        // Another book's session deletes the directory when this one stays open for a day (docs/spec.md 3.3).
+        dir.mkdirs()
         val part = File.createTempFile("entry-$index-", PART, dir)
-        val sink = FileSink(part, ArchiveSession.MAX_ENTRY_BYTES.toLong())
-        val status = try {
-            archive.readData(sink)
-        } finally {
-            sink.close()
-        }
-        val file = File(dir, index.toString())
-        val exceeded = sink.exceeded
-        val slot = when {
-            status == Status.OK && sink.failure == null && part.renameTo(file) -> null
-            status == Status.PPMD -> Slot.Settled(EntryResult.UnsupportedCompression(PPMD))
-            exceeded != null -> Slot.Settled(EntryResult.TooLarge(exceeded))
-            status == Status.OK || sink.failure != null -> Slot.Settled(EntryResult.Failed(ArchiveFailure.ReadError))
-            else -> Slot.Settled(EntryResult.Failed(archive.failure()))
-        }
-        if (slot != null) part.delete()
-        change {
-            if (slot == null) {
-                cache(index, file)
-                evictOverLimit()
-            } else {
-                slots[index] = slot
+        var complete = false
+        try {
+            val sink = FileSink(part, ArchiveSession.MAX_ENTRY_BYTES.toLong())
+            val status = try {
+                archive.readData(sink)
+            } finally {
+                sink.close()
             }
+            val file = File(dir, index.toString())
+            val exceeded = sink.exceeded
+            complete = status == Status.OK && sink.failure == null && part.renameTo(file)
+            val slot = when {
+                complete -> null
+                status == Status.PPMD -> Slot.Settled(EntryResult.UnsupportedCompression(PPMD))
+                exceeded != null -> Slot.Settled(EntryResult.TooLarge(exceeded))
+                status == Status.OK || sink.failure != null -> Slot.Settled(EntryResult.Failed(ArchiveFailure.ReadError))
+                else -> Slot.Settled(EntryResult.Failed(archive.failure()))
+            }
+            change {
+                if (slot == null) {
+                    cache(index, file)
+                    evictOverLimit()
+                } else {
+                    slots[index] = slot
+                }
+            }
+            return status
+        } finally {
+            if (!complete) part.delete()
         }
-        return status
     }
 
     private fun settleFrom(from: Int, failure: ArchiveFailure) = change {
@@ -220,7 +238,7 @@ internal class Extraction(
 
     private fun evictOverLimit() {
         while (cachedBytes > limit) {
-            val farthest = slots.indices.filter { slots[it] is Slot.Cached }.maxByOrNull { abs(it - anchor) } ?: return
+            val farthest = slots.indices.filter { slots[it] is Slot.Cached && waiting[it] == 0 }.maxByOrNull { abs(it - anchor) } ?: return
             val slot = slots[farthest] as Slot.Cached
             slot.file.delete()
             slots[farthest] = Slot.Evicted
