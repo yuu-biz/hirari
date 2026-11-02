@@ -92,7 +92,7 @@ internal class ReaderInput(
         when (item) {
             PanelItem.Close -> onClose()
             PanelItem.Menu -> ui.toggleMenu()
-            is PanelItem.Command -> if (!viewModel.command(item.command, now)) ui.message = R.string.reader_not_yet
+            is PanelItem.Command -> ui.follow(viewModel.command(item.command, now))
         }
     }
 

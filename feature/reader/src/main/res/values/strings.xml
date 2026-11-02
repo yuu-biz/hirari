@@ -66,4 +66,10 @@
     <string name="orientation_device">端末に従う</string>
     <string name="orientation_portrait">縦</string>
     <string name="orientation_landscape">横</string>
+
+    <string name="adjust_level">明るさ</string>
+    <string name="adjust_sharpen">シャープ</string>
+    <string name="adjust_mono">グレースケール</string>
+    <string name="adjust_negative">白黒反転</string>
+    <string name="adjust_global">全体の設定に戻す</string>
 </resources>

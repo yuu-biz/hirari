@@ -28,6 +28,7 @@ import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -154,6 +155,7 @@ class ReaderViewModel(
         val services: ReaderServices,
         val progress: ProgressLog,
         val overrides: OverridesWriter,
+        val globalAdjust: ImageAdjust,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -229,16 +231,22 @@ class ReaderViewModel(
         opened?.prefetcher?.retry(page)
     }
 
-    /** Runs a command of the command bar, or returns false for one of a later milestone. */
-    fun command(command: ReaderCommand, nowMs: Long): Boolean {
-        val current = state ?: return false
+    /**
+     * Runs a command of the command bar. What only the screen can do comes back: a sheet to show, or
+     * [CommandEffect.NotYet] for a command of a later milestone.
+     */
+    fun command(command: ReaderCommand, nowMs: Long): CommandEffect? {
+        val current = state ?: return null
         when (val effect = current.config.effectOf(command)) {
             is CommandEffect.Configure -> dispatch(ReaderEvent.ConfigChanged(effect.config))
             CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
-            CommandEffect.NotYet -> return false
+            is CommandEffect.Show, CommandEffect.NotYet -> return effect
         }
-        return true
+        return null
     }
+
+    /** The global `adjust*` settings, where 全体の設定に戻す of the 画像補正 sheet goes back to. */
+    val globalAdjust: ImageAdjust get() = opened?.globalAdjust ?: ImageAdjust()
 
     /** The reader left the screen. The process may end before [onCleared], so the history is written now. */
     fun onStop() {
@@ -301,7 +309,7 @@ class ReaderViewModel(
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val writer = OverridesWriter(id, overrides, services.storage.books, services.appScope)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, settings.adjust)
         stops.attach(session)
         phase = ReaderPhase.Reading
         start()
@@ -356,6 +364,9 @@ class ReaderViewModel(
         orientation = after.config.orientation
         if (before != null && before.config.rotation != after.config.rotation) {
             book.overrides.update { it.copy(rotation = after.config.rotation.takeUnless { r -> r == Rotation.None }) }
+        }
+        if (before != null && before.config.adjust != after.config.adjust) {
+            book.overrides.update { it.copy(adjust = after.config.adjust.takeUnless { a -> a == book.globalAdjust }) }
         }
     }
 

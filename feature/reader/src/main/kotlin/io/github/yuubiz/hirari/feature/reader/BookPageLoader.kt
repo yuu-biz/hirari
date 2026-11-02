@@ -42,6 +42,7 @@ class BookPageLoader(private val book: OpenBook, private val dispatcher: Corouti
         return try {
             bitmap = bitmap.replacedBy { rotated(it, steps.rotation) }
             bitmap = bitmap.replacedBy { cropped(it, steps.crop) }
+            if (steps.sharpen) bitmap = bitmap.replacedBy(::sharpenedBitmap)
             val hardware = bitmap.copy(Bitmap.Config.HARDWARE, false)
             if (hardware == null) {
                 PageResult.Ready(bitmap)
@@ -73,6 +74,16 @@ private fun cropped(bitmap: Bitmap, crop: Side?): Bitmap {
     if (crop == null) return bitmap
     val width = (bitmap.width / 2).coerceAtLeast(1)
     return Bitmap.createBitmap(bitmap, if (crop == Side.Left) 0 else bitmap.width - width, 0, width, bitmap.height)
+}
+
+/** A bitmap already on the GPU has no pixels to read here, so it stays as it is. */
+private fun sharpenedBitmap(bitmap: Bitmap): Bitmap {
+    if (bitmap.config == Bitmap.Config.HARDWARE) return bitmap
+    val width = bitmap.width
+    val height = bitmap.height
+    val pixels = IntArray(width * height)
+    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+    return Bitmap.createBitmap(sharpened(pixels, width, height), width, height, Bitmap.Config.ARGB_8888)
 }
 
 /**

@@ -26,6 +26,9 @@ sealed interface CommandEffect {
     /** 組ずらし: the pairing one page later. */
     data object ShiftForward : CommandEffect
 
+    /** A sheet over the reader, which the screen opens. */
+    data class Show(val sheet: ReaderSheet) : CommandEffect
+
     /** A command of a later milestone. */
     data object NotYet : CommandEffect
 }
@@ -43,8 +46,9 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.ShiftPairing -> CommandEffect.ShiftForward
     ReaderCommand.Orientation -> CommandEffect.Configure(copy(orientation = orientation.next()))
     ReaderCommand.Rotate -> CommandEffect.Configure(copy(rotation = rotation.next()))
+    ReaderCommand.ImageAdjust -> CommandEffect.Show(ReaderSheet.Adjust)
     ReaderCommand.Trim, ReaderCommand.AddBookmark, ReaderCommand.Bookmarks, ReaderCommand.AutoPlay,
-    ReaderCommand.ReverseOrder, ReaderCommand.ImageAdjust, ReaderCommand.EditCommandBar, ReaderCommand.Breath,
+    ReaderCommand.ReverseOrder, ReaderCommand.EditCommandBar, ReaderCommand.Breath,
     ReaderCommand.BookSettings, ReaderCommand.SetCover, ReaderCommand.SharePage, ReaderCommand.Settings,
     -> CommandEffect.NotYet
 }

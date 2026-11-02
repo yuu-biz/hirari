@@ -107,6 +107,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
                 when (val sheet = ui.sheet) {
                     is ReaderSheet.Pages -> PagePanelSheet(viewModel, state, sheet, onClose = { ui.sheet = null })
                     ReaderSheet.Menu -> MenuSheet(viewModel, state, onCloseMenu = { ui.sheet = null }, onCloseReader = onClose)
+                    ReaderSheet.Adjust -> AdjustSheet(viewModel, state, onClose = { ui.sheet = null })
                     null -> Unit
                 }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
@@ -142,6 +143,18 @@ internal class ReaderUi {
     fun closePanels() {
         commandBar = CommandBarState.Closed
         sheet = null
+    }
+
+    /** Does what a command left to the screen: opens its sheet, or says it is not there yet. */
+    fun follow(effect: CommandEffect?) {
+        when (effect) {
+            is CommandEffect.Show -> {
+                closePanels()
+                sheet = effect.sheet
+            }
+            CommandEffect.NotYet -> message = R.string.reader_not_yet
+            else -> Unit
+        }
     }
 
     /** The Menu key and the panel's メニュー: the menu opens over anything else, and the key closes it again. */

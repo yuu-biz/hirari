@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -113,6 +115,8 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         )
     }
 
+    val adjust = state.config.adjust
+    val colorFilter = remember(adjust) { adjust.colorMatrix()?.let { ColorFilter.colorMatrix(ColorMatrix(it)) } }
     val label = pageLabel(state.current, state.pagination.shapes.size)
     Canvas(
         Modifier
@@ -122,7 +126,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
     ) {
         viewModel.prepared
         val now = if (state.transition != null || state.stopTravel != null) frameMs else Long.MAX_VALUE
-        for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer)
+        for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
     }
 
     val rest = if (state.transition == null && state.pull == null) state.positionAt(Long.MAX_VALUE) else null
@@ -183,14 +187,14 @@ private fun errorOf(viewModel: ReaderViewModel, view: PageView, index: Int, page
     return (prepared as? PreparedPage.Error)?.result ?: viewModel.failedPages[page]
 }
 
-private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, layer: Layer) {
+private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, layer: Layer, colorFilter: ColorFilter?) {
     val geometry = state.geometry(layer.view) ?: return
     val prepared = viewModel.preparedView(layer.view)
     geometry.pages.forEachIndexed { i, rect ->
         val left = rect.left - layer.position.x + layer.shift
         val top = rect.top - layer.position.y
         when (val page = prepared?.pages?.getOrNull(i)) {
-            is PreparedPage.Image<*> -> drawPage(page.image as Bitmap, left, top, rect, layer.alpha)
+            is PreparedPage.Image<*> -> drawPage(page.image as Bitmap, left, top, rect, layer.alpha, colorFilter)
             is PreparedPage.Error -> drawRect(CardBackground, Offset(left, top), androidx.compose.ui.geometry.Size(rect.width, rect.height), layer.alpha)
             null -> Unit
         }
@@ -214,13 +218,14 @@ private fun DrawScope.drawSeamShadow(seamX: Float, fadeX: Float, top: Float, hei
     drawRect(brush, Offset(minOf(seamX, fadeX), top), androidx.compose.ui.geometry.Size(kotlin.math.abs(fadeX - seamX), height), alpha)
 }
 
-private fun DrawScope.drawPage(bitmap: Bitmap, left: Float, top: Float, rect: Rect, alpha: Float) {
+private fun DrawScope.drawPage(bitmap: Bitmap, left: Float, top: Float, rect: Rect, alpha: Float, colorFilter: ColorFilter?) {
     if (bitmap.isRecycled) return
     drawImage(
         bitmap.asImageBitmap(),
         dstOffset = IntOffset(left.roundToInt(), top.roundToInt()),
         dstSize = IntSize(rect.width.roundToInt().coerceAtLeast(1), rect.height.roundToInt().coerceAtLeast(1)),
         alpha = alpha,
+        colorFilter = colorFilter,
         filterQuality = FilterQuality.Low,
     )
 }

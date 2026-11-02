@@ -11,12 +11,15 @@ sealed interface ReaderSheet {
     /** メニュー. */
     data object Menu : ReaderSheet
 
+    /** 画像補正: 明るさ, シャープ, グレースケール, and 白黒反転 of this book. */
+    data object Adjust : ReaderSheet
+
     /**
      * Whether the reader takes [code] while this sheet is up. Back closes it and Menu opens or closes the menu.
-     * Every other key goes to the sheet's buttons, and on the page panel Del goes to the page number field.
+     * Every other key goes to the sheet's controls, and on the page panel Del goes to the page number field.
      */
     fun takes(code: Int): Boolean = when (this) {
-        is Pages -> code == KeyCodes.BACK || code == KeyCodes.MENU
+        is Pages, Adjust -> code == KeyCodes.BACK || code == KeyCodes.MENU
         Menu -> code == KeyCodes.BACK || code == KeyCodes.MENU || code == KeyCodes.DEL
     }
 }

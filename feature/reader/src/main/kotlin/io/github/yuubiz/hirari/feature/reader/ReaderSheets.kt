@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,6 +32,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,10 +62,12 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 private val SheetBackground = Color(0xF0202028)
 private val SheetText = Color.White
@@ -322,3 +326,65 @@ private val MenuItem.label: Int
         MenuItem.EditCommandBar -> R.string.command_edit_command_bar
         MenuItem.About -> R.string.menu_about
     }
+
+/**
+ * 画像補正 (docs/spec.md section 4.8). Every change shows at once and is kept as this book's override.
+ * 全体の設定に戻す goes back to the global `adjust*` settings.
+ */
+@Composable
+internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose: () -> Unit) {
+    val adjust = state.config.adjust
+    fun set(next: ImageAdjust) = viewModel.dispatch(ReaderEvent.ConfigChanged(state.config.copy(adjust = next)))
+
+    Scrim(onClose) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .width(menuWidthDp(maxWidth.value, maxHeight.value).dp)
+                    .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 8.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.adjust_level), color = SheetText, modifier = Modifier.weight(1f))
+                    Text(if (adjust.level > 0) "+${adjust.level}" else "${adjust.level}", color = SheetDisabled)
+                }
+                Slider(
+                    value = adjust.level.toFloat(),
+                    onValueChange = { value ->
+                        val level = value.roundToInt().coerceIn(ADJUST_LEVELS)
+                        if (level != adjust.level) set(adjust.copy(level = level))
+                    },
+                    valueRange = ADJUST_LEVELS.first.toFloat()..ADJUST_LEVELS.last.toFloat(),
+                    steps = ADJUST_LEVELS.last - ADJUST_LEVELS.first - 1,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+                SwitchRow(R.string.adjust_sharpen, adjust.sharpen) { set(adjust.copy(sharpen = it)) }
+                SwitchRow(R.string.adjust_mono, adjust.mono) { set(adjust.copy(mono = it)) }
+                SwitchRow(R.string.adjust_negative, adjust.negative) { set(adjust.copy(negative = it)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
+                    SheetButton(R.string.adjust_global, enabled = adjust != viewModel.globalAdjust) { set(viewModel.globalAdjust) }
+                    SheetButton(R.string.panel_close, onClick = onClose)
+                }
+            }
+        }
+    }
+}
+
+private val ADJUST_LEVELS = -5..5
+
+@Composable
+private fun SwitchRow(label: Int, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, onValueChange = onChange)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(label), color = SheetText, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}

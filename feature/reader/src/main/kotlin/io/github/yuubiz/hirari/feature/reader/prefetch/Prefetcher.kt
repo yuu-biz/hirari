@@ -26,10 +26,11 @@ sealed interface PreparedPage<out T> {
 }
 
 /**
- * What is done to a page after it is scaled, in the order of docs/spec.md section 4.8: the [rotation], then for a
- * half the side of the turned page it shows ([crop]).
+ * What is done to a page after it is scaled, in the order of docs/spec.md section 4.8: the [rotation], for a half
+ * the side of the turned page it shows ([crop]), then シャープ when [sharpen]. The colour steps of 画像補正 are
+ * drawn, not prepared.
  */
-data class PageSteps(val crop: Side? = null, val rotation: Rotation = Rotation.None)
+data class PageSteps(val crop: Side? = null, val rotation: Rotation = Rotation.None, val sharpen: Boolean = false)
 
 /**
  * The pixel size of each page of [view] in reading order, as shown, and the [steps] that make it. A view prepared

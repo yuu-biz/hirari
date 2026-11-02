@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookOverrides
+import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.ReaderCommand
@@ -37,6 +38,7 @@ data class ReaderConfig(
     /** The book's rotation (docs/spec.md section 2.9), which has no global setting. */
     val rotation: Rotation = Rotation.None,
     val orientation: ReaderOrientation = ReaderOrientation.System,
+    val adjust: ImageAdjust = ImageAdjust(),
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -63,9 +65,14 @@ data class ReaderConfig(
             commandBarItems = settings.commandBarItems,
             rotation = overrides.rotation ?: Rotation.None,
             orientation = settings.readerOrientation,
+            adjust = overrides.adjust ?: settings.adjust,
         )
     }
 }
+
+/** The global `adjust*` settings as one value. */
+val GlobalSettings.adjust: ImageAdjust
+    get() = ImageAdjust(adjustLevel.coerceIn(GlobalSettings.ADJUST_LEVEL), adjustSharpen, adjustMono, adjustNegative)
 
 /** 綴じ目の表示 (docs/spec.md section 4.8, 見開き). [Shadow] darkens the bound edge of each page of a pair. */
 enum class Gutter { None, Gap, Shadow }
