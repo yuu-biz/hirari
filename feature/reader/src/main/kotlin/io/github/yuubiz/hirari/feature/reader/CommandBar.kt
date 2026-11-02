@@ -2,48 +2,21 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rect
+import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScreenOrientation
 import io.github.yuubiz.hirari.core.model.StopOrder
 import kotlin.math.hypot
 
-/** The commands the command bar can hold (docs/spec.md section 4.8, コマンドバー). */
-enum class ReaderCommand {
-    Layout,
-    ShiftPairing,
-    ScaleMode,
-    Trim,
-    Direction,
-    Rotate,
-    Orientation,
-    AddBookmark,
-    Bookmarks,
-    AutoPlay,
-    ReverseOrder,
-    ImageAdjust,
-    MirrorControls,
-    StopOrder,
-    Gutter,
-    EditCommandBar,
-    Breath,
-    BookSettings,
-    SetCover,
-    SharePage,
-    Settings,
-    ;
+/**
+ * The commands that do something in this milestone. Until the settings screen can choose the items, the panel shows
+ * these instead of [ReaderCommand.Defaults] (docs/spec.md section 4.8, コマンドバー).
+ */
+val ReaderCommand.Companion.Available: List<ReaderCommand>
+    get() = AvailableCommands
 
-    companion object {
-        /** The default `commandBarItems`. */
-        val Defaults = listOf(Orientation, Trim, Layout, ScaleMode)
-        const val MAX_ITEMS = 8
-
-        /**
-         * The commands that do something in this milestone. Until the settings screen can choose the items, the
-         * panel shows these instead of [Defaults] (docs/spec.md section 4.8, コマンドバー).
-         */
-        val Available: List<ReaderCommand> = entries.filter { ReaderConfig().effectOf(it) != CommandEffect.NotYet }.take(MAX_ITEMS)
-    }
-}
+private val AvailableCommands: List<ReaderCommand> =
+    ReaderCommand.entries.filter { ReaderConfig().effectOf(it) != CommandEffect.NotYet }.take(ReaderCommand.MAX_ITEMS)
 
 /** What running a command does. */
 sealed interface CommandEffect {

@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.feature.reader.BookEdge.End
 import io.github.yuubiz.hirari.feature.reader.BookEdge.Start
 import kotlin.test.Test

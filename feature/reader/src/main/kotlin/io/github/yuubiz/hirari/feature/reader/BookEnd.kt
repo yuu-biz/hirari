@@ -1,7 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
-/** The `atBookEnd` setting. */
-enum class BookEndAction { Ask, NextBook, Close, Stop }
+import io.github.yuubiz.hirari.core.model.BookEndAction
 
 enum class BookEdge { Start, End }
 

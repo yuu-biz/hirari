@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.Point
+import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.ScreenOrientation.Landscape
 import io.github.yuubiz.hirari.core.model.ScreenOrientation.Portrait
@@ -9,15 +10,15 @@ import io.github.yuubiz.hirari.feature.reader.CommandBarEvent.Hold
 import io.github.yuubiz.hirari.feature.reader.CommandBarEvent.Move
 import io.github.yuubiz.hirari.feature.reader.CommandBarEvent.Up
 import io.github.yuubiz.hirari.feature.reader.PanelItem.Command
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.AddBookmark
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.AutoPlay
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.Bookmarks
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.Layout
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.Orientation
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.Rotate
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.ScaleMode
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.Settings
-import io.github.yuubiz.hirari.feature.reader.ReaderCommand.Trim
+import io.github.yuubiz.hirari.core.model.ReaderCommand.AddBookmark
+import io.github.yuubiz.hirari.core.model.ReaderCommand.AutoPlay
+import io.github.yuubiz.hirari.core.model.ReaderCommand.Bookmarks
+import io.github.yuubiz.hirari.core.model.ReaderCommand.Layout
+import io.github.yuubiz.hirari.core.model.ReaderCommand.Orientation
+import io.github.yuubiz.hirari.core.model.ReaderCommand.Rotate
+import io.github.yuubiz.hirari.core.model.ReaderCommand.ScaleMode
+import io.github.yuubiz.hirari.core.model.ReaderCommand.Settings
+import io.github.yuubiz.hirari.core.model.ReaderCommand.Trim
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
