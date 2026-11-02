@@ -115,7 +115,7 @@ class ArchiveSession private constructor(
                 is Cursor.Before -> at.next
                 Cursor.Closed -> Int.MAX_VALUE
             }
-            if (next > index) {
+            if (next > index || (next until index).any { entries[it].encrypted }) {
                 cursor = Cursor.Closed
                 if (!Status.succeeded(archive.open())) return archive.failure()
                 next = 0

@@ -168,7 +168,7 @@ internal class Extraction(
             if (!Status.succeeded(status)) return settleFrom(next, headerFailure(status))
             val slot = synchronized(lock) { slots[next] }
             val dataStatus = if (slot == Slot.Pending || slot == Slot.Evicted) extract(next) else Status.OK
-            if (dataStatus < Status.FAILED) open = false
+            if (dataStatus < Status.FAILED || entries[next].encrypted) open = false
             next++
         }
     }
