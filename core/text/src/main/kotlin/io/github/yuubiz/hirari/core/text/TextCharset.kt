@@ -29,16 +29,27 @@ private fun bomOf(bytes: ByteArray): Bom? = Bom.entries.firstOrNull { bom ->
 }
 
 /**
- * How many malformed or unmappable sequences [sample] has in [charset]. When the sample is a prefix of a longer
- * file, a sequence cut at its end does not count, because the cut is ours and not the file's.
+ * A strict reading of a sample: its malformed or unmappable sequences, and the characters a wrong guess tends to
+ * produce, half-width katakana and private use.
  */
-private fun errorCount(sample: ByteArray, charset: Charset, isWholeFile: Boolean): Int {
+private data class Reading(val errors: Int, val oddities: Int)
+
+private fun isOdd(c: Char): Boolean = c in '｡'..'ﾟ' || c in ''..''
+
+/** When the sample is a prefix of a longer file, a sequence cut at its end is not an error: the cut is ours. */
+private fun read(sample: ByteArray, charset: Charset, isWholeFile: Boolean): Reading {
     val decoder = charset.newDecoder()
         .onMalformedInput(CodingErrorAction.REPORT)
         .onUnmappableCharacter(CodingErrorAction.REPORT)
     val input = ByteBuffer.wrap(sample)
     val output = CharBuffer.allocate(4096)
     var errors = 0
+    var oddities = 0
+    fun drain() {
+        output.flip()
+        while (output.hasRemaining()) if (isOdd(output.get())) oddities++
+        output.clear()
+    }
     while (true) {
         val result = decoder.decode(input, output, isWholeFile)
         when {
@@ -46,11 +57,12 @@ private fun errorCount(sample: ByteArray, charset: Charset, isWholeFile: Boolean
                 errors++
                 input.position(input.position() + result.length())
             }
-            result.isOverflow -> output.clear()
+            result.isOverflow -> drain()
             else -> break
         }
     }
-    return errors
+    drain()
+    return Reading(errors, oddities)
 }
 
 /** docs/spec.md section 3.11. [fallback] is the `fallbackCharset` setting. */
@@ -58,13 +70,12 @@ fun detectCharset(bytes: ByteArray, fallback: Charset): DetectedCharset {
     bomOf(bytes)?.let { return DetectedCharset(it.charset, CharsetEvidence.Bom) }
     val isWholeFile = bytes.size <= CHARSET_SAMPLE_BYTES
     val sample = if (isWholeFile) bytes else bytes.copyOf(CHARSET_SAMPLE_BYTES)
-    val errors = candidates.associateWith { errorCount(sample, it, isWholeFile) }
-    errors.entries.firstOrNull { it.value == 0 }?.let { return DetectedCharset(it.key, CharsetEvidence.Valid) }
-    val best = errors.entries.minBy { it.value }
-    return if (best.value <= maxOf(1, sample.size / 1000)) {
-        DetectedCharset(best.key, CharsetEvidence.FewestErrors)
-    } else {
-        DetectedCharset(fallback, CharsetEvidence.Fallback)
+    val (charset, reading) = candidates.map { it to read(sample, it, isWholeFile) }
+        .minWith(compareBy({ it.second.errors }, { it.second.oddities }))
+    return when {
+        reading.errors == 0 -> DetectedCharset(charset, CharsetEvidence.Valid)
+        reading.errors <= maxOf(1, sample.size / 1000) -> DetectedCharset(charset, CharsetEvidence.FewestErrors)
+        else -> DetectedCharset(fallback, CharsetEvidence.Fallback)
     }
 }
 

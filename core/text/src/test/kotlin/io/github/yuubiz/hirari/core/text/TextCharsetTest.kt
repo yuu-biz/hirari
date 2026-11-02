@@ -29,6 +29,14 @@ class TextCharsetTest {
         }
     }
 
+    // Every EUC-JP kana byte is a half-width katakana in CP932, so kana-only EUC-JP also reads cleanly as CP932.
+    @Test
+    fun `kana-only EUC-JP is not taken for half-width CP932`() {
+        val bytes = "あいうえお。かきくけこ。\n".repeat(50).toByteArray(EUC_JP)
+        assertEquals(DetectedCharset(EUC_JP, CharsetEvidence.Valid), detect(bytes))
+        assertEquals(CP932, detect("ｱｲｳｴｵ、カタカナ。\n".repeat(50).toByteArray(CP932)).charset)
+    }
+
     @Test
     fun `ASCII reads as UTF-8`() {
         assertEquals(Charsets.UTF_8, detect("plain text\n".toByteArray()).charset)
