@@ -65,12 +65,12 @@ internal class ReaderInput(
         }
         step(CommandBarEvent.Down(down.position.dp(density), down.uptimeMillis, systemBarsHidden = true))
         down.consume()
-        if (ui.commandBar is CommandBarState.Holding) {
-            val early = withTimeoutOrNull(LONG_PRESS_MS) { awaitPointerEvent() }
-            if (early == null) step(CommandBarEvent.Hold(down.uptimeMillis + LONG_PRESS_MS)) else if (finishCommand(early, down.id, density, ::step)) return
-        }
+        val hold = HoldTimer(down.uptimeMillis)
         while (true) {
-            if (finishCommand(awaitPointerEvent(), down.id, density, ::step)) return
+            val holding = ui.commandBar is CommandBarState.Holding
+            val event = awaitOrHold(hold, waiting = holding)
+            if (holding && hold.due) step(CommandBarEvent.Hold(hold.at))
+            if (event != null && finishCommand(event, down.id, density, ::step)) return
         }
     }
 
@@ -121,13 +121,16 @@ internal class ReaderInput(
         }
         step(PageBarEvent.Down(down.position.dp(density), down.uptimeMillis, current.current.pages.first()))
         down.consume()
-        val early = withTimeoutOrNull(LONG_PRESS_MS) { awaitPointerEvent() }
-        if (early == null) {
-            step(PageBarEvent.Hold(down.uptimeMillis + LONG_PRESS_MS))
-            if (ui.pageBar == PageBarState.Idle) return
-        }
-        var event = early ?: awaitPointerEvent()
+        val hold = HoldTimer(down.uptimeMillis)
+        var held = false
         while (true) {
+            val event = awaitOrHold(hold, waiting = !held)
+            if (!held && hold.due) {
+                held = true
+                step(PageBarEvent.Hold(hold.at))
+                if (ui.pageBar == PageBarState.Idle) return
+            }
+            if (event == null) continue
             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
             change.consume()
             if (!change.pressed) {
@@ -135,7 +138,6 @@ internal class ReaderInput(
                 return
             }
             step(PageBarEvent.Move(change.position.dp(density)))
-            event = awaitPointerEvent()
         }
     }
 
@@ -237,3 +239,26 @@ internal class ReaderInput(
 }
 
 private fun Offset.dp(density: Float) = Point(x / density, y / density)
+
+/**
+ * The [LONG_PRESS_MS] press of the bars. Small moves within the touch slop keep coming while a finger rests, so
+ * the press is due by the clock of the events as well as by a timeout when none comes.
+ */
+private class HoldTimer(downAtMs: Long) {
+    val at = downAtMs + LONG_PRESS_MS
+    var lastMs = downAtMs
+
+    val due: Boolean get() = lastMs >= at
+
+    fun seen(event: PointerEvent) {
+        lastMs = maxOf(lastMs, event.changes.maxOf { it.uptimeMillis })
+    }
+}
+
+/** The next event, or `null` when the press of [hold] became due first. */
+private suspend fun AwaitPointerEventScope.awaitOrHold(hold: HoldTimer, waiting: Boolean): PointerEvent? {
+    if (!waiting || hold.due) return awaitPointerEvent().also(hold::seen)
+    val event = withTimeoutOrNull((hold.at - hold.lastMs).coerceAtLeast(1)) { awaitPointerEvent() }
+    if (event == null) hold.lastMs = hold.at else hold.seen(event)
+    return event
+}
