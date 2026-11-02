@@ -48,7 +48,10 @@ data class Insets(val left: Int, val top: Int, val right: Int, val bottom: Int) 
 
 /** The rules of docs/spec.md section 4.8 that keep a trim from cutting too much. */
 enum class TrimRule {
-    /** The outer band of an edge varies: the art reaches the paper's edge there, so that edge is not cut. */
+    /**
+     * The art reaches the paper's edge, so that edge is not cut: its outer band varies, or a faint picture runs
+     * inward from it.
+     */
     BleedEdge,
 
     /** A wide page cuts its left and right by the smaller of the two, so that the fold stays in the middle. */
@@ -89,11 +92,12 @@ class MarginScan internal constructor(val page: PixelSize, private val lines: Ma
     fun trim(strength: TrimStrength): PageTrim {
         val level = strength.level() ?: return PageTrim.settled(page, Insets.None, emptyList())
         val adjustments = mutableListOf<TrimRule>()
-        if (bleedEdges.isNotEmpty()) adjustments += TrimRule.BleedEdge
-        var proposed = Insets.of { edge ->
+        val cuts = Edge.entries.associateWith { edge ->
             val side = if (edge == Edge.Left || edge == Edge.Right) page.width else page.height
-            lines[edge]?.cut(level, side) ?: 0
+            lines[edge]?.cut(level, side)
         }
+        if (null in cuts.values) adjustments += TrimRule.BleedEdge
+        var proposed = Insets.of { cuts[it] ?: 0 }
         if (page.width > page.height && proposed.left != proposed.right) {
             val side = min(proposed.left, proposed.right)
             proposed = proposed.copy(left = side, right = side)
@@ -194,24 +198,29 @@ private fun TrimStrength.level(): TrimLevel? = when (this) {
 
 /**
  * The lines of one edge from the edge inward: [differing] counts, for each, the pixels that differ from the
- * edge's background by more than 32, out of the [span] pixels counted in every line.
+ * edge's background by more than 32, out of the [span] pixels counted in every line, and [toned] tells the lines
+ * whose median is more than 8 levels off the background.
  */
-internal class EdgeLines(private val span: Int, private val differing: IntArray) {
-    /** The pixels of a side of [side] pixels to cut at [level], rounded down. */
-    fun cut(level: TrimLevel, side: Int): Int {
-        val found = marginLines(level)
+internal class EdgeLines(private val span: Int, private val differing: IntArray, private val toned: BooleanArray) {
+    /**
+     * The pixels of a side of [side] pixels to cut at [level], rounded down, or null when the edge is not cut:
+     * when two toned lines in a row come before the content, a faint picture runs to the edge.
+     */
+    fun cut(level: TrimLevel, side: Int): Int? {
+        val start = contentStart(level)
+        if ((0 until start - 1).any { toned[it] && toned[it + 1] }) return null
+        val found = min(start, differing.size * level.rangePercent / 100)
         val inPage = found.toLong() * side / differing.size
         return (inPage * level.cutPercent / 100).toInt()
     }
 
-    /** The lines before the first two content lines in a row, or the whole range when there are none in it. */
-    private fun marginLines(level: TrimLevel): Int {
-        val limit = differing.size * level.rangePercent / 100
+    /** The first of the first two content lines in a row on the whole side, or the side's length when there are none. */
+    private fun contentStart(level: TrimLevel): Int {
         fun isMargin(line: Int) = differing[line].toLong() * 1000 < level.thresholdPermille.toLong() * span
-        for (line in 0 until limit) {
+        for (line in differing.indices) {
             if (!isMargin(line) && (line + 1 == differing.size || !isMargin(line + 1))) return line
         }
-        return limit
+        return differing.size
     }
 }
 
@@ -246,22 +255,41 @@ private fun inner(length: Int, band: Int): IntRange = if (length > 2 * band) ban
 
 /**
  * The lines of one edge, or null when its band varies: when the middle 80% of the band's pixels spans more than
- * 32 levels. The background is the band's median.
+ * 32 levels, or the medians of the eight parts of the band along the edge span more than 8. The background is the
+ * band's median.
  */
 private inline fun edgeLines(lineCount: Int, bandLines: Int, span: IntRange, pixel: (line: Int, at: Int) -> Int): EdgeLines? {
+    val length = span.last - span.first + 1
     val histogram = IntArray(256)
     for (line in 0 until bandLines) for (at in span) histogram[pixel(line, at)]++
-    val total = bandLines * (span.last - span.first + 1)
+    val total = bandLines * length
     if (percentile(histogram, total, 90) - percentile(histogram, total, 10) > DIFFERENT) return null
     val background = percentile(histogram, total, 50)
+    val parts = min(BAND_PARTS, length)
+    val partMedians = IntArray(parts) { part ->
+        val from = span.first + part * length / parts
+        val until = span.first + (part + 1) * length / parts
+        val partHistogram = IntArray(256)
+        for (line in 0 until bandLines) for (at in from until until) partHistogram[pixel(line, at)]++
+        percentile(partHistogram, bandLines * (until - from), 50)
+    }
+    if (partMedians.max() - partMedians.min() > TONE) return null
     val differs = BooleanArray(256) { abs(it - background) > DIFFERENT }
     val counts = IntArray(lineCount)
+    val toned = BooleanArray(lineCount)
+    val lineHistogram = IntArray(256)
     for (line in 0 until lineCount) {
+        lineHistogram.fill(0)
         var n = 0
-        for (at in span) if (differs[pixel(line, at)]) n++
+        for (at in span) {
+            val value = pixel(line, at)
+            if (differs[value]) n++
+            lineHistogram[value]++
+        }
         counts[line] = n
+        toned[line] = abs(percentile(lineHistogram, length, 50) - background) > TONE
     }
-    return EdgeLines(span.last - span.first + 1, counts)
+    return EdgeLines(length, counts, toned)
 }
 
 /** The smallest level at or below which [percent]% of the [total] pixels of [histogram] lie. */
@@ -277,3 +305,8 @@ private fun percentile(histogram: IntArray, total: Int, percent: Int): Int {
 
 /** Levels of luma that tell content from background (docs/spec.md section 4.8). */
 private const val DIFFERENT = 32
+
+/** Levels by which the median of a part of a band, or of a line, tells a faint picture from the paper. */
+private const val TONE = 8
+
+private const val BAND_PARTS = 8

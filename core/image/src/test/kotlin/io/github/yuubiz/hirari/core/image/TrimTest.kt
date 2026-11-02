@@ -110,6 +110,39 @@ class TrimTest {
     }
 
     @Test
+    fun aFaintGradientOverTheWholePageIsNotCutAtAnyStrength() {
+        for (levels in listOf(10, 20)) {
+            val across = TestPage(200, 200).apply { for (y in 0 until 200) for (x in 0 until 200) this[x, y] = 220 + levels * x / 199 }
+            val down = TestPage(200, 200).apply { for (y in 0 until 200) for (x in 0 until 200) this[x, y] = 220 + levels * y / 199 }
+            for (page in listOf(across, down)) for (strength in TrimStrength.entries - TrimStrength.Off) {
+                val trim = trimmed(page, strength, PixelSize(200, 200))
+                assertEquals("$levels levels, $strength", Insets.None, trim.cut)
+                assertEquals("$levels levels, $strength", listOf(TrimRule.BleedEdge), trim.fired)
+            }
+        }
+    }
+
+    @Test
+    fun aFaintPanelOffOneEdgeKeepsThatEdgeAndNotTheOthers() {
+        val page = portrait(ORDINARY.copy(top = 100)) { fill(PixelRect(140, 0, 240, 100), 225) }
+        val trim = trimmed(page, TrimStrength.Weak)
+        assertEquals(ordinaryWeak.copy(top = 0), trim.content)
+        assertEquals(listOf(TrimRule.BleedEdge), trim.fired)
+    }
+
+    @Test
+    fun grainOf20LevelsDoesNotReadAsAFaintPicture() {
+        val plain = TrimStrength.entries.associateWith { trimmed(portrait(ORDINARY), it).cut }
+        for (seed in 1L..20L) {
+            val scan = scanMargins(portrait(ORDINARY) { grain(20, seed) }.luma(), PORTRAIT_PAGE)
+            for (strength in TrimStrength.entries) {
+                assertEquals("seed $seed, $strength", plain[strength], scan.trim(strength).cut)
+                assertEquals("seed $seed, $strength", emptyList<TrimRule>(), scan.trim(strength).fired)
+            }
+        }
+    }
+
+    @Test
     fun aFullBleedSpreadIsNotCut() {
         val spread = TestPage(512, 362).apply {
             tone(PixelRect(0, 0, 512, 362))
