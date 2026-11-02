@@ -3,10 +3,16 @@ package io.github.yuubiz.hirari.tools.fuzz
 import java.io.File
 import java.util.concurrent.TimeUnit
 
+/** How an `adb` call ended: its output, its exit status, and whether it was killed (exit -1) for running past its time. */
+data class AdbResult(val output: String, val exit: Int, val timedOut: Boolean)
+
 /** What the fuzz and monkey drivers need from a device. */
 interface Adb {
-    /** Runs `adb shell` with [command] and returns its output. [timeoutSeconds] bounds the wait. */
-    fun shell(command: String, timeoutSeconds: Long = 600): String
+    /** Runs `adb shell` with [command]. [timeoutSeconds] bounds the wait. */
+    fun shellResult(command: String, timeoutSeconds: Long = 600): AdbResult
+
+    /** The output of [shellResult], for a caller that does not need to know how the command ended. */
+    fun shell(command: String, timeoutSeconds: Long = 600): String = shellResult(command, timeoutSeconds).output
 
     fun push(local: File, remote: String)
 
@@ -23,7 +29,7 @@ interface Adb {
 
 /** [Adb] over the `adb` program of the Android SDK, aimed at [serial] when it is given. */
 class ProcessAdb(private val adb: String, private val serial: String?) : Adb {
-    private fun run(timeoutSeconds: Long, vararg args: String): Result {
+    private fun run(timeoutSeconds: Long, vararg args: String): AdbResult {
         val command = listOf(adb) + (if (serial != null) listOf("-s", serial) else emptyList()) + args
         val builder = ProcessBuilder(command).redirectErrorStream(true)
         builder.environment()["MSYS_NO_PATHCONV"] = "1"
@@ -34,19 +40,17 @@ class ProcessAdb(private val adb: String, private val serial: String?) : Adb {
         if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly()
             reader.join(2000)
-            return Result(-1, "$output\n[timed out after $timeoutSeconds s]")
+            return AdbResult("$output\n[timed out after $timeoutSeconds s]", -1, timedOut = true)
         }
         reader.join()
-        return Result(process.exitValue(), output.toString())
+        return AdbResult(output.toString(), process.exitValue(), timedOut = false)
     }
 
-    private class Result(val exit: Int, val text: String)
-
-    override fun shell(command: String, timeoutSeconds: Long): String = run(timeoutSeconds, "shell", command).text
+    override fun shellResult(command: String, timeoutSeconds: Long): AdbResult = run(timeoutSeconds, "shell", command)
 
     override fun push(local: File, remote: String) {
         val result = run(300, "push", local.path, remote)
-        check(result.exit == 0) { "adb push ${local.name} failed: ${result.text}" }
+        check(result.exit == 0) { "adb push ${local.name} failed: ${result.output}" }
     }
 
     override fun pull(remote: String, local: File): Boolean {
@@ -56,11 +60,11 @@ class ProcessAdb(private val adb: String, private val serial: String?) : Adb {
 
     override fun install(apk: File) {
         val result = run(300, "install", "-r", "-t", apk.path)
-        check(result.exit == 0 && "Success" in result.text) { "adb install ${apk.name} failed: ${result.text}" }
+        check(result.exit == 0 && "Success" in result.output) { "adb install ${apk.name} failed: ${result.output}" }
     }
 
     override fun logcat(vararg buffers: String): String =
-        run(120, *(listOf("logcat", "-d", "-v", "threadtime") + buffers.flatMap { listOf("-b", it) }).toTypedArray()).text
+        run(120, *(listOf("logcat", "-d", "-v", "threadtime") + buffers.flatMap { listOf("-b", it) }).toTypedArray()).output
 
     override fun clearLogcat() {
         run(60, "logcat", "-b", "all", "-c")

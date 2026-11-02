@@ -1,12 +1,37 @@
 package io.github.yuubiz.hirari.tools.fuzz
 
-/** What one `monkey` session did to the app. */
-data class MonkeyCounts(val injected: Int, val crashes: Int, val nativeCrashes: Int, val anrs: Int, val aborted: Boolean) {
+/**
+ * What one `monkey` session did to the app. [abnormal] counts the sessions that did not end normally: see [abnormality].
+ */
+data class MonkeyCounts(
+    val injected: Int,
+    val crashes: Int,
+    val nativeCrashes: Int,
+    val anrs: Int,
+    val aborted: Boolean,
+    val abnormal: Int = 0,
+) {
     val failures: Int get() = crashes + nativeCrashes + anrs
 
+    /** Whether the test run these counts belong to has to fail. */
+    val failed: Boolean get() = failures > 0 || aborted || abnormal > 0
+
     operator fun plus(other: MonkeyCounts) = MonkeyCounts(
-        injected + other.injected, crashes + other.crashes, nativeCrashes + other.nativeCrashes, anrs + other.anrs, aborted || other.aborted,
+        injected + other.injected, crashes + other.crashes, nativeCrashes + other.nativeCrashes, anrs + other.anrs,
+        aborted || other.aborted, abnormal + other.abnormal,
     )
+
+    /**
+     * Why a session that asked `monkey` for [requested] events, and ended as [end], does not count as a normal one, or
+     * null. A hang that `adb` gave up on prints none of the lines that [of] looks for, so without this it would read
+     * as a quiet session with no events.
+     */
+    fun abnormality(requested: Int, end: AdbResult): String? = when {
+        end.timedOut -> "monkey did not end in time and was stopped"
+        end.exit != 0 -> "monkey ended with status ${end.exit}"
+        injected != requested -> "monkey injected $injected of the $requested events asked for"
+        else -> null
+    }
 
     companion object {
         val None = MonkeyCounts(0, 0, 0, 0, false)

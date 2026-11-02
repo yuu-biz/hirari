@@ -63,16 +63,17 @@ fun main(args: Array<String>) {
         val events = totalEvents / books.size + if (i < totalEvents % books.size) 1 else 0
         val counts = session(adb, book, "$dir/${book.name}", events, seed + i, throttle, out)
         total += counts
-        val line = "${book.name}: seed ${seed + i}, ${counts.injected} events, ${counts.crashes} crashes, ${counts.nativeCrashes} native crashes, ${counts.anrs} ANRs" +
-            if (counts.aborted) ", monkey aborted" else ""
+        val line = "${book.name}: seed ${seed + i}, ${counts.injected} of $events events, ${counts.crashes} crashes, ${counts.nativeCrashes} native crashes, ${counts.anrs} ANRs" +
+            (if (counts.aborted) ", monkey aborted" else "") + (if (counts.abnormal > 0) ", ${counts.abnormal} sessions did not end normally" else "")
         println(line)
         summary.appendLine(line)
     }
-    val line = "total: ${total.injected} events, ${total.crashes} crashes, ${total.nativeCrashes} native crashes, ${total.anrs} ANRs"
+    val line = "total: ${total.injected} events, ${total.crashes} crashes, ${total.nativeCrashes} native crashes, ${total.anrs} ANRs" +
+        (if (total.abnormal > 0) ", ${total.abnormal} sessions did not end normally" else "")
     println(line)
     summary.appendLine(line)
     File(out, "summary.txt").writeText(summary.toString())
-    exitProcess(if (total.failures > 0 || total.aborted) 1 else 0)
+    exitProcess(if (total.failed) 1 else 0)
 }
 
 /**
@@ -83,10 +84,8 @@ fun main(args: Array<String>) {
 private fun session(adb: Adb, book: File, remote: String, events: Int, seed: Long, throttle: Int, out: File): MonkeyCounts {
     var total = MonkeyCounts.None
     var round = 0
-    while (total.injected < events) {
-        val counts = chunk(adb, book, remote, minOf(CHUNK, events - total.injected), seed * 1000 + round, throttle, out, round)
-        total += counts
-        if (counts.injected == 0) break
+    while (total.injected < events && total.abnormal == 0) {
+        total += chunk(adb, book, remote, minOf(CHUNK, events - total.injected), seed * 1000 + round, throttle, out, round)
         round++
     }
     return total
@@ -100,16 +99,19 @@ private fun chunk(adb: Adb, book: File, remote: String, events: Int, seed: Long,
     adb.shell("am start -n $APP/.MainActivity --es book file://$remote")
     Thread.sleep(5000)
     val percentages = "--pct-touch 45 --pct-motion 25 --pct-pinchzoom 10 --pct-nav 5 --pct-majornav 0 --pct-syskeys 0 --pct-appswitch 0 --pct-anyevent 0 --pct-trackball 0"
-    val monkey = adb.shell(
+    val end = adb.shellResult(
         "monkey -p $APP -s $seed --throttle $throttle --ignore-crashes --ignore-timeouts --ignore-security-exceptions --ignore-native-crashes --monitor-native-crashes " +
             "$percentages -v $events",
         timeoutSeconds = events.toLong() * (throttle + 400) / 1000 + 300,
     )
     val logcat = adb.logcat("crash", "main", "system")
-    val counts = MonkeyCounts.of(APP, monkey, logcat)
-    if (counts.failures > 0 || counts.aborted) {
-        File(out, "${book.name}.$index.monkey.txt").writeText(monkey)
+    val observed = MonkeyCounts.of(APP, end.output, logcat)
+    val problem = observed.abnormality(events, end)
+    val counts = if (problem == null) observed else observed.copy(abnormal = 1)
+    if (counts.failed) {
+        File(out, "${book.name}.$index.monkey.txt").writeText((problem?.let { "$it\n" } ?: "") + end.output)
         File(out, "${book.name}.$index.logcat.txt").writeText(logcat)
     }
+    if (problem != null) println("${book.name}, round $index: $problem")
     return counts
 }
