@@ -13,6 +13,8 @@ class Storage internal constructor(
     launchStore: DataStore<StoredLaunch>,
     /** The thumbnail disk cache. */
     val thumbnails: ThumbnailCache,
+    /** The fonts imported for the text reader. */
+    val fonts: FontStore,
 ) {
     constructor(context: Context) : this(
         database = openDatabase(context),
@@ -21,6 +23,7 @@ class Storage internal constructor(
         settingsStore = openSettings(context.applicationContext),
         launchStore = openLaunch(context.applicationContext),
         thumbnails = DiskThumbnailCache(File(context.cacheDir, "thumbs"), openThumbnailIndex(context).thumbs()),
+        fonts = FontStore(File(context.filesDir, "fonts")),
     )
 
     val progress: ProgressRepository = RoomProgressRepository(database.bookProgress())
