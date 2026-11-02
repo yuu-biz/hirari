@@ -20,24 +20,36 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.io.Closeable
+import java.io.IOException
 import java.io.File
 import java.time.Instant
 
-private class MemoryStore : ThumbnailStore {
+private class MemoryStore(private val dir: File) : ThumbnailStore {
     val files = HashMap<ThumbnailKey, File>()
     val failed = LinkedHashSet<ThumbnailKey>()
     val held = ArrayList<ThumbnailKey>()
     val released = ArrayList<ThumbnailKey>()
     var puts = 0
+    var onHold: (ThumbnailKey) -> Unit = {}
+
+    val holding: List<ThumbnailKey> get() = held.toMutableList().apply { released.forEach { remove(it) } }
+
+    /** What the size limit of the cache does at its worst: every thumbnail nobody holds goes. */
+    fun evictUnheld() {
+        files.keys.retainAll(holding.toSet())
+    }
 
     override suspend fun get(key: ThumbnailKey): StoredThumb = when {
         key in failed -> StoredThumb.Failed
         else -> files[key]?.let(StoredThumb::Hit) ?: StoredThumb.Miss
     }
 
-    override suspend fun put(key: ThumbnailKey, webp: ByteArray): File = File("thumbs/${puts++}.webp").also { files[key] = it }
+    override suspend fun put(key: ThumbnailKey, webp: ByteArray): File =
+        File(dir, "${puts++}.webp").also { it.writeBytes(webp) }.also { files[key] = it }
 
     override suspend fun markFailed(key: ThumbnailKey) {
         failed += key
@@ -50,11 +62,18 @@ private class MemoryStore : ThumbnailStore {
 
     override fun hold(key: ThumbnailKey): Closeable {
         held += key
+        onHold(key)
         return Closeable { released += key }
     }
 }
 
-private class FakeMaker(var script: suspend (ThumbSubject.Book) -> Made = { Made.Webp(byteArrayOf(1)) }) : ThumbnailMaker {
+/** A thumbnail whose bytes name the book it was made from. */
+private fun image(book: ThumbSubject.Book) = Made.Webp(book.id.value.toByteArray())
+
+/** The book whose image [result] shows. */
+private fun shows(result: ThumbResult?): String = (result as ThumbResult.Ready).file.readText()
+
+private class FakeMaker(var script: suspend (ThumbSubject.Book) -> Made = ::image) : ThumbnailMaker {
     class Call(val book: ThumbSubject.Book, val sizePx: Int, val direction: ReadingDirection)
 
     val calls = ArrayList<Call>()
@@ -77,7 +96,10 @@ private class FakeMaker(var script: suspend (ThumbSubject.Book) -> Made = { Made
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ThumbnailsTest {
-    private val store = MemoryStore()
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    private val store by lazy { MemoryStore(temp.root) }
     private val maker = FakeMaker()
     private var clock = 0L
 
@@ -393,24 +415,19 @@ class ThumbnailsTest {
         val thumbnails = thumbnails()
         val result = async { thumbnails.thumbnail(request(folder(item("10.zip"), item("2.zip"), item("1.zip")))) }
         runCurrent()
-        val ready = result.await() as ThumbResult.Ready
+        assertEquals("1.zip", shows(result.await()))
         assertEquals(listOf("1.zip"), maker.ids)
-        assertEquals(BookId("1.zip"), ready.key.book)
     }
 
     @Test
     fun aFolderSkipsItemsThatCannotBeReadAndShowsTheFirstThatCan() = runTest {
         val thumbnails = thumbnails()
-        maker.script = { if (it.id.value in setOf("1", "2")) Made.Unreadable else Made.Webp(byteArrayOf(1)) }
+        maker.script = { if (it.id.value in setOf("1", "2")) Made.Unreadable else image(it) }
         val result = async { thumbnails.thumbnail(request(folder(item("1"), item("2"), item("3"), item("4")))) }
         runCurrent()
-        assertEquals(BookId("3"), (result.await() as ThumbResult.Ready).key.book)
+        assertEquals("3", shows(result.await()))
         assertEquals(listOf("1", "2", "3"), maker.ids)
         assertEquals(setOf(BookId("1"), BookId("2")), store.failed.map { it.book }.toSet())
-        val again = async { thumbnails.thumbnail(request(folder(item("1"), item("2"), item("3"), item("4")))) }
-        runCurrent()
-        assertEquals(BookId("3"), (again.await() as ThumbResult.Ready).key.book)
-        assertEquals("the failed items were tried again", 3, maker.calls.size)
     }
 
     @Test
@@ -419,23 +436,23 @@ class ThumbnailsTest {
         val chosen = book("chosen")
         val first = async { thumbnails.thumbnail(request(folder(item("1"), chosen = chosen))) }
         runCurrent()
-        assertEquals(BookId("chosen"), (first.await() as ThumbResult.Ready).key.book)
+        assertEquals("chosen", shows(first.await()))
         assertEquals(listOf("chosen"), maker.ids)
 
-        maker.script = { if (it.id.value == "gone") Made.Unreadable else Made.Webp(byteArrayOf(1)) }
+        maker.script = { if (it.id.value == "gone") Made.Unreadable else image(it) }
         val second = async { thumbnails.thumbnail(request(folder(item("1"), chosen = book("gone"), id = "other"))) }
         runCurrent()
-        assertEquals(BookId("1"), (second.await() as ThumbResult.Ready).key.book)
+        assertEquals("1", shows(second.await()))
     }
 
     @Test
     fun aFolderSearchesSubFoldersInPlaceInNaturalOrder() = runTest {
         val thumbnails = thumbnails()
-        maker.script = { if (it.id.value == "a/1") Made.Unreadable else Made.Webp(byteArrayOf(1)) }
+        maker.script = { if (it.id.value == "a/1") Made.Unreadable else image(it) }
         val sub = FolderEntry.Directory("a") { listOf(item("1", "a/1"), item("2", "a/2")) }
         val result = async { thumbnails.thumbnail(request(folder(item("b"), sub))) }
         runCurrent()
-        assertEquals(BookId("a/2"), (result.await() as ThumbResult.Ready).key.book)
+        assertEquals("a/2", shows(result.await()))
         assertEquals(listOf("a/1", "a/2"), maker.ids)
     }
 
@@ -520,19 +537,46 @@ class ThumbnailsTest {
     }
 
     @Test
-    fun cachedStopsAtTheFirstItemOfAFolderWithoutAThumbnail() = runTest {
+    fun cachedNeverListsAFolder() = runTest {
         val thumbnails = thumbnails()
-        val subject = folder(item("1"), item("2"))
+        var listed = 0
+        val subject = folder(item("1"), item("2"), onList = { listed++ })
         val miss = async { thumbnails.cached(request(subject)) }
         runCurrent()
         assertNull(miss.await())
-        assertTrue(maker.calls.isEmpty())
+        assertEquals("pass 1 listed the folder", 0, listed)
         launch { thumbnails.thumbnail(request(subject)) }
         runCurrent()
+        assertEquals(1, listed)
         val hit = async { thumbnails.cached(request(subject)) }
         runCurrent()
-        assertEquals(BookId("1"), (hit.await() as ThumbResult.Ready).key.book)
+        assertEquals("1", shows(hit.await()))
+        assertEquals("pass 1 listed the folder", 1, listed)
         assertEquals(1, maker.calls.size)
+    }
+
+    @Test
+    fun aFolderCoverIsFoundWithoutListingAfterARestart() = runTest {
+        var listed = 0
+        val subject = folder(item("1"), onList = { listed++ })
+        launch { thumbnails().thumbnail(request(subject)) }
+        runCurrent()
+        val hit = async { thumbnails().cached(request(subject)) }
+        runCurrent()
+        assertEquals("1", shows(hit.await()))
+        assertEquals(1, listed)
+    }
+
+    @Test
+    fun aFolderCoverStaysWhenTheImageItCameFromIsEvicted() = runTest {
+        val thumbnails = thumbnails()
+        val subject = folder(item("1"))
+        launch { thumbnails.thumbnail(request(subject)) }
+        runCurrent()
+        store.files.keys.removeAll { it.book == BookId("1") }
+        val hit = async { thumbnails.cached(request(subject)) }
+        runCurrent()
+        assertEquals("1", shows(hit.await()))
     }
 
     @Test
@@ -542,10 +586,27 @@ class ThumbnailsTest {
         maker.script = { Made.Unreadable }
         launch { thumbnails.thumbnail(request(subject)) }
         runCurrent()
-        maker.script = { Made.Webp(byteArrayOf(1)) }
+        maker.script = ::image
         val result = async { thumbnails.regenerate(request(subject)) }
         runCurrent()
-        assertEquals(BookId("1"), (result.await() as ThumbResult.Ready).key.book)
+        assertEquals("1", shows(result.await()))
+    }
+
+    @Test
+    fun regeneratingAFolderSearchesItAgain() = runTest {
+        val thumbnails = thumbnails()
+        var first = true
+        val subject = ThumbSubject.Folder(BookId("folder"), Instant.ofEpochMilli(500)) {
+            listOf(if (first) item("old") else item("new")).also { first = false }
+        }
+        launch { thumbnails.thumbnail(request(subject)) }
+        runCurrent()
+        val result = async { thumbnails.regenerate(request(subject)) }
+        runCurrent()
+        assertEquals("new", shows(result.await()))
+        val hit = async { thumbnails.cached(request(subject)) }
+        runCurrent()
+        assertEquals("new", shows(hit.await()))
     }
 
     @Test
@@ -564,14 +625,48 @@ class ThumbnailsTest {
     }
 
     @Test
-    fun observeHoldsTheImageAFolderShows() = runTest {
+    fun observeHoldsWhatAFolderShowsAndReleasesItWhenCancelled() = runTest {
         val thumbnails = thumbnails()
-        val job = launch { thumbnails.observe(request(folder(item("1")))).collect { } }
+        val seen = ArrayList<ThumbResult>()
+        val job = launch { thumbnails.observe(request(folder(item("1")))).collect { seen += it } }
         runCurrent()
-        assertEquals(listOf(BookId("1")), store.held.map { it.book })
+        assertEquals("1", shows(seen.single()))
+        store.evictUnheld()
+        assertTrue(store.get((seen.single() as ThumbResult.Ready).key) is StoredThumb.Hit)
         job.cancel()
         runCurrent()
-        assertEquals(store.held, store.released)
+        assertTrue(store.holding.isEmpty())
+    }
+
+    @Test
+    fun aFolderShowingAnotherImageThanItFoundFirstKeepsItHeld() = runTest {
+        val thumbnails = thumbnails()
+        launch { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        store.onHold = { key -> if (key.book == BookId("a")) store.files.remove(key) }
+        maker.script = { if (it.id.value == "a") Made.Unavailable else image(it) }
+        val seen = ArrayList<ThumbResult>()
+        val job = launch { thumbnails.observe(request(folder(item("a"), item("b")))).collect { seen += it } }
+        runCurrent()
+        val shown = seen.single() as ThumbResult.Ready
+        store.evictUnheld()
+        assertTrue("the shown thumbnail was evicted", store.get(shown.key) is StoredThumb.Hit)
+        job.cancel()
+    }
+
+    @Test
+    fun aStoreThatFailsWhileAFolderIsShownIsAnUnavailableThumbnailNotACrash() = runTest {
+        val failing = object : ThumbnailStore by store {
+            override suspend fun get(key: ThumbnailKey): StoredThumb =
+                if (key in store.holding) throw IOException("disk") else store.get(key)
+        }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val thumbnails = Thumbnails(failing, maker, CoroutineScope(SupervisorJob() + dispatcher), dispatcher, now = { clock })
+        val seen = ArrayList<ThumbResult>()
+        val job = launch { thumbnails.observe(request(folder(item("1")))).collect { seen += it } }
+        runCurrent()
+        assertEquals(listOf<ThumbResult>(ThumbResult.Unavailable), seen)
+        job.cancel()
     }
 
     @Test

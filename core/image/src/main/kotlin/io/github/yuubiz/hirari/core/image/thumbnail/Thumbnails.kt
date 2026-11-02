@@ -13,7 +13,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
-import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -45,7 +44,7 @@ class Thumbnails internal constructor(
 
     /**
      * Pass 1: the thumbnail for [request] if the store has it or knows it failed, and `null` if it has to be made.
-     * For a folder, `null` as soon as the search for its cover reaches an image without a thumbnail.
+     * It does not list a folder: a folder has a thumbnail once pass 2 has searched it.
      */
     suspend fun cached(request: ThumbRequest): ThumbResult? = resolve(request, Mode.CacheOnly)
 
@@ -69,19 +68,13 @@ class Thumbnails internal constructor(
      * at once.
      */
     fun observe(request: ThumbRequest): Flow<ThumbResult> = flow {
-        val holds = ArrayList<Closeable>(1)
-        try {
-            val book = request.subject as? ThumbSubject.Book
-            if (book != null) holds += store.hold(keyOf(book, request))
-            var result = cached(request) ?: thumbnail(request)
-            if (book == null && result is ThumbResult.Ready) {
-                holds += store.hold(result.key)
-                if (store.get(result.key) !is StoredThumb.Hit) result = thumbnail(request)
-            }
-            emit(result)
+        val key = when (val subject = request.subject) {
+            is ThumbSubject.Book -> keyOf(subject, request)
+            is ThumbSubject.Folder -> keyOf(subject, request)
+        }
+        store.hold(key).use {
+            emit(cached(request) ?: thumbnail(request))
             awaitCancellation()
-        } finally {
-            holds.forEach(Closeable::close)
         }
     }
 
@@ -104,6 +97,9 @@ class Thumbnails internal constructor(
 
     private fun keyOf(book: ThumbSubject.Book, request: ThumbRequest) =
         ThumbnailKey(book.id, book.modified, book.byteSize, book.coverEntry, request.sizePx, request.direction)
+
+    private fun keyOf(folder: ThumbSubject.Folder, request: ThumbRequest) =
+        ThumbnailKey(folder.id, folder.modified, byteSize = 0, FOLDER_COVER, request.sizePx, request.direction)
 
     private suspend fun book(book: ThumbSubject.Book, request: ThumbRequest, mode: Mode, urgency: Urgency): ThumbResult? {
         val key = keyOf(book, request)
@@ -167,35 +163,40 @@ class Thumbnails internal constructor(
     /** A search for the cover of a folder, and what it has seen so far. Its books are made with the [urgency] of the folder. */
     private class Search(val request: ThumbRequest, val mode: Mode, val urgency: Urgency) {
         var found: ThumbResult.Ready? = null
-        var missed = false
         var unavailable = false
         var exhausted = false
         var books = 0
         var listings = 0
 
-        val done: Boolean get() = found != null || missed || exhausted
+        val done: Boolean get() = found != null || exhausted
     }
 
+    /** A folder is stored like a book, under a key of its own, so finding it never lists the folder. */
     private suspend fun folder(folder: ThumbSubject.Folder, request: ThumbRequest, mode: Mode): ThumbResult? {
-        val key = ThumbnailKey(folder.id, folder.modified, byteSize = 0, FOLDER_COVER, request.sizePx, request.direction)
-        if (mode == Mode.Remake) store.remove(key) else if (store.get(key) == StoredThumb.Failed) return ThumbResult.Failed
-        val urgency = Urgency(request.priority)
-        if (mode == Mode.CacheOnly) return withContext(io) { search(folder, key, Search(request, mode, urgency)) }
-        return flights.join(key, urgency) { checkNotNull(search(folder, key, Search(request, mode, it))) }
+        val key = keyOf(folder, request)
+        if (mode == Mode.Remake) store.remove(key)
+        stored(key)?.let { return it }
+        if (mode == Mode.CacheOnly) return null
+        return flights.join(key, Urgency(request.priority)) { search(folder, key, Search(request, mode, it)) }
     }
 
     /**
      * Visits the chosen image and then the items in natural order, sub-folders in place, until one gives a
-     * thumbnail. A folder none of them gives one for is recorded as failed when every attempt was final.
+     * thumbnail, and stores a copy of it under the folder's [key]. A folder none of them gives one for is recorded
+     * as failed when every attempt was final.
      */
-    private suspend fun search(folder: ThumbSubject.Folder, key: ThumbnailKey, search: Search): ThumbResult? {
+    private suspend fun search(folder: ThumbSubject.Folder, key: ThumbnailKey, search: Search): ThumbResult {
+        // Another flight for the key may have stored it since [folder] looked.
+        stored(key)?.let { return it }
         folder.chosen?.let { visit(it, search) }
         if (!search.done) {
             val entries = listing(search, FolderEntry.Directory(folder.id.value, folder.children))
             if (entries != null) walk(entries, depth = 0, search)
         }
-        search.found?.let { return it }
-        if (search.missed) return null
+        search.found?.let { found ->
+            val bytes = store.hold(found.key).use { withContext(io) { found.file.readBytes() } }
+            return ThumbResult.Ready(store.put(key, bytes), key)
+        }
         if (search.unavailable) return ThumbResult.Unavailable
         store.markFailed(key)
         return ThumbResult.Failed
@@ -221,8 +222,7 @@ class Thumbnails internal constructor(
             return
         }
         search.books++
-        when (val result = book(book, search.request, search.mode, search.urgency)) {
-            null -> search.missed = true
+        when (val result = checkNotNull(book(book, search.request, search.mode, search.urgency))) {
             is ThumbResult.Ready -> search.found = result
             ThumbResult.Failed -> Unit
             ThumbResult.Unavailable -> search.unavailable = true

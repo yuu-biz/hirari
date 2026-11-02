@@ -85,9 +85,12 @@ sealed interface ThumbSubject {
 
     /**
      * A folder of the file list. Its thumbnail is the first thumbnail that can be made from [chosen], then from
-     * the items inside in natural order of their names, descending into sub-folders in place (section 4.4).
+     * the items inside in natural order of their names, descending into sub-folders in place (section 4.4). The
+     * store keeps a copy of it under the folder's own key, which has [id] and [modified] but not what is inside,
+     * so the folder shows the same cover until [modified] changes or [Thumbnails.regenerate] searches it again.
      *
-     * @property chosen the image or page the user chose as the cover of this folder, if any.
+     * @property chosen the image or page the user chose as the cover of this folder, if any. Regenerate the folder
+     * when it changes.
      * @property children lists the folder; it is called on `Dispatchers.IO` and may throw, which counts as the
      * folder being unavailable for now. List only what a thumbnail can be made from: archives, PDFs and images.
      */
@@ -123,7 +126,7 @@ class ThumbRequest(
 
 /** The outcome of a request. Cancelling it is not an outcome: the call throws `CancellationException`. */
 sealed interface ThumbResult {
-    /** [key] names the thumbnail in the store; for a folder it is the key of the image the folder shows. */
+    /** [key] names the thumbnail in the store; for a folder it is the folder's own key, under which its cover is kept. */
     data class Ready(val file: File, val key: ThumbnailKey) : ThumbResult
 
     /** The book cannot give a thumbnail: encrypted, broken, or without an image. It is recorded and not tried again. */
