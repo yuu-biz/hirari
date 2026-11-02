@@ -41,6 +41,10 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.junit)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    // ui-test brings Espresso 3.5.0, which calls an InputManager method that API 37 no longer has.
+    androidTestImplementation(libs.androidx.test.espresso.core)
 }
 
 // The device test reads a corpus book from its assets, as :core:image does. A task dependency keeps :tools:corpus
