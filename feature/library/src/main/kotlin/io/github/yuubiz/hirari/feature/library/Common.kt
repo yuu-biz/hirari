@@ -150,4 +150,5 @@ fun Notice.message(): Int = when (this) {
     Notice.SmbBookNotReady -> R.string.notice_smb_book_not_ready
     Notice.ShortcutMissing -> R.string.notice_shortcut_missing
     Notice.ShortcutUnsupported -> R.string.notice_shortcut_unsupported
+    Notice.IncomingUnreadable -> R.string.notice_incoming_unreadable
 }

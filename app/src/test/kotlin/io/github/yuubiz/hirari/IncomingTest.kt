@@ -10,7 +10,7 @@ class IncomingTest {
     @Test
     fun aViewOrASendOfAContentUriOpensThatDocument() {
         assertEquals(IncomingRoute(cbz), incoming("android.intent.action.VIEW", cbz, null, null, null, false)?.toRoute())
-        assertEquals(IncomingRoute(cbz), incoming("android.intent.action.SEND", null, cbz, null, null, false)?.toRoute())
+        assertEquals(IncomingRoute(cbz), incoming("android.intent.action.SEND", null, Stream.Uri(cbz), null, null, false)?.toRoute())
     }
 
     @Test
@@ -18,6 +18,12 @@ class IncomingTest {
         assertNull(incoming("android.intent.action.MAIN", null, null, null, null, false))
         assertNull(incoming("android.intent.action.VIEW", "file:///sdcard/vol1.cbz", null, null, null, false))
         assertNull(incoming("android.intent.action.SEND", null, null, null, null, false))
+    }
+
+    @Test
+    fun aSendWhoseStreamIsNoUriOpensHomeWithANotice() {
+        assertEquals(Incoming.Unreadable, incoming("android.intent.action.SEND", null, Stream.NotAUri, null, null, false))
+        assertEquals(HomeRoute, Incoming.Unreadable.toRoute())
     }
 
     @Test

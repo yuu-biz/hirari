@@ -11,6 +11,16 @@ internal sealed interface Incoming {
 
     /** A folder or book of a place, from a shortcut the app made. */
     data class Shortcut(val location: Long, val path: String, val folder: Boolean) : Incoming
+
+    /** An intent whose extras do not read, or a send whose stream is no URI. Home opens and says so. */
+    data object Unreadable : Incoming
+}
+
+/** What `EXTRA_STREAM` of `ACTION_SEND` holds: a URI, or another object an app put there. */
+internal sealed interface Stream {
+    data class Uri(val value: String) : Stream
+
+    data object NotAUri : Stream
 }
 
 /** The action of the intents of the app's shortcuts. */
@@ -20,18 +30,22 @@ internal const val EXTRA_PATH = "io.github.yuubiz.hirari.extra.PATH"
 internal const val EXTRA_FOLDER = "io.github.yuubiz.hirari.extra.FOLDER"
 
 private const val ACTION_VIEW = "android.intent.action.VIEW"
-private const val ACTION_SEND = "android.intent.action.SEND"
+internal const val ACTION_SEND = "android.intent.action.SEND"
 
 /**
  * What an intent asks for, from its parts: [data] of `ACTION_VIEW`, [stream] (`EXTRA_STREAM`) of `ACTION_SEND`, and
  * the extras of [ACTION_OPEN_PLACE]. Only `content:` URIs are read, since the app holds no storage permission.
  * Anything else, a launcher start among them, asks for nothing.
  */
-internal fun incoming(action: String?, data: String?, stream: String?, location: Long?, path: String?, folder: Boolean): Incoming? {
+internal fun incoming(action: String?, data: String?, stream: Stream?, location: Long?, path: String?, folder: Boolean): Incoming? {
     fun content(uri: String?) = uri?.takeIf { it.startsWith("content:", ignoreCase = true) }?.let(Incoming::Document)
     return when (action) {
         ACTION_VIEW -> content(data)
-        ACTION_SEND -> content(stream)
+        ACTION_SEND -> when (stream) {
+            null -> null
+            is Stream.Uri -> content(stream.value)
+            Stream.NotAUri -> Incoming.Unreadable
+        }
         ACTION_OPEN_PLACE -> if (location != null && path != null) Incoming.Shortcut(location, path, folder) else null
         else -> null
     }
@@ -75,4 +89,5 @@ internal data class ShortcutRoute(val location: Long, val path: String, val fold
 internal fun Incoming.toRoute(): Any = when (this) {
     is Incoming.Document -> IncomingRoute(uri)
     is Incoming.Shortcut -> ShortcutRoute(location, path, folder)
+    Incoming.Unreadable -> HomeRoute
 }

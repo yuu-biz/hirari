@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Parcelable
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -79,7 +80,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = application as HirariApp
-        val debugStart = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: intent.incoming()?.toRoute()
+        val incoming = intent.incoming()
+        val debugStart = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: incoming?.toRoute()
         val kind = startKind(savedState = savedInstanceState != null, startInProcess = app.start != null)
         when {
             debugStart != null -> app.start = null
@@ -93,7 +95,9 @@ class MainActivity : ComponentActivity() {
             HirariTheme {
                 val nav = rememberNavController()
                 val scope = rememberCoroutineScope()
-                var homeNotice by remember { mutableStateOf<Notice?>(null) }
+                var homeNotice by remember {
+                    mutableStateOf(Notice.IncomingUnreadable.takeIf { incoming == Incoming.Unreadable && savedInstanceState == null })
+                }
                 fun open(uri: Uri?, folder: Boolean) {
                     if (uri == null) return
                     scope.launch {
@@ -219,23 +223,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** What the intent that started the activity hands over (docs/spec.md section 4.11). */
-    private fun Intent.incoming(): Incoming? = incoming(
-        action = action,
-        data = dataString,
-        stream = streamUri()?.toString(),
-        location = if (hasExtra(EXTRA_LOCATION)) getLongExtra(EXTRA_LOCATION, 0) else null,
-        path = getStringExtra(EXTRA_PATH),
-        folder = getBooleanExtra(EXTRA_FOLDER, false),
-    )
+    /**
+     * What the intent that started the activity hands over (docs/spec.md section 4.11). The activity is exported, so
+     * any app fills the extras. Extras that do not unparcel, as a class only the sender has, make the intent
+     * unreadable, and they are dropped so that nothing after this reads them.
+     */
+    private fun Intent.incoming(): Incoming? = try {
+        incoming(
+            action = action,
+            data = dataString,
+            stream = if (action == ACTION_SEND) stream() else null,
+            location = if (hasExtra(EXTRA_LOCATION)) getLongExtra(EXTRA_LOCATION, 0) else null,
+            path = getStringExtra(EXTRA_PATH),
+            folder = getBooleanExtra(EXTRA_FOLDER, false),
+        )
+    } catch (_: RuntimeException) {
+        replaceExtras(null as Bundle?)
+        Incoming.Unreadable
+    }
 
-    private fun Intent.streamUri(): Uri? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    /** Read as any `Parcelable` and checked here, since the sender decides what the extra holds. */
+    private fun Intent.stream(): Stream? {
+        val extra: Parcelable? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(Intent.EXTRA_STREAM, Parcelable::class.java)
         } else {
             @Suppress("DEPRECATION")
             getParcelableExtra(Intent.EXTRA_STREAM)
         }
+        return when (extra) {
+            null -> null
+            is Uri -> Stream.Uri(extra.toString())
+            else -> Stream.NotAUri
+        }
+    }
 
     /**
      * Before Compose focus handling, which would take the D-pad keys first. Lint flags androidx's own override of

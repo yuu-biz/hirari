@@ -111,6 +111,7 @@
     <string name="sheet_shortcut">ホーム画面にショートカットを作成</string>
     <string name="notice_shortcut_missing">ショートカットの場所かファイルが見つかりません</string>
     <string name="notice_shortcut_unsupported">ホーム画面がショートカットの追加に対応していません</string>
+    <string name="notice_incoming_unreadable">渡されたものを開けません</string>
     <string name="ok">OK</string>
     <string name="cancel">キャンセル</string>
 </resources>

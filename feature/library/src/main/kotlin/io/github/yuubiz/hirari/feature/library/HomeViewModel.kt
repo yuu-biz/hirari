@@ -56,7 +56,7 @@ data class HistoryTab(val sort: HistorySort, val items: List<HistoryItem>)
 data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 
 /** A one-time message for a snackbar. */
-enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, SmbBookNotReady, ShortcutMissing, ShortcutUnsupported }
+enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, SmbBookNotReady, ShortcutMissing, ShortcutUnsupported, IncomingUnreadable }
 
 data class HomeUi(
     val shelf: Loadable<Shelf> = Loadable.Loading,
