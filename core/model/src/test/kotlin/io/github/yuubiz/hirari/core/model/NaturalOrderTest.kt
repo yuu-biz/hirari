@@ -61,13 +61,13 @@ class NaturalOrderTest {
 
     @Test
     fun pageTiesWithEqualBytesFallBackToTheStoredOrder() {
-        fun entry(stored: Int) = PageEntry(0, stored, byteArrayOf(0x41), "same", 0, 0, null)
+        fun entry(stored: Int) = PageEntry(index = 0, entryIndex = stored, rawName = byteArrayOf(0x41), name = "same", declaredSize = 0, sniffed = null)
         assertEquals(listOf(1, 3), listOf(entry(3), entry(1)).sortedWith(NaturalPageOrder).map { it.entryIndex })
     }
 
     @Test
     fun pageTiesFallBackToRawBytes() {
-        fun entry(raw: Int) = PageEntry(0, 0, byteArrayOf(raw.toByte()), "same", 0, 0, null)
+        fun entry(raw: Int) = PageEntry(index = 0, entryIndex = 0, rawName = byteArrayOf(raw.toByte()), name = "same", declaredSize = 0, sniffed = null)
         val sorted = listOf(entry(0xE3), entry(0x41)).sortedWith(NaturalPageOrder)
         assertEquals(listOf(0x41, 0xE3), sorted.map { it.rawName[0].toInt() and 0xFF })
     }

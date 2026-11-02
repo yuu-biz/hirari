@@ -10,9 +10,8 @@ data class PageEntry(
     /** The name before charset detection. */
     val rawName: ByteArray,
     val name: String,
-    val packedSize: Long,
-    /** Only for the size limit check. The archive may lie. */
-    val declaredSize: Long,
+    /** The size the container declares, or null when it declares none. Only for the size limit. It may lie. */
+    val declaredSize: Long?,
     /** `null` until the first bytes are read. */
     val sniffed: ImageType?,
 ) {
@@ -22,7 +21,6 @@ data class PageEntry(
             entryIndex == other.entryIndex &&
             rawName.contentEquals(other.rawName) &&
             name == other.name &&
-            packedSize == other.packedSize &&
             declaredSize == other.declaredSize &&
             sniffed == other.sniffed
 
@@ -31,8 +29,7 @@ data class PageEntry(
         result = 31 * result + entryIndex
         result = 31 * result + rawName.contentHashCode()
         result = 31 * result + name.hashCode()
-        result = 31 * result + packedSize.hashCode()
-        result = 31 * result + declaredSize.hashCode()
+        result = 31 * result + (declaredSize?.hashCode() ?: 0)
         result = 31 * result + (sniffed?.hashCode() ?: 0)
         return result
     }

@@ -141,8 +141,7 @@ data class PageEntry(
 	val entryIndex: Int, // 書庫内の格納順
 	val rawName: ByteArray, // 文字コード判定前のバイト列
 	val name: String, // 判定後の名前。文字コードを変えると rawName から作り直す
-	val packedSize: Long,
-	val declaredSize: Long, // 書庫が宣言する展開後の大きさ。上限の判定にだけ使い、信用しない
+	val declaredSize: Long?, // 書庫が宣言する展開後の大きさ。宣言がなければ null。上限の判定にだけ使い、信用しない
 	val sniffed: ImageType?, // 先頭バイトを読むまで null
 )
 
@@ -156,6 +155,7 @@ sealed interface PageShape {
 
 - 横長の基準は「幅が高さより大きい」である。単ページの縦横比を r とすると見開きは 2r になり、両者の対数上の中間は r√2 である。漫画の r は 0.7 前後なので中間は 1.0 前後になり、幅と高さの比較がそのまま基準になる。
 - 正方形に近いページ（比が 0.95〜1.05）の扱いは実データで確かめる (要検証)。
+- 圧縮後の大きさは持たない。libarchive のエントリの API が返さないためである。
 
 ### 2.4 ページの読み込み結果
 
