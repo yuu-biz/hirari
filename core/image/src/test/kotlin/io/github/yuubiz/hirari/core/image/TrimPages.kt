@@ -1,0 +1,78 @@
+package io.github.yuubiz.hirari.core.image
+
+import kotlin.random.Random
+
+internal const val PAPER = 240
+internal const val INK = 20
+
+/** A page drawn at the analysis size. Content drawn with [frame] covers exactly the rectangle it is given. */
+internal class TestPage(val width: Int, val height: Int, paper: Int = PAPER) {
+    private val pixels = ByteArray(width * height) { paper.toByte() }
+
+    operator fun set(x: Int, y: Int, value: Int) {
+        pixels[y * width + x] = value.coerceIn(0, 255).toByte()
+    }
+
+    operator fun get(x: Int, y: Int): Int = pixels[y * width + x].toInt() and 0xFF
+
+    fun fill(rect: PixelRect, value: Int) {
+        for (y in rect.top until rect.bottom) for (x in rect.left until rect.right) this[x, y] = value
+    }
+
+    /** Panels with an [ink] border filling [rect]: screentone above, text marks in the middle, a wash below. */
+    fun frame(rect: PixelRect, ink: Int = INK, paper: Int = PAPER) {
+        border(rect, ink)
+        if (rect.height < 40) return
+        val third = rect.height / 3
+        val panels = listOf(
+            PixelRect(rect.left + 6, rect.top + 6, rect.right - 6, rect.top + third - 3),
+            PixelRect(rect.left + 6, rect.top + third + 3, rect.right - 6, rect.top + 2 * third - 3),
+            PixelRect(rect.left + 6, rect.top + 2 * third + 3, rect.right - 6, rect.bottom - 6),
+        )
+        panels.forEach { border(it, ink) }
+        tone(panels[0].inset(3), ink)
+        for (x in panels[1].left + 8 until panels[1].right - 8 step 12) {
+            for (y in panels[1].top + 6 until panels[1].bottom - 6 step 9) fill(PixelRect(x, y, x + 6, y + 6), ink)
+        }
+        val wash = panels[2].inset(3)
+        for (y in wash.top until wash.bottom) for (x in wash.left until wash.right) {
+            this[x, y] = paper + (ink - paper) * (x - wash.left) / wash.width.coerceAtLeast(1)
+        }
+    }
+
+    fun border(rect: PixelRect, ink: Int = INK) {
+        fill(PixelRect(rect.left, rect.top, rect.right, rect.top + 2), ink)
+        fill(PixelRect(rect.left, rect.bottom - 2, rect.right, rect.bottom), ink)
+        fill(PixelRect(rect.left, rect.top, rect.left + 2, rect.bottom), ink)
+        fill(PixelRect(rect.right - 2, rect.top, rect.right, rect.bottom), ink)
+    }
+
+    /** Dots of 2 x 2 every 4 pixels, a quarter of [rect]. */
+    fun tone(rect: PixelRect, ink: Int = INK) {
+        for (y in rect.top until rect.bottom) for (x in rect.left until rect.right) {
+            if (x % 4 < 2 && y % 4 < 2) this[x, y] = ink
+        }
+    }
+
+    /** Uniform grain of up to [amplitude] levels on every pixel. */
+    fun grain(amplitude: Int, seed: Long) {
+        val random = Random(seed)
+        for (y in 0 until height) for (x in 0 until width) this[x, y] = this[x, y] + random.nextInt(-amplitude, amplitude + 1)
+    }
+
+    fun luma(): LumaImage = LumaImage(width, height, pixels.copyOf())
+
+    private fun PixelRect.inset(by: Int) = PixelRect(left + by, top + by, right - by, bottom - by)
+}
+
+/** A portrait page of [content] at the analysis size of a 1448 x 2048 page. */
+internal fun portrait(content: PixelRect, paper: Int = PAPER, ink: Int = INK, draw: TestPage.() -> Unit = {}): TestPage =
+    TestPage(362, 512, paper).apply {
+        frame(content, ink, paper)
+        draw()
+    }
+
+internal val PORTRAIT_PAGE = PixelSize(1448, 2048)
+
+/** Content with margins of 30, 40, 28 and 44 lines at the analysis size. */
+internal val ORDINARY = PixelRect(30, 40, 334, 468)
