@@ -33,35 +33,54 @@ fun searchText(document: TextDocument, query: String): SearchResult {
     val hits = ArrayList<SearchHit>()
     for (paragraph in document.blocks) {
         if (paragraph !is Paragraph || paragraph.text.isEmpty()) continue
-        val (folded, origin) = folded(paragraph.text)
-        var at = folded.indexOf(needle)
+        val folded = Folded(paragraph.text)
+        var at = folded.text.indexOf(needle)
         while (at >= 0) {
             if (hits.size == SEARCH_MAX_HITS) return SearchResult(query, hits, truncated = true)
-            val last = origin[at + needle.length - 1]
-            hits += hit(paragraph, origin[at], last + Character.charCount(paragraph.text.codePointAt(last)))
-            at = folded.indexOf(needle, at + needle.length)
+            hits += hit(paragraph, folded.starts[at], folded.ends[at + needle.length - 1])
+            at = folded.text.indexOf(needle, at + needle.length)
         }
     }
     return SearchResult(query, hits, truncated = false)
 }
 
-/** [text] folded one code point at a time, and the index in [text] of the code point each folded char came from. */
-private fun folded(text: String): Pair<String, IntArray> {
-    val out = StringBuilder(text.length)
-    var origin = IntArray(text.length + 16)
-    var i = 0
-    while (i < text.length) {
-        val cp = text.codePointAt(i)
-        val width = Character.charCount(cp)
-        val piece = if (cp == OBJECT_REPLACEMENT.code) "\u0000" else fold(text.substring(i, i + width))
-        if (out.length + piece.length > origin.size) origin = origin.copyOf(origin.size * 2 + piece.length)
-        for (c in piece) {
-            origin[out.length] = i
-            out.append(c)
+/** Whether [cp] may combine with the code point before it under NFKC, as a combining mark or a half-width voiced mark does. */
+private fun joinsPrevious(cp: Int): Boolean = when (Character.getType(cp)) {
+    Character.NON_SPACING_MARK.toInt(), Character.COMBINING_SPACING_MARK.toInt(), Character.ENCLOSING_MARK.toInt() -> true
+    else -> cp == 0xFF9E || cp == 0xFF9F
+}
+
+/**
+ * [source] folded a cluster at a time: a code point with the marks that may combine with it, so `ｶﾞ` folds to `ガ`
+ * as the query does. Each folded char maps back to the [starts] and [ends] of its cluster in [source].
+ */
+private class Folded(source: String) {
+    val text: String
+    var starts = IntArray(source.length + 16)
+        private set
+    var ends = IntArray(source.length + 16)
+        private set
+
+    init {
+        val out = StringBuilder(source.length)
+        var i = 0
+        while (i < source.length) {
+            var end = i + Character.charCount(source.codePointAt(i))
+            while (end < source.length && joinsPrevious(source.codePointAt(end))) end += Character.charCount(source.codePointAt(end))
+            val piece = if (source[i] == OBJECT_REPLACEMENT) "\u0000" else fold(source.substring(i, end))
+            if (out.length + piece.length > starts.size) {
+                starts = starts.copyOf(starts.size * 2 + piece.length)
+                ends = ends.copyOf(starts.size)
+            }
+            for (c in piece) {
+                starts[out.length] = i
+                ends[out.length] = end
+                out.append(c)
+            }
+            i = end
         }
-        i += width
+        text = out.toString()
     }
-    return out.toString() to origin
 }
 
 private fun hit(paragraph: Paragraph, from: Int, to: Int): SearchHit {
