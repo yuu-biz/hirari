@@ -252,32 +252,42 @@ private fun SizePanel(settings: GlobalSettings, viewModel: TextReaderViewModel) 
     val imported by produceState(emptyList<String>(), refresh) { value = viewModel.importedFonts() }
     val store by produceState<FontStore?>(null) { value = viewModel.fonts() }
     val choices = listOf(TextTypeface.Mincho, TextTypeface.Gothic) + imported.map { TextTypeface.Imported(it) }
-    choices.forEach { typeface ->
-        Row(
-            Modifier.fillMaxWidth().clickable { viewModel.updateSettings { it.copy(textTypeface = typeface) } }.padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RadioButton(selected = settings.textTypeface == typeface, onClick = null)
-            Text(
-                when (typeface) {
-                    TextTypeface.Mincho -> stringResource(R.string.text_typeface_mincho)
-                    TextTypeface.Gothic -> stringResource(R.string.text_typeface_gothic)
-                    is TextTypeface.Imported -> typeface.fileName
-                },
-                Modifier.padding(12.dp),
-            )
+    // Out of the list, so the picker's result still lands while its button is scrolled away.
+    val pick = store?.let { rememberFontPick(it, viewModel) { refresh++ } }
+    // The list takes what the sheet leaves under the slider and scrolls, so many imported fonts keep the import in reach.
+    LazyColumn {
+        items(choices) { typeface ->
+            Row(
+                Modifier.fillMaxWidth().clickable { viewModel.updateSettings { it.copy(textTypeface = typeface) } }.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = settings.textTypeface == typeface, onClick = null)
+                Text(
+                    when (typeface) {
+                        TextTypeface.Mincho -> stringResource(R.string.text_typeface_mincho)
+                        TextTypeface.Gothic -> stringResource(R.string.text_typeface_gothic)
+                        is TextTypeface.Imported -> typeface.fileName
+                    },
+                    Modifier.padding(12.dp),
+                )
+            }
+        }
+        pick?.let {
+            item {
+                TextButton(onClick = it, modifier = Modifier.padding(horizontal = 16.dp)) { Text(stringResource(R.string.text_typeface_import)) }
+            }
         }
     }
-    store?.let { FontImportButton(it, viewModel) { refresh++ } }
 }
 
+/** Starts the import of a font into [store], which then selects the font it imported. */
 @Composable
-private fun FontImportButton(store: FontStore, viewModel: TextReaderViewModel, onImported: () -> Unit) {
+private fun rememberFontPick(store: FontStore, viewModel: TextReaderViewModel, onImported: () -> Unit): () -> Unit {
     val context = LocalContext.current
     val notAFont = stringResource(R.string.text_font_not_a_font)
     val noRoom = stringResource(R.string.text_font_no_room)
     val unreadable = stringResource(R.string.text_font_unreadable)
-    val pick = rememberFontImport(store) { result ->
+    return rememberFontImport(store) { result ->
         when (result) {
             is FontImport.Imported -> {
                 viewModel.updateSettings { it.copy(textTypeface = TextTypeface.Imported(result.fileName)) }
@@ -288,7 +298,6 @@ private fun FontImportButton(store: FontStore, viewModel: TextReaderViewModel, o
             FontImport.Unreadable -> Toast.makeText(context, unreadable, Toast.LENGTH_SHORT).show()
         }
     }
-    TextButton(onClick = pick, modifier = Modifier.padding(horizontal = 16.dp)) { Text(stringResource(R.string.text_typeface_import)) }
 }
 
 /** The page panel of a text: a slider through the book, right to left, and the two ends. */
