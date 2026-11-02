@@ -10,7 +10,12 @@
     <string name="shelf_pinned">ピン留めしたフォルダ</string>
     <string name="shelf_places">場所</string>
     <string name="shelf_no_places">場所がまだありません</string>
-    <string name="place_permission_lost">許可がありません。長押しでフォルダを選び直せます</string>
+    <string name="place_permission_lost">許可がありません。押すとフォルダを選び直します</string>
+    <string name="place_add">場所を追加</string>
+    <string name="place_rename">名前の変更</string>
+    <string name="place_remove">削除</string>
+    <string name="place_repick">フォルダを選び直す</string>
+    <string name="place_remove_confirm">「%1$s」を場所から削除しますか。フォルダの中身は消えません。読書位置、しおり、履歴は残ります。</string>
     <string name="book_not_indexed">（索引にない本）</string>
     <string name="open_folder">フォルダを開く</string>
     <string name="history_clear">すべて消す</string>

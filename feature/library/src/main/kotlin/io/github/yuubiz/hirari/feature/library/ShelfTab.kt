@@ -1,6 +1,9 @@
 package io.github.yuubiz.hirari.feature.library
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,20 +17,34 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.model.UriString
 
 @Composable
 internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
+    val pickTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let { home.addTree(UriString(it.toString())) }
+    }
+    var renaming by remember { mutableStateOf<LibraryLocation?>(null) }
+    var removing by remember { mutableStateOf<LibraryLocation?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         if (shelf.continueReading.isNotEmpty()) {
             item(key = "continue-header") { SectionHeader(R.string.shelf_continue) }
@@ -53,8 +70,39 @@ internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
         item(key = "places-header") { SectionHeader(R.string.shelf_places) }
         if (shelf.places.isEmpty()) item(key = "places-empty") { EmptyPlaces() }
         items(shelf.places, key = { "place-${it.id.value}" }) { place ->
-            PlaceRow(place, onOpen = { actions.openFolder(FolderKey(place.id, "")) })
+            PlaceRow(
+                place,
+                onOpen = { actions.openFolder(FolderKey(place.id, "")) },
+                onRepick = { pickTree.launch(null) },
+                onRename = { renaming = place },
+                onRemove = { removing = place },
+            )
         }
+        item(key = "add-place") {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.place_add), color = MaterialTheme.colorScheme.primary) },
+                modifier = Modifier.clickable { pickTree.launch(null) },
+            )
+        }
+    }
+    renaming?.let { place ->
+        RenameDialog(R.string.place_rename, place.displayName, onDismiss = { renaming = null }) {
+            renaming = null
+            home.renamePlace(place.id, it)
+        }
+    }
+    removing?.let { place ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            text = { Text(stringResource(R.string.place_remove_confirm, place.displayName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = null
+                    home.removePlace(place.id)
+                }) { Text(stringResource(R.string.place_remove)) }
+            },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 }
 
@@ -92,17 +140,42 @@ private fun ContinueCard(item: ContinueItem, onOpen: () -> Unit) {
     }
 }
 
-/** A place on the shelf. A SAF place that lost its grant cannot open until its folder is picked again (section 7). */
+/**
+ * A place on the shelf; a long press offers renaming and removing it (docs/spec.md section 4.2). A SAF place
+ * that lost its grant does not open: tapping it picks the folder again (section 7). SMB places wait for M4.
+ */
 @Composable
-internal fun PlaceRow(place: LibraryLocation, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    val usable = place is LibraryLocation.SafTree && place.permissionHeld
+private fun PlaceRow(place: LibraryLocation, onOpen: () -> Unit, onRepick: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
     val detail = when (place) {
         is LibraryLocation.SafTree -> if (place.permissionHeld) null else stringResource(R.string.place_permission_lost)
         is LibraryLocation.SmbShare -> place.address()
     }
-    ListItem(
-        headlineContent = { Text(place.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = detail?.let { { Text(it) } },
-        modifier = modifier.then(if (usable) Modifier.clickable(onClick = onOpen) else Modifier),
-    )
+    val onTap: (() -> Unit)? = when (place) {
+        is LibraryLocation.SafTree -> if (place.permissionHeld) onOpen else onRepick
+        is LibraryLocation.SmbShare -> null
+    }
+    Box {
+        ListItem(
+            headlineContent = { Text(place.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            supportingContent = detail?.let { { Text(it) } },
+            modifier = Modifier.combinedClickable(enabled = true, onClick = { onTap?.invoke() }, onLongClick = { menu = true }),
+        )
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            if (place is LibraryLocation.SafTree && !place.permissionHeld) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.place_repick)) }, onClick = {
+                    menu = false
+                    onRepick()
+                })
+            }
+            DropdownMenuItem(text = { Text(stringResource(R.string.place_rename)) }, onClick = {
+                menu = false
+                onRename()
+            })
+            DropdownMenuItem(text = { Text(stringResource(R.string.place_remove)) }, onClick = {
+                menu = false
+                onRemove()
+            })
+        }
+    }
 }

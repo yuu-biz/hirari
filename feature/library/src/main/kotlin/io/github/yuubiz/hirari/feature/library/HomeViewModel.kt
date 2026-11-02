@@ -16,6 +16,7 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.StartAt
+import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.address
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -96,6 +98,28 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
 
     fun dismissNotice() {
         notice.value = null
+    }
+
+    /**
+     * Registers the picked [tree] as a place with its persisted grant (docs/spec.md section 4.5). Picking a
+     * registered tree again gives that place its grant back instead of adding it twice (section 7).
+     */
+    fun addTree(tree: UriString) = write {
+        if (!grants.take(tree)) {
+            notice.value = Notice.GrantRefused
+            return@write
+        }
+        val known = locations.locations.first().any { it is LibraryLocation.SafTree && it.treeUri == tree }
+        if (known) locations.syncGrants(grants.held()) else locations.addSafTree(grants.name(tree), tree)
+    }
+
+    fun renamePlace(id: LocationId, name: String) = write { locations.rename(id, name.trim()) }
+
+    /** Removes the place and releases its grant; its books keep their progress, bookmarks and history (section 7). */
+    fun removePlace(id: LocationId) = write {
+        val removed = locations.delete(id) as? LibraryLocation.SafTree ?: return@write
+        val shared = locations.locations.first().any { it is LibraryLocation.SafTree && it.treeUri == removed.treeUri }
+        if (!shared) grants.release(removed.treeUri)
     }
 
     fun setHistorySort(sort: HistorySort) = write { settings.update { it.copy(historySort = sort) } }
