@@ -31,4 +31,5 @@ include(
     ":feature:text",
     ":feature:settings",
     ":tools:corpus",
+    ":benchmark",
 )

@@ -29,6 +29,10 @@ gradlePlugin {
             id = "hirari.android.feature"
             implementationClass = "hirari.AndroidFeaturePlugin"
         }
+        register("androidTest") {
+            id = "hirari.android.test"
+            implementationClass = "hirari.AndroidTestPlugin"
+        }
         register("root") {
             id = "hirari.root"
             implementationClass = "hirari.RootPlugin"

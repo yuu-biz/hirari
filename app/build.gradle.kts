@@ -9,6 +9,14 @@ android {
         versionCode = 1
         versionName = "0.0.1"
     }
+    buildTypes {
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            isProfileable = true
+        }
+    }
 }
 
 dependencies {
