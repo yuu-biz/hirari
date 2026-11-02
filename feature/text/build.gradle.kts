@@ -2,6 +2,12 @@ plugins {
     id("hirari.android.feature")
 }
 
+android {
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+}
+
 dependencies {
     implementation(project(":core:text"))
     implementation(project(":core:data"))
@@ -15,4 +21,6 @@ dependencies {
     testImplementation(kotlin("test-junit"))
     testImplementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.junit)
 }
