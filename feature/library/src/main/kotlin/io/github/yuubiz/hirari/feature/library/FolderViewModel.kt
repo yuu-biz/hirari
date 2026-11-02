@@ -187,6 +187,13 @@ class FolderViewModel(
         notice.value = null
     }
 
+    fun show(message: Notice) {
+        notice.value = message
+    }
+
+    /** ホーム画面にショートカットを作成 of the long-press sheet, when [row] has one. */
+    fun shortcut(row: FileRow): PlaceShortcut? = shortcutFor(row, folder.location, place.value)
+
     /**
      * What tapping [row] opens (docs/spec.md section 4.3). An image file opens its folder as one book at that
      * image. A text file opens in the text reader. Moving to another folder clears the filter. The readers do not

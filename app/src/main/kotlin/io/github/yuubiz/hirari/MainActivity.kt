@@ -5,6 +5,7 @@ import androidx.compose.runtime.produceState
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -17,6 +18,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +48,7 @@ import io.github.yuubiz.hirari.feature.library.HomeActions
 import io.github.yuubiz.hirari.feature.library.HomeScreen
 import io.github.yuubiz.hirari.feature.library.HomeViewModel
 import io.github.yuubiz.hirari.feature.library.Loadable
+import io.github.yuubiz.hirari.feature.library.Notice
 import io.github.yuubiz.hirari.feature.library.SmbServerScreen
 import io.github.yuubiz.hirari.feature.library.SmbServerViewModel
 import io.github.yuubiz.hirari.feature.reader.KeyRelay
@@ -76,7 +79,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = application as HirariApp
-        val debugStart = prototypeStartRoute(intent) ?: debugBookRoute(intent)
+        val debugStart = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: intent.incoming()?.toRoute()
         val kind = startKind(savedState = savedInstanceState != null, startInProcess = app.start != null)
         when {
             debugStart != null -> app.start = null
@@ -90,6 +93,7 @@ class MainActivity : ComponentActivity() {
             HirariTheme {
                 val nav = rememberNavController()
                 val scope = rememberCoroutineScope()
+                var homeNotice by remember { mutableStateOf<Notice?>(null) }
                 fun open(uri: Uri?, folder: Boolean) {
                     if (uri == null) return
                     scope.launch {
@@ -103,6 +107,10 @@ class MainActivity : ComponentActivity() {
                 NavHost(nav, startDestination = debugStart ?: HomeRoute) {
                     composable<HomeRoute> { entry ->
                         val home = viewModel { HomeViewModel(app.library) }
+                        LaunchedEffect(homeNotice) {
+                            homeNotice?.let(home::show)
+                            homeNotice = null
+                        }
                         ReportSettled(nav, entry, app) { home.state.first { it.shelf is Loadable.Ready } }
                         HomeScreen(
                             home,
@@ -134,12 +142,19 @@ class MainActivity : ComponentActivity() {
                                     openText = { nav.navigate(it.toRoute()) },
                                     openArchive = { nav.navigate(it.toRoute()) },
                                     openFolder = { nav.navigate(it.toRoute()) },
+                                    pinShortcut = { pinShortcut(it) },
                                     openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null), from = key.path) },
                                     close = { nav.popBackStack() },
                                 ),
                                 reveal = route.reveal,
                             )
                         }
+                    }
+                    composable<IncomingRoute> { entry ->
+                        IncomingDocument(entry.toRoute<IncomingRoute>(), nav, contentResolver)
+                    }
+                    composable<ShortcutRoute> { entry ->
+                        ShortcutOpen(entry.toRoute<ShortcutRoute>(), nav, app) { homeNotice = Notice.ShortcutMissing }
                     }
                     composable<SmbServerRoute> { entry ->
                         ReportSettled(nav, entry, app) {}
@@ -198,6 +213,24 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /** What the intent that started the activity hands over (docs/spec.md section 4.11). */
+    private fun Intent.incoming(): Incoming? = incoming(
+        action = action,
+        data = dataString,
+        stream = streamUri()?.toString(),
+        location = if (hasExtra(EXTRA_LOCATION)) getLongExtra(EXTRA_LOCATION, 0) else null,
+        path = getStringExtra(EXTRA_PATH),
+        folder = getBooleanExtra(EXTRA_FOLDER, false),
+    )
+
+    private fun Intent.streamUri(): Uri? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            getParcelableExtra(Intent.EXTRA_STREAM)
+        }
 
     /**
      * Before Compose focus handling, which would take the D-pad keys first. Lint flags androidx's own override of

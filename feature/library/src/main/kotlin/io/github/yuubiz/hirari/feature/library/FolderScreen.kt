@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,6 +55,7 @@ import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
+import kotlinx.coroutines.launch
 
 /** What the file list asks of the app. [openAncestor] goes up to the folder at that path of the same place. */
 class FolderActions(
@@ -61,6 +63,8 @@ class FolderActions(
     val openText: (TextAddress) -> Unit,
     val openArchive: (ArchiveKey) -> Unit,
     val openFolder: (FolderKey) -> Unit,
+    /** Asks the launcher to pin [PlaceShortcut]; false when it cannot. */
+    val pinShortcut: suspend (PlaceShortcut) -> Boolean,
     val openAncestor: (String) -> Unit,
     val close: () -> Unit,
 )
@@ -75,6 +79,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalResources.current
     val gate = rememberLocalNetworkGate()
+    val scope = rememberCoroutineScope()
     LaunchedEffect(state.notice) {
         val notice = state.notice ?: return@LaunchedEffect
         snackbar.showSnackbar(resources.getString(notice.message()))
@@ -137,7 +142,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     }
     sheetFor?.let { row ->
         ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
-            RowSheet(row) { action ->
+            RowSheet(row, hasShortcut = model.shortcut(row) != null) { action ->
                 sheetFor = null
                 when (action) {
                     SheetAction.Open -> open(row)
@@ -146,6 +151,9 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     SheetAction.MarkRead -> model.mark(row, ReadState.Read)
                     SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)
                     SheetAction.Pin -> model.pin(row)
+                    SheetAction.Shortcut -> model.shortcut(row)?.let { shortcut ->
+                        scope.launch { if (!actions.pinShortcut(shortcut)) model.show(Notice.ShortcutUnsupported) }
+                    }
                 }
             }
         }
@@ -238,11 +246,11 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-private enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin }
+private enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
-private fun RowSheet(row: FileRow, onAction: (SheetAction) -> Unit) {
+private fun RowSheet(row: FileRow, hasShortcut: Boolean, onAction: (SheetAction) -> Unit) {
     val actions = buildList {
         add(SheetAction.Open to R.string.sheet_open)
         if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
@@ -252,6 +260,7 @@ private fun RowSheet(row: FileRow, onAction: (SheetAction) -> Unit) {
             if (row.mark != ReadMark.Unread) add(SheetAction.MarkUnread to R.string.sheet_mark_unread)
         }
         if (row.item is FileItem.Folder) add(SheetAction.Pin to R.string.sheet_pin)
+        if (hasShortcut) add(SheetAction.Shortcut to R.string.sheet_shortcut)
     }
     Column(Modifier.padding(bottom = 24.dp)) {
         Text(row.item.entry.name, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)

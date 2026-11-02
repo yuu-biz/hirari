@@ -56,7 +56,7 @@ data class HistoryTab(val sort: HistorySort, val items: List<HistoryItem>)
 data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 
 /** A one-time message for a snackbar. */
-enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, SmbBookNotReady }
+enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, SmbBookNotReady, ShortcutMissing, ShortcutUnsupported }
 
 data class HomeUi(
     val shelf: Loadable<Shelf> = Loadable.Loading,
@@ -98,6 +98,11 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
 
     fun dismissNotice() {
         notice.value = null
+    }
+
+    /** Shows [message], as the app does when a shortcut found nothing (docs/spec.md section 4.11). */
+    fun show(message: Notice) {
+        notice.value = message
     }
 
     /**
