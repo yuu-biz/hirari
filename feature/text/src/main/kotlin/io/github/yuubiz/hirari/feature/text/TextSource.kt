@@ -1,0 +1,74 @@
+package io.github.yuubiz.hirari.feature.text
+
+import io.github.yuubiz.hirari.core.model.Book
+import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.TextTypeface
+import io.github.yuubiz.hirari.core.text.GlyphMetrics
+
+/** Why a text did not open. */
+enum class TextFailure {
+    NotFound,
+    NoPermission,
+
+    /** The provider cannot seek and the copy does not fit (docs/spec.md section 3.1). */
+    NoRoomForCopy,
+
+    /** The archive, or the entry, is encrypted (section 3.8). */
+    Encrypted,
+
+    /** Longer than [MAX_TEXT_BYTES] (section 3.11). */
+    TooLarge,
+    ReadError,
+}
+
+/** The longest text the reader reads, whole, into memory (docs/spec.md section 3.11). */
+const val MAX_TEXT_BYTES = 64 shl 20
+
+/** Reads the 挿絵 at [path], resolved against the text, from the container the text came from. Null when it is not there. */
+fun interface PictureReader {
+    suspend fun read(path: String): ByteArray?
+}
+
+/**
+ * A text read off its source. [path] is where the text sits in its archive, for the 挿絵, and [pictures] reads
+ * them; a single document has no reachable neighbors, so it has none. [book] is the entry for the library index,
+ * or null when the source has no form there. [close] releases the source.
+ */
+class OpenedText(
+    val id: BookId,
+    val bytes: ByteArray,
+    val title: String,
+    val path: String,
+    val book: Book?,
+    val pictures: PictureReader?,
+    val close: () -> Unit,
+)
+
+sealed interface TextOpenResult {
+    class Opened(val text: OpenedText) : TextOpenResult
+
+    data class Failed(val reason: TextFailure) : TextOpenResult
+}
+
+/** Opens one text. It does its own I/O off the main thread and throws nothing but cancellation. */
+fun interface TextOpener {
+    suspend fun open(): TextOpenResult
+}
+
+/** The typefaces the reader lays out and draws with. */
+interface TextFonts {
+    /** [typeface], or Mincho when it names an imported font that is gone (docs/spec.md section 4.9). */
+    suspend fun available(typeface: TextTypeface): TextTypeface
+
+    /** Measures with [typeface]. One layout uses the result at a time. */
+    suspend fun metrics(typeface: TextTypeface): GlyphMetrics
+}
+
+/** The library index and the history for one opened text (docs/spec.md sections 2.2, 2.8 and 4.6). */
+interface TextHistory {
+    /** The text opened at [openedAt]; [book] is null when it has no index entry. */
+    fun opened(id: BookId, book: Book?, openedAt: java.time.Instant, limit: Int)
+
+    /** The reader stopped or closed. Only the first call after [opened] writes. */
+    fun stop()
+}
