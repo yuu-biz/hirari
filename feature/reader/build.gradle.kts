@@ -8,4 +8,5 @@ dependencies {
     testImplementation(kotlin("test-junit"))
     testImplementation(libs.kotest.property)
     testImplementation(libs.kotlinx.coroutines.core)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
