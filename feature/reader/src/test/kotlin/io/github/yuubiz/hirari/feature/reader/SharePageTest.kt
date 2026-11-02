@@ -10,6 +10,7 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -55,7 +56,8 @@ class SharePageTest {
         val cache = Files.createTempDirectory("cache").toFile()
         val dir = File(cache, SHARE_DIR)
         val file = assertNotNull(SharedPageFiles.write(dir, "001.jpg") { it.write(byteArrayOf(1, 2, 3)) })
-        assertEquals(dir, file.parentFile)
+        assertEquals("001.jpg", file.name)
+        assertEquals(dir, file.parentFile.parentFile)
         assertEquals(listOf<Byte>(1, 2, 3), file.readBytes().toList())
         SharedPageFiles.clear(dir)
         assertFalse(dir.exists())
@@ -65,11 +67,26 @@ class SharePageTest {
     }
 
     @Test
+    fun pagesOfTheSameNameAreSharedAsTwoFilesThatKeepTheirOwnBytes() = runBlocking {
+        val dir = File(Files.createTempDirectory("cache").toFile(), SHARE_DIR)
+        val first = assertNotNull(SharedPageFiles.write(dir, "001.jpg") { it.write(byteArrayOf(1)) })
+        val second = assertNotNull(SharedPageFiles.write(dir, "001.jpg") { it.write(byteArrayOf(2)) })
+        assertEquals("001.jpg", second.name)
+        assertNotEquals(first, second)
+        assertEquals(listOf<Byte>(1), first.readBytes().toList())
+        assertEquals(listOf<Byte>(2), second.readBytes().toList())
+        SharedPageFiles.clear(dir)
+        assertFalse(first.exists() || second.exists())
+        dir.parentFile.deleteRecursively()
+        Unit
+    }
+
+    @Test
     fun aWriteThatFailsLeavesNoFileBehind() = runBlocking {
         val dir = Files.createTempDirectory("share").toFile()
         val written = SharedPageFiles.write(dir, "broken.png") { error("the page did not draw") }
         assertEquals(null, written)
-        assertFalse(File(dir, "broken.png").exists())
+        assertEquals(emptyList(), dir.listFiles().orEmpty().toList())
         dir.deleteRecursively()
         Unit
     }

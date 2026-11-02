@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.OutputStream
+import java.nio.file.Files
 
 /** The folder under the cache directory that holds the files of ページを共有 (docs/spec.md section 4.8). */
 const val SHARE_DIR = "share"
@@ -63,22 +64,24 @@ fun shareFileName(entryName: String, type: ImageType?, page: Int): String {
 }
 
 /**
- * The files of ページを共有 in [dir]. A write and a clear never overlap, so a reader closing while another
- * shares does not remove the file half written. Both run on `Dispatchers.IO`.
+ * The files of ページを共有 in [dir]. Each share gets a folder of its own, so a page of the same name shared later
+ * never changes what an app given an earlier one still reads. A write and a clear never overlap, so a reader
+ * closing while another shares does not remove the file half written. Both run on `Dispatchers.IO`.
  */
 object SharedPageFiles {
     private val lock = Mutex()
 
-    /** Writes [name] in [dir] with [write] and returns it, or `null` when the file could not be written. */
+    /** Writes [name] in a new folder in [dir] with [write] and returns it, or `null` when the file could not be written. */
     suspend fun write(dir: File, name: String, write: (OutputStream) -> Unit): File? = lock.withLock {
         withContext(Dispatchers.IO) {
-            val file = File(dir, name)
+            var folder: File? = null
             try {
                 dir.mkdirs()
-                file.outputStream().use(write)
-                file
+                val own = Files.createTempDirectory(dir.toPath(), "").toFile()
+                folder = own
+                File(own, name).also { file -> file.outputStream().use(write) }
             } catch (_: Exception) {
-                file.delete()
+                folder?.deleteRecursively()
                 null
             }
         }
