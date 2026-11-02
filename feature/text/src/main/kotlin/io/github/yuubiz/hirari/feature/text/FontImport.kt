@@ -30,14 +30,14 @@ val FONT_MIME_TYPES = arrayOf(
 
 /** Copies the font at [uri] into [fonts] under the provider's name for it. Runs its I/O off the main thread. */
 suspend fun importFont(resolver: ContentResolver, uri: Uri, fonts: FontStore): FontImport = try {
-    val name = try {
-        resolver.documentInfo(uri)?.name
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Exception) {
-        null
-    } ?: uri.lastPathSegment.orEmpty()
     withContext(Dispatchers.IO) {
+        val name = try {
+            resolver.documentInfo(uri)?.name
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        } ?: uri.lastPathSegment.orEmpty()
         (resolver.openInputStream(uri) ?: throw IOException("no stream for $uri")).use { fonts.import(name, it) }
     }
 } catch (e: CancellationException) {

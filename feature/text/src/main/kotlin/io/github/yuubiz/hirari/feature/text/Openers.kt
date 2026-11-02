@@ -47,9 +47,10 @@ sealed interface TextBookRef {
     data class ArchiveEntry(val archive: Uri, val entryIndex: Int) : TextBookRef
 }
 
+/** The opener of [ref]. Every step blocks on Binder or the disk, so all of it runs on `Dispatchers.IO` (section 6.4). */
 internal fun opener(ref: TextBookRef, resolver: ContentResolver, copyDir: File): TextOpener = when (ref) {
-    is TextBookRef.Document -> TextOpener { openDocument(resolver, ref.uri) }
-    is TextBookRef.ArchiveEntry -> TextOpener { openEntry(resolver, ref, copyDir) }
+    is TextBookRef.Document -> TextOpener { withContext(Dispatchers.IO) { openDocument(resolver, ref.uri) } }
+    is TextBookRef.ArchiveEntry -> TextOpener { withContext(Dispatchers.IO) { openEntry(resolver, ref, copyDir) } }
 }
 
 /** The document's bytes, its id as a single document (docs/spec.md section 2.2), and its entry for the index. */
@@ -61,9 +62,8 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri): TextOpenR
     } catch (_: Exception) {
         null
     }
-    val bytes = withContext(Dispatchers.IO) {
-        (resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())).use(::readCapped)
-    } ?: return@guarded TextOpenResult.Failed(TextFailure.TooLarge)
+    val bytes = (resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())).use(::readCapped)
+        ?: return@guarded TextOpenResult.Failed(TextFailure.TooLarge)
     val id = documentBookId(bytes.copyOf(minOf(bytes.size, BOOK_ID_PREFIX_BYTES)), bytes.size.toLong())
     val title = info?.name ?: uri.lastPathSegment ?: uri.toString()
     val book = Book(
@@ -78,25 +78,30 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri): TextOpenR
     TextOpenResult.Opened(OpenedText(id, bytes, title, path = "", book, pictures = null) {})
 }
 
-/**
- * The entry's bytes and a reader of its 挿絵 from the same archive, which stays open with the text. The entry has no
- * form in the library index (`BookSource` names no entry), so it gets none; its progress and bookmarks still keep.
- */
 private suspend fun openEntry(resolver: ContentResolver, ref: TextBookRef.ArchiveEntry, copyDir: File): TextOpenResult = guarded {
-    val source = withContext(Dispatchers.IO) { resolver.openByteSource(ref.archive, copyDir) }
+    val source = resolver.openByteSource(ref.archive, copyDir)
     val archiveId = try {
-        withContext(Dispatchers.IO) { documentBookId(prefixOf(source), source.size) }
+        documentBookId(prefixOf(source), source.size)
     } catch (e: Throwable) {
         source.close()
         throw e
     }
+    openEntry(source, archiveId, ref.entryIndex)
+}
+
+/**
+ * The bytes of entry [entryIndex] of the archive in [source], which the text owns from here on, and a reader of its
+ * 挿絵 from the same archive, which stays open with the text. The entry has no form in the library index
+ * (`BookSource` names no entry), so it gets none; its progress and bookmarks still keep.
+ */
+internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int): TextOpenResult = guarded {
     val session = when (val opened = ArchiveSession.open(source)) {
         is OpenResult.Failed -> return@guarded TextOpenResult.Failed(TextFailure.ReadError)
         OpenResult.Encrypted -> return@guarded TextOpenResult.Failed(TextFailure.Encrypted)
         is OpenResult.Opened -> opened.session
     }
     try {
-        val entry = session.entries.getOrNull(ref.entryIndex)
+        val entry = session.entries.getOrNull(entryIndex)
             ?: return@guarded TextOpenResult.Failed(TextFailure.NotFound).also { session.close() }
         val bytes = when (val read = session.read(entry.entryIndex, MAX_TEXT_BYTES)) {
             is EntryResult.Data -> read.bytes
