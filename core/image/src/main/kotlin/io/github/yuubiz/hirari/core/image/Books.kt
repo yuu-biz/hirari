@@ -19,7 +19,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.IOException
 import java.nio.ByteBuffer
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -69,6 +68,9 @@ object Books {
                 }
             }
             BookResult.Opened(OpenBook(ArchivePages(session), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
+        } catch (_: OutOfMemoryError) {
+            session.close()
+            BookResult.Failed(BookFailure.ReadError)
         } catch (e: Throwable) {
             session.close()
             throw e
@@ -92,7 +94,7 @@ object Books {
 
     /** Opens the ZIP document at [uri]. A provider that cannot seek gets the document copied into [copyDir]. */
     suspend fun openDocument(resolver: ContentResolver, uri: Uri, copyDir: File, decoding: ImageDecoding): BookResult {
-        val source = when (val opened = safely { resolver.openByteSource(uri, copyDir) }) {
+        val source = when (val opened = safely(release = ByteSource::close) { resolver.openByteSource(uri, copyDir) }) {
             is Safely.Done -> opened.value
             is Safely.Failed -> return BookResult.Failed(opened.reason)
         }
@@ -131,29 +133,43 @@ object Books {
         null
     }
 
-    private sealed interface Safely<out T> {
+    internal sealed interface Safely<out T> {
         class Done<T>(val value: T) : Safely<T>
 
         class Failed(val reason: BookFailure) : Safely<Nothing>
     }
 
-    private suspend fun <T> safely(block: () -> T): Safely<T> = withContext(Dispatchers.IO) {
+    /**
+     * Runs [block] on [Dispatchers.IO] and turns what it throws into a [BookFailure]. When the caller is cancelled
+     * after [block] returned, [release] gets what it returned, since the caller never will.
+     */
+    internal suspend fun <T> safely(release: (T) -> Unit = {}, block: () -> T): Safely<T> {
+        var done: Safely.Done<T>? = null
         try {
-            Safely.Done(block())
-        } catch (_: FileNotFoundException) {
-            Safely.Failed(BookFailure.NotFound)
-        } catch (_: SecurityException) {
-            Safely.Failed(BookFailure.NoPermission)
-        } catch (_: NoRoomForCopyException) {
-            Safely.Failed(BookFailure.NoRoomForCopy)
-        } catch (_: IOException) {
-            Safely.Failed(BookFailure.ReadError)
-        } catch (_: IllegalArgumentException) {
-            Safely.Failed(BookFailure.NotFound)
+            return withContext(Dispatchers.IO) {
+                try {
+                    Safely.Done(block()).also { done = it }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Safely.Failed(e.bookFailure())
+                }
+            }
+        } catch (e: CancellationException) {
+            done?.let { release(it.value) }
+            throw e
         }
     }
 
     private const val SNIFF_BYTES = 32
+}
+
+/** Why a book did not open, from what the provider or the copy threw. */
+internal fun Exception.bookFailure(): BookFailure = when (this) {
+    is FileNotFoundException, is IllegalArgumentException -> BookFailure.NotFound
+    is SecurityException -> BookFailure.NoPermission
+    is NoRoomForCopyException -> BookFailure.NoRoomForCopy
+    else -> BookFailure.ReadError
 }
 
 private fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
