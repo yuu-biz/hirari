@@ -8,6 +8,7 @@ android {
     ndkVersion = "28.2.13676358"
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles("consumer-rules.pro")
     }
     externalNativeBuild {
         cmake {
@@ -19,6 +20,9 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    api(project(":core:source"))
+    implementation(libs.kotlinx.coroutines.core)
+    testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.junit)
 }
