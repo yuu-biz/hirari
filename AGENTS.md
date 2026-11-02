@@ -33,6 +33,7 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 - ライセンスの検査が効くことを CI で確かめるときは、捨てブランチで許可外の依存（例えば LGPL の `org.mariadb.jdbc:mariadb-java-client`）を `:app` に足し、そのブランチで CI を手動実行して失敗を見ます。確かめたらブランチを消します。
 - Baseline Profile の生成は、端末のフォルダを選ぶ画面（システムの DocumentsUI）を UiAutomator で操作します。API 33 以上の端末かエミュレータで、root なしで動きます。エミュレータで流すときは `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR` を足します。生成物は端末の種類によらないので、エミュレータで作ったものをコミットしてかまいません。
 - エミュレータは PC のメモリを大きく使います。端末上の試験は必要なときに 1 台ずつ、対象の試験だけを流します。挙動はできるだけ JVM の単体試験で確かめます。
+- 端末を 2 台以上つないでいるときは、`ANDROID_SERIAL` で使う 1 台を指してから端末を使うタスクを動かします。`connected...` のタスクは、つないでいる全台にアプリを入れ直して動かすので、別の作業が使っている端末のアプリを書き換えます。起動の計測は、アプリの中の `androidx.profileinstaller` の受信部へ shell から放送を送ります。その端末にデバッグ版が入っていると、受信部がメインスレッドでディスクを読み、StrictMode（`docs/spec.md` の 6.3 節）でプロセスが止まります。モンキー試験はこれを落ちとして数えます。
 - CI（`.github/workflows/ci.yml`）は、`v` で始まるタグの push と手動実行のときだけ動きます。
 - fuzz とモンキー試験は、`.github/workflows/fuzz.yml` を手動で実行して回します（毎晩は回しません）。延べ 24 時間は実行ごとの時間の合計で、実行ごとに時間の記録（`fuzz-time-log` の成果物）へ足されます。詳しくは `docs/spec.md` の 6.2 節です。
 
