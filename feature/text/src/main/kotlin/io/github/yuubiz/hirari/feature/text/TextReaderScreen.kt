@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -187,7 +188,7 @@ private fun Reading(
     val slop = LocalViewConfiguration.current.touchSlop
     val longPress = LocalViewConfiguration.current.longPressTimeoutMillis
     val current by rememberUpdatedState(state)
-    var barDrag by remember { mutableStateOf<Int?>(null) }
+    var barDrag by remember { mutableStateOf<PageBarDrag?>(null) }
     Box(
         Modifier
             .fillMaxSize()
@@ -202,13 +203,15 @@ private fun Reading(
                     onRegionTouch()
                     if (region == TextRegion.CommandBar) onPanel(TextPanel.Commands)
                     if (current.frame?.continuous == true && region == TextRegion.TurnArea) return@awaitEachGesture
+                    if (region == TextRegion.PageBar) barDrag = PageBarDrag(down.position.x / density.density, down.position.y / density.density)
                     var last = down
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         last = change
                         if (region == TextRegion.PageBar) {
-                            barDrag = pageBarPages(-(change.position.x - down.position.x) / density.density)
+                            val at = change.position / density.density
+                            barDrag = barDrag?.moveTo(at.x, at.y, heightDp - settings.barHeightDp, settings.barHeightDp.toFloat(), slop / density.density)
                         }
                         if (!change.pressed) break
                     }
@@ -217,9 +220,13 @@ private fun Reading(
                     val tap = abs(dx) <= slop && abs(dy) <= slop && last.uptimeMillis - down.uptimeMillis < longPress
                     when (region) {
                         TextRegion.PageBar -> {
-                            val pages = barDrag ?: 0
+                            val release = barDrag?.release()
                             barDrag = null
-                            if (tap || pages == 0) onPanel(TextPanel.PageJump) else jumpPages(current, viewModel, pages)
+                            when (release) {
+                                PageBarRelease.OpenPanel -> onPanel(TextPanel.PageJump)
+                                is PageBarRelease.Jump -> jumpPages(current, viewModel, release.pages)
+                                PageBarRelease.None, null -> Unit
+                            }
                         }
                         TextRegion.TurnArea -> {
                             val barHeight = settings.barHeightDp * density.density
@@ -245,7 +252,7 @@ private fun Reading(
         } else {
             Box(Modifier.fillMaxSize().background(Color(argb(state.colors.paper))), contentAlignment = Alignment.Center) { DelayedProgress() }
         }
-        barDrag?.let { pages -> PageBarPreview(state, pages) }
+        barDrag?.let { PageBarPreview(state, it) }
     }
 }
 
@@ -254,16 +261,18 @@ private fun jumpPages(state: TextReaderUiState.Reading, viewModel: TextReaderVie
     viewModel.showPage((state.current + pages).coerceIn(run.pages.indices))
 }
 
+/** The page a slide on the page bar goes to, grayed out while the slide is cancelled. */
 @Composable
-private fun PageBarPreview(state: TextReaderUiState.Reading, pages: Int) {
+private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarDrag) {
     val run = state.run ?: return
-    val target = (state.current + pages).coerceIn(run.pages.indices)
+    val target = (state.current + drag.pages).coerceIn(run.pages.indices)
     Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
         Text(
             pageNumberText(run.number(target)),
-            color = Color.White,
+            color = if (drag.cancelled) Color.Gray else Color.White,
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.background(PANEL_BACKGROUND).padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.alpha(if (drag.cancelled) 0.4f else 1f).background(PANEL_BACKGROUND)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
         )
     }
 }

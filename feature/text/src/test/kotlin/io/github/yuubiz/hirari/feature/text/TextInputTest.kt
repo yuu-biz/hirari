@@ -62,6 +62,36 @@ class TextInputTest {
         assertEquals(-2, pageBarPages(-30f))
     }
 
+    /** A press at ([x], 770) on a 800 dp screen with the default 60 dp bars, so the bar starts at 740. */
+    private fun press(x: Float = 200f) = PageBarDrag(x, 770f)
+
+    private fun PageBarDrag.to(x: Float, y: Float = 770f) = moveTo(x, y, barTop = 740f, barHeight = 60f, slop = 8f)
+
+    @Test
+    fun `a press on the page bar that does not move opens the page panel, however long it lasts`() {
+        assertEquals(PageBarRelease.OpenPanel, press().release())
+        assertEquals(PageBarRelease.OpenPanel, press().to(203f, 772f).release())
+    }
+
+    @Test
+    fun `sliding left on the page bar goes forward and sliding right goes back`() {
+        assertEquals(PageBarRelease.Jump(2), press().to(170f).release())
+        assertEquals(PageBarRelease.Jump(-1), press().to(212f).release())
+        assertEquals(PageBarRelease.None, press().to(170f).to(195f).release())
+    }
+
+    @Test
+    fun `a finger a bar's height above the bar cancels, and coming back takes the pages again`() {
+        val away = press().to(170f).to(170f, 680f)
+        assertEquals(true, away.cancelled)
+        assertEquals(2, away.pages)
+        assertEquals(PageBarRelease.None, away.release())
+        assertEquals(false, press().to(170f, 681f).cancelled)
+        val back = away.to(170f, 700f)
+        assertEquals(false, back.cancelled)
+        assertEquals(PageBarRelease.Jump(2), back.release())
+    }
+
     @Test
     fun `a touch at the very top or bottom goes to the system while the bars are hidden`() {
         assertEquals(null, regionAt(3f, 800f, defaults))

@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.TapLayout
 import io.github.yuubiz.hirari.core.model.VolumeKeys
 import kotlin.math.abs
+import kotlin.math.hypot
 
 /**
  * What an input asks of the text reader. The rules mirror the image reader's (docs/spec.md sections 4.8 and 4.9);
@@ -145,4 +146,41 @@ fun pageBarPages(distance: Float): Int {
         else -> 3 + (units - 9).toInt()
     }
     return if (distance < 0) -pages else pages
+}
+
+/**
+ * A finger on the page bar (docs/spec.md section 4.8, ページバー) that pressed at ([downX], [downY]), in dp on the
+ * screen. [pages] is how far it moves the reading position, forward when it went left as a text binds on the right.
+ * Once it [moved] past the touch slop a release is no tap, and while it is [cancelled], a bar's height or more above
+ * the bar, a release goes nowhere.
+ */
+data class PageBarDrag(
+    val downX: Float,
+    val downY: Float,
+    val pages: Int = 0,
+    val moved: Boolean = false,
+    val cancelled: Boolean = false,
+) {
+    /** The finger is at ([x], [y]), with the bar's top edge at [barTop]. */
+    fun moveTo(x: Float, y: Float, barTop: Float, barHeight: Float, slop: Float) = copy(
+        pages = pageBarPages(downX - x),
+        moved = moved || hypot(x - downX, y - downY) > slop,
+        cancelled = y <= barTop - barHeight,
+    )
+
+    fun release(): PageBarRelease = when {
+        !moved -> PageBarRelease.OpenPanel
+        cancelled || pages == 0 -> PageBarRelease.None
+        else -> PageBarRelease.Jump(pages)
+    }
+}
+
+sealed interface PageBarRelease {
+    /** A tap or a long press, which opens the page panel. */
+    data object OpenPanel : PageBarRelease
+
+    data object None : PageBarRelease
+
+    /** Move [pages] pages from the current one, forward when positive. */
+    data class Jump(val pages: Int) : PageBarRelease
 }
