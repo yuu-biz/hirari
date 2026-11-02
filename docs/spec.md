@@ -1778,12 +1778,28 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 |---|---|---|
 | 単体試験（JVM） | `layoutViews` と `scrollStops` のプロパティテスト、自然順、文字コードの判定、青空文庫記法の解析、設定の読み込みの検証 | すべての変更で CI |
 | コーパス試験（端末） | コーパスの全ファイルを開き、全ページを読む。各ページが 10 秒以内に `PageResult` を返し、プロセスが生き残ること。各ファイルの期待する結果を目録に書き、照合する | API 28、API 31、最新 API のエミュレータと実機 1 台。マージ前と毎晩 |
-| ネイティブの fuzz | 自前の JNI と libarchive の読み込み、libjxl、libavif の入口。libFuzzer と ASan、UBSan でホスト向けにビルドする。シードはコーパスから取る | 毎晩 1 時間。新しい落ち方で CI を失敗にする |
-| Kotlin の fuzz | ZIP の名前の判定、青空文庫記法の解析、設定ファイルの読み込み。Jazzer を使う | 毎晩 |
+| ネイティブの fuzz（端末） | 自前の JNI と libarchive の読み込み、libjxl、`ImageDecoder`、`PdfRenderer` の入口（`ArchiveSession`、`Books.openBook`、`OpenBook.page`、`JxlDecoder`）。端末かエミュレータの上で、コーパスのファイルを変異させた入力を流す。libavif は同梱していないので対象にない | 手動（`fuzz.yml`、下記）。落ち方が見つかった実行は失敗にする |
+| ネイティブの fuzz（ホスト） | libarchive の読み込みと libjxl のデコーダ。libFuzzer と ASan、UBSan でホスト向けにビルドする。シードはコーパスから取る | 手動（`fuzz.yml`、下記）。新しい落ち方で実行を失敗にする |
+| Kotlin の fuzz | ZIP の名前の判定、青空文庫記法の解析、設定ファイルの読み込み。Jazzer を使う | 手動。まだ作っていない（要検証。`fuzz.yml` には載せていない） |
 | 組版の照合（JVM） | 記法ごとの試験用テキストを、文字の幅を固定した寸法で組む。各ページの行、字、ルビ、傍点、傍線の位置を文字で書き出し、照合用ファイル（`core/text/src/test/resources/golden`）と比べる。意図して変えたときは `-PupdateGoldens=true` で書き直し、差分を確かめる | すべての変更で CI |
 | 余白トリミングの試験画像（JVM） | 4.8 節の切りすぎを防ぐ規則と、帯のばらつき、2 行続く行、交わる辺の帯を除く規則のそれぞれについて、その規則で結果が変わる画像をコードで描き（`core/image/src/test` の `TrimPages.kt`）、切り幅と働いた規則を確かめる。ふつうの余白、黒い余白、ざらつきと点のゴミ、紙の端の影、端まである見開き、余白の中のページ番号、ページ全体の淡いグラデーション、端に掛かる淡いコマも描く。縮小の格子に揃わない境界は、元画像の内容を縮小の各段の双一次で平均した解析画像を計算で作り、背景との差 33、40、100、220 段階でどの強さも内容を切らないことを確かめる | すべての変更で CI |
 | 画面の試験 | テキストの組版の結果画像の照合、主要画面のスクリーンショット。画像の照合は、組版の照合と同じ試験用テキストを画面の描画で描いて比べ、書体の字形と `vert` の働きを確かめる | すべての変更で CI |
-| モンキー試験 | 標準コーパスとエラーコーパスを開いた状態で `monkey` を 10,000 イベント | 毎晩 |
+| モンキー試験 | 標準コーパスとエラーコーパスを開いた状態で `monkey` を 10,000 イベント | 手動（`fuzz.yml`、下記）と、手元で `:tools:fuzz:monkey` |
+
+#### fuzz とモンキー試験の実行
+
+毎晩は回さず、無料のプランの分数を守るために、`fuzz.yml`（`workflow_dispatch`）を手動で実行する。M3 の「延べ 24 時間」は、実行ごとの時間の合計である。
+
+- **ワークフロー**。1 つのジョブ（`ubuntu-24.04`、6 時間の上限の内）で、`android-emulator-runner`（API 34、x86_64）の上のエミュレータで端末の fuzz とモンキー試験を回し、続けてホストの fuzz を回す。入力は、端末の fuzz の分数（既定 240、上限 270）、種（空なら実行の番号）、モンキーのイベント数（既定 10,000、0 で省く）、ホストの fuzz の分数（`archive` と `jxl` のそれぞれ。既定 10、0 で省く）である。落ち方、タイムアウト、捕まえられなかった例外、モンキーの落ちと ANR のどれかがあれば、ジョブは失敗にする。
+- **時間の記録**。端末の fuzz とホストの fuzz は、実行の終わりに 1 行ずつ `fuzz-time.log`（時刻、種、秒数、実行した入力の数、コミット、結果）に足す。ワークフローは前の実行が上げた成果物 `fuzz-time-log` を取り込んでから足し、足した記録をまた上げるので、記録は実行をまたいで伸びる。合計はジョブの要約に出る。成果物の保持は 90 日（上限）なので、90 日以上空くと記録は途切れる。そのときは要約の合計を控えておき、記録の先頭に `seconds=` の行として足す。
+- **成果物**。`fuzz-results` に、落ちた入力（`reproducers/`）、捕まえた例外の入力（`findings/`）、ログ、要約を 30 日置く。
+- **種と再現**。端末の fuzz の入力 n は、種と n だけから決まる（`SplittableRandom`）。落ちた入力は、落ちる前に `current.bin` へ書いてあるので、プロセスが死んでも残る。ドライバ（`tools/fuzz`）がそれを取り出し、`replay` の試験で、半分ずつ削る方法（ddmin）で小さくする。1 回に候補をまとめて流すので、プロセスの起動は削る回数だけで済む。落ちた入力を 1 つだけ流しても落ちないときは、前の入力に左右される落ち方なので、そのままの入力と種と番号を残す。ログの `Fatal signal` から、信号と上位 4 つの関数を取り、同じ落ち方は 1 回だけ小さくする。
+- **端末の fuzz の対象**。`archive`（`ArchiveSession` を、展開キャッシュを付けて開き、全エントリを読む）、`book`（`Books.openBook` で PDF か書庫を開き、先頭の 6 ページを読む）、`image`（1 ファイルのフォルダとして `OpenBook.page` を、全体とタイルで読む。`ImageDecoder`、`BitmapRegionDecoder`、libjxl に届く）、`jxl`（`JxlDecoder` を、縮小率とメモリの上限を変えて直接呼ぶ）。4 つを順に回す。シードはコーパスから取る。`zip/images.zip` は中の画像を `image` のシードにし、32 KB 以下の画像を詰め直した ZIP を `book` と `archive` のシードにする。256 KB を超えるシードは外す（変異の fuzz は、入力が大きいと遅くなるため）。変異は、ビット反転、境界の値の書き込み、整数への加減、削除、挿入、複製、別のシードの断片の差し込み、切り詰めである。カバレッジの帰還はなく、シードに近い入力だけを試すので、ホストの libFuzzer で補う。
+- **タイムアウト**。1 つの入力が 20 秒（既定。`--timeout-seconds`）を超えたら、監視のスレッドが全スレッドの呼び出し履歴を保存してプロセスを止め、その入力を「タイムアウト」として残す。3 秒を超えた入力は、入力を `slow-` として最大 20 個残す（3.7 節の、データディスクリプタ付き Deflate を飛ばす時間を測るため）。製品の 10 秒のデコードの時間切れ（3.7 節）は、`PageResult` を返して終わるので、落ち方には数えない。ANR は、端末の fuzz がメイン以外のスレッドで動くので起こらない。ANR はモンキー試験で数える。
+- **ホストの fuzz**。`tools/fuzz/native` の CMake が、`:core:archive` と `:core:image` の CMake をそのまま取り込み、libarchive、liblzma、bzip2、zstd、libjxl、Highway の静的ライブラリだけを、clang の `-fsanitize=fuzzer-no-link,address,undefined` でビルドする。対象は `archive_fuzzer`（`libarchive_jni.c` と同じ形式、同じ読み込み、シーク、スキップのコールバックで、全エントリを上限つきで読み、開き直してエントリを飛ばす）と `jxl_fuzzer`（`jxl_jni.cc` と同じ、メモリの上限を断るメモリ管理と逐次の並列ランナーで、先頭の 1 バイトが上限を選ぶ）である。JNI の層、縮小の和（`Sink`）、`ImageDecoder` と `PdfRenderer` は含まないので、端末の fuzz が受け持つ。`bash tools/fuzz/native/run.sh archive|jxl 秒 [種]` で動かし、落ちた入力は libFuzzer の `-minimize_crash` で小さくする。
+- **モンキー試験**。`:tools:fuzz:monkey` が、デバッグ版の APK を入れ、コーパスの本を `run-as` でアプリの `cache/monkey/` に置き（シェルが外部ファイルのディレクトリに書いたファイルは、アプリが読めなかった）、`--es book` の経路（デバッグ版の入口。`MainActivity`）でリーダーに開いてから、`monkey` を動かす。イベントの総数（既定 10,000）は本の数で等分する。`monkey` のタップやスワイプはいずれリーダーを出てホームに着き、残りのイベントがホームに落ちるので、1 冊を 250 イベントずつに区切り、区切りごとにアプリを止めてその本を開き直す。本は、標準コーパスの代わりに `zip/images.zip`（画像のある ZIP）と、エラーコーパスの `zip/truncated-second-data.zip`、`zip/corrupt.zip`、`zip/encrypted.zip`、`rar5/stored.rar`、`7z/methods.7z`、`tar/compressed.txz`、`pdf/mixed-sizes.pdf`、`pdf/broken.pdf` である。350 MB の標準コーパスは `--standard` で足せる。種は本の順に 1 ずつ増やし（既定は 1 から）、区切り k の `monkey` の種は「本の種 × 1000 + k」とする。間隔は 30 ms で、タッチ 45%、モーション 25%、ピンチ 10%、方向キー 5%、それ以外は 0%（システムキー、アプリの切り替え、メジャーナビゲーションを含む。BACK でリーダーを出ないため）。`--ignore-crashes` などで落ちても続け、落ちと ANR を、`monkey` の出力（`// CRASH:`、`// NOT RESPONDING:`）と logcat（`AndroidRuntime` の `Process:`、`Fatal signal`、`ANR in`）の多い方で数える。StrictMode の違反（6.3 節）で止まったものは落ちとして数える。
+- **手元で動かした結果**（API 37 のエミュレータ、x86_64、メモリ 2 GB。実機の値ではない）。端末の fuzz は、3 分で 56,238 入力（毎秒 311）と、5 分で 65,301 入力（毎秒 215。`archive` 458、`book` 211、`image` 175、`jxl` 7,763）を、落ち方なし、捕まえた例外なしで流した。`jxl` が速いのは、変異した入力の大半がヘッダの段階で断られるためである。`tools/fuzz` の自己試験用の対象（`selftest`。`BOOM` を含む入力でヌル番地へ書き、`HANG` を含む入力で止まる）で、落ちた入力の取り出し、ログからの落ち方の取り出し、削ること（5,025 バイトを 4 バイトに）、タイムアウトの検出（1,504 バイトを 4 バイトに）を確かめた。ホストの fuzz は、Ubuntu 24.04 のコンテナ（clang 18）で、`archive` が 151 秒で 82,984 入力（毎秒約 550）、`jxl` が 122 秒で 85,714 入力（毎秒約 700）を、落ち方なしで流した。モンキー試験は、`zip/images.zip` と `pdf/mixed-sizes.pdf` を開いて 1,500 イベントを流し、落ち 0 件、ANR 0 件だった。1 回の実行はこの長さなので、24 時間の完了条件の達成は `fuzz.yml` の実行の積み重ねで確かめる（要検証）。
+- **liblzma の UBSan の指摘**。ホストの fuzz は、始めの 1 分以内に liblzma 5.8.4 の `lzma_decoder.c:264` で「null ポインタに 0 を足している」（`pointer-overflow`）と止まった。空の入力で LZMA の復号器を始めるときの C の未定義動作で、アプリが動くどの CPU でも何も起こさない。止まったままでは先を調べられないので、`tools/fuzz/native` の CMake が liblzma にだけこの検査を外し、ほかの検査は残している。
 
 コーパスは生成スクリプト（`tools/corpus`）で決定的に作る。第三者のファイルは、ライセンスが許す場合だけ入れる。漫画の実ページは入れず、生成した画像を使う。画像は網点に似た模様にし、縮小のモアレが見えるようにする。
 
@@ -1938,6 +1954,7 @@ RAR、7z、tar の書庫は次のように作る。
 | `:feature:settings` | 設定画面 | `:core:*` |
 | `:benchmark` | Macrobenchmark と Baseline Profile の生成 | `:app` |
 | `tools/corpus` | コーパスの生成スクリプト（JVM） | `:core:model` |
+| `tools/fuzz` | 端末の fuzz とモンキー試験を adb で動かして結果を集める道具（JVM）と、ホストの libFuzzer の対象（C と C++。`tools/fuzz/native`）。ほかのモジュールに依存せず、端末の fuzz の本体は `:core:image` の `androidTest` にある | なし |
 | `build-logic` | 共通の Gradle 規約、ライセンスの検査 | |
 
 `feature` のモジュールどうしは互いに依存しない。
@@ -2006,6 +2023,8 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Licensee（Gradle プラグイン） | ライセンスの検査 | Apache-2.0 | ビルド時だけ |
 | tomlj | `third_party/manifest.toml` の読み込み | Apache-2.0。antlr4-runtime（BSD-3-Clause）、checker-qual（MIT）を伴う | ビルド時だけ。`build-logic` の中で使う |
 | Kotest、Jazzer、libFuzzer | 試験 | Apache-2.0（libFuzzer は Apache-2.0 WITH LLVM-exception） | 試験時だけ。配布物に入らない |
+| ReactiveCircus/android-emulator-runner v2.38.0 | `fuzz.yml` が CI のランナーでエミュレータを起動する | Apache-2.0（コミット `a421e43` の `LICENSE` で確かめた）。依存は `@actions/core`、`@actions/exec`、`@actions/tool-cache`、`minimist`、`set-value` で、ランナーの上でだけ動く | CI のワークフローだけ。コミットの SHA で固定して使う。アプリにも APK にも入らない |
+| Android エミュレータとシステムイメージ、`monkey`、`adb` | 端末の fuzz とモンキー試験の実行環境 | Android SDK の使用許諾と Apache-2.0。SDK のパッケージで、再配布しない | 試験時だけ。配布物に入らない。`monkey` は端末のプラットフォームに内蔵 |
 | kotest-property 6.2.6 | `:core:model` と `:feature:reader` のプロパティテスト | Apache-2.0。kotest の各モジュールと kotlinx-coroutines（core、test、debug、jdk8）、kotlinx-serialization-core、xmlutil、java-diff-utils、opentest4j、byte-buddy、kotlin-reflect、JetBrains の annotations、rgxgen（Apache-2.0）、kotlin-rgxgen、classgraph（MIT）、JNA（LGPL-2.1-or-later と Apache-2.0 の二重ライセンスのうち Apache-2.0 を選ぶ）を伴う。6.2.6 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit、kotlinx-coroutines-test、AndroidX Test（runner、core、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
 | Compose の ui-test-junit4 と ui-test-manifest（BOM 2026.09.00 で 1.12.1）、espresso-core 3.7.0 | `:app` の端末上の UI 試験。ui-test-manifest は試験用の空の画面を宣言し、デバッグ版にだけ入る。espresso-core は、ui-test が持ち込む 3.5.0 が API 37 で動かないので直接上げる | Apache-2.0。ui-test、espresso-core と espresso-idling-resource、AndroidX Test の ext-junit と services の storage、javawriter、jsr305、javax.inject、listenablefuture（Apache-2.0）、hamcrest-library と hamcrest-integration 1.3（BSD-3-Clause。親 POM の New BSD License）を伴う。推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
@@ -2103,12 +2122,12 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 
 ### M3 RAR、7z、PDF とすべての画像形式
 
-**内容**。RAR 4 と RAR 5、7z、tar、solid と展開キャッシュ、PDF、GIF、BMP、HEIF、AVIF、JPEG XL、エントリ名の文字コードの判定と手動の変更、暗号化の検出、縦長画像のタイル表示、fuzz の毎晩の実行。
+**内容**。RAR 4 と RAR 5、7z、tar、solid と展開キャッシュ、PDF、GIF、BMP、HEIF、AVIF、JPEG XL、エントリ名の文字コードの判定と手動の変更、暗号化の検出、縦長画像のタイル表示、fuzz を手動で回す仕組み（`fuzz.yml`。6.2 節）。
 
 完了条件:
 
 - 全コーパスで、各ファイルの結果が目録の期待と一致する。
-- fuzz を延べ 24 時間回して、未修正の落ち方がない。
+- fuzz を延べ 24 時間回して、未修正の落ち方がない。24 時間は `fuzz.yml` を手動で実行した時間の合計で、端末の fuzz とホストの fuzz の時間を足す（6.2 節）。
 - 幅 800 で高さ 50,000 の画像を最後までスクロールでき、メモリが P10 に収まる。
 - コーパスの CP932 と UTF-8 の名前が正しく表示され、文字コードを変えると並びが変わる。
 - 3.3 節の libarchive に関する (要検証) がすべて解消している。

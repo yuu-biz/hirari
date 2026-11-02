@@ -23,12 +23,16 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 | 書庫の端末上の試験（接続した端末かエミュレータで動く） | `./gradlew :core:archive:connectedDebugAndroidTest` |
 | コーパスの生成（`tools/corpus/build/corpus` に出る） | `./gradlew :tools:corpus:generateCorpus` |
 | 起動の計測（実機で。エミュレータの値は使わない） | `./gradlew :benchmark:connectedBenchmarkAndroidTest` |
+| 端末の fuzz（接続した端末かエミュレータで。`--args` の `--minutes` が時間、`--seed` が種） | `./gradlew :tools:fuzz:fuzz -Pandroid.injected.build.abi=x86_64 --args="--minutes 10"` |
+| モンキー試験（デバッグ版の APK とコーパスの本を端末に入れて実行する） | `./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000"` |
+| ホストの fuzz（clang と libFuzzer が要る。Linux で動かす） | `bash tools/fuzz/native/run.sh archive 600` か `jxl 600` |
 
 - モジュールどうしの依存は `docs/spec.md` の 8.2 節の表に従います。表にない依存を足すと、`build-logic` の検査で設定の段階で失敗します。
 - `check` はライセンスも検査します。Maven の依存は Licensee が、`build-logic` の許可リスト（`Licenses.kt`）と照らします。`third_party/` の下のディレクトリは、`verifyThirdParty` が `third_party/manifest.toml` と照らします。
 - ライセンスの検査が効くことを CI で確かめるときは、捨てブランチで許可外の依存（例えば LGPL の `org.mariadb.jdbc:mariadb-java-client`）を `:app` に足し、そのブランチで CI を手動実行して失敗を見ます。確かめたらブランチを消します。
 - エミュレータは PC のメモリを大きく使います。端末上の試験は必要なときに 1 台ずつ、対象の試験だけを流します。挙動はできるだけ JVM の単体試験で確かめます。
 - CI（`.github/workflows/ci.yml`）は、`v` で始まるタグの push と手動実行のときだけ動きます。
+- fuzz とモンキー試験は、`.github/workflows/fuzz.yml` を手動で実行して回します（毎晩は回しません）。延べ 24 時間は実行ごとの時間の合計で、実行ごとに時間の記録（`fuzz-time-log` の成果物）へ足されます。詳しくは `docs/spec.md` の 6.2 節です。
 
 ## 要求は仕様書が決める
 

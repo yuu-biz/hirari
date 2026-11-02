@@ -1,0 +1,126 @@
+name: fuzz
+
+# By hand only (Actions > fuzz > Run workflow). There is no nightly run, to keep the free plan's minutes for releases;
+# the 24 hours that docs/spec.md section 9 asks for (M3) are the sum of many runs. Each run reads the time log that the
+# last run uploaded, adds its own fuzzing time, uploads the log again and prints the total in the job summary.
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes of device fuzzing (at most 270, to stay inside the six hours a job may take)
+        default: "240"
+        type: string
+      seed:
+        description: Seed of the input stream. Empty uses the run number, so every run explores new inputs
+        default: ""
+        type: string
+      monkey_events:
+        description: Monkey events over the corpus books, 0 to skip the monkey test
+        default: "10000"
+        type: string
+      host_minutes:
+        description: Minutes of host libFuzzer for each of archive and jxl, 0 to skip
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+  actions: read # to find the time log that the last run uploaded
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      FUZZ_MINUTES: ${{ inputs.minutes }}
+      FUZZ_SEED: ${{ inputs.seed || github.run_number }}
+      MONKEY_EVENTS: ${{ inputs.monkey_events }}
+      HOST_MINUTES: ${{ inputs.host_minutes }}
+    steps:
+      - name: Check the inputs
+        run: |
+          for value in "$FUZZ_MINUTES" "$FUZZ_SEED" "$MONKEY_EVENTS" "$HOST_MINUTES"; do
+            [[ "$value" =~ ^[0-9]+$ ]] || { echo "not a whole number: '$value'"; exit 1; }
+          done
+          [ "$FUZZ_MINUTES" -le 270 ] || { echo "minutes is at most 270"; exit 1; }
+      # Actions pinned to full commit SHAs (tag noted for readability), as in ci.yml. No secrets are used.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: "platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358 cmake;4.1.2"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Fetch the fuzzing time log of earlier runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p tools/fuzz/build
+          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=fuzz-time-log&per_page=1" --jq '.artifacts[] | select(.expired == false) | .id' | head -1)
+          if [ -n "$id" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > previous.zip
+            unzip -o previous.zip -d tools/fuzz/build
+          fi
+      - name: Build the APKs and the corpus
+        run: ./gradlew :core:image:assembleDebugAndroidTest :app:assembleDebug :tools:corpus:generateCorpus -Pandroid.injected.build.abi=x86_64
+      # The emulator needs KVM, which the runner allows to every user only after this rule.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Apache-2.0, used only to start the emulator on the runner; nothing of it is in the app (docs/spec.md section 8.5).
+      - name: Fuzz and monkey on an emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          cores: 4
+          ram-size: 3072M
+          disable-animations: true
+          script: bash tools/fuzz/ci-device.sh
+      - name: Fuzz the native readers on the host
+        if: ${{ always() && inputs.host_minutes != '0' }}
+        run: |
+          sudo apt-get install -y --no-install-recommends clang-18 libclang-rt-18-dev ninja-build zlib1g-dev
+          export CC=clang-18 CXX=clang++-18
+          export TIME_LOG=tools/fuzz/build/fuzz-time.log
+          status=0
+          for target in archive jxl; do
+            bash tools/fuzz/native/run.sh "$target" "$((HOST_MINUTES * 60))" "$FUZZ_SEED" || status=1
+          done
+          exit $status
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### Fuzz'
+            echo "seed $FUZZ_SEED"
+            echo '```'
+            cat tools/fuzz/build/fuzz/summary.txt 2>/dev/null || echo 'no device fuzz summary'
+            cat tools/fuzz/build/monkey/summary.txt 2>/dev/null || echo 'no monkey summary'
+            echo '```'
+            awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^seconds=/) { split($i, a, "="); total += a[2] } } END { printf "Accumulated fuzzing time over all runs: %.2f h of 24 h\n", total / 3600 }' tools/fuzz/build/fuzz-time.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the time log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-time-log
+          path: tools/fuzz/build/fuzz-time.log
+          retention-days: 90
+          if-no-files-found: ignore
+      - name: Upload reproducers and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-results
+          path: |
+            tools/fuzz/build/fuzz/
+            tools/fuzz/build/monkey/
+            tools/fuzz/build/native/artifacts/
+          retention-days: 30
+          if-no-files-found: ignore
