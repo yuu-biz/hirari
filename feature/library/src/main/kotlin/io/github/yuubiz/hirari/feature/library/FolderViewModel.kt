@@ -3,10 +3,12 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LibraryView
+import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
@@ -66,12 +68,19 @@ sealed interface FileTarget {
     data class Text(val address: TextAddress) : FileTarget
 }
 
-/** A text the text reader opens (docs/spec.md section 4.9): a document, or a text entry of an archive document. */
+/**
+ * A text the text reader opens (docs/spec.md section 4.9), with what its id is made of (section 2.2), so the list,
+ * the reader, the history and a shortcut keep its progress under one id.
+ */
 sealed interface TextAddress {
+    /** A document picked or handed over outside a place; its id comes from its first bytes. */
     data class Document(val uri: UriString) : TextAddress
 
-    /** The entry at [entryIndex], in the archive's stored order. */
-    data class ArchiveEntry(val archive: UriString, val entryIndex: Int) : TextAddress
+    /** The text at [path] of a place. [documentId] is the provider's id when the caller knows it. */
+    data class InLocation(val location: LocationId, val path: String, val documentId: String? = null) : TextAddress
+
+    /** The entry at [entryIndex], in the stored order, of the archive document [archive], whose id is [archiveId]. */
+    data class ArchiveEntry(val archive: UriString, val entryIndex: Int, val archiveId: BookId) : TextAddress
 }
 
 private sealed interface ListingState {
@@ -221,11 +230,7 @@ class FolderViewModel(
         is FileItem.Image -> FileTarget.Book(
             OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),
         )
-        is FileItem.Text -> {
-            val tree = (place.value as? LibraryLocation.SafTree)?.treeUri
-            val documentId = item.entry.documentId
-            if (tree == null || documentId == null) null else FileTarget.Text(TextAddress.Document(services.getCompleted().documents.of(tree, documentId)))
-        }
+        is FileItem.Text -> FileTarget.Text(TextAddress.InLocation(folder.location, row.path, item.entry.documentId))
     }
 
     /** 既読にする and 未読にする of the long-press sheet (docs/spec.md sections 2.7 and 4.3). */

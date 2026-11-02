@@ -3,25 +3,31 @@ package io.github.yuubiz.hirari.feature.text
 import android.content.ContentResolver
 import android.graphics.Typeface
 import android.net.Uri
+import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ArchiveSession
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.archive.OpenResult
 import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.data.FontStore
 import io.github.yuubiz.hirari.core.data.HistoryRepository
+import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.documentBookId
 import io.github.yuubiz.hirari.core.model.entryBookId
+import io.github.yuubiz.hirari.core.model.locationBookId
 import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
+import io.github.yuubiz.hirari.core.source.findDocumentId
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.text.GlyphMetrics
 import io.github.yuubiz.hirari.core.text.PaintGlyphMetrics
@@ -33,28 +39,53 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
-import java.nio.ByteBuffer
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 
-/** A text book: one document picked through SAF, or a text entry of an archive book (docs/spec.md section 4.7). */
+/**
+ * A text book (docs/spec.md section 4.9), with what its id is made of (section 2.2), so the file list, the reader,
+ * the history and a shortcut keep its progress under one id.
+ */
 sealed interface TextBookRef {
+    /** A document picked or handed over outside a place; its id comes from its first bytes. */
     data class Document(val uri: Uri) : TextBookRef
 
-    /** The entry at [entryIndex], in the archive's stored order, of the archive document at [archive]. */
-    data class ArchiveEntry(val archive: Uri, val entryIndex: Int) : TextBookRef
+    /** The text at [path] of a place. [documentId] is the provider's id when the caller knows it. */
+    data class InLocation(val location: LocationId, val path: String, val documentId: String? = null) : TextBookRef
+
+    /** The entry at [entryIndex], in the stored order, of the archive document at [archive], whose id is [archiveId]. */
+    data class ArchiveEntry(val archive: Uri, val entryIndex: Int, val archiveId: BookId) : TextBookRef
 }
 
 /** The opener of [ref]. Every step blocks on Binder or the disk, so all of it runs on `Dispatchers.IO` (section 6.4). */
-internal fun opener(ref: TextBookRef, resolver: ContentResolver, copyDir: File): TextOpener = when (ref) {
-    is TextBookRef.Document -> TextOpener { openOn(Dispatchers.IO) { openDocument(resolver, ref.uri) } }
-    is TextBookRef.ArchiveEntry -> TextOpener { openOn(Dispatchers.IO) { openEntry(resolver, ref, copyDir) } }
+internal fun opener(ref: TextBookRef, resolver: ContentResolver, locations: LocationRepository, copyDir: File): TextOpener = when (ref) {
+    is TextBookRef.Document -> TextOpener {
+        openOn(Dispatchers.IO) { guarded { openDocument(resolver, ref.uri, id = null, BookSource.External(UriString(ref.uri.toString()))) } }
+    }
+    is TextBookRef.InLocation -> TextOpener { openOn(Dispatchers.IO) { guarded { openInLocation(resolver, locations, ref) } } }
+    is TextBookRef.ArchiveEntry -> TextOpener {
+        openOn(Dispatchers.IO) { guarded { openEntry(resolver.openByteSource(ref.archive, copyDir), ref.archiveId, ref.entryIndex) } }
+    }
 }
 
-/** The document's bytes, its id as a single document (docs/spec.md section 2.2), and its entry for the index. */
-private suspend fun openDocument(resolver: ContentResolver, uri: Uri): TextOpenResult = guarded {
+/** A text of a SAF place, by its path inside the place, as the image reader finds a book there. */
+private suspend fun openInLocation(resolver: ContentResolver, locations: LocationRepository, ref: TextBookRef.InLocation): TextOpenResult {
+    val path = normalizePath(ref.path)
+    val place = locations.get(ref.location) as? LibraryLocation.SafTree ?: return TextOpenResult.Failed(TextFailure.NotFound)
+    if (!place.permissionHeld) return TextOpenResult.Failed(TextFailure.NoPermission)
+    val tree = Uri.parse(place.treeUri.value)
+    val documentId = ref.documentId ?: resolver.findDocumentId(tree, path) ?: return TextOpenResult.Failed(TextFailure.NotFound)
+    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
+    return openDocument(resolver, uri, locationBookId(place, path), BookSource.InLocation(ref.location, path))
+}
+
+/**
+ * The document's bytes, its id, and its entry for the index. Without [id] the document is a single one, whose id
+ * comes from its first bytes (docs/spec.md section 2.2).
+ */
+private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId?, source: BookSource): TextOpenResult {
     val info = try {
         resolver.documentInfo(uri)
     } catch (e: CancellationException) {
@@ -63,30 +94,19 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri): TextOpenR
         null
     }
     val bytes = (resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())).use(::readCapped)
-        ?: return@guarded TextOpenResult.Failed(TextFailure.TooLarge)
-    val id = documentBookId(bytes.copyOf(minOf(bytes.size, BOOK_ID_PREFIX_BYTES)), bytes.size.toLong())
-    val title = info?.name ?: uri.lastPathSegment ?: uri.toString()
+        ?: return TextOpenResult.Failed(TextFailure.TooLarge)
+    val bookId = id ?: documentBookId(bytes.copyOf(minOf(bytes.size, BOOK_ID_PREFIX_BYTES)), bytes.size.toLong())
+    val title = info?.name ?: (source as? BookSource.InLocation)?.path?.substringAfterLast('/') ?: uri.lastPathSegment ?: uri.toString()
     val book = Book(
-        id = id,
-        source = BookSource.External(UriString(uri.toString())),
+        id = bookId,
+        source = source,
         format = BookFormat.Text(charset = null),
         title = title,
         byteSize = info?.size ?: bytes.size.toLong(),
         modified = info?.lastModifiedMs?.let(Instant::ofEpochMilli) ?: Instant.EPOCH,
         pageCount = null,
     )
-    TextOpenResult.Opened(OpenedText(id, title, path = "", book, pictures = null) {}, bytes)
-}
-
-private suspend fun openEntry(resolver: ContentResolver, ref: TextBookRef.ArchiveEntry, copyDir: File): TextOpenResult = guarded {
-    val source = resolver.openByteSource(ref.archive, copyDir)
-    val archiveId = try {
-        documentBookId(prefixOf(source), source.size)
-    } catch (e: Throwable) {
-        source.close()
-        throw e
-    }
-    openEntry(source, archiveId, ref.entryIndex)
+    return TextOpenResult.Opened(OpenedText(bookId, title, path = "", book, pictures = null) {}, bytes)
 }
 
 /**
@@ -153,12 +173,6 @@ private fun readCapped(input: InputStream): ByteArray? {
         if (out.size() + read > MAX_TEXT_BYTES) return null
         out.write(buffer, 0, read)
     }
-}
-
-private fun prefixOf(source: ByteSource): ByteArray {
-    val prefix = ByteBuffer.allocate(minOf(source.size, BOOK_ID_PREFIX_BYTES.toLong()).toInt())
-    while (prefix.hasRemaining() && source.read(prefix.position().toLong(), prefix) > 0) Unit
-    return prefix.array().copyOf(prefix.position())
 }
 
 /**

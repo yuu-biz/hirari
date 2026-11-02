@@ -151,8 +151,9 @@ class ArchiveViewModel(
     }
 
     fun open(text: ArchiveText): ArchiveTarget? {
-        val uri = opened?.contents?.documentUri ?: return null.also { notice.value = Notice.SmbBookNotReady }
-        return ArchiveTarget.Text(TextAddress.ArchiveEntry(uri, text.entryIndex))
+        val opened = opened ?: return null
+        val uri = opened.contents.documentUri ?: return null.also { notice.value = Notice.SmbBookNotReady }
+        return ArchiveTarget.Text(TextAddress.ArchiveEntry(uri, text.entryIndex, opened.id))
     }
 
     /** 文字コード of the menu (docs/spec.md section 3.4); null goes back to the detected one. */

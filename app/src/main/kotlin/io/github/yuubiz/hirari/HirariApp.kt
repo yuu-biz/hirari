@@ -16,7 +16,6 @@ import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
 import io.github.yuubiz.hirari.feature.library.DeviceArchives
-import io.github.yuubiz.hirari.feature.library.SafDocumentUris
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
@@ -82,7 +81,6 @@ class HirariApp : Application() {
                 smb = smb,
                 archives = DeviceArchives(contentResolver, cacheDir, smb),
                 launch = storage.launch,
-                documents = SafDocumentUris,
             )
         }
         text = appScope.async { services.await().let { TextReaderServices(it.storage, it.progress, appScope) } }

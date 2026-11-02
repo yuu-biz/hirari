@@ -46,9 +46,8 @@ suspend fun LibraryServices.resolve(shortcut: PlaceShortcut): ShortcutTarget {
     val name = path.substringAfterLast('/')
     val entry = (list(place, parent) as? Listing.Listed)?.entries?.firstOrNull { !it.directory && normalizePath(it.name) == name }
     val item = entry?.toItem(showDotFiles = true) ?: return ShortcutTarget.Missing
-    val tree = (place as? LibraryLocation.SafTree)?.treeUri
     return when {
-        item is FileItem.Text && tree != null && entry.documentId != null -> ShortcutTarget.Text(TextAddress.Document(documents.of(tree, entry.documentId)))
+        item is FileItem.Text && place is LibraryLocation.SafTree -> ShortcutTarget.Text(TextAddress.InLocation(shortcut.location, path, entry.documentId))
         item is FileItem.Archive -> ShortcutTarget.Book(OpenBookRequest(BookAddress.InLocation(shortcut.location, path, folder = false, entry.documentId)))
         else -> ShortcutTarget.Missing
     }

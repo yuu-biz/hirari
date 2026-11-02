@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari
 
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.StartAt
@@ -119,16 +120,26 @@ internal fun OpenBookRequest.toReaderRoute(): ReaderRoute {
 
 /** The text reader's arguments (docs/spec.md section 4.9), flattened like [ReaderRoute]. */
 @Serializable
-internal data class TextRoute(val kind: Kind, val uri: String, val entryIndex: Int = -1) {
-    enum class Kind { Document, ArchiveEntry }
+internal data class TextRoute(
+    val kind: Kind,
+    val uri: String = "",
+    val location: Long = 0,
+    val path: String = "",
+    val documentId: String? = null,
+    val entryIndex: Int = -1,
+    val archiveId: String = "",
+) {
+    enum class Kind { Document, InLocation, ArchiveEntry }
 
     fun toRef(): TextBookRef = when (kind) {
         Kind.Document -> TextBookRef.Document(Uri.parse(uri))
-        Kind.ArchiveEntry -> TextBookRef.ArchiveEntry(Uri.parse(uri), entryIndex)
+        Kind.InLocation -> TextBookRef.InLocation(LocationId(location), path, documentId)
+        Kind.ArchiveEntry -> TextBookRef.ArchiveEntry(Uri.parse(uri), entryIndex, BookId(archiveId))
     }
 }
 
 internal fun TextAddress.toRoute(): TextRoute = when (this) {
-    is TextAddress.Document -> TextRoute(TextRoute.Kind.Document, uri.value)
-    is TextAddress.ArchiveEntry -> TextRoute(TextRoute.Kind.ArchiveEntry, archive.value, entryIndex)
+    is TextAddress.Document -> TextRoute(TextRoute.Kind.Document, uri = uri.value)
+    is TextAddress.InLocation -> TextRoute(TextRoute.Kind.InLocation, location = location.value, path = path, documentId = documentId)
+    is TextAddress.ArchiveEntry -> TextRoute(TextRoute.Kind.ArchiveEntry, uri = archive.value, entryIndex = entryIndex, archiveId = archiveId.value)
 }

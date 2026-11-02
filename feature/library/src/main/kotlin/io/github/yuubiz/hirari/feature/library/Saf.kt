@@ -47,12 +47,6 @@ class SafTreeGrants(private val resolver: ContentResolver) : TreeGrants {
     }
 }
 
-/** Builds the URI without asking the provider, so it is safe on the main thread. */
-object SafDocumentUris : DocumentUris {
-    override fun of(tree: UriString, documentId: String): UriString =
-        UriString(DocumentsContract.buildDocumentUriUsingTree(Uri.parse(tree.value), documentId).toString())
-}
-
 class SafFolderLister(private val resolver: ContentResolver) : FolderLister {
     override suspend fun list(tree: UriString, path: String, documentId: String?): Listing = withContext(Dispatchers.IO) {
         val uri = Uri.parse(tree.value)

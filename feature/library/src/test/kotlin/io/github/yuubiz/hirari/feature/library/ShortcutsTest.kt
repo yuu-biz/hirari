@@ -31,7 +31,7 @@ class ShortcutsTest {
             resolve(place.id, "作品/1巻.zip", folder = false),
         )
         assertEquals(
-            ShortcutTarget.Text(TextAddress.Document(UriString("content://tree/manga/document/doc:作品/後書き.txt"))),
+            ShortcutTarget.Text(TextAddress.InLocation(place.id, "作品/後書き.txt", "doc:作品/後書き.txt")),
             resolve(place.id, "作品/後書き.txt", folder = false),
         )
     }

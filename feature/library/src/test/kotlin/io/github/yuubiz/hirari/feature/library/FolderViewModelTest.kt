@@ -121,7 +121,7 @@ class FolderViewModelTest {
             list.open(all[2]),
         )
         assertEquals(
-            FileTarget.Text(TextAddress.Document(UriString("content://tree/manga/document/doc:作品/後書き.txt"))),
+            FileTarget.Text(TextAddress.InLocation(place.id, "作品/後書き.txt", "doc:作品/後書き.txt")),
             list.open(all.first { it.item is FileItem.Text }),
         )
     }

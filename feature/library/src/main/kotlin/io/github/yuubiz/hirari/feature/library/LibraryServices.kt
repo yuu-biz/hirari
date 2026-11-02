@@ -54,11 +54,6 @@ interface FolderLister {
     suspend fun list(tree: UriString, path: String, documentId: String?): Listing
 }
 
-/** The content URI of a document of a SAF tree, which the text reader opens (docs/spec.md section 4.3). */
-fun interface DocumentUris {
-    fun of(tree: UriString, documentId: String): UriString
-}
-
 /** What the library screens read and write. */
 class LibraryServices(
     val locations: LocationRepository,
@@ -72,6 +67,5 @@ class LibraryServices(
     val smb: SmbPlaces,
     val archives: ArchiveOpener,
     val launch: LaunchRepository,
-    val documents: DocumentUris,
     val clock: () -> Instant = Instant::now,
 )
