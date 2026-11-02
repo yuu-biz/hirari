@@ -84,7 +84,8 @@ class DocumentChild(
 
 /**
  * The direct children of the folder [documentId] in the tree [treeUri], in the order the provider gives them,
- * from one query. Blocks on Binder, so never call it on the main thread.
+ * from one query. Blocks on Binder, so never call it on the main thread. Cancelling [signal] stops the query and,
+ * once the provider has answered, the reading of its rows.
  *
  * @throws SecurityException when the permission to the tree is gone.
  * @throws IOException when the provider gives no result.
@@ -98,7 +99,9 @@ fun ContentResolver.listChildren(
     val cursor = query(childrenUri, CHILD_COLUMNS, null, null, null, signal) ?: throw IOException("the provider returned no cursor")
     return cursor.use {
         val children = ArrayList<DocumentChild>(it.count.coerceAtLeast(0))
-        while (it.moveToNext()) {
+        while (true) {
+            signal?.throwIfCanceled()
+            if (!it.moveToNext()) break
             val id = it.getString(0) ?: continue
             children += DocumentChild(
                 uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id),
