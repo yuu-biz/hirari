@@ -52,9 +52,9 @@ object EntryNames {
             charset to CommonCharacters.score(charset, rawNames.map { decode(it, charset, slashMayBeBackslash) })
         }
         val best = scores.maxByOrNull { it.second } ?: return null
-        if (best.second < MIN_CONFIDENCE) return null
         val japanese = scores.filter { it.first in JAPANESE && it.second >= best.second - JAPANESE_MARGIN }.maxByOrNull { it.second }
-        return (japanese ?: best).first
+        val (charset, score) = japanese ?: best
+        return charset.takeIf { score >= MIN_CONFIDENCE }
     }
 
     /**

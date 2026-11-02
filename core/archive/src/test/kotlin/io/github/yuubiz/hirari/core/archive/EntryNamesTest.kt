@@ -58,6 +58,13 @@ class EntryNamesTest {
     }
 
     @Test
+    fun `a Japanese candidate preferred below the minimum score goes to the undetermined charset`() {
+        val raw = listOf(ByteArray(18) { if (it % 2 == 0) 0xd8.toByte() else 0xfe.toByte() } + byteArrayOf(0xd0.toByte(), 0xa1.toByte()) + ".jpg".toByteArray())
+
+        assertEquals(Charsets.US_ASCII, charsetOf(raw, undetermined = Charsets.US_ASCII))
+    }
+
+    @Test
     fun `Big5 names that are not CP932 are detected as Big5`() {
         val raw = names("第一卷/第一話 開始的早晨.jpg", "第一卷/第二話 離別的夜晚.jpg", "第一卷/封面.jpg", charset = EntryNames.BIG5)
 
