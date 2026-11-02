@@ -27,6 +27,7 @@ import java.io.Closeable
 import java.io.IOException
 import java.io.File
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 
 private class MemoryStore(private val dir: File) : ThumbnailStore {
     val files = HashMap<ThumbnailKey, File>()
@@ -36,6 +37,7 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
     var puts = 0
     var afterGet: (ThumbnailKey) -> Unit = {}
     var afterPut: (ThumbnailKey) -> Unit = {}
+    var beforeRemove: suspend (ThumbnailKey) -> Unit = {}
 
     val holding: List<ThumbnailKey> get() = held.toMutableList().apply { released.forEach { remove(it) } }
 
@@ -58,6 +60,7 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
     }
 
     override suspend fun remove(key: ThumbnailKey) {
+        beforeRemove(key)
         files.remove(key)
         failed.remove(key)
     }
@@ -656,6 +659,114 @@ class ThumbnailsTest {
         runCurrent()
         assertEquals("B", shows(regenerated.await()))
         assertEquals("B", shows(first.await()))
+    }
+
+    @Test
+    fun aRegenerationThatEndsUnavailableFirstIsTheAnswerOfTheOlderSearchToo() = runTest {
+        val thumbnails = thumbnails()
+        val oldSearch = CompletableDeferred<Unit>()
+        maker.script = {
+            if (it.id.value == "A") {
+                oldSearch.await()
+                image(it)
+            } else {
+                Made.Unavailable
+            }
+        }
+        val first = async { thumbnails.thumbnail(request(folder(item("1"), chosen = book("A")))) }
+        runCurrent()
+        val regenerated = async { thumbnails.regenerate(request(folder(item("1"), chosen = book("B")))) }
+        runCurrent()
+        assertEquals(ThumbResult.Unavailable, regenerated.await())
+        oldSearch.complete(Unit)
+        runCurrent()
+        assertEquals(ThumbResult.Unavailable, first.await())
+        val hit = async { thumbnails.cached(request(folder(item("1")))) }
+        runCurrent()
+        assertNull("the older search stored its cover", hit.await())
+    }
+
+    @Test
+    fun aRegenerationGoesOnForTheOlderSearchWhenItsCallerLeaves() = runTest {
+        val thumbnails = thumbnails()
+        val oldSearch = CompletableDeferred<Unit>()
+        val newSearch = CompletableDeferred<Unit>()
+        maker.script = {
+            when (it.id.value) {
+                "A" -> oldSearch.await()
+                "B" -> newSearch.await()
+            }
+            image(it)
+        }
+        val first = async { thumbnails.thumbnail(request(folder(item("1"), chosen = book("A")))) }
+        runCurrent()
+        val regenerated = launch { thumbnails.regenerate(request(folder(item("1"), chosen = book("B")))) }
+        runCurrent()
+        regenerated.cancel()
+        runCurrent()
+        oldSearch.complete(Unit)
+        newSearch.complete(Unit)
+        runCurrent()
+        assertEquals("B", shows(first.await()))
+        val hit = async { thumbnails.cached(request(folder(item("1")))) }
+        runCurrent()
+        assertEquals("B", shows(hit.await()))
+    }
+
+    @Test
+    fun anOlderSearchThatEndsWhileTheRegenerationStartsGivesWayToIt() = runTest {
+        val thumbnails = thumbnails()
+        val oldSearch = CompletableDeferred<Unit>()
+        val removing = CompletableDeferred<Unit>()
+        store.beforeRemove = { if (it.book == BookId("folder")) removing.await() }
+        maker.script = {
+            if (it.id.value == "A") oldSearch.await()
+            image(it)
+        }
+        val first = async { thumbnails.thumbnail(request(folder(item("1"), chosen = book("A")))) }
+        runCurrent()
+        val regenerated = async { thumbnails.regenerate(request(folder(item("1"), chosen = book("B")))) }
+        runCurrent()
+        oldSearch.complete(Unit)
+        runCurrent()
+        removing.complete(Unit)
+        runCurrent()
+        assertEquals("B", shows(regenerated.await()))
+        assertEquals("B", shows(first.await()))
+        val hit = async { thumbnails.cached(request(folder(item("1")))) }
+        runCurrent()
+        assertEquals("B", shows(hit.await()))
+    }
+
+    @Test
+    fun eachRegenerationAnswersEveryoneWaitingForTheFolder() = runTest {
+        val thumbnails = thumbnails()
+        val gates = mapOf("A" to CompletableDeferred<Unit>(), "B" to CompletableDeferred(), "C" to CompletableDeferred())
+        maker.script = {
+            gates[it.id.value]?.await()
+            image(it)
+        }
+        val first = async { thumbnails.thumbnail(request(folder(item("1"), chosen = book("A")))) }
+        runCurrent()
+        val second = async { thumbnails.regenerate(request(folder(item("1"), chosen = book("B")))) }
+        runCurrent()
+        val third = async { thumbnails.regenerate(request(folder(item("1"), chosen = book("C")))) }
+        runCurrent()
+        gates.values.forEach { it.complete(Unit) }
+        runCurrent()
+        assertEquals(listOf("C", "C", "C"), listOf(first, second, third).map { shows(it.await()) })
+    }
+
+    @Test
+    fun closingEndsTheWaitForAFolder() = runTest {
+        val thumbnails = thumbnails()
+        maker.script = { awaitCancellation() }
+        val waiting = async { runCatching { thumbnails.thumbnail(request(folder(item("1")))) } }
+        runCurrent()
+        thumbnails.close()
+        runCurrent()
+        assertTrue("the wait went on after closing", waiting.isCompleted)
+        assertTrue(waiting.await().exceptionOrNull() is CancellationException)
     }
 
     @Test
