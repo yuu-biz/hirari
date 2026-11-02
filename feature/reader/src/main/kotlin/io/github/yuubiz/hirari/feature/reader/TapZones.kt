@@ -25,6 +25,13 @@ data class ReaderRegions(val screen: Size, val barHeight: Float, val systemBarsH
     }
 }
 
+/**
+ * What a tap toward [turn] does. With `tapAdvancesStops` on, a view larger than the screen
+ * ([overflows]) steps through its stops before it turns.
+ */
+fun tapAction(turn: Turn, overflows: Boolean, tapAdvancesStops: Boolean): ReaderAction =
+    if (overflows && tapAdvancesStops) ReaderAction.StepStops(turn) else ReaderAction.TurnView(turn)
+
 /** Bands on both sides leave room for the middle that does nothing. */
 const val TWO_BAND_MAX_PERCENT = 45
 

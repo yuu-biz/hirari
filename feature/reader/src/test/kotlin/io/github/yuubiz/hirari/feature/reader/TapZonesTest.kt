@@ -117,6 +117,14 @@ class TapZonesTest {
     }
 
     @Test
+    fun aTapStepsThroughStopsOnlyWhenZoomedAndEnabled() {
+        assertEquals(ReaderAction.StepStops(Forward), tapAction(Forward, overflows = true, tapAdvancesStops = true))
+        assertEquals(ReaderAction.StepStops(Back), tapAction(Back, overflows = true, tapAdvancesStops = true))
+        assertEquals(ReaderAction.TurnView(Forward), tapAction(Forward, overflows = true, tapAdvancesStops = false))
+        assertEquals(ReaderAction.TurnView(Forward), tapAction(Forward, overflows = false, tapAdvancesStops = true))
+    }
+
+    @Test
     fun theBarsSplitTheScreen() {
         val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, systemBarsHidden = false)
         assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 0f)))
