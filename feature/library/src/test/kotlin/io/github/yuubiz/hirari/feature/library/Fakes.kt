@@ -241,15 +241,17 @@ internal class FakeGrants : TreeGrants {
     override suspend fun name(tree: UriString): String = names[tree] ?: tree.value.substringAfterLast('/')
 }
 
-/** Each folder by path; a missing path fails as not found. */
+/** Each folder by path; a missing path fails as not found, and every path fails with [failure] when it is set. */
 internal class FakeLister : FolderLister {
     val folders = mutableMapOf<String, List<FolderEntry>>()
     var calls = 0
     var delayMs = 0L
+    var failure: ListFailure? = null
 
     override suspend fun list(tree: UriString, path: String, documentId: String?): Listing {
         calls++
         if (delayMs > 0) delay(delayMs)
+        failure?.let { return Listing.Failed(it) }
         val entries = folders[path] ?: return Listing.Failed(ListFailure.NotFound)
         return Listing.Listed(documentId ?: "doc:$path", entries)
     }

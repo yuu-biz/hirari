@@ -26,8 +26,9 @@ sealed interface ShortcutTarget {
 
 /**
  * Looks up the place and the path of [shortcut]. A book is looked for in the listing of its folder, which also
- * gives a SAF book its document. A folder that does not list for another reason than being gone still opens,
- * so its file list shows why.
+ * gives a SAF book its document. A SAF folder the provider refuses counts as gone, since the grant can be lost
+ * while the place still says it holds it. A folder that does not list for another reason still opens, so its file
+ * list shows why.
  */
 suspend fun LibraryServices.resolve(shortcut: PlaceShortcut): ShortcutTarget {
     val place = locations.get(shortcut.location)?.takeIf { it.usable() } ?: return ShortcutTarget.Missing
@@ -35,7 +36,10 @@ suspend fun LibraryServices.resolve(shortcut: PlaceShortcut): ShortcutTarget {
     if (shortcut.folder) {
         return when (val listed = list(place, path)) {
             is Listing.Listed -> ShortcutTarget.Folder(FolderKey(shortcut.location, path, listed.folderDocumentId))
-            is Listing.Failed -> if (listed.reason == ListFailure.NotFound) ShortcutTarget.Missing else ShortcutTarget.Folder(FolderKey(shortcut.location, path))
+            is Listing.Failed -> when (listed.reason) {
+                ListFailure.NotFound, ListFailure.NoPermission -> ShortcutTarget.Missing
+                else -> ShortcutTarget.Folder(FolderKey(shortcut.location, path))
+            }
         }
     }
     val parent = path.substringBeforeLast('/', "")

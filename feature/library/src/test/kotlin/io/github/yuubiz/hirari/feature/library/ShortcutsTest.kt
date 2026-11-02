@@ -48,6 +48,13 @@ class ShortcutsTest {
     }
 
     @Test
+    fun `a SAF folder whose grant is gone though the place still says held finds nothing`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.failure = ListFailure.NoPermission
+        assertEquals(ShortcutTarget.Missing, resolve(place.id, "作品", folder = true))
+    }
+
+    @Test
     fun `an SMB folder opens even when the server does not answer, so its list says why`() = runTest {
         fixture.locations.rows.value = listOf(server)
         fixture.smb.failure = ListFailure.Unreachable
