@@ -447,10 +447,10 @@ interface ByteSource : Closeable {
 
 | 形式 | 必須の対応 | 扱い |
 |---|---|---|
-| ZIP | ZIP64、データディスクリプタ（汎用フラグの bit 3）、長いコメント、前置データ、UTF-8 フラグ（bit 11）、無圧縮と Deflate | 末尾 16 KB に終端レコードがあれば、中央ディレクトリを読む方式で開く。終端レコードがそれより前にある（コメントが 16 KB を超える）か、切れて無いときは、ローカルヘッダを先頭から順に読む方式で開く（libarchive 3.8.11 のソースで確かめた）。無圧縮と Deflate 以外の方式はビルドしていないので、`Unsupported(Compression)` にする |
+| ZIP | ZIP64、データディスクリプタ（汎用フラグの bit 3）、長いコメント、前置データ、UTF-8 フラグ（bit 11）、無圧縮と Deflate | 末尾 16 KB に終端レコードがあれば、中央ディレクトリを読む方式で開く。終端レコードがそれより前にある（コメントが 16 KB を超える）か、切れて無いときは、ローカルヘッダを先頭から順に読む方式で開く（libarchive 3.8.11 のソースで確かめた）。無圧縮、Deflate、PPMd（方式 98）を読む。ほかの方式は `Unsupported(Compression)` にする。BZip2、LZMA、xz、zstd のライブラリは 7z と tar のために組み込んであるが、ZIP のこれらの方式はコーパスで確かめていないので読まない |
 | RAR 4 | 通常と solid | 通常の書庫は読む。solid は読めない。libarchive 3.8.11 は solid の印（ファイルヘッダの `0x0010`）を持つファイルヘッダで「solid には対応していない」として止まる（ソースで確かめ、コーパスの `rar4/solid.rar` で確かめた）。solid の書庫では 2 つ目以降のファイルがみなこの印を持つので、一覧は最初のエントリで止まり、理由は `Corrupt` になる。読むには libarchive に手を入れるか RAR 4 の展開器を別に持つ必要があり、v1 ではしない |
 | RAR 5 | 通常と solid | どちらも読む。solid の書庫は、主ヘッダの solid の印（`0x0004`）をセッションが先頭の 64 バイトから読んで見分け、展開キャッシュで読む。libarchive は solid の書庫でエントリを飛ばすときにも中で展開するので、開いて一覧を作るだけで全体を 1 度展開する（ソースで確かめた）。圧縮した RAR 5 はコーパスに作れないので、展開が正しいことは実データで確かめる (要検証) |
-| 7z | LZMA、LZMA2、PPMd、BCJ、Deflate、BZip2 | PPMd は組み込まない（Q19）。7z は常に展開キャッシュで読む。solid かどうかはヘッダに書かれるが、ヘッダはたいてい圧縮されていて、確かめるにはヘッダの展開が要るためである。libarchive は一覧を作るときにデータを展開しない |
+| 7z | LZMA、LZMA2、PPMd、BCJ、Deflate、BZip2 | PPMd も読む（Q19）。7z は常に展開キャッシュで読む。solid かどうかはヘッダに書かれるが、ヘッダはたいてい圧縮されていて、確かめるにはヘッダの展開が要るためである。libarchive は一覧を作るときにデータを展開しない |
 | tar | 無圧縮、gzip、xz、zstd | bzip2 も読む。圧縮した tar は、エントリを飛ばすにも展開が要るので、展開キャッシュで読む。無圧縮の tar はシークで飛ばす |
 | 暗号化された書庫 | | 3.8 節 |
 | 分割書庫 | | 非目標。開いたときに「分割された書庫には対応していません」と出す |
@@ -483,7 +483,7 @@ libarchive は順に読む形の API を持つ。任意のエントリを開く�
 - 開くときは、読めたところまでのエントリを索引にする。ヘッダが読めなくなったら、そこで一覧を止め、理由を索引に残す。
 - libarchive のエラーは次のように分ける。`ByteSource` の読み込みが `ConnectionLostException` を投げたら `ConnectionLost`、ほかの例外を投げたら `ReadError`、libarchive が終端より先を求めたら `Truncated`、それ以外は `Corrupt`。暗号化の印があるエントリは `Encrypted`、展開できない方式は `Compression(方式)` として、データを読まずに返す。
 - 形式を判定できずに開けなかったときは、短いファイルで終端より先を求めても `Truncated` ではなく `Corrupt` にする。形式の判定は、ファイルが短くても先まで読もうとするためである。
-- ZIP の方式は libarchive が一覧の段階で名前を返すので、データを読まずに返せる。7z と RAR の方式は一覧では分からない。PPMd のエントリは、データを読み始めたところで `Compression("ppmd")` になる。PPMd の代わりに置いた自前の関数（8.5 節）が、モデルのメモリを求められたことをスレッドごとに記録し、JNI がそれを見て、メモリ不足と区別する。
+- ZIP の方式は libarchive が一覧の段階で名前を返すので、データを読まずに返せる。7z と RAR の方式は一覧では分からず、libarchive が展開できない方式のエントリは、データを読んだところで `Corrupt` になる。
 - ディレクトリのエントリはデータを読まずに空のデータを返す。libarchive の RAR 5 の読み込みは、ディレクトリのデータを読むと失敗するためである。
 - 展開した量は実際に書き出した量で数え、上限（3.7 節）を超えるブロックが来たら止めて `TooLarge` にする。宣言サイズが上限を超えるエントリは読まずに `TooLarge` にする。
 
@@ -1702,15 +1702,16 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 RAR、7z、tar の書庫は次のように作る。
 
 - RAR 4 と RAR 5 は、公開されている形式の説明（RAR 4 の technote と、rarlab.com の RAR 5 の形式の説明）から、格納（無圧縮）のエントリだけを自前で書く。RAR の圧縮器は公式のツールにしかなく、使わない。暗号化されたエントリとヘッダは、暗号化の印と記録だけを書き、データは暗号文ではない。solid の印は、RAR 4 では主ヘッダと 2 つ目以降のファイルヘッダに、RAR 5 では主ヘッダだけに立てる（RAR 5 のファイルの solid の印は展開器の辞書を引き継ぐ印で、格納のファイルには付けられない）。
-- 7z は、LZMA SDK の `7zFormat.txt` から自前で書く。圧縮は XZ for Java（LZMA、LZMA2、x86 の分岐フィルタ）、Apache Commons Compress（BZip2）、JDK（Deflate）で行う。PPMd と AES の符号器は宣言だけで、データは本物ではない。
+- 7z は、LZMA SDK の `7zFormat.txt` から自前で書く。圧縮は XZ for Java（LZMA、LZMA2、x86 の分岐フィルタ）、Apache Commons Compress（BZip2）、JDK（Deflate）で行う。AES の符号器は宣言だけで、データは本物ではない。
 - tar は POSIX の ustar を自前で書く。gzip は JDK、xz は XZ for Java、bzip2 は Commons Compress で圧縮する。zstd は圧縮器を使わず、そのまま格納するブロックだけの zstd のフレーム（RFC 8878）を書く。
+- PPMd の 7z と ZIP は、許可したライセンスの符号器がないので、7-Zip 26.02 で一度だけ作ったファイルを `tools/corpus/src/main/resources/fixtures` に置いて使う。作ったときのコマンドと SHA-256 は `Fixtures.kt` に書く。7-Zip は道具として使っただけで、そのコードは入れない。中身は ASCII の行で、JVM の試験で、JDK と Commons Compress が一覧に返す名前、大きさ、CRC-32 が目録と一致することを確かめる。展開できることは端末の試験で確かめる。
 - 書いた 7z と tar は、JVM の試験で Commons Compress に読ませて、名前とデータが目録と一致することを確かめる。Commons Compress は RAR を読めないので、RAR は端末の試験だけで確かめる。
 - Android のアセットの仕組みは `.gz` で終わる名前のファイルを展開して名前を変えるので、圧縮した tar は `.tgz`、`.txz`、`.tzst`、`.tbz2` の名前にする。
 
 次のものは作れないので、コーパスに入れない。
 
 - 圧縮した RAR 4 と RAR 5（solid のものを含む）。RAR の圧縮器は許可したライセンスのものがない。RAR 5 の solid の展開と、RAR の圧縮方式の読み込みは、実データで確かめる (要検証)。
-- PPMd で圧縮した RAR（RAR 4 は圧縮の途中で PPMd に切り替わる）。PPMd は組み込まないので、読むと `Compression("ppmd")` になるはずである (要検証)。
+- PPMd で圧縮した RAR（RAR 4 は圧縮の途中で PPMd に切り替わる）。RAR の圧縮器がないので作れない。RAR 4 の PPMd は 7z と同じ `archive_ppmd7.c`（PPMd var.H）で展開するが、RAR での読み込みは実データで確かめる (要検証)。
 - 本物の AES で暗号化した 7z と RAR。暗号化の印だけで `Encrypted` になることは、印だけのコーパスで確かめた。
 - BCJ2、ARM、ARM64 の分岐フィルタを使う 7z。XZ for Java は x86 などの単純な分岐フィルタは書けるが、BCJ2 は書けない。
 
@@ -1880,7 +1881,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 
 | 依存 | 用途 | ライセンス | 組み込み方 |
 |---|---|---|---|
-| libarchive | ZIP、RAR、7z、tar の読み込み | BSD-2-Clause、BSD-3-Clause、ISC、Apache-2.0、0BSD。ファイルごとの内訳は表の下 | ソースから NDK でビルドし、JNI で呼ぶ。書き込み機能は外す。`third_party/libarchive` には、ビルドするファイルと `COPYING` だけを置く |
+| libarchive | ZIP、RAR、7z、tar の読み込み | BSD-2-Clause、BSD-3-Clause、ISC、Apache-2.0、0BSD、public domain。ファイルごとの内訳は表の下 | ソースから NDK でビルドし、JNI で呼ぶ。書き込み機能は外す。`third_party/libarchive` には、ビルドするファイルと `COPYING` だけを置く |
 | zlib | Deflate | Zlib | NDK に含まれる版を使う |
 | liblzma（XZ Utils） | LZMA、LZMA2、xz | 0BSD (要検証。版による) | ソースからビルド |
 | bzip2 | BZip2 | bzip2-1.0.6 | ソースからビルド |
@@ -1911,19 +1912,19 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | XZ for Java 1.12（`org.tukaani:xz`） | `tools/corpus` で 7z と tar のコーパスを LZMA、LZMA2、x86 の分岐フィルタ、xz で圧縮する | 0BSD。推移的な依存はない（1.12 の POM で確かめた） | コーパスの生成時だけ。配布物に入らない |
 | Apache Commons Compress 1.28.0 | `tools/corpus` で BZip2 に圧縮する。JVM の試験で、コーパスの 7z と tar を独立に読んで確かめる | Apache-2.0。commons-codec、commons-io、commons-lang3（どれも Apache-2.0）を伴う。zstd-jni、brotli の dec、XZ for Java、asm は任意の依存で、XZ for Java だけを上の行のとおり直接使う（1.28.0 の POM で確かめた） | コーパスの生成時と試験時だけ。配布物に入らない |
 
-libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 29 個の `.c` と 25 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
+libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 31 個の `.c` と 25 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
 
-- ビルドするファイルは、次の項目に挙げる部分を除いて BSD-2-Clause である。目録の SPDX 識別子は `BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0 AND Apache-2.0 AND 0BSD` とする。
+- ビルドするファイルは、次の項目に挙げる部分を除いて BSD-2-Clause である。目録の SPDX 識別子は `BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0 AND Apache-2.0 AND 0BSD AND LicenseRef-Public-Domain` とし、public domain のコードを含む 6 つのファイルを目録の `public_domain` に挙げる。
 - `archive_blake2s_ref.c`、`archive_blake2sp_ref.c`、`archive_blake2.h`、`archive_blake2_impl.h`（RAR 5 の検査値）は CC0-1.0、OpenSSL、Apache-2.0 から選べる三重ライセンスで、Apache-2.0 を選ぶ。
-- `archive_read_support_format_7zip.c` の分岐フィルタのうち、SPARC、PowerPC、RISC-V の変換は 0BSD である。
-- 同じ `archive_read_support_format_7zip.c` の x86（BCJ）、BCJ2、ARM、ARM64 の変換の関数は、LZMA SDK と XZ Embedded から移した public domain のコードである。ファイルの一部なので外せず、そのまま組み込んでいる。Q19 の方針との関係は Q19 に書く。
+- `archive_read_support_format_7zip.c` の分岐フィルタのうち、ARM Thumb、SPARC、PowerPC、IA-64、RISC-V の変換と Delta フィルタは 0BSD である（関数ごとに SPDX の表示か 0BSD の条文がある）。
+- 同じ `archive_read_support_format_7zip.c` の x86（BCJ）と BCJ2 の変換は LZMA SDK（Igor Pavlov）から、ARM と ARM64 の変換は XZ Embedded（Lasse Collin と Igor Pavlov）から移した public domain のコードで、関数ごとにその表示がある。出所が明らかな public domain として組み込む（Q19）。
 - `archive_ppmd7_private.h` は public domain（Igor Pavlov）。RAR と 7z の読み込みのソースが、PPMd の型の宣言のために取り込む。
 - `archive_entry.c` のファイルフラグの部分は、カリフォルニア大学の BSD-3-Clause である。
 - `archive_random.c` の arc4random の部分は ISC である。bionic の `arc4random_buf` を使うので、この部分はコンパイルされない。
 - `archive_ppmd_private.h` と `archive_ppmd8_private.h` は public domain（Igor Pavlov）。ZIP の読み込みのソースが、PPMd の型の宣言のために取り込む。
 - `archive_string_composition.h` は Unicode 文字データベース 6.0.0 の `UnicodeData.txt` から生成した表で、表示は BSD-2-Clause である。元のデータのライセンスの表示も載せるため、目録に Unicode-3.0 を加える。Unicode, Inc. は現在、データファイルをこのライセンスで配っている。6.0.0 の当時の条項は同じ趣旨の「Data Files and Software」の許諾である。
 - `COPYING` は著作権者の欄がひな形のままで、各ファイルの著作権者が載っていない。そのためライセンス画面では、ネイティブの依存について 3 つを並べる。`license_file` の全文、ソースから抜き出した著作権の行（ビルド時に生成する）、目録の SPDX 識別子ごとの正規の全文である。
-- PPMd の実装の `archive_ppmd8.c` と `archive_ppmd7.c` も public domain で、許可リストにないので組み込まない（Q19）。代わりに自前の `core/archive/src/main/cpp/libarchive/ppmd8_unsupported.c` と `ppmd7_unsupported.c` を置く。PPMd で圧縮されたエントリは、一覧には出るが、データを読むと `Unsupported(Compression("ppmd"))` になる（3.3 節）。
+- PPMd の実装の `archive_ppmd7.c`（PPMd var.H。7z と RAR 4 が使う）と `archive_ppmd8.c`（PPMd var.I rev. 1。ZIP が使う）は public domain（Igor Pavlov。元にした Dmitry Shkarin の PPMd と Dmitry Subbotin の range coder も public domain）で、ファイルの先頭にその表示がある。出所が明らかな public domain として組み込む（Q19）。3.8.11 の tarball（目録の SHA-256 で確かめた）から取り出した。
 - `archive_read_support_filter_compress.c`（BSD-3-Clause、`.Z`）は、3.3 節の表にない形式なので組み込まない。
 
 libarchive に加えて組み込むネイティブのライブラリは、`.so` の大きさを次のように増やす。libarchive の RAR、RAR 5、7z、tar の読み込みと gzip、xz、zstd、bzip2 のフィルタ、liblzma、bzip2、zstd を足す前と後の、リリースビルドで記号を除いた `libhirari_archive.so` の大きさである。静的ライブラリの記号は `--exclude-libs,ALL` で外に出さず、使わない関数をリンク時に捨てる。
@@ -1950,6 +1951,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 
 - 新しい依存は、推移的な依存とネイティブの依存を含めて、マージの前にライセンスを確かめ、この表に記録する。
 - 配布物に入れてよいライセンスは、Apache-2.0、MIT、BSD-2-Clause、BSD-3-Clause、ISC、Zlib、0BSD、bzip2-1.0.6、Unicode-3.0、書体だけ OFL-1.1 とする。
+- 出所が明らかな public domain のコードも入れてよい（利用者が決めた。Q19）。出所が明らかとは、ファイルに作者と public domain であることが書かれ、取り出した配布物の版と SHA-256 が目録にあることをいう。`third_party/` のネイティブのソースに限り、目録の `spdx` に `LicenseRef-Public-Domain`（SPDX には public domain の識別子がないので、SPDX の `LicenseRef-` の形で名付けた）を書き、そのファイルを `public_domain` に挙げる。`build-logic` はこの識別子だけを完全一致で受け付け、識別子とファイルの一覧の片方だけがあるときと、挙げたファイルがないときに失敗する。ライセンス画面には、そのファイルの一覧と `build-logic/spdx/LicenseRef-Public-Domain.txt` の文を載せる。Maven の依存には使わず、Licensee の許可リストには入れない。
 - 使わないライセンスは、GPL（全版）、LGPL、AGPL、SSPL、RAR の公式展開ソースに付く非 OSI のライセンス、そのほかライセンスが不明なものである。
 - GPL 系のソースから移したコードや、そのアルゴリズムの書き写しも入れない。
 - 二重ライセンスの依存は寛容な側を選び、選んだ側を表に書く。
@@ -2064,5 +2066,5 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 | Q16 | 読書位置としおりを自動バックアップに含めるか | 含める、含めない、設定で選ぶ | 含める。機種変更で読書の記録が消えるのは困る。SMB の資格情報は常に含めない |
 | Q17 | SMB の共有の一覧を取るか | 共有名を入力させる、SRVSVC で一覧を取る | v1 は入力させる。smbj は SRVSVC を持たず、一覧には DCE/RPC の別の依存が要る。候補の com.rapid7.client:dcerpc 0.12.13 は POM で BSD-3-Clause であり、guava、commons-io、commons-lang3 を伴う。それらのライセンスは、採用するときに確かめる |
 | Q18 | solid 書庫のサムネイルをどのページから作るか | 自然順で先頭のページ、格納順で先頭の画像 | 格納順で先頭の画像を使い、本を一度開いたら自然順で先頭のページに作り直す。solid 書庫で自然順の先頭を探すと、全体の展開が要ることがある |
-| Q19 | public domain のソース（libarchive の PPMd）を組み込むか | 組み込まない（ZIP と 7z の PPMd は `Unsupported(Compression)`）、許可リストに public domain を加える | 決定。public domain のソースファイル（`archive_ppmd7.c`、`archive_ppmd8.c`）は組み込まない。ZIP、7z、RAR の PPMd は `Unsupported(Compression("ppmd"))` になる。ただし `archive_read_support_format_7zip.c` は、x86（BCJ）、BCJ2、ARM、ARM64 の変換の関数に public domain のコードを含み（8.5 節）、ファイルを組み込むと一緒に入る。M3 ではそのまま組み込んだ。これらを外すには libarchive のソースに手を入れる必要があり、外すと 7z の BCJ 系のフィルタが読めなくなる。どちらにするかは利用者が決める (要検証) |
+| Q19 | public domain のソース（libarchive の PPMd）を組み込むか | 組み込まない（ZIP と 7z の PPMd は `Unsupported(Compression)`）、許可リストに public domain を加える | 決定。出所が明らかな public domain のコードは組み込んでよいとし、許可リストに加えた（利用者が 2026-11-03 に決めた。8.5 節）。前例として、AOSP は LZMA SDK を `external/lzma` に置き（METADATA の license_type は UNENCUMBERED）、Chromium は `third_party/lzma_sdk` に置いている（README.chromium の License は Public Domain）。libarchive の `archive_ppmd7.c` と `archive_ppmd8.c` を組み込み、ZIP、7z、RAR 4 の PPMd を読む。`archive_read_support_format_7zip.c` の x86（BCJ）、BCJ2、ARM、ARM64 の変換もそのまま組み込む。ZIP と 7z の PPMd はコーパスの `zip/ppmd.zip` と `7z/ppmd.7z` で確かめる。RAR 4 の PPMd はコーパスに作れず、実データで確かめる (要検証) |
 | Q20 | デコーダが返した、途中で切れた画像をどう出すか | そのまま出す、出したうえで切れていることを重ねて知らせる、`Failed(Truncated)` にする | M1 はデコーダの結果に従う（API 28 では失敗、API 37 では表示になる）。自前で判定して端末によらず揃えるには、JPEG の EOI を探すなど形式ごとの処理が要り、誤判定すると読めるページを隠す。実データで切れた画像がどれだけあるかを見て、M6 で決める |

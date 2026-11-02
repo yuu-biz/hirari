@@ -17,5 +17,6 @@
 gradlew text eol=lf
 *.jar binary
 *.zip binary
+*.7z binary
 *.png binary
 third_party/** -text

@@ -1,0 +1,4 @@
+Public domain
+
+The authors of this code placed it in the public domain, as the notices in its source files state. It may be
+used, copied, modified and distributed without conditions. The files are listed with the library they belong to.

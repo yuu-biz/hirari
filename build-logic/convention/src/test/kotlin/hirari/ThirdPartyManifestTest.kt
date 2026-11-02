@@ -22,7 +22,7 @@ class ThirdPartyManifestTest {
         return root
     }
 
-    private fun entry(spdx: String = "BSD-2-Clause", sha256: String = sha) = """
+    private fun entry(spdx: String = "BSD-2-Clause", sha256: String = sha, extra: String = "") = """
         [[library]]
         name = "zlib"
         version = "1.3.1"
@@ -31,7 +31,7 @@ class ThirdPartyManifestTest {
         sha256 = "$sha256"
         spdx = "$spdx"
         license_file = "LICENSE"
-    """.trimIndent()
+    """.trimIndent() + extra
 
     private fun problems(root: File): String =
         assertFailsWith<GradleException> { readThirdPartyManifest(root) }.message.orEmpty()
@@ -60,6 +60,37 @@ class ThirdPartyManifestTest {
     @Test
     fun `a license outside the allowlist fails`() {
         assertContains(problems(tree(entry(spdx = "BSD-2-Clause AND LGPL-2.1-only"), "zlib/LICENSE")), "\"LGPL-2.1-only\" is not allowed")
+    }
+
+    private fun publicDomain(file: String) = "\npublic_domain = [\"$file\"]"
+
+    @Test
+    fun `public domain code passes with the files that hold it`() {
+        val manifest = entry(spdx = "BSD-2-Clause AND $PUBLIC_DOMAIN", extra = publicDomain("src/ppmd.c"))
+        val libraries = readThirdPartyManifest(tree(manifest, "zlib/LICENSE", "zlib/src/ppmd.c"))
+        assertEquals(listOf("src/ppmd.c"), libraries.single().publicDomain)
+    }
+
+    @Test
+    fun `public domain without the files that hold it fails`() {
+        assertContains(problems(tree(entry(spdx = PUBLIC_DOMAIN), "zlib/LICENSE")), "go together")
+    }
+
+    @Test
+    fun `public domain files without the public domain id fail`() {
+        assertContains(problems(tree(entry(extra = publicDomain("ppmd.c")), "zlib/LICENSE", "zlib/ppmd.c")), "go together")
+    }
+
+    @Test
+    fun `a public domain file that is not there fails`() {
+        val manifest = entry(spdx = "BSD-2-Clause AND $PUBLIC_DOMAIN", extra = publicDomain("ppmd.c"))
+        assertContains(problems(tree(manifest, "zlib/LICENSE")), "public domain file third_party/zlib/ppmd.c does not exist")
+    }
+
+    @Test
+    fun `public domain under another spelling is not allowed`() {
+        val manifest = entry(spdx = "BSD-2-Clause AND LicenseRef-Public-Domain-Like", extra = publicDomain("ppmd.c"))
+        assertContains(problems(tree(manifest, "zlib/LICENSE", "zlib/ppmd.c")), "\"LicenseRef-Public-Domain-Like\" is not allowed")
     }
 
     @Test

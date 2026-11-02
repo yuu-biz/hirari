@@ -39,7 +39,7 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 
 ## 依存とライセンス
 
-- 配布物に入れてよいライセンスは、Apache-2.0、MIT、BSD-2-Clause、BSD-3-Clause、ISC、Zlib、0BSD、bzip2-1.0.6、Unicode-3.0 です。書体だけ OFL-1.1 も使えます。
+- 配布物に入れてよいライセンスは、Apache-2.0、MIT、BSD-2-Clause、BSD-3-Clause、ISC、Zlib、0BSD、bzip2-1.0.6、Unicode-3.0 です。書体だけ OFL-1.1 も使えます。出所が明らかな public domain のコードも、`third_party/` のネイティブのソースに限って使えます（`docs/spec.md` の 8.5 節）。
 - GPL（全版）、LGPL、AGPL、SSPL、RAR の公式展開ソースのライセンス、ライセンスが不明なものは使いません。これらのソースから移したコードやアルゴリズムの書き写しも入れません。
 - 依存を足すときは、推移的な依存とネイティブの依存も含めてライセンスを確かめます。確かめた結果は `docs/spec.md` の 8.5 節の表に書きます。
 

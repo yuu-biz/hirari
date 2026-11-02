@@ -12,7 +12,6 @@ internal object Status {
     const val EOF = 1
     const val STOPPED = 2
     const val ENCRYPTED_HEADERS = 3
-    const val PPMD = 4
     const val WARN = -20
     const val FAILED = -25
 

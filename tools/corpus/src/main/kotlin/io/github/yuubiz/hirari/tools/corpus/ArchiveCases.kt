@@ -55,9 +55,8 @@ private fun sevenZipCases(): Map<String, CorpusCase> {
         .mapIndexed { i, method -> one(method, SevenZipFile("%03d.jpg".format(i + 1), letters(10000, 10 + i))) }
     val unreadable = listOf(
         one(SevenZipMethod.Copy, SevenZipFile("001.jpg", letters(3000, 1))),
-        one(SevenZipMethod.Ppmd, SevenZipFile("002.jpg", letters(3000, 2))),
-        one(SevenZipMethod.Aes, SevenZipFile("003.jpg", letters(3000, 3))),
-        one(SevenZipMethod.Copy, SevenZipFile("004.jpg", letters(3000, 4))),
+        one(SevenZipMethod.Aes, SevenZipFile("002.jpg", letters(3000, 2))),
+        one(SevenZipMethod.Copy, SevenZipFile("003.jpg", letters(3000, 3))),
     )
     return mapOf(
         "7z/copy.7z" to CorpusCase(write7z(files.map { one(SevenZipMethod.Copy, it) }), Expected.Opens(expected)),
@@ -69,9 +68,8 @@ private fun sevenZipCases(): Map<String, CorpusCase> {
             Expected.Opens(
                 listOf(
                     data("001.jpg", unreadable[0].files[0].data),
-                    ExpectedEntry("002.jpg", ExpectedRead.Unsupported("compression:ppmd")),
-                    encrypted("003.jpg"),
-                    data("004.jpg", unreadable[3].files[0].data),
+                    encrypted("002.jpg"),
+                    data("003.jpg", unreadable[2].files[0].data),
                 ),
             ),
         ),

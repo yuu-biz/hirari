@@ -79,8 +79,7 @@ private fun methodsZip(): CorpusCase {
     val deflated = file("deflated.jpg", 20000, 2)
     val bzip2 = file("bzip2.jpg", 100, 3, Method.Raw(12))
     val lzma = file("lzma.jpg", 100, 4, Method.Raw(14))
-    val ppmd = file("ppmd.jpg", 100, 5, Method.Raw(98))
-    val entries = listOf(stored, deflated, bzip2, lzma, ppmd)
+    val entries = listOf(stored, deflated, bzip2, lzma)
     return CorpusCase(
         writeZip(entries).bytes,
         Expected.Opens(
@@ -89,7 +88,6 @@ private fun methodsZip(): CorpusCase {
                 readable(deflated),
                 unsupported(bzip2, "compression:bzip"),
                 unsupported(lzma, "compression:lzma"),
-                unsupported(ppmd, "compression:ppmd-1"),
             ),
         ),
     )
@@ -218,6 +216,7 @@ fun corpusCases(): Map<String, CorpusCase> = buildMap {
     putAll(truncatedCases())
     put("zip/images.zip", imagesZip())
     putAll(archiveCases())
+    putAll(ppmdCases())
 }
 
 const val MANIFEST = "expected.tsv"

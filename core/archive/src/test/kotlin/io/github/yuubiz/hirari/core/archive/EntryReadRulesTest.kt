@@ -16,9 +16,10 @@ class EntryReadRulesTest {
     ) = ArchiveEntry(0, "a.jpg".toByteArray(), declaredSize, isDirectory = false, encrypted = encrypted, compression = compression)
 
     @Test
-    fun `stored and deflated entries within the limit are read`() {
+    fun `stored, deflated and PPMd entries within the limit are read`() {
         assertNull(ArchiveSession.refusal(entry("uncompressed"), 1000))
         assertNull(ArchiveSession.refusal(entry("deflation"), 1000))
+        assertNull(ArchiveSession.refusal(entry("ppmd-1"), 1000))
         assertNull(ArchiveSession.refusal(entry(compression = null, declaredSize = null), 1000))
     }
 

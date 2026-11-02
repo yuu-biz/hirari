@@ -36,14 +36,14 @@ class CorpusTest {
     }
 
     // The JDK reader is independent of the generator, so it checks that the cases it can read are well formed and
-    // that their data matches the expectations. It needs the end record, which truncation removes, and it rejects a
-    // name that has the UTF-8 flag but is not UTF-8.
+    // that their data matches the expectations. It needs the end record, which truncation removes, it rejects a
+    // name that has the UTF-8 flag but is not UTF-8, and it has no PPMd decoder.
     @Test
     fun `the JDK reads every fully readable zip with the expected data in order`() {
         val dir = generate()
         val readable = corpusCases().filter { (path, case) ->
             val expected = case.expected
-            path.startsWith("zip/") && !path.startsWith("zip/truncated-") && path != "zip/names-invalid-flag.zip" &&
+            path.startsWith("zip/") && !path.startsWith("zip/truncated-") && path != "zip/names-invalid-flag.zip" && path != "zip/ppmd.zip" &&
                 expected is Expected.Opens && expected.indexError == null &&
                 expected.entries.all { it.read is ExpectedRead.Data || it.read == ExpectedRead.Directory }
         }

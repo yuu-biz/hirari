@@ -168,7 +168,7 @@ internal class Extraction(
             if (!Status.succeeded(status)) return settleFrom(next, headerFailure(status))
             val slot = synchronized(lock) { slots[next] }
             val dataStatus = if (slot == Slot.Pending || slot == Slot.Evicted) extract(next) else Status.OK
-            if (dataStatus < Status.FAILED || dataStatus == Status.PPMD) open = false
+            if (dataStatus < Status.FAILED) open = false
             next++
         }
     }
@@ -201,7 +201,6 @@ internal class Extraction(
             complete = status == Status.OK && sink.failure == null && part.renameTo(file)
             val slot = when {
                 complete -> null
-                status == Status.PPMD -> Slot.Settled(EntryResult.UnsupportedCompression(PPMD))
                 exceeded != null -> Slot.Settled(EntryResult.TooLarge(exceeded))
                 status == Status.OK || sink.failure != null -> failed(ArchiveFailure.ReadError)
                 else -> failed(archive.failure())

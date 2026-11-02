@@ -2,9 +2,11 @@ package io.github.yuubiz.hirari.tools.corpus
 
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.compress.compressors.CompressorStreamFactory
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
 import java.io.ByteArrayInputStream
+import java.util.zip.CRC32
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -36,6 +38,20 @@ class ArchiveCasesTest {
             assertEquals(expectedNames(path), names, path)
             assertEquals(expectedData(path), data, path)
         }
+    }
+
+    // Commons Compress has no PPMd decoder, but it lists the names, sizes and CRC-32 of the entries.
+    @Test
+    fun `the PPMd fixtures hold the expected files in order`() {
+        val expected = ppmdPages.map { (name, bytes) -> Triple(name, bytes.size.toLong(), CRC32().apply { update(bytes) }.value) }
+
+        val sevenZip = SevenZFile.builder().setSeekableByteChannel(SeekableInMemoryByteChannel(cases.getValue("7z/ppmd.7z").bytes)).get()
+            .use { file -> file.entries.map { Triple(it.name, it.size, it.crcValue) } }
+        val zipped = ZipFile.builder().setSeekableByteChannel(SeekableInMemoryByteChannel(cases.getValue("zip/ppmd.zip").bytes)).get()
+            .use { file -> file.entries.toList().map { Triple(it.name, it.size, it.crc) to it.method } }
+
+        assertEquals(expected, sevenZip)
+        assertEquals(expected.map { it to 98 }, zipped)
     }
 
     // Commons Compress reads zstd only through a native library, so the zstd frame is taken apart here instead:

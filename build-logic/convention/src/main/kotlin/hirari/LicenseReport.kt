@@ -83,8 +83,11 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
         val key = "third_party/${library.directory}"
         val dir = thirdPartyDir.resolve(library.directory)
         val notices = copyrightNotices(dir, exclude = dir.resolve(library.licenseFile))
+        val publicDomain = if (library.publicDomain.isEmpty()) "" else {
+            library.publicDomain.joinToString("\n", prefix = "\n\nFiles that hold public domain code:\n\n")
+        }
         texts[key] = dir.resolve(library.licenseFile).readText().trimEnd() +
-            notices.joinToString("\n", prefix = "\n\nCopyright notices in the source files:\n\n")
+            notices.joinToString("\n", prefix = "\n\nCopyright notices in the source files:\n\n") + publicDomain
         val ids = library.spdx.split(" AND ")
         ids.forEach { id ->
             val file = spdxTextsDir.resolve("$id.txt")

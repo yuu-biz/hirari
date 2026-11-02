@@ -30,9 +30,6 @@ enum class SevenZipMethod {
     /** The x86 branch filter, then LZMA2. */
     Lzma2X86,
 
-    /** Declared only: the packed bytes are not a PPMd stream. */
-    Ppmd,
-
     /** Declared only: the packed bytes are not cipher text. */
     Aes,
 }
@@ -43,7 +40,6 @@ private val LZMA2 = byteArrayOf(0x21)
 private val DEFLATE = byteArrayOf(0x04, 0x01, 0x08)
 private val BZIP2 = byteArrayOf(0x04, 0x02, 0x02)
 private val X86 = byteArrayOf(0x03, 0x03, 0x01, 0x03)
-private val PPMD = byteArrayOf(0x03, 0x04, 0x01)
 private val AES = byteArrayOf(0x06, 0xf1.toByte(), 0x07, 0x01)
 
 private const val DICTIONARY = 1 shl 16
@@ -87,7 +83,6 @@ private fun pack(method: SevenZipMethod, data: ByteArray): Pair<List<Coder>, Byt
     SevenZipMethod.BZip2 -> listOf(Coder(BZIP2)) to compress { BZip2CompressorOutputStream(it) }(data)
     SevenZipMethod.Lzma2X86 -> listOf(Coder(LZMA2, byteArrayOf(LZMA2_DICTIONARY_PROPERTY)), Coder(X86)) to
         compress { X86Options().getOutputStream(lzmaOptions().getOutputStream(FinishableWrapperOutputStream(it))) }(data)
-    SevenZipMethod.Ppmd -> listOf(Coder(PPMD, bytes { u8(6); u32(16 shl 20) })) to letters(64, 1)
     SevenZipMethod.Aes -> listOf(Coder(AES, byteArrayOf(0x13))) to letters(64, 2)
 }
 

@@ -18,12 +18,9 @@
 #include <archive.h>
 #include <archive_entry.h>
 
-#include "ppmd_unsupported.h"
-
 /* Status codes shared with NativeArchive.kt. The negative ones are libarchive's. */
 #define STATUS_STOPPED 2
 #define STATUS_ENCRYPTED_HEADERS 3
-#define STATUS_PPMD 4
 
 /*
  * A read right after a seek or a skip is usually for one local header, so it
@@ -209,22 +206,20 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeNextHeader(JNIEnv 
  * Passes the data of the current entry to the bridge's data method one block
  * at a time. The ByteBuffer views libarchive's block, which stays valid only
  * until the next archive_read_data_block call. Returns STATUS_STOPPED when the
- * bridge declines a block, and STATUS_PPMD when the entry needs the PPMd
- * decoder, which is not built.
+ * bridge declines a block.
  */
 JNIEXPORT jint JNICALL
 Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeReadData(JNIEnv *env, jobject self, jlong handle) {
 	(void)self;
 	session *s = from_handle(handle);
 	s->env = env;
-	hirari_take_ppmd_request();
 	for (;;) {
 		const void *block;
 		size_t size;
 		la_int64_t offset;
 		int r = archive_read_data_block(s->archive, &block, &size, &offset);
 		if (r == ARCHIVE_EOF) return ARCHIVE_OK;
-		if (r != ARCHIVE_OK && r != ARCHIVE_WARN) return hirari_take_ppmd_request() ? STATUS_PPMD : r;
+		if (r != ARCHIVE_OK && r != ARCHIVE_WARN) return r;
 		if (size == 0) continue;
 		jobject view = (*env)->NewDirectByteBuffer(env, (void *)block, (jlong)size);
 		if (view == NULL) return ARCHIVE_FATAL;

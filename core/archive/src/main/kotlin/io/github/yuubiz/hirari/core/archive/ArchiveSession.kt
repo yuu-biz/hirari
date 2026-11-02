@@ -142,7 +142,6 @@ class ArchiveSession private constructor(
             val reached = bytes.exceeded
             return when {
                 status == Status.OK -> EntryResult.Data(bytes.toByteArray())
-                status == Status.PPMD -> EntryResult.UnsupportedCompression(PPMD)
                 reached != null -> EntryResult.TooLarge(reached)
                 else -> EntryResult.Failed(archive.failure())
             }
@@ -178,7 +177,7 @@ class ArchiveSession private constructor(
         /** The size limit of one entry (docs/spec.md section 3.7). */
         const val MAX_ENTRY_BYTES: Int = 256 shl 20
 
-        private val READABLE_COMPRESSION = setOf("uncompressed", "deflation")
+        private val READABLE_COMPRESSION = setOf("uncompressed", "deflation", "ppmd-1")
         private const val PREFIX_BYTES = 64
 
         /**
@@ -281,9 +280,6 @@ class ArchiveSession private constructor(
         }
     }
 }
-
-/** The method an entry gets when it needs the PPMd decoder, which is not built (Q19). */
-internal const val PPMD = "ppmd"
 
 /** Collects the data of one entry, stopping once it would pass [limit] bytes. */
 internal class EntryBytes(private val limit: Int) : DataSink {

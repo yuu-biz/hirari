@@ -23,6 +23,8 @@ data class ThirdPartyLibrary(
     val spdx: String,
     /** Path of the license text, relative to the library's directory. */
     val licenseFile: String,
+    /** The files, relative to the library's directory, that hold [PUBLIC_DOMAIN] code. */
+    val publicDomain: List<String> = emptyList(),
 )
 
 private val SHA256 = Regex("[0-9a-f]{64}")
@@ -47,6 +49,7 @@ fun readThirdPartyManifest(thirdPartyDir: File): List<ThirdPartyLibrary> {
             sha256 = field("sha256") ?: return@mapNotNull null,
             spdx = field("spdx") ?: return@mapNotNull null,
             licenseFile = field("license_file") ?: return@mapNotNull null,
+            publicDomain = table.getArrayOrEmpty("public_domain").toList().map { it.toString() },
         )
         library
     }
@@ -54,10 +57,17 @@ fun readThirdPartyManifest(thirdPartyDir: File): List<ThirdPartyLibrary> {
     for (library in libraries) {
         val where = "library \"${library.name}\""
         if (!SHA256.matches(library.sha256)) problems += "$where: sha256 must be 64 lowercase hex digits"
-        library.spdx.split(" AND ").filterNot { it in allowedLicenses }.forEach {
+        val ids = library.spdx.split(" AND ")
+        ids.filterNot { it in allowedLicenses || it == PUBLIC_DOMAIN }.forEach {
             problems += "$where: license \"$it\" is not allowed (docs/spec.md section 8.5)"
         }
+        if ((PUBLIC_DOMAIN in ids) != library.publicDomain.isNotEmpty()) {
+            problems += "$where: $PUBLIC_DOMAIN in \"spdx\" and the files in \"public_domain\" go together"
+        }
         val dir = thirdPartyDir.resolve(library.directory)
+        library.publicDomain.filterNot { dir.resolve(it).isFile }.forEach {
+            problems += "$where: public domain file third_party/${library.directory}/$it does not exist"
+        }
         if (!dir.isDirectory) problems += "$where: directory third_party/${library.directory} does not exist"
         else if (!dir.resolve(library.licenseFile).isFile) {
             problems += "$where: license file third_party/${library.directory}/${library.licenseFile} does not exist"

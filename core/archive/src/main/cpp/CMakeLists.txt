@@ -103,6 +103,8 @@ add_library(archive STATIC
     ${LIBARCHIVE_DIR}/archive_entry_xattr.c
     ${LIBARCHIVE_DIR}/archive_hmac.c
     ${LIBARCHIVE_DIR}/archive_options.c
+    ${LIBARCHIVE_DIR}/archive_ppmd7.c
+    ${LIBARCHIVE_DIR}/archive_ppmd8.c
     ${LIBARCHIVE_DIR}/archive_random.c
     ${LIBARCHIVE_DIR}/archive_rb.c
     ${LIBARCHIVE_DIR}/archive_read.c
@@ -121,8 +123,6 @@ add_library(archive STATIC
     ${LIBARCHIVE_DIR}/archive_time.c
     ${LIBARCHIVE_DIR}/archive_util.c
     ${LIBARCHIVE_DIR}/archive_virtual.c
-    libarchive/ppmd7_unsupported.c
-    libarchive/ppmd8_unsupported.c
 )
 target_compile_definitions(archive PRIVATE HAVE_CONFIG_H=1 _FILE_OFFSET_BITS=64)
 target_include_directories(archive

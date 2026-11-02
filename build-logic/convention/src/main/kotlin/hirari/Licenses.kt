@@ -21,6 +21,12 @@ val allowedLicenses = listOf(
 )
 
 /**
+ * The id of public domain code whose origin is clear, allowed only in the native sources under third_party/,
+ * where the manifest lists the files that carry it (docs/spec.md section 8.5). SPDX has no id for it.
+ */
+const val PUBLIC_DOMAIN = "LicenseRef-Public-Domain"
+
+/**
  * License URLs in POMs that Licensee does not map to an SPDX id, and the id of the text they carry. Both the
  * check and the license screen use this table (docs/spec.md section 8.5).
  */
