@@ -1,0 +1,134 @@
+package io.github.yuubiz.hirari.core.image.thumbnail
+
+import io.github.yuubiz.hirari.core.image.BookResult
+import io.github.yuubiz.hirari.core.image.ImageDecoding
+import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.ReadingDirection
+import java.io.Closeable
+import java.io.File
+import java.time.Instant
+
+/**
+ * What a thumbnail is made from (docs/spec.md section 5.4). The same fields as the key of the disk cache in
+ * `:core:data`; `:core:image` cannot depend on that module (section 8.2), so [ThumbnailStore] is the port.
+ */
+data class ThumbnailKey(
+    val book: BookId,
+    val modified: Instant,
+    val byteSize: Long,
+    /** The `entryIndex` of the page the user chose as the cover, `null` for the first page in natural order. */
+    val coverEntry: Int?,
+    /** The long side in pixels. */
+    val sizePx: Int,
+    /** Picks the half of a cover scanned as a spread (section 4.4). */
+    val direction: ReadingDirection,
+)
+
+/** What the store knows about a [ThumbnailKey]. */
+sealed interface StoredThumb {
+    data class Hit(val file: File) : StoredThumb
+
+    /** Making it failed for this version of the file; section 4.4 does not try again. */
+    data object Failed : StoredThumb
+
+    data object Miss : StoredThumb
+}
+
+/**
+ * The thumbnail disk cache as [Thumbnails] needs it. `ThumbnailCache` of `:core:data` is the implementation: the
+ * app maps a [ThumbnailKey] to its `ThumbKey` field by field.
+ */
+interface ThumbnailStore {
+    suspend fun get(key: ThumbnailKey): StoredThumb
+
+    /** Stores a WebP thumbnail and returns its file. */
+    suspend fun put(key: ThumbnailKey, webp: ByteArray): File
+
+    suspend fun markFailed(key: ThumbnailKey)
+
+    /** Forgets the thumbnail or the failure, so the next [get] is a miss. */
+    suspend fun remove(key: ThumbnailKey)
+
+    /** Keeps [key] out of eviction until the result is closed. */
+    fun hold(key: ThumbnailKey): Closeable
+}
+
+/** Where the bytes of a book come from, which sets how many thumbnails are made at once (section 4.4). */
+enum class ThumbLane(internal val parallelism: Int) {
+    Local(2),
+    Smb(1),
+}
+
+/** Visible items come before the ones the list only prepares. Section 4.4: both passes serve visible items first. */
+enum class ThumbPriority { Visible, Nearby }
+
+/** What [Thumbnails] shows for something in a list. */
+sealed interface ThumbSubject {
+    val id: BookId
+    val modified: Instant
+
+    /**
+     * A book, or one image file: the cover is its first page in natural order, or the page with the `entryIndex`
+     * [coverEntry]. A page that no longer exists gives the first page.
+     *
+     * @property open opens the book with the decoding it is given, with [io.github.yuubiz.hirari.core.image.Books].
+     * It may throw, which counts as the book being unavailable for now.
+     */
+    class Book(
+        override val id: BookId,
+        override val modified: Instant,
+        val byteSize: Long,
+        val coverEntry: Int? = null,
+        val lane: ThumbLane = ThumbLane.Local,
+        val open: suspend (ImageDecoding) -> BookResult,
+    ) : ThumbSubject
+
+    /**
+     * A folder of the file list. Its thumbnail is the first thumbnail that can be made from [chosen], then from
+     * the items inside in natural order of their names, descending into sub-folders in place (section 4.4).
+     *
+     * @property chosen the image or page the user chose as the cover of this folder, if any.
+     * @property children lists the folder; it is called on `Dispatchers.IO` and may throw, which counts as the
+     * folder being unavailable for now. List only what a thumbnail can be made from: archives, PDFs and images.
+     */
+    class Folder(
+        override val id: BookId,
+        override val modified: Instant,
+        val chosen: Book? = null,
+        val children: suspend () -> List<FolderEntry>,
+    ) : ThumbSubject
+}
+
+/** An entry of a folder being searched for a cover. */
+sealed interface FolderEntry {
+    val name: String
+
+    class Item(override val name: String, val book: ThumbSubject.Book) : FolderEntry
+
+    /** A sub-folder; [children] is called on `Dispatchers.IO` and may throw. */
+    class Directory(override val name: String, val children: suspend () -> List<FolderEntry>) : FolderEntry
+}
+
+/** One thumbnail to show: [sizePx] is the long side, [direction] the binding direction of the book. */
+class ThumbRequest(
+    val subject: ThumbSubject,
+    val sizePx: Int,
+    val direction: ReadingDirection,
+    val priority: ThumbPriority = ThumbPriority.Visible,
+) {
+    init {
+        require(sizePx > 0) { "size $sizePx" }
+    }
+}
+
+/** The outcome of a request. Cancelling it is not an outcome: the call throws `CancellationException`. */
+sealed interface ThumbResult {
+    /** [key] names the thumbnail in the store; for a folder it is the key of the image the folder shows. */
+    data class Ready(val file: File, val key: ThumbnailKey) : ThumbResult
+
+    /** The book cannot give a thumbnail: encrypted, broken, or without an image. It is recorded and not tried again. */
+    data object Failed : ThumbResult
+
+    /** Reading failed for a reason that may pass (a lost connection, a timeout). Nothing is recorded; a later request tries again. */
+    data object Unavailable : ThumbResult
+}
