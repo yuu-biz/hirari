@@ -105,7 +105,7 @@ private fun <T> SliderRow(setting: SliderSetting<T>, settings: GlobalSettings, o
     val current = setting.read(settings)
     val stored = values.indexOf(current).coerceAtLeast(0)
     var dragged by remember(stored, values.size) { mutableStateOf<Float?>(null) }
-    val shown = (dragged ?: stored.toFloat()).toInt().coerceIn(0, values.lastIndex)
+    val shown = sliderIndex(dragged ?: stored.toFloat(), values.size)
     val text = setting.format(values[shown])
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -117,7 +117,7 @@ private fun <T> SliderRow(setting: SliderSetting<T>, settings: GlobalSettings, o
             value = shown.toFloat(),
             onValueChange = { dragged = it },
             onValueChangeFinished = {
-                val target = values[(dragged ?: stored.toFloat()).toInt().coerceIn(0, values.lastIndex)]
+                val target = values[sliderIndex(dragged ?: stored.toFloat(), values.size)]
                 if (target != current) onChange { setting.write(it, target) }
             },
             valueRange = 0f..values.lastIndex.toFloat().coerceAtLeast(1f),
