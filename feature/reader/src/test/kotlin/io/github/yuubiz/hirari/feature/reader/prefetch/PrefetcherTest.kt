@@ -41,16 +41,34 @@ private val SINGLE = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, Rea
 private class FakeLoader(
     val shapes: Map<Int, PageResult<PageShape.Known>> = emptyMap(),
     val failing: MutableMap<Int, PageResult<Nothing>> = mutableMapOf(),
-) : PageLoader<String> {
+    val rawFailing: MutableMap<Int, PageResult<Nothing>> = mutableMapOf(),
+    val rawBytes: Long = 1000,
+) : PageLoader<String, String> {
     val cancelled = mutableListOf<Int>()
     var gate: CompletableDeferred<Unit>? = null
 
     /** Pages that wait here besides [gate]. */
     val pageGates = mutableMapOf<Int, CompletableDeferred<Unit>>()
+    var rawGate: CompletableDeferred<Unit>? = null
+    val rawReads = mutableListOf<Int>()
 
-    override suspend fun shape(page: Int): PageResult<PageShape.Known> = shapes[page] ?: PageResult.Ready(TALL)
+    /** The raw data each prepared page was given, `null` for one read from the book. */
+    val preparedFrom = mutableMapOf<Int, String?>()
 
-    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps): PageResult<String> {
+    override suspend fun raw(page: Int): PageResult<String> {
+        rawReads += page
+        rawGate?.await()
+        return rawFailing[page] ?: PageResult.Ready("raw$page")
+    }
+
+    override fun bytesOf(raw: String): Long = rawBytes
+
+    override fun rawEstimate(page: Int): Long = rawBytes
+
+    override suspend fun shape(page: Int, raw: String?): PageResult<PageShape.Known> = shapes[page] ?: PageResult.Ready(TALL)
+
+    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: String?): PageResult<String> {
+        preparedFrom[page] = raw
         try {
             gate?.await()
             pageGates[page]?.await()
@@ -64,12 +82,17 @@ private class FakeLoader(
 }
 
 /** The reader and its prefetcher as the screen wires them: every new state makes a new plan. */
-private class Reader(scope: CoroutineScope, var state: ReaderState, val loader: FakeLoader = FakeLoader()) : Prefetcher.Listener {
+private class Reader(
+    scope: CoroutineScope,
+    var state: ReaderState,
+    val loader: FakeLoader = FakeLoader(),
+    budgetBytes: Long = 1L shl 30,
+) : Prefetcher.Listener {
     val released = mutableListOf<String>()
 
     /** Views the screen draws besides the ones [state] names. */
     var alsoShown: Set<PageView> = emptySet()
-    val prefetcher = Prefetcher(scope, loader, { released += it }, budgetBytes = 1L shl 30, PrefetchDepths(), this)
+    val prefetcher = Prefetcher(scope, loader, { released += it }, budgetBytes, PrefetchDepths(), this)
 
     init {
         prefetcher.update(state.prefetchInput())
@@ -91,10 +114,18 @@ private class Reader(scope: CoroutineScope, var state: ReaderState, val loader: 
     }
 
     fun preparedPages(): Set<Int> = state.pagination.views.filter { prefetcher[it] != null }.flatMap { it.pages }.toSet()
+
+    fun rawPages(): Set<Int> = state.pagination.shapes.indices.filter { prefetcher.raw(it) != null }.toSet()
 }
 
-private fun TestScope.reader(pages: Int, config: ReaderConfig = SINGLE, viewport: Viewport = PORTRAIT, start: Int = 0, loader: FakeLoader = FakeLoader()) =
-    Reader(CoroutineScope(StandardTestDispatcher(testScheduler)), ReaderState.open(pages, start, config, viewport), loader)
+private fun TestScope.reader(
+    pages: Int,
+    config: ReaderConfig = SINGLE,
+    viewport: Viewport = PORTRAIT,
+    start: Int = 0,
+    loader: FakeLoader = FakeLoader(),
+    budgetBytes: Long = 1L shl 30,
+) = Reader(CoroutineScope(StandardTestDispatcher(testScheduler)), ReaderState.open(pages, start, config, viewport), loader, budgetBytes)
 
 class PrefetcherTest {
     @Test
@@ -233,5 +264,69 @@ class PrefetcherTest {
         reader.turn(Turn.Forward)
         advanceUntilIdle()
         assertEquals(setOf(3, 4, 5, 6), reader.preparedPages())
+    }
+
+    @Test
+    fun theRawDataOfThePagesInReachIsHeldAndViewsDecodeFromIt() = runTest {
+        val reader = reader(pages = 60, start = 20)
+        advanceUntilIdle()
+        assertEquals((4..52).toSet(), reader.rawPages())
+        assertEquals("raw20", reader.loader.preparedFrom[20])
+        assertEquals("raw22", reader.loader.preparedFrom[22])
+        assertEquals(reader.loader.rawReads.size, reader.loader.rawReads.toSet().size, "read twice: ${reader.loader.rawReads}")
+    }
+
+    @Test
+    fun aViewWaitsForTheRawReadOfItsPageInsteadOfReadingItAgain() = runTest {
+        val loader = FakeLoader().apply { rawGate = CompletableDeferred() }
+        val reader = reader(pages = 3, loader = loader)
+        runCurrent()
+        assertNull(reader.prefetcher[PageView.One(0)])
+        loader.rawGate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("raw0", loader.preparedFrom[0])
+    }
+
+    @Test
+    fun rawDataTakesAtMostHalfTheBudgetNearestFirst() = runTest {
+        val reader = reader(pages = 60, viewport = Viewport(10f, 15f, 1f), start = 20, budgetBytes = 20_000)
+        advanceUntilIdle()
+        assertEquals(10, reader.rawPages().size, "held ${reader.rawPages()}")
+        assertTrue(reader.rawPages().containsAll(listOf(19, 20, 21, 22)), "held ${reader.rawPages()}")
+    }
+
+    @Test
+    fun aJumpDropsTheRawDataOutOfReach() = runTest {
+        val reader = reader(pages = 200)
+        advanceUntilIdle()
+        assertTrue(0 in reader.rawPages())
+        reader.apply(ReaderEvent.GoTo(150))
+        advanceUntilIdle()
+        assertEquals((134..182).toSet(), reader.rawPages())
+    }
+
+    @Test
+    fun aPageWhoseRawReadFailsIsAnErrorAndIsNotReadAgainUntilARetry() = runTest {
+        val lost = PageResult.Failed(FailureReason.ConnectionLost, retryable = true)
+        val loader = FakeLoader(rawFailing = mutableMapOf(1 to lost))
+        val reader = reader(pages = 4, loader = loader)
+        advanceUntilIdle()
+        reader.turn(Turn.Forward)
+        advanceUntilIdle()
+        assertEquals(PreparedPage.Error(lost), reader.prefetcher[PageView.One(1)]!!.pages.single())
+        assertEquals(1, loader.rawReads.count { it == 1 })
+        loader.rawFailing.clear()
+        reader.prefetcher.retry(1)
+        advanceUntilIdle()
+        assertIs<PreparedPage.Image<String>>(reader.prefetcher[PageView.One(1)]!!.pages.single())
+        assertEquals("raw1", loader.preparedFrom[1])
+    }
+
+    @Test
+    fun trimmingKeepsOnlyTheRawDataOfTheViewsOnScreen() = runTest {
+        val reader = reader(pages = 60, start = 20)
+        advanceUntilIdle()
+        reader.prefetcher.trim()
+        assertEquals(setOf(20), reader.rawPages())
     }
 }

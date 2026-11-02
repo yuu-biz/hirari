@@ -159,7 +159,7 @@ class ReaderViewModel(
         val id: BookId,
         val start: Int,
         val config: ReaderConfig,
-        val prefetcher: Prefetcher<Bitmap>,
+        val prefetcher: Prefetcher<RawPage, Bitmap>,
         val services: ReaderServices,
         val progress: ProgressLog,
         val overrides: BookOverridesStore.OverridesWriter,
@@ -438,7 +438,7 @@ class ReaderViewModel(
         }
         if (wanted == null || loupeDetail != null) return
         loupeRead = viewModelScope.launch {
-            val result = loader.prepare(wanted.page, wanted.size, wanted.steps)
+            val result = loader.prepare(wanted.page, wanted.size, wanted.steps, opened?.prefetcher?.raw(wanted.page))
             val bitmap = (result as? PageResult.Ready)?.image ?: return@launch
             if (loupeWanted == wanted) loupeDetail = LoupeDetail(wanted, bitmap) else bitmap.recycle()
         }
