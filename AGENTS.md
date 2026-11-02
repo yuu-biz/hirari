@@ -4,7 +4,25 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 
 ## 状態
 
-まだコードはありません。次の作業は `docs/spec.md` のマイルストーン M0（骨組みとライセンスの仕組み）です。ビルドと試験のコマンドは、M0 でこのファイルに書き足します。
+`docs/spec.md` のマイルストーン M0（骨組みとライセンスの仕組み）を進めています。
+
+## ビルドと試験
+
+必要なもの:
+
+- JDK 21。`JAVA_HOME` で指します。
+- Android SDK。`ANDROID_HOME` か、Git に入れない `local.properties` の `sdk.dir` で指します。
+- SDK のパッケージは `platforms;android-37.0`、`build-tools;36.0.0`、`platform-tools` です。足りないパッケージはビルド中に取得せず、エラーで止まります（`android.builder.sdkDownload=false`）。
+
+コマンドはリポジトリの最上位で実行します。Windows では `./gradlew` を `.\gradlew.bat` に読み替えます。
+
+| 目的 | コマンド |
+|---|---|
+| ビルド、単体試験、lint のすべて（CI と同じ） | `./gradlew check` |
+| デバッグ版の APK | `./gradlew :app:assembleDebug` |
+
+- モジュールどうしの依存は `docs/spec.md` の 8.2 節の表に従います。表にない依存を足すと、`build-logic` の検査で設定の段階で失敗します。
+- CI（`.github/workflows/ci.yml`）は、`v` で始まるタグの push と手動実行のときだけ動きます。
 
 ## 要求は仕様書が決める
 
