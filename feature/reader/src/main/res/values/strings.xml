@@ -6,7 +6,6 @@
     <string name="reader_failed_encrypted">暗号化された本には対応していません</string>
     <string name="reader_failed_corrupt">書庫が壊れています</string>
     <string name="reader_failed_truncated">書庫が途中で切れています</string>
-    <string name="reader_failed_encrypted">暗号化された書庫には対応していません</string>
     <string name="reader_failed_read">本を読み込めませんでした</string>
     <string name="reader_no_pages">この本には画像がありません</string>
     <string name="reader_all_pages_failed">どのページも読み込めませんでした</string>

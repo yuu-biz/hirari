@@ -39,13 +39,10 @@ enum class BookFailure {
     /** The provider cannot seek and the copy does not fit (docs/spec.md section 3.1). */
     NoRoomForCopy,
 
-    /** A password protects the whole book, such as a PDF with a user password (docs/spec.md section 3.8). */
+    /** A password protects the whole book: a PDF with a user password or an archive with encrypted headers (3.8). */
     Encrypted,
     Corrupt,
     Truncated,
-
-    /** The archive's headers are encrypted (docs/spec.md section 3.8). */
-    Encrypted,
     ReadError,
 }
 
