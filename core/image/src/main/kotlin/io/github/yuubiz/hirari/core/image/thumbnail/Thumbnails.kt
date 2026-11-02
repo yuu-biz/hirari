@@ -160,9 +160,12 @@ class Thumbnails internal constructor(
         unavailableUntil[key] = now() + UNAVAILABLE_BACKOFF_MILLIS
     }
 
-    /** A search for the cover of a folder, and what it has seen so far. Its books are made with the [urgency] of the folder. */
+    /**
+     * A search for the cover of a folder, and what it has seen so far: [found] is a copy of the first thumbnail it
+     * got. Its books are made with the [urgency] of the folder.
+     */
     private class Search(val request: ThumbRequest, val mode: Mode, val urgency: Urgency) {
-        var found: ThumbResult.Ready? = null
+        var found: ByteArray? = null
         var unavailable = false
         var exhausted = false
         var books = 0
@@ -193,10 +196,7 @@ class Thumbnails internal constructor(
             val entries = listing(search, FolderEntry.Directory(folder.id.value, folder.children))
             if (entries != null) walk(entries, depth = 0, search)
         }
-        search.found?.let { found ->
-            val bytes = store.hold(found.key).use { withContext(io) { found.file.readBytes() } }
-            return ThumbResult.Ready(store.put(key, bytes), key)
-        }
+        search.found?.let { return ThumbResult.Ready(store.put(key, it), key) }
         if (search.unavailable) return ThumbResult.Unavailable
         store.markFailed(key)
         return ThumbResult.Failed
@@ -222,10 +222,13 @@ class Thumbnails internal constructor(
             return
         }
         search.books++
-        when (val result = checkNotNull(book(book, search.request, search.mode, search.urgency))) {
-            is ThumbResult.Ready -> search.found = result
-            ThumbResult.Failed -> Unit
-            ThumbResult.Unavailable -> search.unavailable = true
+        // Held from before the store is asked until the copy is read, so no eviction falls in between.
+        store.hold(keyOf(book, search.request)).use {
+            when (val result = checkNotNull(book(book, search.request, search.mode, search.urgency))) {
+                is ThumbResult.Ready -> search.found = withContext(io) { result.file.readBytes() }
+                ThumbResult.Failed -> Unit
+                ThumbResult.Unavailable -> search.unavailable = true
+            }
         }
     }
 

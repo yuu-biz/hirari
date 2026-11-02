@@ -34,22 +34,24 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
     val held = ArrayList<ThumbnailKey>()
     val released = ArrayList<ThumbnailKey>()
     var puts = 0
-    var onHold: (ThumbnailKey) -> Unit = {}
+    var afterGet: (ThumbnailKey) -> Unit = {}
+    var afterPut: (ThumbnailKey) -> Unit = {}
 
     val holding: List<ThumbnailKey> get() = held.toMutableList().apply { released.forEach { remove(it) } }
 
-    /** What the size limit of the cache does at its worst: every thumbnail nobody holds goes. */
+    /** What the size limit of the cache does at its worst: every thumbnail nobody holds goes, file and all. */
     fun evictUnheld() {
-        files.keys.retainAll(holding.toSet())
+        val kept = holding.toSet()
+        files.entries.removeAll { (key, file) -> key !in kept && file.delete() }
     }
 
     override suspend fun get(key: ThumbnailKey): StoredThumb = when {
         key in failed -> StoredThumb.Failed
         else -> files[key]?.let(StoredThumb::Hit) ?: StoredThumb.Miss
-    }
+    }.also { afterGet(key) }
 
     override suspend fun put(key: ThumbnailKey, webp: ByteArray): File =
-        File(dir, "${puts++}.webp").also { it.writeBytes(webp) }.also { files[key] = it }
+        File(dir, "${puts++}.webp").also { it.writeBytes(webp) }.also { files[key] = it }.also { afterPut(key) }
 
     override suspend fun markFailed(key: ThumbnailKey) {
         failed += key
@@ -62,7 +64,6 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
 
     override fun hold(key: ThumbnailKey): Closeable {
         held += key
-        onHold(key)
         return Closeable { released += key }
     }
 }
@@ -639,11 +640,11 @@ class ThumbnailsTest {
     }
 
     @Test
-    fun aFolderCoverThatObserveShowsSurvivesEvictionOfItsImageAndOfAllElse() = runTest {
+    fun aFolderCoverSurvivesAnEvictionBetweenFindingTheImageInTheStoreAndCopyingIt() = runTest {
         val thumbnails = thumbnails()
         launch { thumbnails.thumbnail(request(book("a"))) }
         runCurrent()
-        store.onHold = { key -> if (key.book == BookId("a")) store.files.remove(key) }
+        store.afterGet = { key -> if (key.book == BookId("a")) store.evictUnheld() }
         maker.script = { if (it.id.value == "a") Made.Unavailable else image(it) }
         val seen = ArrayList<ThumbResult>()
         val job = launch { thumbnails.observe(request(folder(item("a"), item("b")))).collect { seen += it } }
@@ -653,6 +654,15 @@ class ThumbnailsTest {
         store.evictUnheld()
         assertTrue("the shown thumbnail was evicted", store.get(shown.key) is StoredThumb.Hit)
         job.cancel()
+    }
+
+    @Test
+    fun aFolderCoverSurvivesAnEvictionBetweenMakingTheImageAndCopyingIt() = runTest {
+        val thumbnails = thumbnails()
+        store.afterPut = { key -> if (key.book == BookId("a")) store.evictUnheld() }
+        val result = async { thumbnails.thumbnail(request(folder(item("a"), item("b")))) }
+        runCurrent()
+        assertEquals("a", shows(result.await()))
     }
 
     @Test
