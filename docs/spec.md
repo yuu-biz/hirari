@@ -385,9 +385,11 @@ data class BookOverrides(
 ```kotlin
 interface ByteSource : Closeable {
 	val size: Long
-	suspend fun read(offset: Long, dst: ByteBuffer): Int // 0 未満は終端
+	fun read(offset: Long, dst: ByteBuffer): Int // 呼んだスレッドを止める。-1 は終端
 }
 ```
+
+- `read` は中断関数（`suspend`）にしない。libarchive が JNI のコールバックの中から、書庫のセッションのスレッドで呼ぶためである。取り消しはセッションの取り消しフラグで伝える（8.3 節）。SMB の同時に読む数の上限は、SMB の実装の中で守る。
 
 ### 3.2 形式の判定
 
