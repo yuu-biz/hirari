@@ -27,6 +27,13 @@ permissions:
   contents: read
   actions: read # to find the time log that the last run uploaded
 
+# Every run starts from the time log of the last finished run and uploads that log with its own time added. Two runs at
+# once would start from the same log, and the later upload would drop the time of the other. So one run goes at a time,
+# and a run that is started meanwhile waits (it is not cancelled).
+concurrency:
+  group: fuzz-time-log
+  cancel-in-progress: false
+
 jobs:
   fuzz:
     runs-on: ubuntu-24.04
