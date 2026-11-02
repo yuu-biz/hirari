@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader.prefetch
 
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
@@ -201,13 +202,31 @@ class Prefetcher<R, T>(
 
     /** Reads [page] again: its shape if that failed, then the views that hold it. */
     fun retry(page: Int) {
-        failures.remove(page) ?: return
+        if (!forget(page)) return
+        listener.onChanged()
+        last?.let(::update)
+    }
+
+    /**
+     * After the connection came back: every page it lost is read again, once for this reconnect (docs/spec.md
+     * section 6.5). The next plan reads the ones in reach; the others are read when the reader gets to them.
+     */
+    fun retryLost() {
+        val lost = failures.filterValues { it is PageResult.Failed && it.reason == FailureReason.ConnectionLost && it.retryable }.keys
+        if (lost.isEmpty()) return
+        lost.toList().forEach(::forget)
+        listener.onChanged()
+        last?.let(::update)
+    }
+
+    /** Forgets that [page] failed, with the views that show it; false when it had not. */
+    private fun forget(page: Int): Boolean {
+        failures.remove(page) ?: return false
         failedSteps.remove(page)
         failedRaws.remove(page)
         cache.keys.filter { page in it.pages }.forEach(::evict)
         if (failedShapes.remove(page)) running[PrefetchJob.ReadShape(page)] = launchShape(page)
-        listener.onChanged()
-        last?.let(::update)
+        return true
     }
 
     /** Cancels every job and releases every view. */

@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.PaginationEvent
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.rotated
+import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
 
 /** Where the screen rests in the current view. */
 sealed interface Place {
@@ -62,6 +63,8 @@ data class ReaderState(
     val loupe: Loupe? = null,
     /** The last turn that ran into an edge of the book, for 本の端での動作 and its bounce. */
     val edgeHit: EdgeHit? = null,
+    /** The connection to the server of a book on SMB, or `null` for a book on the device (docs/spec.md section 6.5). */
+    val connection: SmbConnectionState? = null,
     /** What 余白トリミング read from each page, in the shown orientation, for every strength at once. */
     val margins: Map<Int, MarginScan> = emptyMap(),
 ) {
@@ -189,6 +192,7 @@ data class ReaderState(
         is ReaderEvent.AutoPlayStarted -> copy(autoPlay = AutoPlay(event.nowMs + config.autoPlayMs))
         ReaderEvent.AutoPlayStopped -> copy(autoPlay = null)
         is ReaderEvent.AutoPlayDue -> autoPlayed(event.nowMs)
+        is ReaderEvent.ConnectionChanged -> copy(connection = event.connection)
     }
 
     /** The state with every running animation at its end, as the next input finds it. */
@@ -388,6 +392,9 @@ sealed interface ReaderEvent {
 
     /** The clock of 自動再生 at [nowMs]. A step that is not due yet changes nothing. */
     data class AutoPlayDue(val nowMs: Long) : ReaderEvent
+
+    /** The connection to the book's server broke, is being made again, or came back. */
+    data class ConnectionChanged(val connection: SmbConnectionState) : ReaderEvent
 }
 
 /** 自動再生 playing, with its next step at [dueAtMs]. */

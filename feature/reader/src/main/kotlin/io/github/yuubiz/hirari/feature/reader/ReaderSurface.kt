@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageView
@@ -162,7 +163,15 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
 
     Box(Modifier.fillMaxSize()) {
         val ready = viewModel.prepared.let { viewModel.preparedView(state.current) != null }
-        if (!ready) key(state.current) { DelayedProgress(Modifier.align(Alignment.Center)) }
+        if (!ready) {
+            key(state.current) {
+                DelayedProgress(Modifier.align(Alignment.Center))
+                if (viewModel.fetchedBytes != null) FetchStatus(viewModel, state.current, Modifier.align(Alignment.Center).padding(top = 96.dp))
+            }
+        }
+        if (state.connection.reconnecting) {
+            OutlinedText(stringResource(R.string.reader_reconnecting), Modifier.align(Alignment.TopCenter).padding(top = 24.dp), size = 16)
+        }
         state.zoom.pinch?.takeIf { it.active }?.let {
             OutlinedText("${state.zoom.percent}%", Modifier.align(Alignment.Center), size = 28)
         }
@@ -197,6 +206,35 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
 /** Whether a frame moves something, so the frames tick. */
 private val ReaderState.animating: Boolean
     get() = transition != null || stopTravel != null || loupe?.move != null || edgeHit != null
+
+/**
+ * 取得の状況 under the progress indicator for a book on a server (docs/spec.md section 4.8): where the view's data
+ * comes from and how far its fetch has come, sampled every [FETCH_SAMPLE_MS] once the indicator shows.
+ */
+@Composable
+private fun FetchStatus(viewModel: ReaderViewModel, view: PageView, modifier: Modifier) {
+    var progress by remember { mutableStateOf<FetchProgress?>(null) }
+    LaunchedEffect(view) {
+        delay(PROGRESS_DELAY_MS)
+        val start = FetchSample(android.os.SystemClock.uptimeMillis(), viewModel.fetchedBytes ?: return@LaunchedEffect)
+        val expected = viewModel.fetchExpected(view)
+        var previous = start
+        while (true) {
+            val now = FetchSample(android.os.SystemClock.uptimeMillis(), viewModel.fetchedBytes ?: return@LaunchedEffect)
+            progress = fetchProgress(start, previous, now, expected)
+            previous = now
+            delay(FETCH_SAMPLE_MS)
+        }
+    }
+    val shown = progress ?: return
+    val text = when (shown.source) {
+        FetchSource.Memory -> stringResource(R.string.fetch_memory)
+        FetchSource.Server -> stringResource(R.string.fetch_server, shown.percent, shown.bytesPerSecond / 1024)
+    }
+    OutlinedText(text, modifier, size = 16)
+}
+
+private const val FETCH_SAMPLE_MS = 500L
 
 private fun errorOf(viewModel: ReaderViewModel, view: PageView, index: Int, page: Int): PageResult<Nothing>? {
     val prepared = viewModel.preparedView(view)?.pages?.getOrNull(index)

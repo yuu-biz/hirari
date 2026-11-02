@@ -52,6 +52,7 @@ import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
 import io.github.yuubiz.hirari.core.source.findDocumentId
 import io.github.yuubiz.hirari.core.source.openByteSource
+import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import io.github.yuubiz.hirari.feature.reader.prefetch.Prefetcher
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchDepths
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchInput
@@ -80,6 +81,7 @@ class ReaderServices(
     /** Outlives every screen, on `Dispatchers.IO`. */
     val appScope: CoroutineScope,
     val siblings: SiblingBooks = SiblingBooks.None,
+    val smb: SmbServers = SmbServers.None,
 ) {
     val overrides = BookOverridesStore(storage.books, appScope)
 }
@@ -99,7 +101,17 @@ private fun BookAddress.initialPath(): String = when (this) {
  * Where an opened book was found: its id, the source the index records, and the document whose name and dates
  * describe it (for a folder, the folder's own document).
  */
-private class Located(val id: BookId, val source: BookSource, val documentUri: Uri, val folder: Boolean, val result: BookResult)
+private class Located(
+    val id: BookId,
+    val source: BookSource,
+    val documentUri: Uri,
+    val folder: Boolean,
+    val result: BookResult,
+    val remote: Remote? = null,
+)
+
+/** A book read from an SMB server, the size of its file, and the meter of what it fetched. */
+private class Remote(val server: SmbServer, val size: Long, val meter: FetchMeter)
 
 sealed interface ReaderPhase {
     data object Opening : ReaderPhase
@@ -168,6 +180,7 @@ class ReaderViewModel(
         val global: ReaderConfig,
         val shareDir: File,
         val loader: BookPageLoader,
+        val remote: Remote?,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -286,8 +299,19 @@ class ReaderViewModel(
 
     fun act(action: ReaderAction, nowMs: Long) = dispatch(ReaderEvent.Act(action, nowMs))
 
+    /** 再試行 on a page's card. When every reconnect attempt failed, it also starts them over (docs/spec.md section 6.5). */
     fun retry(page: Int) {
         opened?.prefetcher?.retry(page)
+        opened?.remote?.server?.retry()
+    }
+
+    /** What the book has fetched from its server, for 取得の状況; `null` for a book not on a server. */
+    val fetchedBytes: Long? get() = opened?.remote?.meter?.bytes
+
+    /** What the pages of [view] still need from the server: the sizes declared for those whose data is not held. */
+    fun fetchExpected(view: PageView): Long {
+        val book = opened ?: return 0
+        return view.pages.filter { book.prefetcher.raw(it) == null }.sumOf { book.loader.rawEstimate(it) }
     }
 
     /**
@@ -375,7 +399,9 @@ class ReaderViewModel(
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader)
+        val remote = located.remote
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader, remote)
+        remote?.server?.state?.let { connection -> viewModelScope.launch { connection.collect { dispatch(ReaderEvent.ConnectionChanged(it)) } } }
         stops.attach(session)
         phase = ReaderPhase.Reading
         start()
@@ -393,7 +419,7 @@ class ReaderViewModel(
         } catch (_: Exception) {
             null
         }
-        val size = if (located.folder) book.pages.sumOf { it.declaredSize ?: 0L } else info?.size ?: 0L
+        val size = located.remote?.size ?: if (located.folder) book.pages.sumOf { it.declaredSize ?: 0L } else info?.size ?: 0L
         val fallbackName = when (val source = located.source) {
             is BookSource.InLocation -> source.path.substringAfterLast('/')
             is BookSource.External -> request.book.initialPath()
@@ -414,7 +440,7 @@ class ReaderViewModel(
         val book = opened ?: return
         val viewport = viewport ?: return
         if (state != null) return
-        val first = ReaderState.open(book.book.pages.size, book.start, book.config, viewport)
+        val first = ReaderState.open(book.book.pages.size, book.start, book.config, viewport).copy(connection = book.remote?.server?.state?.value)
         state = first
         changed(null, first)
     }
@@ -432,6 +458,7 @@ class ReaderViewModel(
             book.overrides.update { it.changedBy(before.config, after.config, book.global) }
         }
         readForLoupe(book.loader, after.loupeSource())
+        if (reconnected(before?.connection, after.connection)) book.prefetcher.retryLost()
         val hit = after.edgeHit
         if (hit != null && hit != before?.edgeHit) {
             viewModelScope.launch { bookEnd = bookEndEffect(hit.edge, after.config.atBookEnd, ::sibling) }
@@ -475,12 +502,16 @@ class ReaderViewModel(
         is BookAddress.InLocation -> openInLocation(book, services, copyDir)
     }
 
-    /** A book in a SAF place, by its path inside the place (docs/spec.md section 2.2). */
+    /** A book in a place, by its path inside the place (docs/spec.md section 2.2). */
     private suspend fun openInLocation(book: BookAddress.InLocation, services: ReaderServices, copyDir: File): Located {
         val path = normalizePath(book.path)
         val source = BookSource.InLocation(book.location, path)
         fun failed(reason: BookFailure) = Located(BookId(""), source, Uri.EMPTY, book.folder, BookResult.Failed(reason))
-        val location = services.storage.locations.get(book.location) as? LibraryLocation.SafTree ?: return failed(BookFailure.NotFound)
+        val location = when (val found = services.storage.locations.get(book.location)) {
+            is LibraryLocation.SafTree -> found
+            is LibraryLocation.SmbShare -> return openOnServer(found, path, book.folder, source, services)
+            null -> return failed(BookFailure.NotFound)
+        }
         if (!location.permissionHeld) return failed(BookFailure.NoPermission)
         withContext(Dispatchers.Main) { bookPath = if (path.isEmpty()) location.displayName else "${location.displayName}/$path" }
         val tree = Uri.parse(location.treeUri.value)
@@ -504,6 +535,27 @@ class ReaderViewModel(
         folder = true,
         result = Books.openTreeFolder(application.contentResolver, tree, documentId, copyDir, services.decoding),
     )
+
+    /**
+     * A book in an SMB place, read through the server's shared connection (docs/spec.md sections 3.1 and 6.5). A
+     * password that cannot be read is a missing permission, and the connection breaking while the book opens is a
+     * read failure. The images of a folder on a server are not read yet.
+     */
+    private suspend fun openOnServer(location: LibraryLocation.SmbShare, path: String, folder: Boolean, source: BookSource, services: ReaderServices): Located {
+        fun failed(reason: BookFailure) = Located(BookId(""), source, Uri.EMPTY, folder, BookResult.Failed(reason))
+        withContext(Dispatchers.Main) { bookPath = if (path.isEmpty()) location.displayName else "${location.displayName}/$path" }
+        if (folder) return failed(BookFailure.ReadError)
+        val server = services.smb.serverOf(location) ?: return failed(BookFailure.NoPermission)
+        val file = try {
+            server.open(normalizePath("${location.basePath}/$path"))
+        } catch (e: Exception) {
+            return failed(e.openFailure())
+        }
+        val id = locationBookId(location, path)
+        val meter = FetchMeter()
+        val result = Books.openBook(meter.counted(file), services.decoding, File(application.cacheDir, "extract/${id.value}"))
+        return Located(id, source, Uri.EMPTY, folder = false, result, Remote(server, file.size, meter))
+    }
 
     /** A picked document has no lasting address, so its [id] comes from its first bytes when the caller has none. */
     private suspend fun openDocument(id: BookId?, source: BookSource, uri: Uri, services: ReaderServices, copyDir: File): Located {

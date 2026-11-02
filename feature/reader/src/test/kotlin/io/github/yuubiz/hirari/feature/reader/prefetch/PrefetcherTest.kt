@@ -383,4 +383,31 @@ class PrefetcherTest {
         reader.prefetcher.trim()
         assertEquals(setOf(20), reader.rawPages())
     }
+
+    @Test
+    fun theConnectionComingBackReadsThePagesItLostOnceAndNoOthers() = runTest {
+        val lost = PageResult.Failed(FailureReason.ConnectionLost, retryable = true)
+        val corrupt = PageResult.Failed(FailureReason.Corrupt, retryable = false)
+        val loader = FakeLoader(rawFailing = mutableMapOf(0 to lost, 1 to lost, 2 to corrupt))
+        val reader = reader(pages = 4, loader = loader)
+        advanceUntilIdle()
+        assertEquals(setOf(0, 1, 2), reader.prefetcher.failedPages.keys)
+        loader.rawFailing.remove(0)
+        reader.prefetcher.retryLost()
+        advanceUntilIdle()
+        assertIs<PreparedPage.Image<String>>(reader.prefetcher[PageView.One(0)]!!.pages.single())
+        assertEquals(mapOf(1 to lost, 2 to corrupt), reader.prefetcher.failedPages)
+        assertEquals(listOf(2, 2, 1), listOf(0, 1, 2).map { page -> loader.rawReads.count { it == page } })
+    }
+
+    @Test
+    fun nothingIsReadAgainWhenNoPageWasLost() = runTest {
+        val loader = FakeLoader(rawFailing = mutableMapOf(1 to PageResult.Failed(FailureReason.ReadError, retryable = true)))
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        val reads = loader.rawReads.size
+        reader.prefetcher.retryLost()
+        advanceUntilIdle()
+        assertEquals(reads, loader.rawReads.size)
+    }
 }

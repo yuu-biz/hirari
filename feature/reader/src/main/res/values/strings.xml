@@ -57,6 +57,10 @@
     <string name="page_panel_undo">取り消す</string>
     <string name="page_panel_number">ページ番号</string>
 
+    <string name="reader_reconnecting">再接続しています</string>
+    <string name="fetch_memory">メモリ</string>
+    <string name="fetch_server">サーバー %1$d%% %2$d KB/s</string>
+
     <string name="book_end_next">次の本（%1$s）</string>
     <string name="book_end_previous">前の本（%1$s）</string>
     <string name="neighbor_saved">続きから</string>

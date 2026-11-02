@@ -20,6 +20,8 @@ import io.github.yuubiz.hirari.feature.library.SafDocumentUris
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
+import android.net.ConnectivityManager
+import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
 import io.github.yuubiz.hirari.feature.text.TextReaderServices
 import kotlinx.coroutines.CoroutineScope
@@ -61,7 +63,8 @@ class HirariApp : Application() {
             val storage = Storage(this@HirariApp)
             appScope.launch { reconcile(storage) }
             val siblings = FolderSiblings(storage.locations, SafFolderLister(contentResolver), storage.settings)
-            ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope, siblings)
+            val smb = SmbServerPool(storage.credentials, appScope, getSystemService(ConnectivityManager::class.java).networkAvailable())
+            ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope, siblings, smb)
         }
         smbShares = appScope.async { SmbShares(appScope, getSystemService(ConnectivityManager::class.java).networkAvailable()) }
         library = appScope.async {
