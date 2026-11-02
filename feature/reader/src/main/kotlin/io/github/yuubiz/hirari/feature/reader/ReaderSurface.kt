@@ -83,11 +83,17 @@ private fun ReaderState.layersAt(nowMs: Long): List<Layer> {
             val incomingAt = if (t.incoming == current) rest else at(t.incoming, t.incomingPlace)
             Triple(t.animation.frameAt(nowMs), t.outgoing to at(t.outgoing, t.outgoingPlace), t.incoming to incomingAt)
         }
-        else -> return listOfNotNull(rest?.let { Layer(current, it, 0f, 1f) })
+        else -> return listOfNotNull(rest?.let { Layer(current, it, bounceAt(nowMs), 1f) })
     }
     val out = outgoing.second?.let { Layer(outgoing.first, it, frame.outgoingShift * viewport.width, 1f) }
     val inc = incoming.second?.let { Layer(incoming.first, it, frame.incomingShift * viewport.width, frame.incomingAlpha) }
     return if (frame.incomingOnTop) listOfNotNull(out, inc) else listOfNotNull(inc, out)
+}
+
+/** The bounce of 止まる at [nowMs], in pixels, and nothing for the other 本の端での動作. */
+private fun ReaderState.bounceAt(nowMs: Long): Float {
+    val hit = edgeHit?.takeIf { bookEndOutcome(it.edge, config.atBookEnd, autoPlaying = false) == BookEndOutcome.Bounce } ?: return 0f
+    return hit.bounceDpAt(nowMs, config.direction) * viewport.density
 }
 
 /** Every reader input and drawing for an open book. */
@@ -99,8 +105,8 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
     val latest by rememberUpdatedState(state)
     val close by rememberUpdatedState(onClose)
 
-    LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move) {
-        if (state.transition == null && state.stopTravel == null && state.loupe?.move == null) return@LaunchedEffect
+    LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move, state.edgeHit) {
+        if (!state.animating) return@LaunchedEffect
         while (true) {
             val now = withFrameMillis { it }
             frameMs = now
@@ -129,7 +135,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
             .pointerInput(input) { with(input) { handle() } },
     ) {
         viewModel.prepared
-        val now = if (state.transition != null || state.stopTravel != null || state.loupe?.move != null) frameMs else Long.MAX_VALUE
+        val now = if (state.animating) frameMs else Long.MAX_VALUE
         for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
         state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter) }
     }
@@ -186,6 +192,10 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         if (ui.commandBar.panelVisible) CommandPanelView(state.commandPanel(), ui.commandBar)
     }
 }
+
+/** Whether a frame moves something, so the frames tick. */
+private val ReaderState.animating: Boolean
+    get() = transition != null || stopTravel != null || loupe?.move != null || edgeHit != null
 
 private fun errorOf(viewModel: ReaderViewModel, view: PageView, index: Int, page: Int): PageResult<Nothing>? {
     val prepared = viewModel.preparedView(view)?.pages?.getOrNull(index)

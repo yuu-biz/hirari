@@ -60,7 +60,8 @@ class HirariApp : Application() {
         services = appScope.async {
             val storage = Storage(this@HirariApp)
             appScope.launch { reconcile(storage) }
-            ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope)
+            val siblings = FolderSiblings(storage.locations, SafFolderLister(contentResolver), storage.settings)
+            ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope, siblings)
         }
         smbShares = appScope.async { SmbShares(appScope, getSystemService(ConnectivityManager::class.java).networkAvailable()) }
         library = appScope.async {

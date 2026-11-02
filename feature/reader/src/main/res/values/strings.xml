@@ -57,6 +57,17 @@
     <string name="page_panel_undo">取り消す</string>
     <string name="page_panel_number">ページ番号</string>
 
+    <string name="book_end_next">次の本（%1$s）</string>
+    <string name="book_end_previous">前の本（%1$s）</string>
+    <string name="neighbor_saved">続きから</string>
+    <string name="neighbor_first">先頭から</string>
+    <string name="neighbor_last">末尾から</string>
+    <string name="book_end_from_first">最初から読む</string>
+    <string name="book_end_close">閉じる</string>
+    <string name="book_end_last_in_folder">このフォルダの最後の本です</string>
+    <string name="book_end_first_in_folder">このフォルダの最初の本です</string>
+    <string name="book_end_no_folder">フォルダから開いた本ではないので、前後の本はありません</string>
+
     <string name="menu_restore_and_close">位置を戻して閉じる</string>
     <string name="menu_set_cover_from_range">範囲を選んで表紙にする</string>
     <string name="menu_guide">操作ガイド</string>

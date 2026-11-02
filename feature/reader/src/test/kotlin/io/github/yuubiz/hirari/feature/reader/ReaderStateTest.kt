@@ -47,9 +47,9 @@ class ReaderStateTest {
     }
 
     @Test
-    fun aTurnPastTheEndChangesNothing() {
+    fun aTurnPastTheEndOnlyRunsIntoIt() {
         val state = readerOf(List(2) { TALL })
-        assertEquals(state, state.act(ReaderAction.TurnView(Turn.Forward)))
+        assertEquals(state.copy(edgeHit = EdgeHit(BookEdge.End, 0)), state.act(ReaderAction.TurnView(Turn.Forward)))
     }
 
     @Test

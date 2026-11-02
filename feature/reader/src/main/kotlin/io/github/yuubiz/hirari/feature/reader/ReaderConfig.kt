@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
@@ -47,6 +48,7 @@ data class ReaderConfig(
     val loupeZoom: LoupeZoom = LoupeZoom.View200,
     val loupeFrame: LoupeFrame = LoupeFrame.Small,
     val loupeHoldMs: Long = 800,
+    val atBookEnd: BookEndAction = BookEndAction.Ask,
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -78,6 +80,7 @@ data class ReaderConfig(
             loupeZoom = settings.loupeZoom,
             loupeFrame = settings.loupeFrame,
             loupeHoldMs = settings.loupeHoldMs.toLong(),
+            atBookEnd = settings.atBookEnd,
         )
     }
 }

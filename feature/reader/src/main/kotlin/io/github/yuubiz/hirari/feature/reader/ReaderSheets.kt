@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.ImageAdjust
+import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
@@ -104,7 +105,13 @@ internal fun Thumbnail(viewModel: ReaderViewModel, page: Int, modifier: Modifier
 /** ページパネル (docs/spec.md section 4.8, ページバー). Each control moves the reader at once. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PagePanelSheet(viewModel: ReaderViewModel, state: ReaderState, sheet: ReaderSheet.Pages, onClose: () -> Unit) {
+internal fun PagePanelSheet(
+    viewModel: ReaderViewModel,
+    state: ReaderState,
+    sheet: ReaderSheet.Pages,
+    onClose: () -> Unit,
+    onNeighbor: (BookEdge) -> Unit,
+) {
     val pageCount = state.pagination.shapes.size
     val head = state.current.pages.min()
     fun goTo(page: Int) = viewModel.dispatch(ReaderEvent.GoTo(page))
@@ -134,8 +141,8 @@ internal fun PagePanelSheet(viewModel: ReaderViewModel, state: ReaderState, shee
                 SheetButton(R.string.page_panel_last) { act(ReaderAction.Last) }
                 SheetButton(R.string.page_panel_shift_back) { act(ReaderAction.Shift(forward = false)) }
                 SheetButton(R.string.page_panel_shift_forward) { act(ReaderAction.Shift(forward = true)) }
-                SheetButton(R.string.page_panel_previous_book, enabled = false) {}
-                SheetButton(R.string.page_panel_next_book, enabled = false) {}
+                SheetButton(R.string.page_panel_previous_book) { onNeighbor(BookEdge.Start) }
+                SheetButton(R.string.page_panel_next_book) { onNeighbor(BookEdge.End) }
                 SheetButton(R.string.command_bookmarks, enabled = false) {}
                 SheetButton(R.string.page_panel_undo) { goTo(sheet.openedOn) }
                 SheetButton(R.string.panel_close, onClick = onClose)
@@ -243,6 +250,77 @@ private fun SheetButton(label: Int, enabled: Boolean = true, args: Array<Any> = 
         Text(stringResource(label, *args), color = if (enabled) SheetText else SheetDisabled)
     }
 }
+
+/**
+ * The neighboring book toward [sheet]'s edge (docs/spec.md section 4.8, 本の端での動作 and ページバー). Until the
+ * library has answered, its items show disabled; a book with no folder has none.
+ */
+@Composable
+internal fun BookEndSheet(
+    viewModel: ReaderViewModel,
+    sheet: ReaderSheet.BookEnd,
+    onClose: () -> Unit,
+    onCloseReader: () -> Unit,
+    onOpenBook: (OpenBookRequest) -> Unit,
+) {
+    var sibling by remember(sheet.edge) { mutableStateOf<Sibling?>(null) }
+    LaunchedEffect(sheet.edge) { sibling = viewModel.sibling(sheet.edge) }
+    val atEnd = sheet.edge == BookEdge.End
+    val starts = when {
+        sheet.fromPanel -> NeighborStart.entries
+        atEnd -> listOf(NeighborStart.Saved, NeighborStart.First)
+        else -> listOf(NeighborStart.Saved, NeighborStart.Last)
+    }
+    Scrim(onClose) {
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            when (val found = sibling) {
+                Sibling.Last -> Text(
+                    stringResource(if (atEnd) R.string.book_end_last_in_folder else R.string.book_end_first_in_folder),
+                    color = SheetDisabled,
+                    modifier = Modifier.padding(12.dp),
+                )
+                Sibling.NoFolder -> if (sheet.fromPanel) Text(stringResource(R.string.book_end_no_folder), color = SheetDisabled, modifier = Modifier.padding(12.dp))
+                is Sibling.Found, null -> for (start in starts) {
+                    SheetButton(
+                        if (atEnd) R.string.book_end_next else R.string.book_end_previous,
+                        enabled = found != null,
+                        args = arrayOf(stringResource(start.label)),
+                    ) { (found as? Sibling.Found)?.let { onOpenBook(it.request(start)) } }
+                }
+            }
+            if (!sheet.fromPanel) {
+                if (atEnd) {
+                    SheetButton(R.string.book_end_from_first) {
+                        viewModel.act(ReaderAction.First, android.os.SystemClock.uptimeMillis())
+                        onClose()
+                    }
+                }
+                SheetButton(R.string.book_end_close, onClick = onCloseReader)
+                SheetButton(R.string.menu_restore_and_close) {
+                    viewModel.restorePosition()
+                    onCloseReader()
+                }
+            } else {
+                SheetButton(R.string.panel_close, onClick = onClose)
+            }
+        }
+    }
+}
+
+private val NeighborStart.label: Int
+    get() = when (this) {
+        NeighborStart.Saved -> R.string.neighbor_saved
+        NeighborStart.First -> R.string.neighbor_first
+        NeighborStart.Last -> R.string.neighbor_last
+    }
 
 /** メニュー (docs/spec.md section 4.8). Items of later milestones show disabled under their names. */
 @Composable

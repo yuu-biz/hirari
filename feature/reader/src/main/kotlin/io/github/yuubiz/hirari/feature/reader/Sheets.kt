@@ -18,11 +18,17 @@ sealed interface ReaderSheet {
     data class SharePick(val view: PageView.Two) : ReaderSheet
 
     /**
+     * The neighboring book toward [edge]: the sheet of 本の端での動作, or with [fromPanel] the choices of 前の本 and
+     * 次の本 on the page panel.
+     */
+    data class BookEnd(val edge: BookEdge, val fromPanel: Boolean = false) : ReaderSheet
+
+    /**
      * Whether the reader takes [code] while this sheet is up. Back closes it and Menu opens or closes the menu.
      * Every other key goes to the sheet's controls, and on the page panel Del goes to the page number field.
      */
     fun takes(code: Int): Boolean = when (this) {
-        is Pages, Adjust, is SharePick -> code == KeyCodes.BACK || code == KeyCodes.MENU
+        is Pages, Adjust, is SharePick, is BookEnd -> code == KeyCodes.BACK || code == KeyCodes.MENU
         Menu -> code == KeyCodes.BACK || code == KeyCodes.MENU || code == KeyCodes.DEL
     }
 }

@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import kotlinx.coroutines.delay
 
@@ -57,9 +58,12 @@ class KeyRelay {
     fun dispatch(event: KeyEvent): Boolean = handler?.invoke(event) == true
 }
 
-/** The image reader. [onClose] leaves it; the position is already saved by then. */
+/**
+ * The image reader. [onClose] leaves it; the position is already saved by then. [onOpenBook] leaves it for
+ * another book, the neighbor of 本の端での動作.
+ */
 @Composable
-fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit) {
+fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit, onOpenBook: (OpenBookRequest) -> Unit) {
     val density = LocalDensity.current.density
     val ui = remember { ReaderUi() }
     val stoppingKey = remember { StoppingKey() }
@@ -121,13 +125,21 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
                 AutoPlayClock(viewModel, state.autoPlay)
                 ReaderSurface(viewModel, state, ui, onClose)
                 when (val sheet = ui.sheet) {
-                    is ReaderSheet.Pages -> PagePanelSheet(viewModel, state, sheet, onClose = { ui.sheet = null })
+                    is ReaderSheet.Pages -> PagePanelSheet(
+                        viewModel,
+                        state,
+                        sheet,
+                        onClose = { ui.sheet = null },
+                        onNeighbor = { ui.sheet = ReaderSheet.BookEnd(it, fromPanel = true) },
+                    )
+                    is ReaderSheet.BookEnd -> BookEndSheet(viewModel, sheet, onClose = { ui.sheet = null }, onCloseReader = onClose, onOpenBook = onOpenBook)
                     ReaderSheet.Menu -> MenuSheet(viewModel, state, onCloseMenu = { ui.sheet = null }, onCloseReader = onClose, onEffect = ui::follow)
                     ReaderSheet.Adjust -> AdjustSheet(viewModel, state, onClose = { ui.sheet = null })
                     is ReaderSheet.SharePick -> SharePickSheet(sheet.view, state.config.direction, onPick = { ui.follow(CommandEffect.Share(it)) }, onClose = { ui.sheet = null })
                     null -> Unit
                 }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
+                BookEndEffects(viewModel, ui, onClose, onOpenBook)
             }
         }
         SharePageEffect(viewModel, ui)
@@ -224,6 +236,28 @@ private fun BookError(text: String, onBack: () -> Unit) {
     ) {
         Text(text, color = Color.White, style = MaterialTheme.typography.titleMedium)
         Button(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.reader_back)) }
+    }
+}
+
+/** Does what running into an edge of the book asks of the screen (docs/spec.md section 4.8, 本の端での動作). */
+@Composable
+private fun BookEndEffects(viewModel: ReaderViewModel, ui: ReaderUi, onClose: () -> Unit, onOpenBook: (OpenBookRequest) -> Unit) {
+    val effect = viewModel.bookEnd ?: return
+    LaunchedEffect(effect) {
+        viewModel.bookEndHandled()
+        when (effect) {
+            is BookEndEffect.Ask -> {
+                ui.closePanels()
+                ui.sheet = ReaderSheet.BookEnd(effect.edge)
+            }
+            is BookEndEffect.Open -> onOpenBook(effect.request)
+            is BookEndEffect.Missing -> ui.message = when {
+                effect.sibling == Sibling.NoFolder -> R.string.book_end_no_folder
+                effect.edge == BookEdge.End -> R.string.book_end_last_in_folder
+                else -> R.string.book_end_first_in_folder
+            }
+            BookEndEffect.Close -> onClose()
+        }
     }
 }
 

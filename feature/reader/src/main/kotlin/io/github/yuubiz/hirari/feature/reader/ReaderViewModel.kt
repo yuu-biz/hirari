@@ -79,6 +79,7 @@ class ReaderServices(
     val decoding: ImageDecoding,
     /** Outlives every screen, on `Dispatchers.IO`. */
     val appScope: CoroutineScope,
+    val siblings: SiblingBooks = SiblingBooks.None,
 ) {
     val overrides = BookOverridesStore(storage.books, appScope)
 }
@@ -235,6 +236,23 @@ class ReaderViewModel(
                 image.bitmap.recycle()
             }
         }
+    }
+
+    /** What running into an edge of the book asks of the screen, until it says it is handled. */
+    var bookEnd: BookEndEffect? by mutableStateOf(null)
+        private set
+
+    fun bookEndHandled() {
+        bookEnd = null
+    }
+
+    private val siblings = HashMap<BookEdge, Sibling>()
+
+    /** The book beside this one in its folder toward [edge], asked of the library once per edge. */
+    suspend fun sibling(edge: BookEdge): Sibling {
+        siblings[edge]?.let { return it }
+        val found = services.await().siblings.beside(request.book, edge)
+        return found.also { siblings[edge] = it }
     }
 
     /** 位置を戻して閉じる: the book gets back the position and state it had when it opened. The screen closes next. */
@@ -414,6 +432,10 @@ class ReaderViewModel(
             book.overrides.update { it.copy(adjust = after.config.adjust.takeUnless { a -> a == book.globalAdjust }) }
         }
         readForLoupe(book.loader, after.loupeSource())
+        val hit = after.edgeHit
+        if (hit != null && hit != before?.edgeHit) {
+            viewModelScope.launch { bookEnd = bookEndEffect(hit.edge, after.config.atBookEnd, ::sibling) }
+        }
     }
 
     /**

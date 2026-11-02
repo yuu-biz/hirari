@@ -60,6 +60,8 @@ data class ReaderState(
     val autoPlay: AutoPlay? = null,
     /** ルーペ, while a finger holds it up. */
     val loupe: Loupe? = null,
+    /** The last turn that ran into an edge of the book, for 本の端での動作 and its bounce. */
+    val edgeHit: EdgeHit? = null,
 ) {
     val current: PageView get() = pagination.current
     /**
@@ -175,6 +177,7 @@ data class ReaderState(
             transition = transition?.takeUnless { it.animation.isDoneAt(event.nowMs) },
             stopTravel = stopTravel?.takeUnless { it.move.motion.isDoneAt(event.nowMs) },
             loupe = loupe?.at(event.nowMs),
+            edgeHit = edgeHit?.takeUnless { it.isDoneAt(event.nowMs) },
         )
         is ReaderEvent.LoupeShown -> byHand().copy(loupe = Loupe.at(event.finger, viewport.size))
         is ReaderEvent.LoupeMoved -> copy(loupe = loupe?.moved(event.finger, viewport.size, viewport.density, event.nowMs))
@@ -210,12 +213,21 @@ data class ReaderState(
     }
 
     private fun act(action: ReaderAction, nowMs: Long): ReaderState = when (action) {
-        is ReaderAction.TurnView -> turned(action.turn, nowMs)
-        is ReaderAction.StepStops -> stepped(action.turn, nowMs)
+        is ReaderAction.TurnView -> ranInto(turned(action.turn, nowMs), action.turn, nowMs)
+        is ReaderAction.StepStops -> ranInto(stepped(action.turn, nowMs), action.turn, nowMs)
         is ReaderAction.Shift -> moved(PaginationEvent.Shift(action.forward))
         ReaderAction.First -> moved(PaginationEvent.GoTo(0))
         ReaderAction.Last -> moved(PaginationEvent.GoTo(pagination.shapes.lastIndex))
         ReaderAction.OpenMenu, ReaderAction.Dismiss -> this
+    }
+
+    /**
+     * [moved], or this state run into the edge toward [turn] when it could not move. A view whose shapes are not
+     * known yet may still split, so it is not an edge until they are.
+     */
+    private fun ranInto(moved: ReaderState, turn: Turn, nowMs: Long): ReaderState {
+        if (moved !== this || neighbor(turn) != null || current.pages.any { pagination.shapes[it] !is PageShape.Known }) return moved
+        return copy(edgeHit = EdgeHit(edgeOf(turn), nowMs))
     }
 
     private fun turned(turn: Turn, nowMs: Long, animation: TurnAnimation? = null): ReaderState {
@@ -298,7 +310,7 @@ data class ReaderState(
 
     private fun released(commit: Boolean, nowMs: Long): ReaderState {
         val pull = pull ?: return this
-        val neighbor = pull.neighbor ?: return copy(pull = null)
+        val neighbor = pull.neighbor ?: return copy(pull = null).let { if (commit) it.ranInto(it, pull.turn, nowMs) else it }
         val movement = turnMovement(pull.turn, config.direction)
         val pulled = pull.pulledDp * viewport.density / viewport.width
         if (commit) {

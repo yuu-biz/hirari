@@ -191,7 +191,12 @@ class MainActivity : ComponentActivity() {
                             val request = entry.toRoute<ReaderRoute>().toRequest()
                             val reader = viewModel { ReaderViewModel(app, app.services, request) }
                             ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent() }.first { it } }
-                            ReaderScreen(reader, keys, onClose = { if (!nav.popBackStack()) finish() })
+                            ReaderScreen(
+                                reader,
+                                keys,
+                                onClose = { if (!nav.popBackStack()) finish() },
+                                onOpenBook = { nav.navigate(it.toReaderRoute()) { popUpTo<ReaderRoute> { inclusive = true } } },
+                            )
                         }
                     }
                     composable<TextRoute> { entry ->
