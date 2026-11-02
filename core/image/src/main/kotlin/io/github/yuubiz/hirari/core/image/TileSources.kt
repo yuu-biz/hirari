@@ -30,7 +30,10 @@ interface TileSource : Closeable {
     /** The tiles to hold while the screen shows [viewport], in image pixels, at [scale] screen pixels per image pixel. */
     fun plan(viewport: PixelRect, scale: Double): TilePlan
 
-    /** The bitmap of [key], of the size of its [tileRect] at its sample size. */
+    /**
+     * The bitmap of [key], of the size of its [tileRect] at its sample size, or smaller when memory ran out on
+     * the first read (docs/spec.md section 6.1).
+     */
     suspend fun tile(key: TileKey): PageResult<Bitmap>
 }
 
@@ -54,12 +57,10 @@ internal abstract class CachedTiles(override val size: PixelSize, private val de
         if (rect.isEmpty) return corrupt
         val result = try {
             decodeWithTimeout(scope, decoding.dispatcher) { _ ->
-                decodeTile(rect, key.sample)?.let { PageResult.Ready(it) } ?: corrupt
+                retryingOnce { reduction -> decodeTile(rect, key.sample, reduction)?.let { PageResult.Ready(it) } ?: corrupt }
             }
         } catch (_: CancellationException) {
             currentCoroutineContext().ensureActive()
-            readError
-        } catch (_: OutOfMemoryError) {
             readError
         } catch (_: Exception) {
             corrupt
@@ -68,8 +69,11 @@ internal abstract class CachedTiles(override val size: PixelSize, private val de
         return result
     }
 
-    /** The bitmap of [rect], in shown pixels, at 1/[sample] of its size, on the calling thread. */
-    protected abstract fun decodeTile(rect: PixelRect, sample: Int): Bitmap?
+    /**
+     * The bitmap of [rect], in shown pixels, at 1/[sample] of its size, on the calling thread. A [reduction] of 2
+     * reads it again after memory ran out, at twice the reduction (docs/spec.md section 6.1).
+     */
+    protected abstract fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap?
 
     override fun close() {
         scope.cancel()
@@ -90,9 +94,9 @@ internal class RegionTiles private constructor(
 ) : CachedTiles(orientation.shown(stored), decoding) {
     private val budgetBytes = decoding.budgetBytes
 
-    override fun decodeTile(rect: PixelRect, sample: Int): Bitmap? {
+    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap? {
         val source = orientation.toStored(rect, stored)
-        val read = planTileRead(PixelSize(source.width, source.height), sample, averagingLimit, budgetBytes)
+        val read = planTileRead(PixelSize(source.width, source.height), sample, averagingLimit, budgetBytes, reduction)
         val options = BitmapFactory.Options().apply {
             inSampleSize = read.decodeSample
             inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -144,14 +148,14 @@ internal class RegionTiles private constructor(
  * section 3.7). [whole] is already turned and may be smaller than [size] when the budget made it so.
  */
 internal class SlicedTiles(private val whole: Bitmap, size: PixelSize, decoding: ImageDecoding) : CachedTiles(size, decoding) {
-    override fun decodeTile(rect: PixelRect, sample: Int): Bitmap? {
+    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap? {
         val across = whole.width / size.width.toDouble()
         val down = whole.height / size.height.toDouble()
         val left = (rect.left * across).toInt().coerceIn(0, whole.width - 1)
         val top = (rect.top * down).toInt().coerceIn(0, whole.height - 1)
         val right = (rect.right * across).toInt().coerceIn(left + 1, whole.width)
         val bottom = (rect.bottom * down).toInt().coerceIn(top + 1, whole.height)
-        val output = PixelSize(sampled(rect.width, sample), sampled(rect.height, sample))
+        val output = PixelSize(sampled(rect.width, sample * reduction), sampled(rect.height, sample * reduction))
         return synchronized(whole) {
             if (whole.isRecycled) return null
             scaledInSteps(whole, Rect(left, top, right, bottom), output, recycleSource = false)

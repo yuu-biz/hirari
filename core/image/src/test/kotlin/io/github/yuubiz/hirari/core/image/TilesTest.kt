@@ -136,6 +136,15 @@ class TilesTest {
     }
 
     @Test
+    fun aTileReadAgainAfterRunningOutOfMemoryDecodesAtTwiceTheChosenSample() {
+        val region = PixelSize(8192, 8192)
+        val budget = 96L shl 20
+        assertEquals(TileRead(4, PixelSize(1024, 1024)), planTileRead(region, 8, averagingLimit = 1, budgetBytes = budget))
+        assertEquals(TileRead(8, PixelSize(1024, 1024)), planTileRead(region, 8, averagingLimit = 1, budgetBytes = budget, reduction = 2))
+        assertEquals("twice the tile's sample alone picks the same decode", 4, planTileRead(region, 16, averagingLimit = 1, budgetBytes = budget).decodeSample)
+    }
+
+    @Test
     fun anEdgeTileRoundsItsOutputUpAsTheDecodersDo() {
         assertEquals(PixelSize(125, 42), planTileRead(PixelSize(1000, 333), 8, averagingLimit = 1, budgetBytes = roomy).output)
         assertEquals(PixelSize(1, 1), planTileRead(PixelSize(3, 2), 8, averagingLimit = 1, budgetBytes = roomy).output)
