@@ -1,9 +1,15 @@
 package io.github.yuubiz.hirari
 
+import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
@@ -14,31 +20,94 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.core.net.toUri
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.yuubiz.hirari.core.ui.HirariTheme
 import io.github.yuubiz.hirari.feature.library.HomeScreen
+import io.github.yuubiz.hirari.feature.reader.BookRef
+import io.github.yuubiz.hirari.feature.reader.KeyRelay
+import io.github.yuubiz.hirari.feature.reader.ReaderScreen
+import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.LicenseScreen
+import kotlinx.coroutines.launch
 
 private const val HOME = "home"
 private const val LICENSES = "licenses"
+private const val READER = "reader/{kind}/{uri}"
+private const val DOCUMENT = "document"
+private const val FOLDER = "folder"
+
+/** The reader route for the document or folder tree at [uri]. */
+internal fun readerRoute(folder: Boolean, uri: Uri): String = "reader/${if (folder) FOLDER else DOCUMENT}/${Uri.encode(uri.toString())}"
+
+/** ZIP and CBZ as providers label them (docs/spec.md section 3.1). */
+private val DOCUMENT_TYPES = arrayOf("application/zip", "application/x-cbz", "application/vnd.comicbook+zip", "application/octet-stream")
 
 class MainActivity : ComponentActivity() {
+    private val keys = KeyRelay()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        val app = application as HirariApp
         setContent {
             HirariTheme {
                 val nav = rememberNavController()
-                NavHost(nav, startDestination = prototypeStartRoute(intent) ?: HOME) {
+                val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    if (uri != null) {
+                        keepPermission(uri)
+                        nav.navigate(readerRoute(folder = false, uri))
+                    }
+                }
+                val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                    if (uri != null) {
+                        keepPermission(uri)
+                        nav.navigate(readerRoute(folder = true, uri))
+                    }
+                }
+                NavHost(nav, startDestination = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: HOME) {
                     composable(HOME) {
-                        HomeScreen(actions = { HomeMenu(onLicenses = { nav.navigate(LICENSES) }, onOpen = nav::navigate) })
+                        HomeScreen(
+                            onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
+                            onOpenFolder = { pickFolder.launch(null) },
+                            actions = { HomeMenu(onLicenses = { nav.navigate(LICENSES) }, onOpen = nav::navigate) },
+                        )
                     }
                     composable(LICENSES) { LicenseScreen(onBack = { nav.popBackStack() }) }
+                    composable(READER) { entry ->
+                        val uri = entry.arguments?.getString("uri").orEmpty().toUri()
+                        val ref = if (entry.arguments?.getString("kind") == FOLDER) BookRef.Folder(uri) else BookRef.Document(uri)
+                        val reader = viewModel { ReaderViewModel(app, app.services, ref) }
+                        ReaderScreen(reader, keys, onClose = { if (!nav.popBackStack()) finish() })
+                    }
                     prototypeRoutes()
                 }
             }
+        }
+    }
+
+    /**
+     * Before Compose focus handling, which would take the D-pad keys first. Lint flags androidx's own override of
+     * this public `Activity` method as restricted.
+     */
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = keys.dispatch(event) || super.dispatchKeyEvent(event)
+
+    /** docs/spec.md section 2.7: the position is always written out on `onStop`. */
+    override fun onStop() {
+        super.onStop()
+        val app = application as HirariApp
+        app.appScope.launch { app.services.await().progress.flush() }
+    }
+
+    /** A picked book opens again after a restart, so keep its grant (docs/spec.md section 3.1). */
+    private fun keepPermission(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: SecurityException) {
         }
     }
 }

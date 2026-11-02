@@ -8,6 +8,7 @@ android {
         applicationId = "io.github.yuubiz.hirari"
         versionCode = 1
         versionName = "0.0.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
         create("benchmark") {
@@ -26,12 +27,51 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:data"))
+    implementation(project(":core:image"))
     implementation(project(":core:ui"))
     implementation(project(":feature:library"))
+    implementation(project(":feature:reader"))
     implementation(project(":feature:settings"))
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
-    debugImplementation(project(":feature:reader"))
-    "benchmarkImplementation"(project(":feature:reader"))
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.kotlinx.coroutines.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.junit)
+}
+
+// The device test reads a corpus book from its assets, as :core:image does. A task dependency keeps :tools:corpus
+// off the module dependencies.
+evaluationDependsOn(":tools:corpus")
+
+abstract class CorpusAssets : DefaultTask() {
+    @get:InputFiles
+    abstract val corpus: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:javax.inject.Inject
+    abstract val fs: FileSystemOperations
+
+    @TaskAction
+    fun copy() {
+        fs.sync {
+            from(corpus)
+            into(outputDir)
+        }
+    }
+}
+
+val corpusAssets = tasks.register<CorpusAssets>("corpusAssets") {
+    corpus.from(project(":tools:corpus").tasks.named("generateCorpus"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.androidTest?.sources?.assets?.addGeneratedSourceDirectory(corpusAssets, CorpusAssets::outputDir)
+    }
 }

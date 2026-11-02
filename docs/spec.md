@@ -238,7 +238,7 @@ fun layoutViews(
 
 `Spread` の組み方の規則は次のとおり。
 
-1. 形が `Unknown` のページは縦長として扱う。
+1. 形が `Unknown` のページは縦長として扱う。ヘッダを読めなかったページは、縦横比 1:1.414 の縦長ページの形を持つものとして扱う。組み方は縦長のページと同じになり、エラーカードはふつうのページの大きさの枠に出る。
 2. 横長ページは常に単独のビューになる。
 3. `coverAlone` が真なら、先頭ページ（0 番）は常に単独のビューになる。
 4. アンカー a から後ろへ向かって、貪欲に組む。a と a+1 がともに縦長なら `Two(a, a+1)` にして a+2 へ進む。そうでなければ `One(a)` にして a+1 へ進む。
@@ -338,7 +338,8 @@ data class BookProgress(
 )
 ```
 
-- 本を開くと `Reading` になる。最後のビュー（テキストでは最後のページ）を表示すると `Read` になる。
+- 本を開くと `Reading` になる。最後のビュー（テキストでは最後のページ）を表示すると `Read` になる。`Read` の本を開き直しても `Read` のままにする。開いただけで既読の印が消えないためである。
+- 保存する `viewStart` は、現在のビューのページのうち最も小さい番号である。`Half` のビューでは、そのページの番号になる。開き直すと、そのページの最初の `Half` から始める。
 - 2 ページの組では、最終ページを含む組を表示した時点で `Read` になる。
 - `Read` の本を開くと、保存された位置（多くは最後のビュー）から始める。4.8 節の「本の端での動作」で「最初から読む」を選べる。
 - 拡大率とスクロール位置は保存しない。開き直すと拡大モードの倍率で、ビューの最初の停止点から表示する。
@@ -996,7 +997,7 @@ SMB サーバーの入力項目は次のとおり。
 
 - **再試行** は、表の行にかかわらず `retryable` が真のときに出し、偽のときは出さない。表の操作の列は、各理由でふつう起きる `retryable` の値のときの例である。
 - エラーのページも普通にめくって通り過ぎられる。
-- すべてのページが失敗した本は、リーダーを開いたまま本全体のエラーを出し、ファイル一覧へ戻る操作を出す。
+- すべてのページが失敗した本は、リーダーを開いたまま本全体のエラーを出し、ファイル一覧へ戻る操作を出す。失敗は先読みで読んだページについてだけ分かるので、全ページを先に読むことはしない。先読みの範囲に全ページが入る小さな本と、読み進めてすべてのページの失敗が分かった本で、本全体のエラーになる。画像が 1 枚もない本は、開いた時点で本全体のエラーにする。
 - **詳細** は、形式、エントリ名、判定した種類、例外の種類を出し、テキストとしてコピーできる。
 
 #### キー操作
@@ -1660,7 +1661,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | libavif | API 28〜30 の AVIF | BSD-2-Clause | Q6 で同梱を決めたときだけ |
 | dav1d | libavif の AV1 デコード | BSD-2-Clause | 同上 |
 | smbj | SMB 2 と SMB 3 | Apache-2.0 | Maven。bcprov（MIT 系の Bouncy Castle License）、mbassador（MIT）、asn-one（Apache-2.0）、slf4j-api（MIT）を伴う (要検証。版ごとの推移的依存) |
-| Jetpack（Compose、Navigation、Lifecycle、Activity、Core） | UI と画面の基盤 | Apache-2.0 | Maven |
+| Jetpack（Compose、Navigation、Lifecycle、Activity、Core） | UI と画面の基盤 | Apache-2.0 | Maven。リーダーは Lifecycle の lifecycle-viewmodel-compose 2.11.0 を直接使う。navigation-compose がすでに推移的に持ち込んでいたもので、新しい推移的依存はない |
 | Room 3.0.3（`androidx.room3`） | DB | Apache-2.0。androidx.sqlite（sqlite、sqlite-async、sqlite-framework）2.7.1、androidx.annotation、androidx.collection、kotlinx-coroutines（core、android）、JetBrains の annotations、jspecify を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。SQLite は同梱せず、端末の `android.database.sqlite` を `AndroidSQLiteDriver` で使う |
 | KSP 2.3.13、room3-compiler、room3 の Gradle プラグイン | Room のコード生成とスキーマの書き出し | Apache-2.0。room3-compiler は room3-external-antlr（BSD-3-Clause）、checker-qual（MIT）、guava、auto-common、auto-value-annotations、javapoet、kotlinpoet、kotlin-metadata-jvm、kotlin-reflect、kotlinx-serialization、jsr305、sqlite-jdbc（Apache-2.0）を伴う。3.0.3 の推移的依存の POM で確かめた | ビルド時だけ。配布物に入らない |
 | DataStore 1.3.0 | 設定の保存 | Apache-2.0。datastore-core、datastore-core-okio、okio 3.17.0、androidx.tracing を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。protobuf は使わない（7 章） |

@@ -7,6 +7,9 @@ import androidx.navigation.NavGraphBuilder
 @Suppress("UNUSED_PARAMETER")
 internal fun prototypeStartRoute(intent: Intent): String? = null
 
+@Suppress("UNUSED_PARAMETER")
+internal fun debugBookRoute(intent: Intent): String? = null
+
 internal fun NavGraphBuilder.prototypeRoutes() = Unit
 
 @Suppress("UNUSED_PARAMETER")
