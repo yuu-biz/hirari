@@ -3,10 +3,10 @@ package io.github.yuubiz.hirari.feature.reader
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Size
-import io.github.yuubiz.hirari.feature.reader.TapLayout.SideBand
-import io.github.yuubiz.hirari.feature.reader.TapLayout.SideBands
-import io.github.yuubiz.hirari.feature.reader.TapLayout.TopBand
-import io.github.yuubiz.hirari.feature.reader.TapLayout.TopBottomBands
+import io.github.yuubiz.hirari.core.model.TapLayout.OneSideBand
+import io.github.yuubiz.hirari.core.model.TapLayout.BothSideBands
+import io.github.yuubiz.hirari.core.model.TapLayout.TopAndBottom
+import io.github.yuubiz.hirari.core.model.TapLayout.TopAndBottomBands
 import io.github.yuubiz.hirari.feature.reader.Turn.Back
 import io.github.yuubiz.hirari.feature.reader.Turn.Forward
 import io.kotest.property.Arb
@@ -47,7 +47,7 @@ class TapZonesTest {
 
     @Test
     fun sideBandsLeaveTheMiddleDoingNothing() {
-        val zones = TapZones(SideBands, bandPercent = 20)
+        val zones = TapZones(BothSideBands, bandPercent = 20)
         assertEquals(Back, zones.at(320f))
         assertEquals(Forward, zones.at(79f))
         assertNull(zones.at(200f))
@@ -57,19 +57,19 @@ class TapZonesTest {
 
     @Test
     fun mirroredSideBandsSwapSides() {
-        val zones = TapZones(SideBands, bandPercent = 20, mirrored = true)
+        val zones = TapZones(BothSideBands, bandPercent = 20, mirrored = true)
         assertEquals(Back, zones.at(10f))
         assertEquals(Forward, zones.at(390f))
     }
 
     @Test
     fun twoBandsAreCappedAtFortyFivePercent() {
-        val sides = TapZones(SideBands, bandPercent = 90)
+        val sides = TapZones(BothSideBands, bandPercent = 90)
         assertEquals(Back, sides.at(220f))
         assertNull(sides.at(219f))
         assertNull(sides.at(180f))
         assertEquals(Forward, sides.at(179f))
-        val vertical = TapZones(TopBottomBands, bandPercent = 90)
+        val vertical = TapZones(TopAndBottomBands, bandPercent = 90)
         assertEquals(Back, vertical.at(200f, 359f))
         assertNull(vertical.at(200f, 400f))
         assertEquals(Forward, vertical.at(200f, 440f))
@@ -77,14 +77,14 @@ class TapZonesTest {
 
     @Test
     fun aSingleBandIsNotCapped() {
-        val zones = TapZones(SideBand, bandPercent = 90)
+        val zones = TapZones(OneSideBand, bandPercent = 90)
         assertEquals(Back, zones.at(41f))
         assertEquals(Forward, zones.at(39f))
     }
 
     @Test
     fun theTopBandGoesBackAndTheRestForward() {
-        val zones = TapZones(TopBand, bandPercent = 10)
+        val zones = TapZones(TopAndBottom, bandPercent = 10)
         assertEquals(Back, zones.at(200f, 79f))
         assertEquals(Forward, zones.at(200f, 80f))
         assertEquals(Forward, zones.at(200f, 799f))
@@ -92,7 +92,7 @@ class TapZonesTest {
 
     @Test
     fun mirroringDoesNotMoveVerticalBands() {
-        val zones = TapZones(TopBottomBands, bandPercent = 10, mirrored = true)
+        val zones = TapZones(TopAndBottomBands, bandPercent = 10, mirrored = true)
         assertEquals(Back, zones.at(200f, 10f))
         assertEquals(Forward, zones.at(200f, 790f))
     }
@@ -106,7 +106,7 @@ class TapZonesTest {
     @Test
     fun layoutsWithoutAMiddleAlwaysTurn() = runBlocking<Unit> {
         checkAll(
-            Arb.element(SideBand, TopBand),
+            Arb.element(OneSideBand, TopAndBottom),
             Arb.int(1..9),
             Arb.boolean(),
             Arb.float(0f..399.9f, includeNaNs = false),

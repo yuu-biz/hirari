@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.reader
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Size
+import io.github.yuubiz.hirari.core.model.TapLayout
 
 enum class Turn { Forward, Back }
 
@@ -24,27 +25,15 @@ data class ReaderRegions(val screen: Size, val barHeight: Float, val systemBarsH
     }
 }
 
-/** The `tapLayout` setting. */
-enum class TapLayout {
-    /** The right band goes back and the rest goes forward. */
-    SideBand,
-
-    /** The right band goes back, the left band goes forward, and the middle does nothing. */
-    SideBands,
-
-    /** The top band goes back and the rest goes forward. */
-    TopBand,
-
-    /** The top band goes back, the bottom band goes forward, and the middle does nothing. */
-    TopBottomBands,
-}
-
 /** Bands on both sides leave room for the middle that does nothing. */
 const val TWO_BAND_MAX_PERCENT = 45
 
-/** The tap zones of the turn area. [mirrored] is the `mirrorControls` setting. */
+/**
+ * The tap zones of the turn area (docs/spec.md section 4.8, タップ領域). [mirrored] is the
+ * `mirrorControls` setting. Bands stay where they are whatever the reading direction.
+ */
 data class TapZones(
-    val layout: TapLayout = TapLayout.SideBand,
+    val layout: TapLayout = TapLayout.OneSideBand,
     val bandPercent: Int = 10,
     val mirrored: Boolean = false,
 ) {
@@ -55,25 +44,25 @@ data class TapZones(
     /** The turn for a tap at [point] in turn-area coordinates, or `null` for the zone that does nothing. */
     fun turnAt(point: Point, area: Size): Turn? {
         val percent = when (layout) {
-            TapLayout.SideBand, TapLayout.TopBand -> bandPercent
-            TapLayout.SideBands, TapLayout.TopBottomBands -> minOf(bandPercent, TWO_BAND_MAX_PERCENT)
+            TapLayout.OneSideBand, TapLayout.TopAndBottom -> bandPercent
+            TapLayout.BothSideBands, TapLayout.TopAndBottomBands -> minOf(bandPercent, TWO_BAND_MAX_PERCENT)
         }
         val fraction = percent / 100f
         return when (layout) {
-            TapLayout.SideBand, TapLayout.SideBands -> {
+            TapLayout.OneSideBand, TapLayout.BothSideBands -> {
                 val band = area.width * fraction
-                val (back, forward) = if (mirrored) Side.Near to Side.Far else Side.Far to Side.Near
+                val (back, forward) = if (mirrored) End.Near to End.Far else End.Far to End.Near
                 when {
                     back.contains(point.x, band, area.width) -> Turn.Back
-                    layout == TapLayout.SideBand || forward.contains(point.x, band, area.width) -> Turn.Forward
+                    layout == TapLayout.OneSideBand || forward.contains(point.x, band, area.width) -> Turn.Forward
                     else -> null
                 }
             }
-            TapLayout.TopBand, TapLayout.TopBottomBands -> {
+            TapLayout.TopAndBottom, TapLayout.TopAndBottomBands -> {
                 val band = area.height * fraction
                 when {
-                    Side.Near.contains(point.y, band, area.height) -> Turn.Back
-                    layout == TapLayout.TopBand || Side.Far.contains(point.y, band, area.height) -> Turn.Forward
+                    End.Near.contains(point.y, band, area.height) -> Turn.Back
+                    layout == TapLayout.TopAndBottom || End.Far.contains(point.y, band, area.height) -> Turn.Forward
                     else -> null
                 }
             }
@@ -81,7 +70,7 @@ data class TapZones(
     }
 
     /** [Near] is the left or top end of an axis, [Far] the right or bottom end. */
-    private enum class Side {
+    private enum class End {
         Near,
         Far,
         ;
