@@ -1,0 +1,15 @@
+== page 1 [0, 68)
+line x=94 w=12 [0, 3)
+  傍@0{x1.2} 点@13.2{x1.2}
+line x=77 w=10 right=6 [3, 17)
+  猫@0 で@11 あ@22 る@33
+  marks Sesame Right @5
+line x=63 w=10 left=6 [17, 34)
+  犬@0 と@11 鳥@22
+  marks WhiteCircle Left @5
+line x=41 w=10 right=6 [34, 51)
+  線@0 付@11 き@22
+  sideline Solid Right @0..32
+line x=25 w=10 right=6 [51, 68)
+  波@0 と@11 dash2@22 と@43 leader2@54
+  sideline Wavy Right @0..10

@@ -1,0 +1,13 @@
+== page 1 [0, 61)
+line x=94 w=12 [0, 3)
+  欧@0{x1.2} 文@13.2{x1.2}
+line x=79 w=10 [3, 12)
+  第@0 12@11{tcy} 話@22 と@33 ABC@44{side 15} と@60
+line x=65 w=10 [12, 26)
+  Hello @0{side 30} world!?@31{side 35}
+line x=51 w=10 [26, 42)
+  S@0{side 5} u@6{side 5} p@12{side 5} e@18{side 5} r@24{side 5} c@30{side 5} a@36{side 5} l@42{side 5} i@48{side 5} f@54{side 5} r@60{side 5} a@66{side 5} g@72{side 5} i@78{side 5} l@84{side 5} i@90{side 5}
+line x=37 w=10 [42, 58)
+  s@0{side 5} t@6{side 5} i@12{side 5} c@18{side 5} e@24{side 5} x@30{side 5} p@36{side 5} i@42{side 5} a@48{side 5} l@54{side 5} i@60{side 5} d@66{side 5} o@72{side 5} c@78{side 5} i@84{side 5} o@90{side 5}
+line x=23 w=10 [58, 61)
+  u@0{side 5} s@6{side 5}
