@@ -23,6 +23,7 @@ import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.File
@@ -176,14 +177,22 @@ private class SessionContents(private val session: ArchiveSession, override val 
 
 /**
  * [open] on [context]. When the caller is cancelled after [open] made its handle, `withContext` drops the handle; it
- * is closed here before the cancellation goes on, so a file or a remote handle is never left open.
+ * is closed here, on [context] and not on the caller's thread, before the cancellation goes on, so a file or a remote
+ * handle is never left open. A close that fails does not replace the cancellation.
  */
 internal suspend fun <T : Closeable> openOwned(context: CoroutineContext, open: () -> T): T {
     val made = AtomicReference<T?>()
     try {
         return withContext(context) { open().also(made::set) }
     } catch (e: CancellationException) {
-        made.get()?.close()
+        val abandoned = made.getAndSet(null)
+        if (abandoned != null) {
+            try {
+                withContext(NonCancellable + context) { abandoned.close() }
+            } catch (closing: Exception) {
+                e.addSuppressed(closing)
+            }
+        }
         throw e
     }
 }
