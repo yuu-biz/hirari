@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.text
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.Rgb
 import io.github.yuubiz.hirari.core.model.TextLatinMode
 import io.github.yuubiz.hirari.core.model.TextLayout
@@ -24,6 +25,8 @@ data class PageFrame(
     val pageHeight: Float,
     val margin: Float,
     val band: Float,
+    /** The gap between neighboring pages, in the reader background. */
+    val gutter: Float,
     val pagesPerView: Int,
     val continuous: Boolean,
     val params: LayoutParams,
@@ -40,7 +43,9 @@ fun pageFrame(viewport: Viewport, settings: GlobalSettings): PageFrame {
         TextLayout.Single, TextLayout.Continuous -> false
     }
     val pages = if (spread) 2 else 1
-    val pageWidth = viewport.width.toFloat() / pages
+    val continuous = settings.textLayout == TextLayout.Continuous
+    val gutter = if ((spread && settings.gutterStyle == GutterStyle.Gap) || continuous) GUTTER_DP * viewport.density else 0f
+    val pageWidth = (viewport.width - gutter * (pages - 1)) / pages
     val pageHeight = viewport.height.toFloat()
     val margin = settings.textMargin.dp * viewport.density
     val band = fontSize * INFO_SCALE * 2
@@ -56,8 +61,11 @@ fun pageFrame(viewport: Viewport, settings: GlobalSettings): PageFrame {
             TextLatinMode.Upright -> LatinMode.Upright
         },
     )
-    return PageFrame(pageWidth, pageHeight, margin, band, pages, settings.textLayout == TextLayout.Continuous, params)
+    return PageFrame(pageWidth, pageHeight, margin, band, gutter, pages, continuous, params)
 }
+
+/** The gap between the pages of a spread, when the gutter setting shows one, and between pages in a row. */
+const val GUTTER_DP = 8f
 
 /** The colors of the page: the 紙の色 preset with its overrides (docs/spec.md section 4.9, 書体と色). */
 data class PageColors(val paper: Rgb, val ink: Rgb, val highlight: Rgb)

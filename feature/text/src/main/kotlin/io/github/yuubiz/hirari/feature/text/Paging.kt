@@ -61,8 +61,6 @@ class Typesetter(private val layout: VerticalLayout, private val sourceLength: I
     private val tailPages = ArrayList<TextPage>()
     private val headPages = ArrayList<TextPage>()
 
-    val done: Boolean get() = !tail.hasNext() && head?.hasNext() != true
-
     /** Lays out the next part toward the reading position [reading]. Returns false when nothing was left. */
     fun step(reading: Int, chunkChars: Int = CHUNK_CHARS): Boolean {
         val needsTail = tail.hasNext() && (tailPages.isEmpty() || tailPages.last().end <= reading || pagesPast(reading) < LOOKAHEAD_PAGES)

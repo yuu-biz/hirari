@@ -177,6 +177,12 @@ internal class TextReaderModel(
         }
     }
 
+    /** The page at [index] of the current run, as the continuous layout scrolls onto it. */
+    fun showPage(index: Int) {
+        val page = run?.pages?.getOrNull(index) ?: return
+        if (run?.indexOf(anchor) != index) moveTo(page.start)
+    }
+
     fun first() = goTo(0)
 
     fun last() {

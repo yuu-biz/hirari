@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="text_failed_not_found">テキストが見つかりません</string>
+    <string name="text_failed_no_permission">テキストを読む許可がありません。もう一度選んでください</string>
+    <string name="text_failed_no_room">複製する空き容量が足りないので開けません</string>
+    <string name="text_failed_encrypted">暗号化されたテキストには対応していません</string>
+    <string name="text_failed_too_large">大きすぎて開けません</string>
+    <string name="text_failed_read">テキストを読み込めませんでした</string>
+    <string name="text_back">戻る</string>
+    <string name="text_close">閉じる</string>
+    <string name="text_command_contents">目次</string>
+    <string name="text_command_search">検索</string>
+    <string name="text_command_add_bookmark">しおりを追加</string>
+    <string name="text_command_bookmarks">しおり一覧</string>
+    <string name="text_command_size">文字の大きさ</string>
+    <string name="text_command_layout">組み方</string>
+    <string name="text_command_orientation">画面の向き</string>
+    <string name="text_command_settings">設定</string>
+    <string name="text_bookmark_added">しおりを追加しました</string>
+    <string name="text_bookmarks_empty">しおりはまだありません</string>
+    <string name="text_bookmark_delete">しおりを削除</string>
+    <string name="text_contents_empty">見出しがありません</string>
+    <string name="text_search_hint">本文を検索</string>
+    <string name="text_search_none">見つかりませんでした</string>
+    <string name="text_search_more">ほかにもあります。言葉を足して絞り込んでください</string>
+    <string name="text_size_value">%1$d sp</string>
+    <string name="text_typeface">書体</string>
+    <string name="text_typeface_mincho">明朝体</string>
+    <string name="text_typeface_gothic">ゴシック体</string>
+    <string name="text_typeface_import">書体を取り込む</string>
+    <string name="text_font_not_a_font">書体のファイルではありません</string>
+    <string name="text_font_no_room">空き容量が足りないので取り込めません</string>
+    <string name="text_font_unreadable">書体を読み込めませんでした</string>
+    <string name="text_layout_single">1 ページ</string>
+    <string name="text_layout_spread">見開き</string>
+    <string name="text_layout_continuous">連続</string>
+    <string name="text_layout_auto">自動</string>
+    <string name="text_orientation_portrait">縦に固定</string>
+    <string name="text_orientation_landscape">横に固定</string>
+    <string name="text_orientation_system">端末に従う</string>
+    <string name="text_first">先頭</string>
+    <string name="text_last">末尾</string>
+    <string name="text_page_number">%1$s / %2$s</string>
+    <string name="text_about">約 %1$d</string>
+</resources>

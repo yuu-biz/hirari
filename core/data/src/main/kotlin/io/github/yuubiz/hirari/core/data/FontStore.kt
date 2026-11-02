@@ -15,6 +15,9 @@ sealed interface FontImport {
 
     /** The copy would leave less than [FontStore.RESERVE_BYTES] free. */
     data object NoRoom : FontImport
+
+    /** Reading the picked file or writing the copy failed. [FontStore.import] throws instead; its callers report this. */
+    data object Unreadable : FontImport
 }
 
 /**
