@@ -50,7 +50,7 @@ import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
-import io.github.yuubiz.hirari.core.source.findDocumentId
+import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import io.github.yuubiz.hirari.feature.reader.prefetch.Prefetcher
@@ -516,7 +516,9 @@ class ReaderViewModel(
         withContext(Dispatchers.Main) { bookPath = if (path.isEmpty()) location.displayName else "${location.displayName}/$path" }
         val tree = Uri.parse(location.treeUri.value)
         val documentId = try {
-            book.documentId ?: application.contentResolver.findDocumentId(tree, path)
+            book.documentId ?: application.contentResolver.locateDocument(tree, path)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return failed(e.openFailure())
         } ?: return failed(BookFailure.NotFound)
