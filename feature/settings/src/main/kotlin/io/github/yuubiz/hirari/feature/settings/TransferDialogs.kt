@@ -27,7 +27,7 @@ internal fun ExportDialog(includeReading: Boolean, onIncludeReading: (Boolean) -
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.export_title)) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(R.string.export_body))
                 Row(
                     Modifier.fillMaxWidth().padding(top = 16.dp).toggleable(includeReading, role = Role.Checkbox, onValueChange = onIncludeReading),
