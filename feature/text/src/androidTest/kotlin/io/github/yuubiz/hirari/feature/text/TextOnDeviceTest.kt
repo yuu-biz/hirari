@@ -84,14 +84,14 @@ class TextOnDeviceTest {
         val parsed = SystemClock.elapsedRealtime()
         val metrics = PaintGlyphMetrics(Typeface.SERIF)
         val setter = Typesetter(VerticalLayout(document, frame.params, metrics), document.sourceLength, 0)
-        setter.step(0)
+        val near = setter.step(0)!!
         val end = SystemClock.elapsedRealtime()
         Log.i(
             "TextOnDeviceTest",
             "P9 on this device: ${bytes.size} bytes to the first page in ${end - start} ms " +
                 "(decode ${decoded - start}, parse ${parsed - decoded}, first pages ${end - parsed})",
         )
-        val page = setter.snapshot().pages.first()
+        val page = near.first()
         assertTrue((page.content as PageContent.Lines).lines.size > 5)
 
         val colors = pageColors(GlobalSettings())

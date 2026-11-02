@@ -8,6 +8,10 @@ import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.TextLayout
 import io.github.yuubiz.hirari.core.model.TextTypeface
+import io.github.yuubiz.hirari.core.text.FixedGlyphMetrics
+import io.github.yuubiz.hirari.core.text.TextPage
+import io.github.yuubiz.hirari.core.text.VerticalLayout
+import io.github.yuubiz.hirari.core.text.parseAozora
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -18,6 +22,7 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TextReaderModelTest {
@@ -63,7 +68,11 @@ class TextReaderModelTest {
 
     private val TextReaderModel.reading: TextReaderUiState.Reading get() = assertIs<TextReaderUiState.Reading>(state.value)
 
-    private val TextReaderModel.page get() = reading.shown.single()
+    private val TextReaderModel.page: TextPage get() = reading.let { assertNotNull(it.page(it.current), "page ${it.current} is laid out") }
+
+    /** The pages of [text] laid out whole from its start, as a reader that opens at the start lays them out. */
+    private fun pagesOf(text: String = source): List<TextPage> =
+        VerticalLayout(parseAozora(text), pageFrame(screen, settings.value).params, FixedGlyphMetrics).pages().toList()
 
     @Test
     fun `a text opens on its first page with the first line as the title and every page laid out`() = runTest {
@@ -74,9 +83,9 @@ class TextReaderModelTest {
         assertEquals(0, state.current)
         assertEquals(0, model.page.start)
         val run = state.run!!
-        assertTrue(run.fromStart && run.complete && run.pages.size > 8, "${run.pages.size} pages")
-        assertEquals(PageNumber(1, run.pages.size, currentExact = true, totalExact = true), state.number)
-        assertEquals(source.length, run.pages.last().end)
+        assertTrue(run.fromStart && run.complete && run.size > 8, "${run.size} pages")
+        assertEquals(PageNumber(1, run.size, currentExact = true, totalExact = true), state.number)
+        assertEquals(source.length, run.end(run.lastIndex))
         assertEquals(listOf(id), history.opened.map { it.first })
     }
 
@@ -84,7 +93,7 @@ class TextReaderModelTest {
     fun `turning moves one page each way and stops at both ends`() = runTest {
         val model = model()
         settle()
-        val pages = model.reading.run!!.pages
+        val pages = pagesOf()
         model.turn(-1)
         assertEquals(0, model.reading.current)
         model.turn(1)
@@ -93,6 +102,7 @@ class TextReaderModelTest {
         model.turn(-1)
         assertEquals(pages[1], model.page)
         model.last()
+        settle()
         assertEquals(pages.last(), model.page)
         model.turn(1)
         assertEquals(pages.last(), model.page)
@@ -103,10 +113,11 @@ class TextReaderModelTest {
         settings.value = settings.value.copy(textLayout = TextLayout.Spread)
         val model = model()
         settle()
-        val pages = model.reading.run!!.pages
-        assertEquals(pages.subList(0, 2), model.reading.shown)
+        val pages = pagesOf()
+        val shown = { model.reading.let { state -> state.shown.map(state::page) } }
+        assertEquals(pages.subList(0, 2), shown())
         model.turn(1)
-        assertEquals(pages.subList(2, 4), model.reading.shown)
+        assertEquals(pages.subList(2, 4), shown())
     }
 
     @Test
@@ -114,6 +125,7 @@ class TextReaderModelTest {
         val model = model()
         settle()
         repeat(14) { model.turn(1) }
+        settle()
         val reading = model.page
         val paragraphStart = source.indexOf("　", source.indexOf("第2章"))
         assertTrue(reading.start > paragraphStart + 600, "the page must sit well inside its paragraph")
@@ -161,6 +173,7 @@ class TextReaderModelTest {
         val contents = model.reading.contents
         assertEquals(listOf("第1章", "第2章", "第3章", "第4章"), contents.map { it.text })
         model.goTo(contents[2])
+        settle()
         assertTrue(contents[2].start in model.page)
     }
 
@@ -181,6 +194,7 @@ class TextReaderModelTest {
         settle()
         val far = (model.reading.search as SearchState.Done).result.hits.single()
         model.show(far)
+        settle()
         assertEquals(far.start until far.end, model.reading.highlight)
         assertTrue(far.start in model.page)
         model.turn(1)
@@ -192,6 +206,7 @@ class TextReaderModelTest {
         val model = model()
         settle()
         repeat(5) { model.turn(1) }
+        settle()
         val page = model.page
         model.addBookmark()
         settle()
@@ -200,6 +215,7 @@ class TextReaderModelTest {
         assertEquals("${page.start.toLong() * 100 / source.length}%", mark.label)
         model.first()
         model.goTo(mark)
+        settle()
         assertEquals(page, model.page)
         model.deleteBookmark(mark)
         settle()
@@ -250,6 +266,40 @@ class TextReaderModelTest {
         val fails = model(blank, heapBudget = budget)
         settle()
         assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), fails.state.value)
+    }
+
+    @Test
+    fun `a text of five million characters lays out to its end within the heap`() = runTest {
+        val big = sampleText(chapters = 48, sentencesPerChapter = 3500)
+        assertTrue(big.length > 5_000_000, "${big.length}")
+        val model = model(big)
+        settle()
+        val run = model.reading.run!!
+        assertTrue(run.fromStart && run.complete)
+        model.last()
+        settle()
+        assertEquals(big.length, model.page.end)
+    }
+
+    @Test
+    fun `only the pages around the view are kept, and a page that comes back is the page it was`() = runTest {
+        val pages = pagesOf()
+        val model = model()
+        settle()
+        repeat(6) { model.turn(1) }
+        settle()
+        val state = model.reading
+        assertEquals(6, state.current)
+        assertEquals((4..8).map(pages::get), (4..8).map(state::page))
+        assertEquals(listOf(null, null), listOf(state.page(3), state.page(9)))
+        assertEquals(5, state.pages.size)
+        model.first()
+        settle()
+        assertEquals(pages.take(3), (0..2).map(model.reading::page))
+        model.last()
+        settle()
+        assertEquals(pages.last(), model.page)
+        assertEquals(PageNumber(pages.size, pages.size, currentExact = true, totalExact = true), model.reading.number)
     }
 
     @Test

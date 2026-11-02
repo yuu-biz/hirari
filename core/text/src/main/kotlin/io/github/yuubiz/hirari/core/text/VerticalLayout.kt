@@ -153,7 +153,10 @@ class VerticalLayout(
      * The pages of blocks `from until to`. The first page starts at block [from], or at 0 when [from] is 0, and the
      * last ends where block [to] starts, or at the end of the source. An empty range makes one empty page.
      */
-    fun pages(from: Int = 0, to: Int = document.blocks.size): Sequence<TextPage> = sequence {
+    fun pages(from: Int = 0, to: Int = document.blocks.size): Sequence<TextPage> = markedPages(from, to).map { it.page }
+
+    /** [pages], each with the mark it can be laid out again from. */
+    fun markedPages(from: Int = 0, to: Int = document.blocks.size): Sequence<MarkedPage> {
         val blocks = document.blocks
         require(from in 0..to && to <= blocks.size) { "blocks $from until $to of ${blocks.size}" }
         val rangeStart = when {
@@ -161,10 +164,21 @@ class VerticalLayout(
             from >= blocks.size -> document.sourceLength
             else -> blocks[from].start
         }
+        return resume(PageMark(rangeStart, from, line = 0, centered = false, to))
+    }
+
+    /**
+     * The pages from the one [mark] stands for to the end of its range: the same pages, line for line, as the layout
+     * that made the mark. A page that starts deep in a paragraph costs the lines of the paragraph before it.
+     */
+    fun resume(mark: PageMark): Sequence<MarkedPage> = sequence {
+        val blocks = document.blocks
+        val to = mark.to
         val rangeEnd = if (to >= blocks.size) document.sourceLength else blocks[to].start
-        var pageStart = rangeStart
+        var pageStart = mark.start
+        var pageMark = mark
         var lines = ArrayList<TextLine>()
-        var centered = false
+        var centered = mark.centered
         var yielded = false
         // A finished page waits here until the next page's first item tells where it ends.
         var pending: PageContent? = null
@@ -177,43 +191,49 @@ class VerticalLayout(
             return content
         }
 
-        suspend fun SequenceScope<TextPage>.begin(itemStart: Int) {
+        /** The item at [itemStart], line [line] of block [block], starts the next page if one is pending. */
+        suspend fun SequenceScope<MarkedPage>.begin(itemStart: Int, block: Int, line: Int) {
             val content = pending ?: return
             val end = maxOf(itemStart, pageStart)
-            yield(TextPage(content, pageStart, end))
+            yield(MarkedPage(TextPage(content, pageStart, end), pageMark))
             yielded = true
             pageStart = end
+            pageMark = PageMark(end, block, line, centered, to)
             pending = null
         }
 
-        for (index in from until minOf(to, blocks.size)) {
+        for (index in mark.block until minOf(to, blocks.size)) {
             when (val block = blocks[index]) {
                 is PageBreak -> finish()?.let { pending = it }
                 is CenterPage -> centered = true
                 is Figure -> {
                     finish()?.let { pending = it }
-                    begin(block.start)
+                    begin(block.start, index, 0)
                     pending = PageContent.Picture(block.path)
                 }
-                is Paragraph -> for (line in layoutParagraph(block)) {
-                    val prev = lines.lastOrNull()
-                    var right = params.width - line.rightBand
-                    if (prev != null) {
-                        val gap = maxOf(params.lineGap * fontSize, prev.leftBand + line.rightBand)
-                        right = prev.x - prev.bodyWidth / 2 - gap
-                        if (right - line.bodyWidth - line.leftBand < -EPSILON) {
-                            pending = finish()
-                            right = params.width - line.rightBand
+                is Paragraph -> {
+                    val skip = if (index == mark.block) mark.line else 0
+                    for ((number, line) in layoutParagraph(block).withIndex()) {
+                        if (number < skip) continue
+                        val prev = lines.lastOrNull()
+                        var right = params.width - line.rightBand
+                        if (prev != null) {
+                            val gap = maxOf(params.lineGap * fontSize, prev.leftBand + line.rightBand)
+                            right = prev.x - prev.bodyWidth / 2 - gap
+                            if (right - line.bodyWidth - line.leftBand < -EPSILON) {
+                                pending = finish()
+                                right = params.width - line.rightBand
+                            }
                         }
+                        begin(line.start, index, number)
+                        lines += line.copy(x = right - line.bodyWidth / 2)
                     }
-                    begin(line.start)
-                    lines += line.copy(x = right - line.bodyWidth / 2)
                 }
             }
         }
         finish()?.let { pending = it }
         if (pending == null && !yielded) pending = PageContent.Lines(emptyList())
-        pending?.let { yield(TextPage(it, pageStart, maxOf(rangeEnd, pageStart))) }
+        pending?.let { yield(MarkedPage(TextPage(it, pageStart, maxOf(rangeEnd, pageStart)), pageMark)) }
     }
 
     private fun centerLines(lines: List<TextLine>): List<TextLine> {

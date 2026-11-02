@@ -119,3 +119,18 @@ sealed interface PageContent {
 data class TextPage(val content: PageContent, val start: Int, val end: Int) {
     operator fun contains(offset: Int): Boolean = offset in start until end
 }
+
+/**
+ * Where [VerticalLayout.resume] lays out a page again, so the screen can keep a page's [start] and not its glyphs: the
+ * block the page's first item is in, the lines of that block's paragraph the pages before hold, whether a
+ * ページの左右中央 seen before the first item applies, and the block the layout's range ends before.
+ */
+class PageMark internal constructor(
+    val start: Int,
+    internal val block: Int,
+    internal val line: Int,
+    internal val centered: Boolean,
+    internal val to: Int,
+)
+
+class MarkedPage(val page: TextPage, val mark: PageMark)

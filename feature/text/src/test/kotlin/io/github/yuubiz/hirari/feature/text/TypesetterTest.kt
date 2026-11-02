@@ -2,7 +2,6 @@ package io.github.yuubiz.hirari.feature.text
 
 import io.github.yuubiz.hirari.core.text.FixedGlyphMetrics
 import io.github.yuubiz.hirari.core.text.LayoutParams
-import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.text.VerticalLayout
 import io.github.yuubiz.hirari.core.text.parseAozora
 import kotlin.test.Test
@@ -15,39 +14,56 @@ class TypesetterTest {
     private val document = parseAozora(source)
     private val layout = VerticalLayout(document, LayoutParams(width = 336f, height = 472f, fontSize = 20f), FixedGlyphMetrics)
 
-    private fun gapFree(pages: List<TextPage>) {
-        assertEquals(0, pages.first().start)
-        assertEquals(source.length, pages.last().end)
-        pages.zipWithNext().forEach { (a, b) -> assertEquals(a.end, b.start) }
+    private fun PageRun.holds(index: Int, offset: Int) = offset >= start(index) && offset < end(index)
+
+    private fun gapFree(run: PageRun) {
+        assertEquals(0, run.start(0))
+        assertEquals(source.length, run.end(run.lastIndex))
+        for (i in 0 until run.lastIndex) assertTrue(run.start(i) < run.start(i + 1))
     }
 
     @Test
     fun `the first step reaches the anchor and the pages after it, before the pages that come first`() {
         val anchor = source.indexOf("名前はまだ5章の30 番目")
         val setter = Typesetter(layout, source.length, anchor)
-        assertTrue(setter.step(anchor))
+        val near = setter.step(anchor)!!
         val first = setter.snapshot()
         assertFalse(first.fromStart)
-        assertTrue(anchor in first.pages[first.indexOf(anchor)])
-        assertTrue(first.pages.size - 1 - first.indexOf(anchor) >= Typesetter.LOOKAHEAD_PAGES)
+        assertTrue(first.holds(first.indexOf(anchor), anchor))
+        assertTrue(first.lastIndex - first.indexOf(anchor) >= Typesetter.LOOKAHEAD_PAGES)
+        assertTrue(near.any { anchor in it }, "the step hands back the page being read")
         val number = first.number(first.indexOf(anchor))
         assertFalse(number.currentExact || number.totalExact)
         assertTrue(number.current in 2..number.total, "$number")
-        while (setter.step(anchor)) Unit
+        while (setter.step(anchor) != null) Unit
         val all = setter.snapshot()
         assertTrue(all.fromStart && all.complete)
-        gapFree(all.pages)
-        assertTrue(anchor in all.pages[all.indexOf(anchor)])
-        assertEquals(PageNumber(all.indexOf(anchor) + 1, all.pages.size, currentExact = true, totalExact = true), all.number(all.indexOf(anchor)))
+        gapFree(all)
+        assertTrue(all.holds(all.indexOf(anchor), anchor))
+        assertEquals(PageNumber(all.indexOf(anchor) + 1, all.size, currentExact = true, totalExact = true), all.number(all.indexOf(anchor)))
     }
 
     @Test
     fun `an anchor at the start lays out one run from the first page`() {
         val setter = Typesetter(layout, source.length, 0)
-        assertTrue(setter.step(0))
+        setter.step(0)
         assertTrue(setter.snapshot().fromStart)
-        while (setter.step(0)) Unit
-        assertEquals(layout.pages().toList().map { it.start }, setter.snapshot().pages.map { it.start })
+        while (setter.step(0) != null) Unit
+        val run = setter.snapshot()
+        assertEquals(layout.pages().toList().map { it.start }, (0 until run.size).map(run::start))
+    }
+
+    @Test
+    fun `every page laid out comes back whole, in any order, before and after the anchor`() {
+        val anchor = source.indexOf("名前はまだ4章の20 番目")
+        val setter = Typesetter(layout, source.length, anchor)
+        while (setter.step(anchor) != null) Unit
+        val run = setter.snapshot()
+        val block = layout.blockIndexAt(anchor)
+        val expected = layout.pages(0, block).toList() + layout.pages(block).toList()
+        assertEquals(expected.map { it.start }, (0 until run.size).map(run::start))
+        val order = (0 until run.size).toList().let { it + it.reversed() + it.shuffled(kotlin.random.Random(3)) }
+        for (i in order) assertEquals(expected[i], setter.page(run.start(i)), "page $i")
     }
 
     @Test

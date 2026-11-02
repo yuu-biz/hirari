@@ -49,8 +49,9 @@ sealed interface TextReaderUiState {
 
     /**
      * An open text. [run] is null until the first page under the current [frame] is laid out, and [current] indexes
-     * its first shown page. [typeface] is the one the pages are laid out and drawn with. [highlight] is the source
-     * range of the search hit last shown.
+     * its first shown page. [pages] holds the content of the pages around it by their start; the others are laid out
+     * again when they come into view. [typeface] is the one the pages are laid out and drawn with. [highlight] is the
+     * source range of the search hit last shown.
      */
     data class Reading(
         val title: String,
@@ -60,17 +61,19 @@ sealed interface TextReaderUiState {
         val frame: PageFrame?,
         val run: PageRun?,
         val current: Int,
+        val pages: Map<Int, TextPage>,
         val number: PageNumber?,
         val contents: List<Heading>,
         val bookmarks: List<Bookmark>,
         val search: SearchState,
         val highlight: IntRange?,
     ) : TextReaderUiState {
-        /** The shown pages, right to left. */
-        val shown: List<TextPage>
-            get() = run?.pages?.let { pages ->
-                pages.subList(current, minOf(pages.size, current + (frame?.pagesPerView ?: 1)))
-            }.orEmpty()
+        /** The indices in [run] of the shown pages, right to left. */
+        val shown: IntRange
+            get() = run?.let { current until minOf(it.size, current + (frame?.pagesPerView ?: 1)) } ?: IntRange.EMPTY
+
+        /** Page [index] of [run], or null while it is laid out. */
+        fun page(index: Int): TextPage? = run?.takeIf { index in 0 until it.size }?.let { pages[it.start(index)] }
     }
 }
 
@@ -105,6 +108,11 @@ internal class TextReaderModel(
     private var viewport: Viewport? = null
     private var frame: PageFrame? = null
     private var run: PageRun? = null
+    private var setter: Typesetter? = null
+
+    /** The pages around the current view, by start (docs/spec.md section 4.9). */
+    private var window = emptyMap<Int, TextPage>()
+    private var fillJob: Job? = null
     private var anchor = 0
     private var highlight: IntRange? = null
     private var search: SearchState = SearchState.Idle
@@ -189,9 +197,12 @@ internal class TextReaderModel(
 
     private fun fail(reason: TextFailure) {
         layoutJob?.cancel()
+        fillJob?.cancel()
         searchJob?.cancel()
         document = null
         run = null
+        setter = null
+        window = emptyMap()
         _state.value = TextReaderUiState.Failed(reason)
     }
 
@@ -208,17 +219,17 @@ internal class TextReaderModel(
         val index = run.indexOf(anchor)
         val target = index + views * perView
         when {
-            target < 0 && index > 0 -> moveTo(run.pages.first().start)
+            target < 0 && index > 0 -> moveTo(run.start(0))
             target < 0 -> if (!run.fromStart) pendingTurn = views
-            target > run.pages.lastIndex -> if (!run.complete) pendingTurn = views
-            else -> moveTo(run.pages[target].start)
+            target > run.lastIndex -> if (!run.complete) pendingTurn = views
+            else -> moveTo(run.start(target))
         }
     }
 
     /** The page at [index] of the current run, as the continuous layout scrolls onto it. */
     fun showPage(index: Int) {
-        val page = run?.pages?.getOrNull(index) ?: return
-        if (run?.indexOf(anchor) != index) moveTo(page.start)
+        val run = run?.takeIf { index in 0 until it.size } ?: return
+        if (run.indexOf(anchor) != index) moveTo(run.start(index))
     }
 
     fun first() = goTo(0)
@@ -226,7 +237,7 @@ internal class TextReaderModel(
     fun last() {
         val document = document ?: return
         val run = run
-        if (run != null && run.complete) moveTo(run.pages.last().start) else goTo(maxOf(0, document.sourceLength - 1))
+        if (run != null && run.complete) moveTo(run.start(run.lastIndex)) else goTo(maxOf(0, document.sourceLength - 1))
     }
 
     /** The page bar: [fraction] of the way through the text, by page once every page is laid out and by character before. */
@@ -235,7 +246,7 @@ internal class TextReaderModel(
         val run = run
         val f = fraction.coerceIn(0f, 1f)
         if (run != null && run.fromStart && run.complete) {
-            moveTo(run.pages[Math.round(f * run.pages.lastIndex)].start)
+            moveTo(run.start(Math.round(f * run.lastIndex)))
         } else {
             goTo((f * document.sourceLength).toInt().coerceAtMost(maxOf(0, document.sourceLength - 1)))
         }
@@ -300,6 +311,7 @@ internal class TextReaderModel(
     fun close() {
         closed = true
         layoutJob?.cancel()
+        fillJob?.cancel()
         searchJob?.cancel()
         writer.flush()
         if (opened != null) history.stop()
@@ -328,6 +340,7 @@ internal class TextReaderModel(
         if (!keepHighlight) highlight = null
         anchor = offset
         pendingTurn = null
+        fill()
         render()
         record()
     }
@@ -346,7 +359,10 @@ internal class TextReaderModel(
 
     private fun relayout() {
         layoutJob?.cancel()
+        fillJob?.cancel()
         run = null
+        setter = null
+        window = emptyMap()
         val document = document
         val frame = frame
         laidOut = frame?.params?.let { it to typeface }
@@ -356,21 +372,52 @@ internal class TextReaderModel(
         layoutJob = scope.launch {
             val metrics = fonts.metrics(typeface)
             val setter = working { Typesetter(VerticalLayout(document, frame.params, metrics), document.sourceLength, anchor) } ?: return@launch
+            this@TextReaderModel.setter = setter
             while (true) {
                 val reading = anchor
-                val step = working { if (setter.step(reading)) setter.snapshot() else null } ?: break
-                publish(step)
+                val (near, snapshot) = working { setter.step(reading)?.let { it to setter.snapshot() } } ?: break
+                publish(snapshot, near)
             }
         }
     }
 
-    private fun publish(snapshot: PageRun) {
+    private fun publish(snapshot: PageRun, near: List<TextPage>) {
         run = snapshot
+        window = window + near.associateBy { it.start }
         val pending = pendingTurn
         pendingTurn = null
         if (pending != null) turn(pending)
+        fill()
         render()
         record()
+    }
+
+    /** The starts of the pages to keep: the shown ones first, then the two after them and the two before. */
+    private fun wanted(run: PageRun): List<Int> {
+        val current = run.indexOf(anchor)
+        val after = current + (frame?.pagesPerView ?: 1)
+        val order = (current until after + KEPT_AROUND) + (current - 1 downTo current - KEPT_AROUND)
+        return order.filter { it in 0 until run.size }.map(run::start)
+    }
+
+    /**
+     * Drops the kept pages that left the view's surroundings and lays out the ones that came in, on [work] between
+     * the steps of the layout. One fill runs at a time and picks up each new position as it goes.
+     */
+    private fun fill() {
+        val run = run ?: return
+        val wanted = wanted(run)
+        window = window.filterKeys { it in wanted }
+        if (fillJob?.isActive == true) return
+        fillJob = scope.launch {
+            while (true) {
+                val typesetter = setter ?: break
+                val start = this@TextReaderModel.run?.let(::wanted)?.firstOrNull { it !in window } ?: break
+                val page = working { typesetter.page(start) } ?: break
+                if (this@TextReaderModel.run?.let(::wanted)?.contains(start) == true) window = window + (start to page)
+                render()
+            }
+        }
     }
 
     /** Hands the position to the writer when it or the read state changed (docs/spec.md section 2.7). */
@@ -379,7 +426,7 @@ internal class TextReaderModel(
         val id = opened?.id ?: return
         val position = position() ?: return
         val index = run.indexOf(anchor)
-        if (run.complete && index + (frame?.pagesPerView ?: 1) > run.pages.lastIndex) readState = ReadState.Read
+        if (run.complete && index + (frame?.pagesPerView ?: 1) > run.lastIndex) readState = ReadState.Read
         val key = readState to anchor
         if (key == lastWritten) return
         lastWritten = key
@@ -399,6 +446,7 @@ internal class TextReaderModel(
             frame = frame,
             run = run,
             current = index,
+            pages = window,
             number = run?.number(index),
             contents = contents,
             bookmarks = marks,
@@ -407,6 +455,9 @@ internal class TextReaderModel(
         )
     }
 }
+
+/** The pages kept on each side of the shown ones (docs/spec.md section 4.9). */
+private const val KEPT_AROUND = 2
 
 /** The Java heap a text may take as it opens: half of it, which leaves the rest of the app its room. */
 internal fun textHeapBudget(): Long = Runtime.getRuntime().maxMemory() / 2

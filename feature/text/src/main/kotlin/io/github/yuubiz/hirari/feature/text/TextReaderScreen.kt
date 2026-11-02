@@ -258,14 +258,14 @@ private fun Reading(
 
 private fun jumpPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel, pages: Int) {
     val run = state.run ?: return
-    viewModel.showPage((state.current + pages).coerceIn(run.pages.indices))
+    viewModel.showPage((state.current + pages).coerceIn(0, run.lastIndex))
 }
 
 /** The page a slide on the page bar goes to, grayed out while the slide is cancelled. */
 @Composable
 private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarDrag) {
     val run = state.run ?: return
-    val target = (state.current + drag.pages).coerceIn(run.pages.indices)
+    val target = (state.current + drag.pages).coerceIn(0, run.lastIndex)
     Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
         Text(
             pageNumberText(run.number(target)),
@@ -277,12 +277,12 @@ private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarDrag) 
     }
 }
 
-/** The shown pages of a single or spread layout, the first on the right. */
+/** The shown pages of a single or spread layout, the first on the right; a page still being laid out is bare paper. */
 @Composable
 private fun ShownPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel) {
     val frame = state.frame ?: return
-    val shown = state.shown
-    val pictures = rememberPictures(shown, frame, viewModel)
+    val shown = state.shown.map(state::page)
+    val pictures = rememberPictures(shown.filterNotNull(), frame, viewModel)
     val painter = remember(state.typeface, state.colors) { PagePainter(viewModel.typeface(state.typeface), state.colors) }
     val decor = shown.indices.map { decorOf(state, state.current + it) }
     Canvas(Modifier.fillMaxSize()) {
@@ -295,7 +295,7 @@ private fun ShownPages(state: TextReaderUiState.Reading, viewModel: TextReaderVi
     }
 }
 
-/** The 連続 layout: every laid-out page in one row, right to left, scrolled by the finger. */
+/** The 連続 layout: every laid-out page in one row, right to left, scrolled by the finger; pages far from the view are bare paper. */
 @Composable
 private fun ContinuousPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel) {
     val frame = state.frame ?: return
@@ -312,9 +312,9 @@ private fun ContinuousPages(state: TextReaderUiState.Reading, viewModel: TextRea
     }
     val gutter = with(LocalDensity.current) { frame.gutter.toDp() }
     LazyRow(Modifier.fillMaxSize(), state = list, reverseLayout = true, horizontalArrangement = Arrangement.spacedBy(gutter)) {
-        items(run.pages.size) { index ->
-            val page = run.pages[index]
-            val pictures = rememberPictures(listOf(page), frame, viewModel)
+        items(run.size) { index ->
+            val page = state.page(index)
+            val pictures = rememberPictures(listOfNotNull(page), frame, viewModel)
             val decor = decorOf(state, index)
             Canvas(Modifier.size(widthDp, with(LocalDensity.current) { frame.pageHeight.toDp() })) {
                 drawIntoCanvas { painter.draw(it.nativeCanvas, page, frame, 0f, 0f, decor) { path -> pictures[path] } }
@@ -327,8 +327,7 @@ private fun ContinuousPages(state: TextReaderUiState.Reading, viewModel: TextRea
 private fun decorOf(state: TextReaderUiState.Reading, index: Int): PageDecor {
     val run = state.run
     val number = run?.number(index)?.let { pageNumberText(it) }.orEmpty()
-    val page = run?.pages?.getOrNull(index)
-    val highlight = state.highlight?.takeIf { page != null && it.first < page.end && it.last >= page.start }
+    val highlight = state.highlight?.takeIf { run != null && index in 0 until run.size && it.first < run.end(index) && it.last >= run.start(index) }
     return PageDecor(state.title, number, highlight)
 }
 

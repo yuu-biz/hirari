@@ -53,10 +53,10 @@ class PagePainter(typeface: Typeface, colors: PageColors) {
     }
 
     /**
-     * Draws [page] into the page box of [frame] whose top left is at ([left], [top]). [picture] gives the decoded 挿絵
-     * of a path, or null while it loads.
+     * Draws [page] into the page box of [frame] whose top left is at ([left], [top]), or the paper and [decor] alone
+     * while the page is null. [picture] gives the decoded 挿絵 of a path, or null while it loads.
      */
-    fun draw(canvas: Canvas, page: TextPage, frame: PageFrame, left: Float, top: Float, decor: PageDecor, picture: (String) -> Bitmap?) {
+    fun draw(canvas: Canvas, page: TextPage?, frame: PageFrame, left: Float, top: Float, decor: PageDecor, picture: (String) -> Bitmap?) {
         fill.color = paper
         canvas.drawRect(left, top, left + frame.pageWidth, top + frame.pageHeight, fill)
         fill.color = ink
@@ -64,7 +64,8 @@ class PagePainter(typeface: Typeface, colors: PageColors) {
         drawInfo(canvas, decor.number, left + frame.pageWidth / 2, top + frame.pageHeight - frame.margin, frame, alignTop = false)
         val originX = left + frame.margin
         val originY = top + frame.margin + frame.band
-        when (val content = page.content) {
+        when (val content = page?.content) {
+            null -> Unit
             is PageContent.Picture -> picture(content.path)?.let { drawFitted(canvas, it, originX, originY, frame.params.width, frame.params.height) }
             is PageContent.Lines -> canvas.withTranslation(originX, originY) {
                 decor.highlight?.let { range -> content.lines.forEach { drawHighlight(this, it, range) } }
