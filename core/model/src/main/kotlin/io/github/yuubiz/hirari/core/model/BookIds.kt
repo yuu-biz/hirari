@@ -44,6 +44,17 @@ fun locationBookId(location: LibraryLocation, path: String): BookId {
     return BookId(digest.digest().toHex())
 }
 
+/**
+ * The id of a text entry inside an archive book (docs/spec.md section 2.2): the id of the archive and the raw bytes
+ * of the entry name, so picking another name charset (section 3.4) keeps the entry's progress and bookmarks.
+ */
+fun entryBookId(archive: BookId, rawName: ByteArray): BookId {
+    val digest = sha256()
+    digest.update("entry\u0000${archive.value}\u0000".toByteArray(Charsets.UTF_8))
+    digest.update(rawName)
+    return BookId(digest.digest().toHex())
+}
+
 /** NFC, `/` between names, and no empty or `.` names, so `a\\b/` and `/a/./b` name the same entry. */
 fun normalizePath(path: String): String =
     Normalizer.normalize(path, Normalizer.Form.NFC)

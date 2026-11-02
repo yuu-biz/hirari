@@ -69,4 +69,14 @@ class BookIdsTest {
         assertNotEquals(folderBookId(UriString("")), documentBookId(ByteArray(0), 0))
         assertNotEquals(folderBookId(UriString("content://a/tree/1")), folderBookId(UriString("content://a/tree/2")))
     }
+
+    @Test
+    fun anEntryIdFollowsTheArchiveAndTheRawNameAndNeverMeetsTheArchiveId() {
+        val archive = documentBookId(bytes, bytes.size.toLong())
+        val name = "本文.txt".toByteArray(Charsets.UTF_8)
+        assertEquals(entryBookId(archive, name), entryBookId(archive, name.copyOf()))
+        assertNotEquals(entryBookId(archive, name), entryBookId(archive, "本文2.txt".toByteArray(Charsets.UTF_8)))
+        assertNotEquals(entryBookId(archive, name), entryBookId(documentBookId(bytes, 1), name))
+        assertNotEquals(archive, entryBookId(archive, ByteArray(0)))
+    }
 }
