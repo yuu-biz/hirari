@@ -45,7 +45,7 @@ fun LicenseScreen(onBack: () -> Unit) {
     ) { padding ->
         val loaded = report ?: return@Scaffold
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            items(loaded.libraries, key = { it.name + " " + it.version }) { library ->
+            items(loaded.libraries, key = { it.id }) { library ->
                 LicenseItem(library, loaded.textsOf(library))
                 HorizontalDivider()
             }

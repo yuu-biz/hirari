@@ -14,8 +14,13 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.io.File
 
-/** One row of the license screen. `texts` are keys into [LicenseReport.texts]. */
+/**
+ * One row of the license screen. [id] is unique: Maven coordinates or `third_party/<directory>`.
+ * Names are not, as in androidx.annotation's `annotation` and `annotation-jvm`. `texts` are keys
+ * into [LicenseReport.texts].
+ */
 data class LicenseReportEntry(
+    val id: String,
     val name: String,
     val version: String,
     val url: String?,
@@ -63,6 +68,7 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
             if (file.isFile) texts[id] = file.readText() else missingTexts += id
         }
         LicenseReportEntry(
+            id = coordinates,
             name = (artifact["name"] as String?) ?: coordinates,
             version = artifact["version"] as String,
             url = (artifact["scm"] as Map<*, *>?)?.get("url") as String?,
@@ -82,6 +88,7 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
             if (file.isFile) texts[id] = file.readText() else missingTexts += id
         }
         LicenseReportEntry(
+            id = key,
             name = library.name,
             version = library.version,
             url = library.url,
@@ -93,7 +100,11 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
         throw GradleException("Add the license text for ${missingTexts.joinToString()} to ${spdxTextsDir.path}/<SPDX id>.txt")
     }
 
-    return LicenseReport((maven + native).sortedBy { it.name.lowercase() }, texts)
+    val libraries = maven + native
+    libraries.groupBy { it.id }.filterValues { it.size > 1 }.keys.forEach {
+        throw GradleException("$it appears more than once in the license report")
+    }
+    return LicenseReport(libraries.sortedBy { it.name.lowercase() }, texts)
 }
 
 abstract class GenerateLicenseReportTask : DefaultTask() {
@@ -122,7 +133,7 @@ abstract class GenerateLicenseReportTask : DefaultTask() {
         val json = JsonOutput.toJson(
             mapOf(
                 "libraries" to report.libraries.map {
-                    mapOf("name" to it.name, "version" to it.version, "url" to it.url, "licenses" to it.licenses, "texts" to it.texts)
+                    mapOf("id" to it.id, "name" to it.name, "version" to it.version, "url" to it.url, "licenses" to it.licenses, "texts" to it.texts)
                 },
                 "texts" to report.texts,
             ),

@@ -15,13 +15,17 @@ data class LicenseReport(val libraries: List<LicensedLibrary>, val texts: Map<St
             val report = Json.decodeFromString<LicenseReport>(json)
             val dangling = report.libraries.flatMap { it.texts }.filterNot { it in report.texts }
             require(dangling.isEmpty()) { "licenses.json has no text for $dangling" }
+            val duplicates = report.libraries.groupBy { it.id }.filterValues { it.size > 1 }.keys
+            require(duplicates.isEmpty()) { "licenses.json repeats $duplicates" }
             return report
         }
     }
 }
 
+/** [id] is unique (Maven coordinates or `third_party/<directory>`); [name] is not. */
 @Serializable
 data class LicensedLibrary(
+    val id: String,
     val name: String,
     val version: String,
     val url: String? = null,

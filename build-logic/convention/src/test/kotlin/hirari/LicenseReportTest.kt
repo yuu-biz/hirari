@@ -47,7 +47,7 @@ class LicenseReportTest {
     @Test
     fun `maven artifacts get the SPDX text and native libraries also their notices`() {
         val report = buildLicenseReport(licensee("Apache-2.0"), thirdParty(), spdxTexts("Apache-2.0", "Zlib"))
-        assertEquals(listOf("Lib 0", "zlib"), report.libraries.map { it.name })
+        assertEquals(listOf("g:a0", "third_party/zlib"), report.libraries.map { it.id })
         assertEquals(listOf("text of Apache-2.0"), report.libraries[0].texts.map(report.texts::getValue))
         assertEquals(
             listOf(
@@ -66,5 +66,21 @@ class LicenseReportTest {
             buildLicenseReport(licensee("Apache-2.0", "MIT"), thirdParty(), spdxTexts("Apache-2.0"))
         }
         assertContains(error.message.orEmpty(), "MIT")
+    }
+
+    @Test
+    fun `artifacts with the same name and version keep distinct ids`() {
+        val json = temp.newFile("same-name.json").apply {
+            writeText(
+                listOf("annotation", "annotation-jvm").joinToString(",", "[", "]") {
+                    """{"groupId":"androidx.annotation","artifactId":"$it","version":"1.10.0","name":"Annotation","spdxLicenses":[{"identifier":"Apache-2.0"}]}"""
+                },
+            )
+        }
+        val report = buildLicenseReport(json, thirdParty(), spdxTexts("Apache-2.0", "Zlib"))
+        assertEquals(
+            listOf("androidx.annotation:annotation", "androidx.annotation:annotation-jvm"),
+            report.libraries.filter { it.name == "Annotation" }.map { it.id },
+        )
     }
 }
