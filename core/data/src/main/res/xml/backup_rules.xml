@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup on API 28 to 30. The same files as data_extraction_rules.xml. -->
+<full-backup-content>
+    <include domain="file" path="datastore/settings.json" />
+    <include domain="database" path="hirari.db" />
+    <include domain="database" path="hirari.db-wal" />
+</full-backup-content>

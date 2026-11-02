@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup on API 31 and later (docs/spec.md section 7). Only what is included here is backed up, so a
+  file added later stays on the device until it is listed. credentials.db, the thumbnail index, the caches,
+  imported fonts and the open-book record are left out.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="datastore/settings.json" />
+        <include domain="database" path="hirari.db" />
+        <include domain="database" path="hirari.db-wal" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="datastore/settings.json" />
+        <include domain="database" path="hirari.db" />
+        <include domain="database" path="hirari.db-wal" />
+    </device-transfer>
+</data-extraction-rules>

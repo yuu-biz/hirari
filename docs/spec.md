@@ -1635,7 +1635,8 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 | 取り込んだ書体 | ファイル | `filesDir/fonts/` | 含めない | 含めない |
 | 開いている本の記録（6.1 節） | DataStore | `filesDir/datastore/` | 含めない | 含めない |
 
-- 自動バックアップの範囲は `dataExtractionRules` で指定する。
+- 自動バックアップの範囲は、API 31 以上では `dataExtractionRules`、API 30 以下では `fullBackupContent` で指定する。規則は `:core:data` の `res/xml/data_extraction_rules.xml` と `res/xml/backup_rules.xml` に置き、`:app` のマニフェストから参照する。
+- 規則は含めるファイルを列挙する。含めるのは `filesDir/datastore/settings.json`、`databases/hirari.db`、`databases/hirari.db-wal` だけである。後から増えたファイルは、規則に書くまでバックアップに入らない。パスワードの DB を書き忘れても漏れない向きに倒すためである。クラウドへのバックアップと端末間の移行は同じ範囲にする。
 - 起動のたびに、アプリが持つ永続許可の一覧と SAF の場所を照らし、許可のない場所に印を付ける（`permissionHeld`）。印の付いた場所は、フォルダを選び直すまで開かない。
 - 本の索引には、開いた本を書く。ファイル一覧の読書状態は、フォルダの直下の本を索引から引いて付ける。索引にない本は未読である。
 - 場所を消すと、その場所のピン留め、フォルダの表紙、パスワードも消す。読書位置、しおり、履歴は残す。同じ場所を登録し直すと、2.2 節の `BookId` で元に戻る。

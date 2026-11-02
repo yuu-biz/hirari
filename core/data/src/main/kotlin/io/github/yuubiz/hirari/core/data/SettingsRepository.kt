@@ -63,5 +63,7 @@ internal fun openSettings(
     produceFile = file,
 )
 
+internal const val SETTINGS_FILE = "settings.json"
+
 internal fun openSettings(context: Context): DataStore<GlobalSettings> =
-    openSettings { context.dataStoreFile("settings.json") }
+    openSettings { context.dataStoreFile(SETTINGS_FILE) }
