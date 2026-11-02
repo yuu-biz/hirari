@@ -13,15 +13,18 @@ class LayoutGoldenTest {
     private val update = System.getProperty("hirari.updateGoldens") == "true"
 
     private fun golden(name: String, params: LayoutParams = PARAMS) {
-        val input = javaClass.getResource("/golden/$name.txt")!!.readText()
+        val input = decodeText(javaClass.getResource("/golden/$name.txt")!!.readBytes(), Charsets.UTF_8)
         val pages = VerticalLayout(parseAozora(input), params, FixedGlyphMetrics).pages().toList()
         val actual = dumpPages(pages, params.fontSize)
-        val expectedFile = "golden/$name-${params.latinMode.name}.layout".let { if (params.latinMode == LatinMode.ShortTateChuYoko) "golden/$name.layout" else it }
+        val suffix = if (params.latinMode == LatinMode.ShortTateChuYoko) "" else "-${params.latinMode.name}"
+        val expectedFile = "golden/$name$suffix.layout"
         if (update) {
             File("src/test/resources/$expectedFile").writeText(actual)
             return
         }
-        val expected = javaClass.getResource("/$expectedFile")?.readText() ?: error("$expectedFile is missing; run with -PupdateGoldens=true")
+        // A checkout may turn the snapshots' line ends into CRLF.
+        val expected = javaClass.getResource("/$expectedFile")?.readText()?.replace("\r\n", "\n")
+            ?: error("$expectedFile is missing; run with -PupdateGoldens=true")
         assertEquals(expected, actual, name)
     }
 
