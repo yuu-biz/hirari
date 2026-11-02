@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import android.graphics.Bitmap
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
@@ -157,18 +158,61 @@ typealias RawResult = PageResult<RawPage>
  * Runs [decode] in [scope] on [dispatcher] and gives up waiting after the timeout of docs/spec.md section 3.7.
  * A decode still queued by then never starts. One already running is told through its `isActive` that its
  * result is not wanted. Inside `ImageDecoder` it cannot stop, so it keeps its thread until it ends, and its
- * result is dropped.
+ * result is released with [release] when it arrives, because nobody else holds it.
  */
 internal suspend fun <T> decodeWithTimeout(
     scope: CoroutineScope,
     dispatcher: CoroutineDispatcher,
+    release: (T) -> Unit = ::releaseUnwanted,
     decode: (() -> Boolean) -> PageResult<T>,
 ): PageResult<T> {
     val caller = currentCoroutineContext()
-    val work = scope.async(dispatcher) { decode { isActive && caller.isActive } }
+    val unclaimed = Unclaimed(release)
+    val work = scope.async(dispatcher) { decode { isActive && caller.isActive }.also(unclaimed::offer) }
+    var delivered: PageResult<T>? = null
     return try {
-        withTimeoutOrNull(ImageDecoding.DECODE_TIMEOUT_MILLIS) { work.await() } ?: timedOut
+        (withTimeoutOrNull(ImageDecoding.DECODE_TIMEOUT_MILLIS) { work.await() } ?: timedOut).also { delivered = it }
     } finally {
         work.cancel()
+        unclaimed.abandon(delivered)
+    }
+}
+
+/** What a decode that nobody waits for any more holds: bitmaps are recycled and tile sources closed. */
+internal fun releaseUnwanted(image: Any?) {
+    when (image) {
+        is Bitmap -> image.recycle()
+        is PreparedImage.Whole -> image.bitmap.recycle()
+        is PreparedImage.Tiled -> image.source.close()
+    }
+}
+
+/**
+ * The result of a decode, from the thread that made it to the caller that waits. A cancelled `async` drops its
+ * value, so the result passes through here: released when it comes after the caller gave up, or when the caller
+ * gave up in the instant it came.
+ */
+private class Unclaimed<T>(private val release: (T) -> Unit) {
+    private var abandoned = false
+    private var held: PageResult<T>? = null
+
+    fun offer(result: PageResult<T>) {
+        val late = synchronized(this) {
+            if (!abandoned) held = result
+            abandoned
+        }
+        if (late) discard(result)
+    }
+
+    fun abandon(delivered: PageResult<T>?) {
+        val left = synchronized(this) {
+            abandoned = true
+            held.also { held = null }
+        }
+        if (left != null && left !== delivered) discard(left)
+    }
+
+    private fun discard(result: PageResult<T>) {
+        if (result is PageResult.Ready) release(result.image)
     }
 }

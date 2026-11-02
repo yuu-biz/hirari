@@ -89,6 +89,60 @@ class OpenBookTest {
     }
 
     @Test
+    fun aResultThatArrivesAfterTheTimeoutIsReleased() = runTest {
+        val scope = CoroutineScope(SupervisorJob())
+        val running = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val released = mutableListOf<String>()
+        val result = async {
+            decodeWithTimeout<String>(scope, decoding.dispatcher, { synchronized(released) { released += it } }) {
+                running.countDown()
+                release.await()
+                PageResult.Ready("late")
+            }
+        }
+        runCurrent()
+        running.await()
+        advanceTimeBy(ImageDecoding.DECODE_TIMEOUT_MILLIS + 1)
+        assertEquals(timedOut, result.await())
+        release.countDown()
+        scope.coroutineContext.job.children.toList().joinAll()
+        assertEquals(listOf("late"), synchronized(released) { released.toList() })
+    }
+
+    @Test
+    fun aResultThatIsDeliveredIsNotReleased() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob())
+        val released = mutableListOf<String>()
+        val result = decodeWithTimeout<String>(scope, decoding.dispatcher, { released += it }) { PageResult.Ready("wanted") }
+        scope.coroutineContext.job.children.toList().joinAll()
+        assertEquals(PageResult.Ready("wanted"), result)
+        assertEquals(emptyList<String>(), released)
+    }
+
+    @Test
+    fun aResultForACallerThatWasCancelledIsReleased() = runTest {
+        val scope = CoroutineScope(SupervisorJob())
+        val running = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val released = mutableListOf<String>()
+        val caller = launch {
+            decodeWithTimeout<String>(scope, decoding.dispatcher, { synchronized(released) { released += it } }) {
+                running.countDown()
+                release.await()
+                PageResult.Ready("orphan")
+            }
+        }
+        runCurrent()
+        running.await()
+        caller.cancel()
+        runCurrent()
+        release.countDown()
+        scope.coroutineContext.job.children.toList().joinAll()
+        assertEquals(listOf("orphan"), synchronized(released) { released.toList() })
+    }
+
+    @Test
     fun aPageDecodesFromItsRawBytesWithoutReadingTheBookAgain() = runBlocking {
         val opens = AtomicInteger()
         val data = "not an image".toByteArray()
