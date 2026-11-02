@@ -207,6 +207,8 @@ class Thumbnails internal constructor(
                 is FolderEntry.Item -> visit(entry.book, request, mode, search)
                 is FolderEntry.Directory -> if (depth < MAX_SEARCH_DEPTH) {
                     listing(search, entry)?.let { walk(it, depth + 1, request, mode, search) }
+                } else {
+                    search.exhausted = true
                 }
             }
             if (search.done) return
@@ -227,9 +229,12 @@ class Thumbnails internal constructor(
         }
     }
 
-    /** The entries of [directory], or `null` when the search has looked at too many folders or the folder cannot be read. */
+    /** The entries of [directory], or `null` when the search has listed as many folders as it may or the folder cannot be read. */
     private suspend fun listing(search: Search, directory: FolderEntry.Directory): List<FolderEntry>? {
-        if (++search.listings > MAX_SEARCH_LISTINGS) return null
+        if (++search.listings > MAX_SEARCH_LISTINGS) {
+            search.exhausted = true
+            return null
+        }
         return try {
             withContext(io) { directory.children() }
         } catch (e: CancellationException) {

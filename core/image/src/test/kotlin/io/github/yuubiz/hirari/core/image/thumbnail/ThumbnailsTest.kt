@@ -476,6 +476,28 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun theSearchForAFolderCoverStopsAtTheMostFoldersItLists() = runTest {
+        val thumbnails = thumbnails()
+        val empty = List(Thumbnails.MAX_SEARCH_LISTINGS) { FolderEntry.Directory("d%02d".format(it)) { emptyList() } }
+        val result = async { thumbnails.thumbnail(request(folder(*empty.toTypedArray(), item("z")))) }
+        runCurrent()
+        assertEquals(ThumbResult.Failed, result.await())
+        assertTrue("an item after the last folder it may list was tried", maker.calls.isEmpty())
+    }
+
+    @Test
+    fun theSearchForAFolderCoverStopsAtTheDeepestFolderItEnters() = runTest {
+        val thumbnails = thumbnails()
+        val deepest = (0..Thumbnails.MAX_SEARCH_DEPTH).fold<Int, FolderEntry>(item("bottom")) { inner, depth ->
+            FolderEntry.Directory("a$depth") { listOf(inner) }
+        }
+        val result = async { thumbnails.thumbnail(request(folder(deepest, item("z")))) }
+        runCurrent()
+        assertEquals(ThumbResult.Failed, result.await())
+        assertTrue("an item after a folder too deep was tried: ${maker.ids}", maker.calls.isEmpty())
+    }
+
+    @Test
     fun cachedStopsAtTheFirstItemOfAFolderWithoutAThumbnail() = runTest {
         val thumbnails = thumbnails()
         val subject = folder(item("1"), item("2"))
