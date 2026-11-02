@@ -24,6 +24,7 @@ import io.github.yuubiz.hirari.feature.reader.TALL
 import io.github.yuubiz.hirari.feature.reader.scanOf
 import io.github.yuubiz.hirari.feature.reader.Turn
 import io.github.yuubiz.hirari.feature.reader.Viewport
+import io.github.yuubiz.hirari.feature.reader.WIDE
 import io.github.yuubiz.hirari.feature.reader.spreadConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -45,7 +46,7 @@ import kotlin.test.assertTrue
 private val SINGLE = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
 
 private class FakeLoader(
-    val shapes: Map<Int, PageResult<PageShape.Known>> = emptyMap(),
+    val shapes: MutableMap<Int, PageResult<PageShape.Known>> = mutableMapOf(),
     val failing: MutableMap<Int, PageResult<Nothing>> = mutableMapOf(),
     val rawFailing: MutableMap<Int, PageResult<Nothing>> = mutableMapOf(),
     val rawBytes: Long = 1000,
@@ -101,7 +102,7 @@ private class FakeLoader(
     }
 }
 
-/** The reader and its prefetcher as the screen wires them: every new state makes a new plan. */
+/** The reader and its prefetcher as the screen wires them: a new state that changes what is laid out or shown makes a new plan. */
 private class Reader(
     scope: CoroutineScope,
     var state: ReaderState,
@@ -125,7 +126,11 @@ private class Reader(
     override fun onMargins(page: Int, scan: MarginScan) = apply(ReaderEvent.MarginsLearned(page, scan))
 
     fun apply(event: ReaderEvent) {
+        val before = state
         state = state.reduce(event)
+        val same = before.pagination === state.pagination && before.shownViews == state.shownViews &&
+            before.viewport == state.viewport && before.config == state.config && before.margins === state.margins
+        if (same) return
         val input = state.prefetchInput()
         prefetcher.update(PrefetchInput(input.views, input.current, input.shapes, input.travel, input.targets, input.shown + alsoShown, readsMargins = input.readsMargins))
     }
@@ -195,7 +200,7 @@ class PrefetcherTest {
     @Test
     fun aPageWhoseHeaderFailsPairsAsPortraitAndItsPartnerStillDraws() = runTest {
         val notAnImage = PageResult.Unsupported(UnsupportedKind.NotAnImage)
-        val reader = reader(pages = 4, config = spreadConfig(), viewport = LANDSCAPE, loader = FakeLoader(shapes = mapOf(1 to notAnImage)))
+        val reader = reader(pages = 4, config = spreadConfig(), viewport = LANDSCAPE, loader = FakeLoader(shapes = mutableMapOf(1 to notAnImage)))
         advanceUntilIdle()
         assertEquals(FAILED_PAGE_SHAPE, reader.state.pagination.shapes[1])
         assertEquals(PageView.Two(0, 1), reader.state.current)
@@ -429,6 +434,34 @@ class PrefetcherTest {
         assertIs<PreparedPage.Image<String>>(reader.prefetcher[PageView.One(0)]!!.pages.single())
         assertEquals(mapOf(1 to lost, 2 to corrupt), reader.prefetcher.failedPages)
         assertEquals(listOf(2, 2, 1), listOf(0, 1, 2).map { page -> loader.rawReads.count { it == page } })
+    }
+
+    @Test
+    fun theConnectionComingBackReadsTheShapeItLostAndLaysThePageOutByIt() = runTest {
+        val lost = PageResult.Failed(FailureReason.ConnectionLost, retryable = true)
+        val loader = FakeLoader(shapes = mutableMapOf(1 to lost))
+        val reader = reader(pages = 4, config = spreadConfig(), viewport = LANDSCAPE, loader = loader)
+        advanceUntilIdle()
+        assertEquals(FAILED_PAGE_SHAPE, reader.state.pagination.shapes[1])
+        loader.shapes[1] = PageResult.Ready(WIDE)
+        reader.prefetcher.retryLost()
+        advanceUntilIdle()
+        assertEquals(WIDE, reader.state.pagination.shapes[1])
+        val view = reader.state.pagination.views.first { 1 in it.pages }
+        assertTrue(reader.prefetcher[view]!!.pages.all { it is PreparedPage.Image }, "view $view")
+        assertTrue(reader.prefetcher.failedPages.isEmpty())
+    }
+
+    @Test
+    fun aShapeLostAgainAfterTheConnectionCameBackShowsItsErrorCard() = runTest {
+        val lost = PageResult.Failed(FailureReason.ConnectionLost, retryable = true)
+        val loader = FakeLoader(shapes = mutableMapOf(1 to lost))
+        val reader = reader(pages = 4, config = spreadConfig(), viewport = LANDSCAPE, loader = loader)
+        advanceUntilIdle()
+        reader.prefetcher.retryLost()
+        advanceUntilIdle()
+        assertEquals(FAILED_PAGE_SHAPE, reader.state.pagination.shapes[1])
+        assertEquals(PreparedPage.Error(lost), reader.prefetcher[PageView.Two(0, 1)]!!.pages[1])
     }
 
     @Test

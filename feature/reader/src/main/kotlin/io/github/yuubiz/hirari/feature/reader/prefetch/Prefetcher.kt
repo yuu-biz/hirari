@@ -126,6 +126,12 @@ class Prefetcher<R, T>(
     private val failures = HashMap<Int, PageResult<Nothing>>()
     private val failedShapes = HashSet<Int>()
 
+    /**
+     * Pages whose failed shape is read again. The reader lays them out by [FAILED_PAGE_SHAPE] until then, so the
+     * plan counts their shapes as unknown: it reads them in reach and prepares no view of them by the stand-in.
+     */
+    private val reshaping = HashSet<Int>()
+
     /** Pages whose raw data failed to read. They are not read again until a [retry]. */
     private val failedRaws = HashSet<Int>()
     private val raws = HashMap<Int, R>()
@@ -160,7 +166,7 @@ class Prefetcher<R, T>(
             PrefetchRequest(
                 views = input.views,
                 current = input.current,
-                shapes = input.shapes,
+                shapes = input.shapes.mapIndexed { page, shape -> if (page in reshaping) PageShape.Unknown else shape },
                 travel = input.travel,
                 budgetBytes = budgetBytes,
                 viewBytes = { input.targets(it)?.bytes ?: 0L },
@@ -237,7 +243,7 @@ class Prefetcher<R, T>(
         failedSteps.remove(page)
         failedRaws.remove(page)
         cache.keys.filter { page in it.pages }.forEach(::evict)
-        if (failedShapes.remove(page)) running[PrefetchJob.ReadShape(page)] = launchShape(page)
+        if (failedShapes.remove(page)) reshaping += page
         return true
     }
 
@@ -290,6 +296,7 @@ class Prefetcher<R, T>(
     private fun launchShape(page: Int): Job = scope.launch {
         val result = loader.shape(page, rawFor(page))
         running.remove(PrefetchJob.ReadShape(page))
+        val reshaped = reshaping.remove(page)
         when (result) {
             is PageResult.Ready -> listener.onShape(page, result.image)
             is PageResult.Failed, is PageResult.Unsupported -> {
@@ -300,6 +307,7 @@ class Prefetcher<R, T>(
                 listener.onChanged()
             }
         }
+        if (reshaped) last?.let(::update)
     }
 
     /**
