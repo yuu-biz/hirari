@@ -29,6 +29,9 @@ class FakeProgress : ProgressRepository {
 
     override fun observe(book: BookId): Flow<BookProgress?> = stored.map { it[book] }
 
+    override fun observe(books: Collection<BookId>): Flow<Map<BookId, BookProgress>> =
+        stored.map { all -> all.filterKeys { it in books } }
+
     override suspend fun save(progress: Collection<BookProgress>) {
         writes += progress
         stored.value = stored.value + progress.associateBy { it.book }
