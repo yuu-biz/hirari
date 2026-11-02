@@ -339,10 +339,12 @@ internal fun pageNumberText(number: PageNumber): String {
     return stringResource(R.string.text_page_number, current, total)
 }
 
-/** The decoded 挿絵 of [pages], loading in the background; a picture draws once it is ready. */
+/**
+ * The decoded 挿絵 of [pages] at the size of [frame], loading in the background; a picture draws once it is ready.
+ * Only the pictures of these pages are held here, so the view model's bounded cache keeps the rest.
+ */
 @Composable
 private fun rememberPictures(pages: List<TextPage>, frame: PageFrame, viewModel: TextReaderViewModel): Map<String, Bitmap> {
-    val loaded = remember { mutableStateMapOf<String, Bitmap>() }
     val paths = pages.flatMap { page ->
         when (val content = page.content) {
             is PageContent.Picture -> listOf(content.path)
@@ -351,13 +353,19 @@ private fun rememberPictures(pages: List<TextPage>, frame: PageFrame, viewModel:
             }
         }
     }.distinct()
-    LaunchedEffect(paths, frame.params) {
-        for (path in paths) {
-            if (path in loaded) continue
-            viewModel.picture(path, frame.params.width.toInt(), frame.params.height.toInt())?.let { loaded[path] = it }
+    val width = frame.params.width.toInt()
+    val height = frame.params.height.toInt()
+    val shown = remember(paths, width, height) {
+        mutableStateMapOf<String, Bitmap>().apply {
+            for (path in paths) viewModel.cachedPicture(path, width, height)?.let { put(path, it) }
         }
     }
-    return loaded
+    LaunchedEffect(shown) {
+        for (path in paths) {
+            if (path !in shown) viewModel.picture(path, width, height)?.let { shown[path] = it }
+        }
+    }
+    return shown
 }
 
 @Composable

@@ -133,13 +133,17 @@ class TextReaderViewModel(
 
     /** The 挿絵 at [path] scaled to fit [maxWidth] by [maxHeight], decoded off the main thread, or null when unreadable. */
     suspend fun picture(path: String, maxWidth: Int, maxHeight: Int): Bitmap? {
-        val key = "$maxWidth×$maxHeight/$path"
-        pictures.get(key)?.let { return it }
+        cachedPicture(path, maxWidth, maxHeight)?.let { return it }
         val bytes = model?.picture(path) ?: return null
         val bitmap = withContext(Dispatchers.Default) { decodeFitting(bytes, maxWidth, maxHeight) } ?: return null
-        pictures.put(key, bitmap)
+        pictures.put(pictureKey(path, maxWidth, maxHeight), bitmap)
         return bitmap
     }
+
+    /** The 挿絵 [picture] decoded last for [path] at this size, while the cache still holds it. */
+    fun cachedPicture(path: String, maxWidth: Int, maxHeight: Int): Bitmap? = pictures.get(pictureKey(path, maxWidth, maxHeight))
+
+    private fun pictureKey(path: String, maxWidth: Int, maxHeight: Int) = "$maxWidth×$maxHeight/$path"
 
     /** The reader left the screen. The process may end before [onCleared], so the position and history go out now. */
     fun onStop() {
