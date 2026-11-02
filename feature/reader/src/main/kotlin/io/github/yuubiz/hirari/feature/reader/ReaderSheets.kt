@@ -40,7 +40,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,11 +87,10 @@ private fun Scrim(onClose: () -> Unit, content: @Composable BoxScope.() -> Unit)
 internal fun Thumbnail(viewModel: ReaderViewModel, page: Int, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     val size = with(density) { PixelSize(ThumbnailWidth.roundToPx(), ThumbnailHeight.roundToPx()) }
-    val bitmap by produceState(viewModel.cachedThumbnail(page), page) {
-        if (value == null) value = viewModel.thumbnail(page, size)
-    }
+    val slot = remember(viewModel, size) { ThumbnailSlot(viewModel::cachedThumbnail) { viewModel.thumbnail(it, size) } }
+    LaunchedEffect(slot, page) { slot.show(page) }
     Box(modifier.size(ThumbnailWidth, ThumbnailHeight).background(Color(0xFF404048)), contentAlignment = Alignment.Center) {
-        bitmap?.takeUnless { it.isRecycled }?.let {
+        slot.shown?.takeUnless { it.isRecycled }?.let {
             Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
         }
     }
