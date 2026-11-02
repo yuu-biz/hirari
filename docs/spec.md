@@ -1762,7 +1762,8 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | liblzma（XZ Utils） | LZMA、LZMA2、xz | 0BSD (要検証。版による) | ソースからビルド |
 | bzip2 | BZip2 | bzip2-1.0.6 | ソースからビルド |
 | zstd | zstd | BSD-3-Clause（GPL-2.0 との二重ライセンスのうち BSD を選ぶ） | ソースからビルド |
-| libjxl | JPEG XL | BSD-3-Clause | ソースからビルド。highway（Apache-2.0）、brotli（MIT）を伴う |
+| libjxl 0.12.0 | JPEG XL | BSD-3-Clause。Apache-2.0 と MIT の部分を含む。内訳は表の下 | ソースから NDK でビルドし、JNI で呼ぶ。デコーダだけをビルドする。brotli は箱の展開と JPEG の復元にだけ要るので、その 2 つを外して組み込まない |
+| Highway 1.2.0 | libjxl の SIMD | Apache-2.0（一部のファイルは BSD-3-Clause との二重ライセンスで、Apache-2.0 を選ぶ） | ソースからビルド。libjxl 0.12.0 が指す版。各 ABI の基準の SIMD 対象だけをコンパイルする（Q7） |
 | libavif | API 28〜30 の AVIF | BSD-2-Clause | Q6 で同梱を決めたときだけ |
 | dav1d | libavif の AV1 デコード | BSD-2-Clause | 同上 |
 | smbj 0.15.0 | SMB 2 と SMB 3 | Apache-2.0。実行時に slf4j-api 2.0.18（MIT）、bcprov-jdk18on 1.85.2（Bouncy Castle License）、mbassador 1.3.2（MIT）、asn-one 0.6.0（Apache-2.0）を伴う。mbassador の juel は任意の依存で、持ち込まれない。0.15.0 の POM と Gradle のモジュールのメタデータ、各依存の POM で確かめ、`:app` の Licensee で確かめた。Bouncy Castle License の条項は MIT と同じ文面なので MIT として扱う。bcprov と slf4j-api の POM にあるライセンスの URL は Licensee が SPDX 識別子に直せないので、`build-logic` の `licenseUrlIds` で MIT に対応付ける | Maven。通信を行う唯一の依存。SLF4J の provider は同梱しない（6.6 節） |
@@ -1791,6 +1792,16 @@ libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`C
 - `COPYING` は著作権者の欄がひな形のままで、各ファイルの著作権者が載っていない。そのためライセンス画面では、ネイティブの依存について 3 つを並べる。`license_file` の全文、ソースから抜き出した著作権の行（ビルド時に生成する）、目録の SPDX 識別子ごとの正規の全文である。
 - PPMd の実装の `archive_ppmd8.c` も public domain で、許可リストにないので組み込まない（Q19）。代わりに自前の `core/archive/src/main/cpp/libarchive/ppmd8_unsupported.c` を置く。PPMd で圧縮された ZIP のエントリは、一覧には出るが、データを読むと失敗する。
 - M3 で加えるファイルのうち、`archive_ppmd7.c`（7z と RAR の PPMd）は public domain、`archive_blake2*`（RAR 5）は CC0-1.0、OpenSSL、Apache-2.0 から選べる三重ライセンス、`archive_read_support_filter_compress.c` は BSD-3-Clause である（`COPYING` による）。
+
+libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルドする libjxl の 75 個の `.cc` と 129 個の `.h`、Highway の 5 個の `.cc` と 19 個の `.h` に含まれる表示を読んで確かめた。ヘッダは、ビルドで読んだものを ninja の依存の記録から抜き出した。
+
+- libjxl のファイルは、「the JPEG XL Project Authors」の BSD-3-Clause である。目録の SPDX 識別子は `BSD-3-Clause AND Apache-2.0 AND MIT` とする。
+- `lib/jxl/base/fast_math-inl.h` の立方根の関数は、Apache 2 の vectorclass（Agner Fog）を改変したものだと書かれている。そのため目録に Apache-2.0 を加える。
+- `lib/jxl/xorshift128plus-inl.h` は、MIT の実装を移したものだと書かれている。元の著作権の表示はファイルにないので、目録に MIT を加えて全文を付ける。
+- `PATENTS` は Google による特許の許諾で、ライセンスの条件を足すものではない。`AUTHORS` とともにディレクトリに置く。
+- Highway のファイルは Google LLC と Arm Limited の著作権で、Apache-2.0 である。`abort.cc`、`abort.h`、`ops/arm_neon-inl.h`、`ops/generic_ops-inl.h`、`ops/set_macros-inl.h` は BSD-3-Clause との二重ライセンスで、Apache-2.0 を選ぶ。
+- 色管理の skcms と lcms2、brotli、libjxl のエンコーダは組み込まない。
+- `third_party/libjxl` と `third_party/highway` には、ビルドで読むファイルとライセンスのファイルだけを置く。ソースの一覧は libjxl の `lib/jxl_lists.cmake` のデコーダの一覧をそのまま使う。`jxl_export.h` は libjxl のビルドが生成するもので、代わりに自前の `core/image/src/main/cpp/libjxl/include/jxl/jxl_export.h` を置く。
 
 方針は次のとおり。
 

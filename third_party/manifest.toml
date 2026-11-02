@@ -18,3 +18,21 @@ url = "https://github.com/libarchive/libarchive/releases/download/v3.8.11/libarc
 sha256 = "900fe9fc7237c2b04f090f3c3648de8fe597525771f5035016537ce2d667d12b"
 spdx = "BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0"
 license_file = "COPYING"
+
+[[library]]
+name = "libjxl"
+version = "0.12.0"
+directory = "libjxl"
+url = "https://github.com/libjxl/libjxl/archive/refs/tags/v0.12.0.tar.gz"
+sha256 = "03e9be69a30be4011f559da75328b6d7cea8ad921fabfbd551ce10bf45cdc992"
+spdx = "BSD-3-Clause AND Apache-2.0 AND MIT"
+license_file = "LICENSE"
+
+[[library]]
+name = "Highway"
+version = "1.2.0"
+directory = "highway"
+url = "https://github.com/google/highway/archive/refs/tags/1.2.0.tar.gz"
+sha256 = "7e0be78b8318e8bdbf6fa545d2ecb4c90f947df03f7aadc42c1967f019e63343"
+spdx = "Apache-2.0"
+license_file = "LICENSE"
