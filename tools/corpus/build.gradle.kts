@@ -4,6 +4,8 @@ plugins {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(libs.xz)
+    implementation(libs.commons.compress)
     testImplementation(kotlin("test-junit"))
 }
 

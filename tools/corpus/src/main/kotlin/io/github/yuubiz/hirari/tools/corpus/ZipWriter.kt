@@ -205,20 +205,3 @@ private fun LittleEndianBytes.endRecord(count: Int, centralSize: Int, centralOff
     u16(comment.size)
     write(comment)
 }
-
-private class LittleEndianBytes : ByteArrayOutputStream() {
-    fun u16(value: Int) {
-        write(value)
-        write(value ushr 8)
-    }
-
-    fun u32(value: Int) {
-        u16(value and 0xffff)
-        u16(value ushr 16)
-    }
-
-    fun u64(value: Long) {
-        u32(value.toInt())
-        u32((value ushr 32).toInt())
-    }
-}

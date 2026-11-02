@@ -43,7 +43,7 @@ class CorpusTest {
         val dir = generate()
         val readable = corpusCases().filter { (path, case) ->
             val expected = case.expected
-            !path.startsWith("zip/truncated-") && path != "zip/names-invalid-flag.zip" &&
+            path.startsWith("zip/") && !path.startsWith("zip/truncated-") && path != "zip/names-invalid-flag.zip" &&
                 expected is Expected.Opens && expected.indexError == null &&
                 expected.entries.all { it.read is ExpectedRead.Data || it.read == ExpectedRead.Directory }
         }

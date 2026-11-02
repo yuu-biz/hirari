@@ -10,7 +10,8 @@ sealed interface Expected {
     data class Opens(val entries: List<ExpectedEntry>, val indexError: Failure? = null) : Expected
 }
 
-enum class Failure { Corrupt, Truncated }
+/** [Encrypted] is only for opening: the headers are encrypted (docs/spec.md section 3.8). */
+enum class Failure { Corrupt, Truncated, Encrypted }
 
 /**
  * [name] is the name after decoding by the rules of docs/spec.md section 3.4. [page] is what the book opener

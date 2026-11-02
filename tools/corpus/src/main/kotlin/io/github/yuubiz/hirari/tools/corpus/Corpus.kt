@@ -217,6 +217,7 @@ fun corpusCases(): Map<String, CorpusCase> = buildMap {
     putAll(nameCases())
     putAll(truncatedCases())
     put("zip/images.zip", imagesZip())
+    putAll(archiveCases())
 }
 
 const val MANIFEST = "expected.tsv"
