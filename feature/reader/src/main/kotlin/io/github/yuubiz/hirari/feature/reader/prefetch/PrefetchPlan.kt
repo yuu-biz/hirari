@@ -74,10 +74,12 @@ data class PrefetchPlan(val jobs: List<PrefetchJob>, val keep: Resident) {
 fun evictionsOnTrim(resident: Resident, shown: PageView): Resident = resident - Resident(views = setOf(shown))
 
 /**
- * The prefetch plan of docs/spec.md section 5.3. The order is the current view, the next two
- * pages with the next view, the previous view, and then two pages ahead for every page behind.
- * Reaches count from the edge of the current view. Each layer that does
- * not fit the budget loses its farthest items first, and raw bytes take at most half the budget.
+ * The prefetch plan of docs/spec.md section 5.3. The order is the current view, the next view
+ * with the shapes of the next two pages, the previous view, and then two pages ahead for every
+ * page behind. A view that still has to be prepared brings the raw bytes of its pages just before
+ * it. The other raw bytes of these views wait until after them. Reaches count from the edge of the
+ * current view. Each layer that does not fit the budget loses its farthest items first, and raw
+ * bytes take at most half the budget.
  */
 fun planPrefetch(request: PrefetchRequest): PrefetchPlan {
     val candidates = Candidates(request)
@@ -87,10 +89,15 @@ fun planPrefetch(request: PrefetchRequest): PrefetchPlan {
     val ahead = Walk(request, request.travel)
     val behind = Walk(request, if (request.travel == Turn.Forward) Turn.Back else Turn.Forward)
     val next = ahead.take(2)
-    candidates.addPages(next)
+    val previous = behind.takeThroughView(1)
+    candidates.addShapes(next)
     candidates.addViews(next) { it == 1 }
-    candidates.add(behind.takeThroughView(1))
+    candidates.addShapes(previous)
+    candidates.addViews(previous) { true }
     candidates.addViews(next) { it > 1 }
+    shown.pages.forEach(candidates::addRaw)
+    candidates.addRaws(next)
+    candidates.addRaws(previous)
     while (ahead.hasNext || behind.hasNext) {
         candidates.add(ahead.take(2))
         candidates.add(behind.take(1))
@@ -105,13 +112,14 @@ private class Step(val page: Int?, val distance: Int, val completes: MutableList
 
 private class Candidates(private val request: PrefetchRequest) {
     private val list = mutableListOf<Candidate>()
+    private val rawPages = mutableSetOf<Int>()
     val size: Int get() = list.size
 
     fun addCurrent(view: PageView) {
         for (page in view.pages) {
             if (request.shapes[page] is PageShape.Unknown) list += Candidate(PrefetchJob.ReadShape(page), 0)
-            list += Candidate(PrefetchJob.ReadRaw(page), request.rawBytes(page))
         }
+        if (view !in request.resident.views) view.pages.forEach(::addRaw)
         if (view.pages.all { request.shapes[it] is PageShape.Known }) {
             list += Candidate(PrefetchJob.PrepareView(view), request.viewBytes(view), current = true)
         }
@@ -119,30 +127,42 @@ private class Candidates(private val request: PrefetchRequest) {
 
     fun add(steps: List<Pair<Step, Turn>>) {
         for (step in steps) {
-            addPages(listOf(step))
+            addShapes(listOf(step))
+            addRaws(listOf(step))
             addViews(listOf(step)) { true }
         }
     }
 
-    fun addPages(steps: List<Pair<Step, Turn>>) {
-        val depths = request.depths
+    fun addShapes(steps: List<Pair<Step, Turn>>) {
         for ((step, way) in steps) {
             val page = step.page ?: continue
-            if (step.distance <= depths.shapePages.toward(request.travel, way) && request.shapes[page] is PageShape.Unknown) {
+            if (step.distance <= request.depths.shapePages.toward(request.travel, way) && request.shapes[page] is PageShape.Unknown) {
                 list += Candidate(PrefetchJob.ReadShape(page), 0)
-            }
-            if (step.distance <= depths.rawPages.toward(request.travel, way)) {
-                list += Candidate(PrefetchJob.ReadRaw(page), request.rawBytes(page))
             }
         }
     }
 
-    /** Adds the prepared views that [steps] complete, of those whose view distance passes [distances]. */
+    fun addRaws(steps: List<Pair<Step, Turn>>) {
+        for ((step, way) in steps) {
+            val page = step.page ?: continue
+            if (step.distance <= request.depths.rawPages.toward(request.travel, way)) addRaw(page)
+        }
+    }
+
+    fun addRaw(page: Int) {
+        if (rawPages.add(page)) list += Candidate(PrefetchJob.ReadRaw(page), request.rawBytes(page))
+    }
+
+    /**
+     * Adds the prepared views that [steps] complete, of those whose view distance passes
+     * [distances], each after the raw bytes it still needs.
+     */
     fun addViews(steps: List<Pair<Step, Turn>>, distances: (Int) -> Boolean) {
         for ((step, way) in steps) {
             for ((view, distance) in step.completes) {
                 val known = view.pages.all { request.shapes[it] is PageShape.Known }
                 if (known && distances(distance) && distance <= request.depths.preparedViews.toward(request.travel, way)) {
+                    if (view !in request.resident.views) view.pages.forEach(::addRaw)
                     list += Candidate(PrefetchJob.PrepareView(view), request.viewBytes(view))
                 }
             }

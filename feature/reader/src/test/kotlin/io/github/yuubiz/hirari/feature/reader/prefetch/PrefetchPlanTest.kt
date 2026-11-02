@@ -58,14 +58,14 @@ class PrefetchPlanTest {
     private fun PrefetchPlan.raw() = jobs.filterIsInstance<ReadRaw>().map { it.page }.toSet()
 
     @Test
-    fun theCurrentViewComesFirstThenTheNextTwoPagesThenThePreviousView() {
+    fun theCurrentViewComesFirstThenTheNextViewThenThePreviousView() {
         val plan = planPrefetch(request(single(100), current = 50))
         assertEquals(
             listOf(
                 ReadRaw(50), PrepareView(One(50)),
-                ReadRaw(51), ReadRaw(52), PrepareView(One(51)),
+                ReadRaw(51), PrepareView(One(51)),
                 ReadRaw(49), PrepareView(One(49)),
-                PrepareView(One(52)),
+                ReadRaw(52), PrepareView(One(52)),
                 ReadRaw(53), ReadRaw(54), ReadRaw(48),
                 ReadRaw(55), ReadRaw(56), ReadRaw(47),
             ),
@@ -101,7 +101,7 @@ class PrefetchPlanTest {
     fun goingBackwardSwapsTheDepths() {
         val plan = planPrefetch(request(single(100), current = 50, travel = Back))
         assertEquals(
-            listOf(ReadRaw(50), PrepareView(One(50)), ReadRaw(49), ReadRaw(48), PrepareView(One(49)), ReadRaw(51), PrepareView(One(51))),
+            listOf(ReadRaw(50), PrepareView(One(50)), ReadRaw(49), PrepareView(One(49)), ReadRaw(51), PrepareView(One(51)), ReadRaw(48)),
             plan.jobs.take(7),
         )
         assertEquals(setOf(One(48), One(49), One(50), One(51)), plan.prepared())
@@ -127,6 +127,15 @@ class PrefetchPlanTest {
     fun preparedViewsLoseTheLowestPriorityFirst() {
         val plan = planPrefetch(request(single(100), current = 50, budget = 25, viewBytes = 10, rawBytes = 0))
         assertEquals(setOf(One(50), One(51)), plan.keep.views)
+    }
+
+    @Test
+    fun rawBytesWaitBehindTheViewsThatDoNotNeedThem() {
+        val resident = Resident(views = setOf(One(50)), rawPages = setOf(50))
+        val plan = planPrefetch(request(single(100), current = 50, budget = 100 * MB, viewBytes = 40 * MB, rawBytes = 20 * MB, resident = resident))
+        assertEquals(setOf(One(50), One(51)), plan.keep.views)
+        assertEquals(setOf(51), plan.keep.rawPages)
+        assertEquals(listOf(ReadRaw(51), PrepareView(One(51))), plan.jobs)
     }
 
     @Test
@@ -184,7 +193,7 @@ class PrefetchPlanTest {
         val views = listOf(Half(0, HalfPart.First), Half(0, HalfPart.Second), One(1), One(2))
         val plan = planPrefetch(request(views, current = 0, shapes = listOf(wide, tall, tall)))
         assertEquals(
-            listOf(ReadRaw(0), PrepareView(Half(0, HalfPart.First)), ReadRaw(1), PrepareView(Half(0, HalfPart.Second)), PrepareView(One(1))),
+            listOf(ReadRaw(0), PrepareView(Half(0, HalfPart.First)), PrepareView(Half(0, HalfPart.Second)), ReadRaw(1), PrepareView(One(1))),
             plan.jobs.take(5),
         )
         assertEquals(1, plan.jobs.count { it == ReadRaw(0) })
