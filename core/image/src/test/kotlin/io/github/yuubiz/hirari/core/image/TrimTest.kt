@@ -123,6 +123,25 @@ class TrimTest {
     }
 
     @Test
+    fun aFaintGradientUnderGrainOrAslantNeedsTheChangeTheSpecStates() {
+        fun gradient(levels: Int, grain: Int, seed: Long, shade: (x: Int, y: Int) -> Int) = TestPage(200, 200).apply {
+            for (y in 0 until 200) for (x in 0 until 200) this[x, y] = 240 - levels + shade(x, y)
+            if (grain > 0) grain(grain, seed)
+        }
+        val pages = buildList {
+            add("aslant, 18 levels" to gradient(18, 0, 0) { x, y -> 9 * (x + y) / 199 })
+            for (seed in 1L..20L) {
+                add("across, 15 levels, seed $seed" to gradient(15, 12, seed) { x, _ -> 15 * x / 199 })
+                add("down, 15 levels, seed $seed" to gradient(15, 12, seed) { _, y -> 15 * y / 199 })
+                add("aslant, 20 levels, seed $seed" to gradient(20, 12, seed) { x, y -> 10 * (x + y) / 199 })
+            }
+        }
+        for ((name, page) in pages) for (strength in TrimStrength.entries - TrimStrength.Off) {
+            assertEquals("$name, $strength", Insets.None, trimmed(page, strength, PixelSize(200, 200)).cut)
+        }
+    }
+
+    @Test
     fun aFaintPanelOffOneEdgeKeepsThatEdgeAndNotTheOthers() {
         val page = portrait(ORDINARY.copy(top = 100)) { fill(PixelRect(140, 0, 240, 100), 225) }
         val trim = trimmed(page, TrimStrength.Weak)
