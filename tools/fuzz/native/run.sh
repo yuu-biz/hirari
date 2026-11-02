@@ -5,8 +5,9 @@
 #
 # Needs clang with libFuzzer and the sanitizer runtimes, cmake, ninja or make, and the zlib headers (on Ubuntu 24.04:
 # clang-18 libclang-rt-18-dev cmake ninja-build zlib1g-dev, with CC=clang-18 CXX=clang++-18), and the corpus:
-# ./gradlew :tools:corpus:generateCorpus. Crashes land in tools/fuzz/build/native/artifacts/
-# with the stack trace in the .log beside them, shrunk by libFuzzer when it can. With TIME_LOG set, the run is appended
+# ./gradlew :tools:corpus:generateCorpus. Crashes land in tools/fuzz/build/native/artifacts/TARGET/
+# with the stack trace in the .log beside them, shrunk by libFuzzer when it can. A run clears only the directory of its
+# own target, so that running archive and then jxl keeps the reproducers of both. With TIME_LOG set, the run is appended
 # to that log in the format of :tools:fuzz:fuzz, so that it counts toward the accumulated fuzzing time.
 set -euo pipefail
 
@@ -14,15 +15,17 @@ target="${1:?usage: run.sh archive|jxl SECONDS [SEED]}"
 seconds="${2:?usage: run.sh archive|jxl SECONDS [SEED]}"
 seed="${3:-1}"
 # libFuzzer takes a time of 0 for no limit, and the numbers reach its command line.
+case "$target" in archive | jxl) ;; *) printf 'unknown target %q\n' "$target" >&2; exit 2 ;; esac
 [[ "$seconds" =~ ^[1-9][0-9]{0,9}$ ]] || { printf 'SECONDS must be a whole number of at least 1: %q\n' "$seconds" >&2; exit 2; }
 [[ "$seed" =~ ^[0-9]{1,18}$ ]] || { printf 'SEED must be a whole number: %q\n' "$seed" >&2; exit 2; }
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 build="$repo/tools/fuzz/build/native"
-# A cached configuration would keep the compiler of an earlier run, and old artifacts would be taken for new ones.
-rm -rf "$build/cmake" "$build/artifacts"
-mkdir -p "$build/artifacts"
+artifacts="$build/artifacts/$target"
+# A cached configuration would keep the compiler of an earlier run, and old artifacts of this target would be taken for new ones.
+rm -rf "$build/cmake" "$artifacts"
+mkdir -p "$artifacts"
 
 cc="${CC:-clang}"
 cxx="${CXX:-clang++}"
@@ -56,9 +59,9 @@ esac
 started=$(date +%s)
 status=0
 "$build/cmake/${target}_fuzzer" -max_total_time="$seconds" -seed="$seed" -timeout=20 -rss_limit_mb=2048 -print_final_stats=1 \
-  -artifact_prefix="$build/artifacts/$target-" "$corpus" "$seeds" 2>&1 | tee "$build/artifacts/$target-run.log" || status=$?
+  -artifact_prefix="$artifacts/" "$corpus" "$seeds" 2>&1 | tee "$artifacts/run.log" || status=$?
 
-for crash in "$build"/artifacts/"$target"-crash-* "$build"/artifacts/"$target"-timeout-* "$build"/artifacts/"$target"-oom-*; do
+for crash in "$artifacts"/crash-* "$artifacts"/timeout-* "$artifacts"/oom-*; do
   [ -f "$crash" ] || continue
   case "$crash" in *.min | *.log) continue ;; esac
   "$build/cmake/${target}_fuzzer" -minimize_crash=1 -runs=2000 -timeout=20 -exact_artifact_path="$crash.min" "$crash" >"$crash.log" 2>&1 || true
