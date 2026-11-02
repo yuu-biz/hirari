@@ -13,7 +13,7 @@ object TextFootprint {
 
     /**
      * Parsing [source] and laying it out: [source] while it is parsed, the document, the styles of its longest line,
-     * which every paragraph layout running at once and a search each hold, and the pages kept for the screen.
+     * which every paragraph layout running at once holds, a search's window, and the pages kept for the screen.
      */
     fun reading(source: String): Long {
         var lines = 0L
@@ -24,7 +24,7 @@ object TextFootprint {
         }
         val chars = source.length.toLong()
         return 2 * chars + DOCUMENT_BYTES_PER_CHAR * chars + DOCUMENT_BYTES_PER_LINE * lines +
-            LINE_LAYOUT_BYTES_PER_CHAR * longest + PAGE_WINDOW_BYTES
+            LINE_LAYOUT_BYTES_PER_CHAR * longest + SEARCH_WINDOW_BYTES + PAGE_WINDOW_BYTES
     }
 
     /** The drawn text of a paragraph and the source offset of each of its chars. */
@@ -33,8 +33,14 @@ object TextFootprint {
     /** A paragraph, its text and offset arrays, and its place in the block and line lists. */
     private const val DOCUMENT_BYTES_PER_LINE = 128L
 
-    /** The per-char styles of up to three paragraph layouts, 20 bytes each, and a search's folded text and maps. */
-    private const val LINE_LAYOUT_BYTES_PER_CHAR = 80L
+    /** The per-char styles of up to three paragraph layouts, 20 bytes each. */
+    private const val LINE_LAYOUT_BYTES_PER_CHAR = 60L
+
+    /**
+     * A search's folded text and the source range of each char of it, for a window of 65536 chars and a query. It does
+     * not depend on the length of the line or on how far NFKC expands it.
+     */
+    private const val SEARCH_WINDOW_BYTES = 2L shl 20
 
     /** The pages laid out for the screen, which hold objects for every glyph. */
     private const val PAGE_WINDOW_BYTES = 8L shl 20

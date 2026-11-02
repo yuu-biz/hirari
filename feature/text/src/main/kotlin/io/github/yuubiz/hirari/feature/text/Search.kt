@@ -19,6 +19,12 @@ const val SEARCH_CONTEXT_CHARS = 16
 /** A search stops after this many matches, so a one-letter query stays quick and the list stays usable. */
 const val SEARCH_MAX_HITS = 1000
 
+/** The folded characters a search holds past the query at a time, whatever the length of the line. */
+internal const val SEARCH_WINDOW_CHARS = 1 shl 16
+
+/** The code points of one cluster a search folds as a whole, so a run of marks cannot grow the working text without bound. */
+private const val MAX_CLUSTER_CODE_POINTS = 32
+
 private const val OBJECT_REPLACEMENT = '￼'
 
 private fun fold(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
@@ -33,13 +39,7 @@ fun searchText(document: TextDocument, query: String): SearchResult {
     val hits = ArrayList<SearchHit>()
     for (paragraph in document.blocks) {
         if (paragraph !is Paragraph || paragraph.text.isEmpty()) continue
-        val folded = Folded(paragraph.text)
-        var at = folded.text.indexOf(needle)
-        while (at >= 0) {
-            if (hits.size == SEARCH_MAX_HITS) return SearchResult(query, hits, truncated = true)
-            hits += hit(paragraph, folded.starts[at], folded.ends[at + needle.length - 1])
-            at = folded.text.indexOf(needle, at + needle.length)
-        }
+        if (!LineSearch(paragraph, needle, hits).run()) return SearchResult(query, hits, truncated = true)
     }
     return SearchResult(query, hits, truncated = false)
 }
@@ -51,35 +51,70 @@ private fun joinsPrevious(cp: Int): Boolean = when (Character.getType(cp)) {
 }
 
 /**
- * [source] folded a cluster at a time: a code point with the marks that may combine with it, so `ｶﾞ` folds to `ガ`
- * as the query does. Each folded char maps back to the [starts] and [ends] of its cluster in [source].
+ * The search of one line for [needle]. The line is folded a cluster at a time: a code point with the marks that may
+ * combine with it, so `ｶﾞ` folds to `ガ` as the query does. Only a window of the folded text is held, with the source
+ * range of each folded char, and it is searched whenever it fills. What stays is the last chars that a match of
+ * [needle] could still start in, so a match across two windows is found. The memory held depends on [needle] and the
+ * window, not on how long the line is or how far NFKC expands it.
  */
-private class Folded(source: String) {
-    val text: String
-    var starts = IntArray(source.length + 16)
-        private set
-    var ends = IntArray(source.length + 16)
-        private set
+private class LineSearch(private val paragraph: Paragraph, private val needle: String, private val hits: MutableList<SearchHit>) {
+    private val source = paragraph.text
+    private val text = StringBuilder()
+    private var starts = IntArray(minOf(source.length, SEARCH_WINDOW_CHARS) + 16)
+    private var ends = IntArray(starts.size)
 
-    init {
-        val out = StringBuilder(source.length)
+    /** The index in the whole folded line of `text[0]`. */
+    private var base = 0
+
+    /** The index in the whole folded line where the next match may start, which is past the last one. */
+    private var from = 0
+    private var scanAt = SEARCH_WINDOW_CHARS
+
+    /** Whether the line was searched to its end, which is false when [SEARCH_MAX_HITS] matches were already found. */
+    fun run(): Boolean {
         var i = 0
         while (i < source.length) {
             var end = i + Character.charCount(source.codePointAt(i))
-            while (end < source.length && joinsPrevious(source.codePointAt(end))) end += Character.charCount(source.codePointAt(end))
-            val piece = if (source[i] == OBJECT_REPLACEMENT) "\u0000" else fold(source.substring(i, end))
-            if (out.length + piece.length > starts.size) {
-                starts = starts.copyOf(starts.size * 2 + piece.length)
-                ends = ends.copyOf(starts.size)
+            var marks = 1
+            while (end < source.length && marks < MAX_CLUSTER_CODE_POINTS && joinsPrevious(source.codePointAt(end))) {
+                end += Character.charCount(source.codePointAt(end))
+                marks++
             }
-            for (c in piece) {
-                starts[out.length] = i
-                ends[out.length] = end
-                out.append(c)
-            }
+            append(if (source[i] == OBJECT_REPLACEMENT) "\u0000" else fold(source.substring(i, end)), i, end)
             i = end
+            if (text.length >= scanAt && !scan()) return false
         }
-        text = out.toString()
+        return scan()
+    }
+
+    private fun append(piece: String, start: Int, end: Int) {
+        if (text.length + piece.length > starts.size) {
+            starts = starts.copyOf(starts.size * 2 + piece.length)
+            ends = ends.copyOf(starts.size)
+        }
+        for (c in piece) {
+            starts[text.length] = start
+            ends[text.length] = end
+            text.append(c)
+        }
+    }
+
+    /** Records the matches in the window, then drops the chars no later match can use. False when the matches ran out of room. */
+    private fun scan(): Boolean {
+        var at = text.indexOf(needle, maxOf(0, from - base))
+        while (at >= 0) {
+            if (hits.size == SEARCH_MAX_HITS) return false
+            hits += hit(paragraph, starts[at], ends[at + needle.length - 1])
+            from = base + at + needle.length
+            at = text.indexOf(needle, from - base)
+        }
+        val keep = minOf(text.length, maxOf(from - base, text.length - (needle.length - 1), 0))
+        System.arraycopy(starts, keep, starts, 0, text.length - keep)
+        System.arraycopy(ends, keep, ends, 0, text.length - keep)
+        text.delete(0, keep)
+        base += keep
+        scanAt = text.length + SEARCH_WINDOW_CHARS
+        return true
     }
 }
 

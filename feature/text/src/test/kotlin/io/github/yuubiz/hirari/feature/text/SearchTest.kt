@@ -38,4 +38,45 @@ class SearchTest {
         assertEquals(listOf("／＼"), ranges(source, "〵"))
         assertEquals(listOf("／＼"), ranges(source, "〳〵"))
     }
+
+    @Test
+    fun `a line whose folded text is many times longer than the line is searched within a bounded memory`() {
+        val source = "title\n" + "ﷺ".repeat(3_000_000) + "end\n"
+        val result = searchText(parseAozora(source), "end")
+        assertEquals(listOf("end\n"), result.hits.map { source.substring(it.start, it.end) })
+        assertEquals(3_000_000 + 6, result.hits.single().start)
+    }
+
+    @Test
+    fun `matches across the windows of a long line are those of the whole line`() {
+        val random = java.util.Random(7)
+        val line = String(CharArray(3 * SEARCH_WINDOW_CHARS + 123) { "ab"[random.nextInt(2)] })
+        val source = "title\n$line\n"
+        for (query in listOf("aba", "abbab", "b", "a".repeat(40), "ba".repeat(300))) {
+            val expected = ArrayList<Int>()
+            var at = line.indexOf(query)
+            while (at >= 0 && expected.size < SEARCH_MAX_HITS) {
+                expected += at + 6
+                at = line.indexOf(query, at + query.length)
+            }
+            assertEquals(expected, searchText(parseAozora(source), query).hits.map { it.start }, query)
+        }
+    }
+
+    @Test
+    fun `a match that straddles the end of a window is found once`() {
+        val at = SEARCH_WINDOW_CHARS - 2
+        val line = "x".repeat(at) + "needle" + "x".repeat(SEARCH_WINDOW_CHARS)
+        val hit = searchText(parseAozora("title\n$line\n"), "needle").hits.single()
+        assertEquals(at + 6, hit.start)
+        assertEquals(at + 12, hit.end)
+    }
+
+    @Test
+    fun `the hit limit ends the search of a line that expands`() {
+        val source = "title\n" + "ﷺ".repeat(1_000_000) + "\nend\n"
+        val result = searchText(parseAozora(source), "صلى")
+        assertEquals(SEARCH_MAX_HITS, result.hits.size)
+        assertEquals(true, result.truncated)
+    }
 }
