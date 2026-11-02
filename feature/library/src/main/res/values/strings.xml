@@ -33,7 +33,7 @@
     <string name="notice_book_missing">この本は索引にありません</string>
     <string name="notice_place_unavailable">この本の場所が見つからないか、許可がありません</string>
     <string name="notice_not_in_place">この本は場所の中にありません</string>
-    <string name="notice_text_not_ready">テキストリーダーはまだありません</string>
+    <string name="notice_text_not_ready">テキストの位置からはまだ開けません</string>
     <string name="sort_name">名前</string>
     <string name="view_grid">グリッド</string>
     <string name="view_thumbnail_list">サムネイル付きリスト</string>

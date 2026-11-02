@@ -38,7 +38,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="content" />
                 <data android:mimeType="application/zip" />
                 <data android:mimeType="application/x-cbz" />
                 <data android:mimeType="application/vnd.comicbook+zip" />
