@@ -121,6 +121,14 @@ class CommandBarTest {
     }
 
     @Test
+    fun aCancelledTouchClosesThePanelWithoutRunning() {
+        val steps = panel.run(Down(bar, 0, false), Move(Point(150f, 200f)), CommandBarEvent.Cancel, Up(Point(150f, 200f)))
+        assertEquals(CommandBarState.Closed, steps[2].state)
+        assertNull(steps[2].effect)
+        assertNull(steps[3].effect)
+    }
+
+    @Test
     fun hiddenSystemBarsOpenThePanelAfterFourHundredMs() {
         val steps = panel.run(Down(bar, 1_000, systemBarsHidden = true), Hold(1_399), Hold(1_400))
         assertFalse(steps[0].state.panelVisible)

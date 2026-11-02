@@ -125,6 +125,14 @@ class PageBarTest {
     }
 
     @Test
+    fun aCancelledTouchMovesNowhere() {
+        val steps = rtl.run(Down(at(200f), 0, page = 12), Move(at(155f)), PageBarEvent.Cancel, Up(at(155f)))
+        assertEquals(PageBarState.Idle, steps[2].state)
+        assertNull(steps[2].effect)
+        assertNull(steps[3].effect)
+    }
+
+    @Test
     fun holdingAfterSlidingDoesNothing() {
         assertNull(rtl.run(Down(at(200f), 0, page = 12), Move(at(150f)), Hold(400)).last().effect)
     }

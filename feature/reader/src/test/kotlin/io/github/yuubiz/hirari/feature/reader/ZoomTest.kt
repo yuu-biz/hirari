@@ -43,6 +43,12 @@ class ZoomTest {
     }
 
     @Test
+    fun pagesScaleIntoScreenPixels() {
+        val pair = viewContent(PageView.Two(0, 1), shapes::getValue, RightToLeft, gapPx = 2f)
+        assertEquals(listOf(Rect(376f, 0f, 726f, 500f), Rect(0f, 0f, 375f, 500f)), pair.pagesAt(Scale(0.5f, 0.5f)))
+    }
+
+    @Test
     fun eachModeScalesTheWholeView() {
         val content = Size(1000f, 2000f)
         val viewport = Size(1000f, 1000f)
