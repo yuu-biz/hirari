@@ -2,6 +2,16 @@ plugins {
     id("hirari.android.feature")
 }
 
+android {
+    testOptions {
+        unitTests.all { test ->
+            // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
+            // without it.
+            test.systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
+        }
+    }
+}
+
 dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:source"))

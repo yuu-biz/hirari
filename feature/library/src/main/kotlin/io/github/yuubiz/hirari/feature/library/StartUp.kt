@@ -73,7 +73,7 @@ suspend fun LibraryServices.planStart(restoring: Boolean = false): StartPlan {
  * is a text book until the text reader exists (M5).
  */
 fun decideStart(record: LaunchRecord, reopen: ReopenLastBook, last: HistoryItem?, places: List<LibraryLocation>): StartPlan.Open {
-    fun usable(id: LocationId) = (places.firstOrNull { it.id == id } as? LibraryLocation.SafTree)?.permissionHeld == true
+    fun usable(id: LocationId) = places.firstOrNull { it.id == id }.usable()
     val folder = record.lastFolder?.takeIf { usable(it.location) }?.let { FolderKey(it.location, it.path, it.documentId) }
     val book = last?.book?.takeIf { book ->
         val source = book.source

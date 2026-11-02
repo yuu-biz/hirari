@@ -23,20 +23,27 @@ interface TreeGrants {
     suspend fun name(tree: UriString): String
 }
 
-/** A direct child of a folder, from the one query of docs/spec.md section 4.3, 読み込み. */
+/**
+ * A direct child of a folder, from the one query of docs/spec.md section 4.3, 読み込み. [documentId] is the SAF
+ * provider's id; an SMB entry has none.
+ */
 data class FolderEntry(
     val name: String,
-    val documentId: String,
+    val documentId: String?,
     val directory: Boolean,
     val size: Long?,
     val modified: Instant?,
 )
 
-enum class ListFailure { NoPermission, NotFound, ReadError }
+/**
+ * Why a folder did not list. The last four are of SMB places (docs/spec.md sections 4.3 and 4.5): the server did
+ * not answer, refused the user, the stored password cannot be opened, or the system blocks the local network.
+ */
+enum class ListFailure { NoPermission, NotFound, ReadError, Unreachable, AuthenticationFailed, PasswordUnreadable, NoLocalNetwork }
 
 sealed interface Listing {
-    /** [folderDocumentId] is the listed folder's own id, which opening it as a book needs. */
-    data class Listed(val folderDocumentId: String, val entries: List<FolderEntry>) : Listing
+    /** [folderDocumentId] is the listed folder's own SAF id, which opening it as a book needs. */
+    data class Listed(val folderDocumentId: String?, val entries: List<FolderEntry>) : Listing
 
     data class Failed(val reason: ListFailure) : Listing
 }
@@ -62,6 +69,7 @@ class LibraryServices(
     val settings: SettingsRepository,
     val grants: TreeGrants,
     val folders: FolderLister,
+    val smb: SmbPlaces,
     val launch: LaunchRepository,
     val documents: DocumentUris,
     val clock: () -> Instant = Instant::now,

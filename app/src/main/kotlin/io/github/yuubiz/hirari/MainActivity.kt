@@ -30,6 +30,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.HirariTheme
@@ -41,6 +42,8 @@ import io.github.yuubiz.hirari.feature.library.HomeActions
 import io.github.yuubiz.hirari.feature.library.HomeScreen
 import io.github.yuubiz.hirari.feature.library.HomeViewModel
 import io.github.yuubiz.hirari.feature.library.Loadable
+import io.github.yuubiz.hirari.feature.library.SmbServerScreen
+import io.github.yuubiz.hirari.feature.library.SmbServerViewModel
 import io.github.yuubiz.hirari.feature.reader.KeyRelay
 import io.github.yuubiz.hirari.feature.reader.ReaderPhase
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
@@ -102,6 +105,7 @@ class MainActivity : ComponentActivity() {
                             HomeActions(
                                 openBook = { nav.navigate(it.toReaderRoute()) },
                                 openFolder = { nav.navigate(it.toRoute()) },
+                                editServer = { nav.navigate(SmbServerRoute(it?.value)) },
                                 menu = {
                                     HomeMenu(
                                         onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
@@ -131,6 +135,12 @@ class MainActivity : ComponentActivity() {
                                 reveal = route.reveal,
                             )
                         }
+                    }
+                    composable<SmbServerRoute> { entry ->
+                        ReportSettled(nav, entry, app) {}
+                        val id = entry.toRoute<SmbServerRoute>().location?.let(::LocationId)
+                        val form = viewModel { SmbServerViewModel(app.library, id) }
+                        SmbServerScreen(form, onClose = { nav.popBackStack() })
                     }
                     composable<LicensesRoute> { entry ->
                         ReportSettled(nav, entry, app) {}

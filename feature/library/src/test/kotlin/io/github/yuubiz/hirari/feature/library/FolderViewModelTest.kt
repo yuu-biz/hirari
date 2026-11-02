@@ -127,6 +127,44 @@ class FolderViewModelTest {
     }
 
     @Test
+    fun `an SMB place lists through its server, marks its books by place and path, and opens its folders`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "漫画", null, "reader", null)
+        fixture.locations.rows.value = listOf(server)
+        fixture.smb.folders["作品"] = listOf(
+            FolderEntry("外伝", null, directory = true, size = null, modified = null),
+            FolderEntry("1巻.zip", null, directory = false, size = 1, modified = null),
+        )
+        val list = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(server.id, "作品"), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        val first = book(server.id, "作品/1巻.zip").copy(id = locationBookId(server, "作品/1巻.zip"))
+        fixture.books.put(reading(first, viewStart = 4))
+
+        assertEquals(listOf(server to "作品"), fixture.smb.listed)
+        assertEquals("NAS", list.state.value.placeName)
+        val rows = list.shown().rows
+        assertEquals(listOf(null, ReadMark.Reading(50)), rows.map { it.mark })
+        assertEquals(FileTarget.Folder(FolderKey(server.id, "作品/外伝")), list.open(rows[0]))
+        assertEquals(null, list.open(rows[1]))
+        assertEquals(Notice.SmbBookNotReady, list.state.value.notice)
+        assertEquals(0, fixture.lister.calls)
+    }
+
+    @Test
+    fun `an SMB failure shows its reason and a retry lists again`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "", null, null, null)
+        fixture.locations.rows.value = listOf(server)
+        fixture.smb.failure = ListFailure.NoLocalNetwork
+        val list = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(server.id, ""), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        assertEquals(FolderContent.Failed(ListFailure.NoLocalNetwork), list.state.value.content)
+
+        fixture.smb.failure = null
+        fixture.smb.folders[""] = emptyList()
+        list.load()
+        assertEquals(0, list.shown().total)
+    }
+
+    @Test
     fun `marking a book never opened writes its progress and changes its mark`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(file("1巻.zip"), file("2巻.zip"))

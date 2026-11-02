@@ -40,7 +40,7 @@ sealed interface Loadable<out T> {
     data class Ready<T>(val value: T) : Loadable<T>
 }
 
-/** A folder of a SAF place, as the file list opens it. Without [documentId] the list looks the path up. */
+/** A folder of a place, as the file list opens it. Without [documentId] a SAF list looks the path up. */
 data class FolderKey(val location: LocationId, val path: String, val documentId: String? = null)
 
 data class ContinueItem(val book: LibraryBook, val percent: Int)
@@ -56,7 +56,7 @@ data class HistoryTab(val sort: HistorySort, val items: List<HistoryItem>)
 data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 
 /** A one-time message for a snackbar. */
-enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady }
+enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, SmbBookNotReady }
 
 data class HomeUi(
     val shelf: Loadable<Shelf> = Loadable.Loading,
@@ -115,11 +115,19 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
 
     fun renamePlace(id: LocationId, name: String) = write { locations.rename(id, name.trim()) }
 
-    /** Removes the place and releases its grant; its books keep their progress, bookmarks and history (section 7). */
+    /**
+     * Removes the place and releases its grant, or drops the connection of a server whose password went with it;
+     * its books keep their progress, bookmarks and history (section 7).
+     */
     fun removePlace(id: LocationId) = write {
-        val removed = locations.delete(id) as? LibraryLocation.SafTree ?: return@write
-        val shared = locations.locations.first().any { it is LibraryLocation.SafTree && it.treeUri == removed.treeUri }
-        if (!shared) grants.release(removed.treeUri)
+        when (val removed = locations.delete(id)) {
+            is LibraryLocation.SafTree -> {
+                val shared = locations.locations.first().any { it is LibraryLocation.SafTree && it.treeUri == removed.treeUri }
+                if (!shared) grants.release(removed.treeUri)
+            }
+            is LibraryLocation.SmbShare -> smb.forget(id)
+            null -> Unit
+        }
     }
 
     fun setHistorySort(sort: HistorySort) = write { settings.update { it.copy(historySort = sort) } }
@@ -165,12 +173,19 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
 
     private fun usable(location: LocationId): Boolean {
         val places = (state.value.shelf as? Loadable.Ready)?.value?.places ?: return true
-        return (places.firstOrNull { it.id == location } as? LibraryLocation.SafTree)?.permissionHeld == true
+        return places.firstOrNull { it.id == location }.usable()
     }
 
     private fun write(block: suspend LibraryServices.() -> Unit) {
         viewModelScope.launch { services.await().block() }
     }
+}
+
+/** A place opens when it is there and, for a SAF place, still has its grant. */
+internal fun LibraryLocation?.usable(): Boolean = when (this) {
+    null -> false
+    is LibraryLocation.SafTree -> permissionHeld
+    is LibraryLocation.SmbShare -> true
 }
 
 internal fun <T> Flow<T>.loadable(): Flow<Loadable<T>> = map<T, Loadable<T>> { Loadable.Ready(it) }.onStart { emit(Loadable.Loading) }

@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:data"))
     implementation(project(":core:image"))
+    implementation(project(":core:source"))
     implementation(project(":core:ui"))
     implementation(project(":feature:library"))
     implementation(project(":feature:reader"))

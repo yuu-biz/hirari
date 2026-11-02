@@ -97,7 +97,7 @@ class FolderViewModel(
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val listing = MutableStateFlow<ListingState>(ListingState.Loading)
-    private val place = MutableStateFlow<LibraryLocation.SafTree?>(null)
+    private val place = MutableStateFlow<LibraryLocation?>(null)
     private val notice = MutableStateFlow<Notice?>(null)
     private var folderDocumentId: String? = folder.documentId
     private var loading: Job? = null
@@ -155,13 +155,12 @@ class FolderViewModel(
             }
             val services = services.await()
             val location = services.locations.get(folder.location)
-            val result = when {
-                location !is LibraryLocation.SafTree -> Listing.Failed(ListFailure.NotFound)
-                !location.permissionHeld -> Listing.Failed(ListFailure.NoPermission)
-                else -> {
-                    place.value = location
-                    services.folders.list(location.treeUri, folder.path, folder.documentId)
-                }
+            if (location != null) place.value = location
+            val result = when (location) {
+                null -> Listing.Failed(ListFailure.NotFound)
+                is LibraryLocation.SafTree ->
+                    if (location.permissionHeld) services.folders.list(location.treeUri, folder.path, folder.documentId) else Listing.Failed(ListFailure.NoPermission)
+                is LibraryLocation.SmbShare -> services.smb.list(location, folder.path)
             }
             slow.cancel()
             if (result is Listing.Listed) folderDocumentId = result.folderDocumentId
@@ -190,19 +189,27 @@ class FolderViewModel(
 
     /**
      * What tapping [row] opens (docs/spec.md section 4.3). An image file opens its folder as one book at that
-     * image. A text file opens in the text reader. Moving to another folder clears the filter.
+     * image. A text file opens in the text reader. Moving to another folder clears the filter. The readers do not
+     * open the books of an SMB place yet, so those say so (section 4.5).
      */
     fun open(row: FileRow, start: StartAt = StartAt.Saved): FileTarget? = when (val item = row.item) {
         is FileItem.Folder -> {
             query.value = ""
             FileTarget.Folder(FolderKey(folder.location, row.path, item.entry.documentId))
         }
+        else -> if (place.value is LibraryLocation.SmbShare) null.also { notice.value = Notice.SmbBookNotReady } else openFile(item, row, start)
+    }
+
+    private fun openFile(item: FileItem, row: FileRow, start: StartAt): FileTarget? = when (item) {
+        is FileItem.Folder -> null
         is FileItem.Archive -> FileTarget.Book(OpenBookRequest(BookAddress.InLocation(folder.location, row.path, folder = false, item.entry.documentId), start))
         is FileItem.Image -> FileTarget.Book(
             OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),
         )
-        is FileItem.Text -> place.value?.let { place ->
-            FileTarget.Text(TextAddress.Document(services.getCompleted().documents.of(place.treeUri, item.entry.documentId)))
+        is FileItem.Text -> {
+            val tree = (place.value as? LibraryLocation.SafTree)?.treeUri
+            val documentId = item.entry.documentId
+            if (tree == null || documentId == null) null else FileTarget.Text(TextAddress.Document(services.getCompleted().documents.of(tree, documentId)))
         }
     }
 

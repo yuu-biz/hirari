@@ -81,7 +81,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     state = grid,
                     modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH),
                 ) {
-                    items(content.rows, key = { it.item.entry.documentId }) { row -> GridCell(row, onOpen, onLongPress) }
+                    items(content.rows, key = { it.path }) { row -> GridCell(row, onOpen, onLongPress) }
                 }
                 FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
             }
@@ -89,7 +89,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                 val list = rememberLazyListState()
                 LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
                 LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH)) {
-                    items(content.rows, key = { it.item.entry.documentId }) { row ->
+                    items(content.rows, key = { it.path }) { row ->
                         ListRow(row, covers = content.view == LibraryView.ThumbnailList, content.thumbSize, onOpen, onLongPress)
                     }
                 }

@@ -74,16 +74,12 @@ internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
                 place,
                 onOpen = { actions.openFolder(FolderKey(place.id, "")) },
                 onRepick = { pickTree.launch(null) },
+                onEdit = { actions.editServer(place.id) },
                 onRename = { renaming = place },
                 onRemove = { removing = place },
             )
         }
-        item(key = "add-place") {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.place_add), color = MaterialTheme.colorScheme.primary) },
-                modifier = Modifier.clickable { pickTree.launch(null) },
-            )
-        }
+        item(key = "add-place") { AddPlace(onFolder = { pickTree.launch(null) }, onServer = { actions.editServer(null) }) }
     }
     renaming?.let { place ->
         RenameDialog(R.string.place_rename, place.displayName, onDismiss = { renaming = null }) {
@@ -140,32 +136,67 @@ private fun ContinueCard(item: ContinueItem, onOpen: () -> Unit) {
     }
 }
 
+/** 場所を追加 offers a folder of the device or an SMB server (docs/spec.md section 4.5). */
+@Composable
+private fun AddPlace(onFolder: () -> Unit, onServer: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.place_add), color = MaterialTheme.colorScheme.primary) },
+            modifier = Modifier.clickable { menu = true },
+        )
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.place_add_folder)) }, onClick = {
+                menu = false
+                onFolder()
+            })
+            DropdownMenuItem(text = { Text(stringResource(R.string.place_add_server)) }, onClick = {
+                menu = false
+                onServer()
+            })
+        }
+    }
+}
+
 /**
- * A place on the shelf; a long press offers renaming and removing it (docs/spec.md section 4.2). A SAF place
- * that lost its grant does not open: tapping it picks the folder again (section 7). SMB places wait for M4.
+ * A place on the shelf; a long press offers renaming, editing a server, and removing it (docs/spec.md section
+ * 4.2). A SAF place that lost its grant does not open: tapping it picks the folder again (section 7).
  */
 @Composable
-private fun PlaceRow(place: LibraryLocation, onOpen: () -> Unit, onRepick: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
+private fun PlaceRow(
+    place: LibraryLocation,
+    onOpen: () -> Unit,
+    onRepick: () -> Unit,
+    onEdit: () -> Unit,
+    onRename: () -> Unit,
+    onRemove: () -> Unit,
+) {
     var menu by remember { mutableStateOf(false) }
     val detail = when (place) {
         is LibraryLocation.SafTree -> if (place.permissionHeld) null else stringResource(R.string.place_permission_lost)
         is LibraryLocation.SmbShare -> place.address()
     }
-    val onTap: (() -> Unit)? = when (place) {
+    val onTap = when (place) {
         is LibraryLocation.SafTree -> if (place.permissionHeld) onOpen else onRepick
-        is LibraryLocation.SmbShare -> null
+        is LibraryLocation.SmbShare -> onOpen
     }
     Box {
         ListItem(
             headlineContent = { Text(place.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingContent = detail?.let { { Text(it) } },
-            modifier = Modifier.combinedClickable(enabled = true, onClick = { onTap?.invoke() }, onLongClick = { menu = true }),
+            modifier = Modifier.combinedClickable(enabled = true, onClick = onTap, onLongClick = { menu = true }),
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             if (place is LibraryLocation.SafTree && !place.permissionHeld) {
                 DropdownMenuItem(text = { Text(stringResource(R.string.place_repick)) }, onClick = {
                     menu = false
                     onRepick()
+                })
+            }
+            if (place is LibraryLocation.SmbShare) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.place_edit)) }, onClick = {
+                    menu = false
+                    onEdit()
                 })
             }
             DropdownMenuItem(text = { Text(stringResource(R.string.place_rename)) }, onClick = {

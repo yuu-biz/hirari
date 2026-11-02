@@ -25,6 +25,10 @@ internal data object LicensesRoute
 @Serializable
 internal data object SettingsRoute
 
+/** The SMB form (docs/spec.md section 4.5): a new server without [location], else that server. */
+@Serializable
+internal data class SmbServerRoute(val location: Long? = null)
+
 /**
  * A folder of a SAF place (docs/spec.md section 4.3). Without [documentId] the list looks the path up. [reveal] is
  * the path of a row the list scrolls to when it first shows.

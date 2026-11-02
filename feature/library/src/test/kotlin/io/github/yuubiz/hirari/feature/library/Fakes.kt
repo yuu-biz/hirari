@@ -27,6 +27,7 @@ import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.Bookmark
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.HistoryEntry
 import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -75,9 +76,30 @@ internal class FakeLocations : LocationRepository {
         return id
     }
 
-    override suspend fun addSmbShare(server: SmbServer, password: CharArray?): LocationId = error("not used")
+    /** The passwords as stored, by reference, and the password changes as the edits asked for them. */
+    val secrets = mutableMapOf<CredentialRef, String>()
+    val changes = mutableListOf<PasswordChange>()
 
-    override suspend fun updateSmbShare(id: LocationId, server: SmbServer, password: PasswordChange) = error("not used")
+    override suspend fun addSmbShare(server: SmbServer, password: CharArray?): LocationId {
+        val id = LocationId(next++)
+        val ref = password?.let { CredentialRef("ref-${id.value}").also { ref -> secrets[ref] = String(it) } }
+        rows.update { it + server.toPlace(id, ref) }
+        return id
+    }
+
+    override suspend fun updateSmbShare(id: LocationId, server: SmbServer, password: PasswordChange) {
+        changes += password
+        val kept = (get(id) as? LibraryLocation.SmbShare)?.credential
+        val ref = when (password) {
+            PasswordChange.Keep -> kept
+            PasswordChange.Remove -> null.also { secrets.remove(kept) }
+            is PasswordChange.Set -> (kept ?: CredentialRef("ref-${id.value}")).also { secrets[it] = String(password.secret) }
+        }
+        rows.update { list -> list.map { if (it.id == id) server.toPlace(id, ref) else it } }
+    }
+
+    private fun SmbServer.toPlace(id: LocationId, ref: CredentialRef?) =
+        LibraryLocation.SmbShare(id, displayName, host, port, share, basePath, domain, user, ref)
 
     override suspend fun rename(id: LocationId, displayName: String) = rows.update { list ->
         list.map { if (it.id == id && it is LibraryLocation.SafTree) it.copy(displayName = displayName) else it }
@@ -229,6 +251,33 @@ internal class FakeLister : FolderLister {
     }
 }
 
+/** SMB places by path below their folder; what each test was asked with, and the forgotten places. */
+internal class FakeSmb : SmbPlaces {
+    val folders = mutableMapOf<String, List<FolderEntry>>()
+    var failure: ListFailure? = null
+    var result: SmbTestResult = SmbTestResult.Connected
+    val listed = mutableListOf<Pair<LibraryLocation.SmbShare, String>>()
+    val tests = mutableListOf<Triple<SmbServer, String?, CredentialRef?>>()
+    val forgotten = mutableListOf<LocationId>()
+
+    override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
+        listed += place to path
+        failure?.let { return Listing.Failed(it) }
+        val entries = folders[path] ?: return Listing.Failed(ListFailure.NotFound)
+        return Listing.Listed(null, entries)
+    }
+
+    override suspend fun test(server: SmbServer, password: CharArray?, stored: CredentialRef?): SmbTestResult {
+        tests += Triple(server, password?.let(::String), stored)
+        password?.fill('\u0000')
+        return result
+    }
+
+    override suspend fun forget(id: LocationId) {
+        forgotten += id
+    }
+}
+
 internal class FakeLaunch : LaunchRepository {
     var record = LaunchRecord()
 
@@ -251,6 +300,7 @@ internal class Fixture {
     val settings = FakeSettings()
     val grants = FakeGrants()
     val lister = FakeLister()
+    val smb = FakeSmb()
     val launch = FakeLaunch()
-    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, launch, { tree, id -> UriString("${tree.value}/document/$id") }, clock = { T0 })
+    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, launch, { tree, id -> UriString("${tree.value}/document/$id") }, clock = { T0 })
 }

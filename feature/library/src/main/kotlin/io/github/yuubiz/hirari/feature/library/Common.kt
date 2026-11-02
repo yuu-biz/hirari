@@ -147,4 +147,5 @@ fun Notice.message(): Int = when (this) {
     Notice.PlaceUnavailable -> R.string.notice_place_unavailable
     Notice.NotInPlace -> R.string.notice_not_in_place
     Notice.TextNotReady -> R.string.notice_text_not_ready
+    Notice.SmbBookNotReady -> R.string.notice_smb_book_not_ready
 }

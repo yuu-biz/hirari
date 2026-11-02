@@ -73,6 +73,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     var sheetFor by remember { mutableStateOf<FileRow?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalResources.current
+    val gate = rememberLocalNetworkGate()
     LaunchedEffect(state.notice) {
         val notice = state.notice ?: return@LaunchedEffect
         snackbar.showSnackbar(resources.getString(notice.message()))
@@ -124,7 +125,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     model.cancel()
                     actions.close()
                 }
-                is FolderContent.Failed -> ListFailed(content.reason, onRetry = model::load)
+                is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
                 is FolderContent.Shown -> if (content.rows.isEmpty()) {
                     EmptyNote(if (content.total == 0) R.string.folder_empty else R.string.folder_no_match)
                 } else {
@@ -223,10 +224,15 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
         ListFailure.NoPermission -> R.string.folder_failed_permission
         ListFailure.NotFound -> R.string.folder_failed_missing
         ListFailure.ReadError -> R.string.folder_failed_read
+        ListFailure.Unreachable -> R.string.folder_failed_unreachable
+        ListFailure.AuthenticationFailed -> R.string.folder_failed_auth
+        ListFailure.PasswordUnreadable -> R.string.folder_failed_password_unreadable
+        ListFailure.NoLocalNetwork -> R.string.folder_failed_local_network
     }
+    val retry = if (reason == ListFailure.NoLocalNetwork) R.string.folder_allow_local_network else R.string.folder_retry
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(stringResource(message), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.folder_retry)) }
+        Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(retry)) }
     }
 }
 

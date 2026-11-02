@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari
 
 import android.app.Application
 import android.content.pm.ApplicationInfo
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -11,7 +12,11 @@ import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.feature.library.LibraryServices
+import io.github.yuubiz.hirari.core.source.smb.SmbShares
+import io.github.yuubiz.hirari.core.source.smb.networkAvailable
+import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
 import io.github.yuubiz.hirari.feature.library.SafDocumentUris
+import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
@@ -41,6 +46,10 @@ class HirariApp : Application() {
     lateinit var text: Deferred<TextReaderServices>
         private set
 
+    /** One connection per SMB place, which the file lists share (docs/spec.md section 3.1). */
+    lateinit var smbShares: Deferred<SmbShares>
+        private set
+
     /** The last start of this process; it outlives an activity recreated before the start finished. */
     internal var start: AppStart? = null
 
@@ -52,6 +61,7 @@ class HirariApp : Application() {
             appScope.launch { reconcile(storage) }
             ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope)
         }
+        smbShares = appScope.async { SmbShares(appScope, getSystemService(ConnectivityManager::class.java).networkAvailable()) }
         library = appScope.async {
             val storage = services.await().storage
             LibraryServices(
@@ -63,6 +73,7 @@ class HirariApp : Application() {
                 settings = storage.settings,
                 grants = SafTreeGrants(contentResolver),
                 folders = SafFolderLister(contentResolver),
+                smb = SmbjPlaces(smbShares.await(), storage.credentials, AndroidLocalNetwork(this@HirariApp), appScope),
                 launch = storage.launch,
                 documents = SafDocumentUris,
             )
