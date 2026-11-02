@@ -79,33 +79,42 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
 /**
  * How the page at [index] read with tiles allowed differs from [whole]: only an image narrower than 1:3 comes as
  * tiles, of the same shape, and the visible tiles at the top and the bottom of a fit-width view each have their
- * planned size and about the colors of the same part of [whole].
+ * planned size and about the colors of the same part of [whole], and stay drawable after the source closes.
  */
 private suspend fun tileProblems(book: OpenBook, index: Int, target: PixelSize, whole: PreparedImage): List<String> {
     val shape = whole.shape
     val result = book.page(index, target, tiling = Tiling.AsPlanned)
     val image = (result as? PageResult.Ready)?.image ?: return listOf("with tiles gave ${describe(result)}")
-    if (image.shape != shape) return listOf("with tiles gave the shape ${image.shape}")
     if (image !is PreparedImage.Tiled) {
-        return if (isElongated(shape.width, shape.height)) listOf("not tiled") else emptyList()
+        return when {
+            image.shape != shape -> listOf("with tiles gave the shape ${image.shape}")
+            isElongated(shape.width, shape.height) -> listOf("not tiled")
+            else -> emptyList()
+        }
     }
-    if (!isElongated(shape.width, shape.height)) return listOf("tiled")
-    val bitmap = (whole as PreparedImage.Whole).bitmap
-    return image.source.use { source ->
-        val size = source.size
-        val scale = target.width / size.width.toDouble()
-        val viewHeight = minOf(size.height, (target.height / scale).toInt())
-        listOf(0, size.height - viewHeight).flatMap { top ->
-            source.plan(PixelRect(0, top, size.width, top + viewHeight), scale).visible.mapNotNull { key ->
-                tileProblem(source, key, bitmap)?.let { "tile $key: $it" }
+    val tiles = ArrayList<Bitmap>()
+    val problems = image.source.use { source ->
+        when {
+            image.shape != shape -> listOf("tiled with the shape ${image.shape}")
+            !isElongated(shape.width, shape.height) -> listOf("tiled")
+            else -> {
+                val size = source.size
+                val scale = target.width / size.width.toDouble()
+                val viewHeight = minOf(size.height, (target.height / scale).toInt())
+                listOf(0, size.height - viewHeight).flatMap { top ->
+                    source.plan(PixelRect(0, top, size.width, top + viewHeight), scale).visible.mapNotNull { key ->
+                        tileProblem(source, key, (whole as PreparedImage.Whole).bitmap, tiles)?.let { "tile $key: $it" }
+                    }
+                }
             }
         }
     }
+    return problems + if (tiles.any { it.isRecycled }) listOf("closing the source recycled a tile") else emptyList()
 }
 
-private suspend fun tileProblem(source: TileSource, key: TileKey, whole: Bitmap): String? {
+private suspend fun tileProblem(source: TileSource, key: TileKey, whole: Bitmap, tiles: MutableList<Bitmap>): String? {
     val tile = when (val result = source.tile(key)) {
-        is PageResult.Ready -> result.image
+        is PageResult.Ready -> result.image.also { tiles += it }
         else -> return describe(result).joinToString(" ")
     }
     val rect = tileRect(key, source.size)

@@ -147,7 +147,11 @@ internal class SlicedTiles(private val whole: Bitmap, size: PixelSize, decoding:
         val height = ((rect.height + sample - 1) / sample).coerceAtLeast(1)
         val matrix = Matrix().apply { setScale(width / (right - left).toFloat(), height / (bottom - top).toFloat()) }
         return synchronized(whole) {
-            if (whole.isRecycled) null else Bitmap.createBitmap(whole, left, top, right - left, bottom - top, matrix, true)
+            if (whole.isRecycled) return null
+            val tile = Bitmap.createBitmap(whole, left, top, right - left, bottom - top, matrix, true)
+            // createBitmap hands back the source itself for the whole of an immutable bitmap at scale 1, and
+            // closing this source recycles the source.
+            if (tile === whole) whole.copy(Bitmap.Config.ARGB_8888, false) else tile
         }
     }
 
