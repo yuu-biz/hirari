@@ -1,0 +1,196 @@
+package io.github.yuubiz.hirari.core.image
+
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.DocumentsContract
+import io.github.yuubiz.hirari.core.archive.ArchiveFailure
+import io.github.yuubiz.hirari.core.archive.ArchiveSession
+import io.github.yuubiz.hirari.core.archive.EntryNames
+import io.github.yuubiz.hirari.core.archive.EntryResult
+import io.github.yuubiz.hirari.core.archive.OpenResult
+import io.github.yuubiz.hirari.core.model.FailureReason
+import io.github.yuubiz.hirari.core.model.PageEntry
+import io.github.yuubiz.hirari.core.model.PageResult
+import io.github.yuubiz.hirari.core.source.ByteSource
+import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
+import io.github.yuubiz.hirari.core.source.listChildren
+import io.github.yuubiz.hirari.core.source.openByteSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileNotFoundException
+import java.io.IOException
+import java.nio.ByteBuffer
+import kotlin.coroutines.cancellation.CancellationException
+
+sealed interface BookResult {
+    class Opened(val book: OpenBook) : BookResult
+
+    data class Failed(val reason: BookFailure) : BookResult
+}
+
+/** Why a book did not open. */
+enum class BookFailure {
+    /** The document or folder no longer exists. */
+    NotFound,
+
+    /** The permission to read it is gone. */
+    NoPermission,
+
+    /** The provider cannot seek and the copy does not fit (docs/spec.md section 3.1). */
+    NoRoomForCopy,
+    Corrupt,
+    Truncated,
+    ReadError,
+}
+
+/** One image file of a folder book. [open] blocks, and is called on [Dispatchers.IO]. */
+class FolderFile(val name: String, val size: Long?, val open: () -> ByteSource)
+
+/** Opens books for the reader. Every function returns a [BookResult] and throws nothing but cancellation. */
+object Books {
+    /** Opens the ZIP in [source], which the book owns from here on. */
+    suspend fun openArchive(source: ByteSource, decoding: ImageDecoding): BookResult {
+        val session = when (val opened = ArchiveSession.open(source)) {
+            is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
+            is OpenResult.Opened -> opened.session
+        }
+        return try {
+            val charset = EntryNames.charsetOf(session.entries.map { it.rawName })
+            val pages = session.entries.mapNotNull { entry ->
+                val name = EntryNames.decode(entry.rawName, charset)
+                val page = PageEntry(-1, entry.entryIndex, entry.rawName, name, entry.declaredSize, sniffed = null)
+                when (pageCandidate(name, entry.isDirectory)) {
+                    PageCandidate.Image -> page
+                    PageCandidate.Excluded -> null
+                    PageCandidate.Sniff -> (session.read(entry.entryIndex) as? EntryResult.Data)
+                        ?.let { sniffImage(it.bytes) }
+                        ?.let { page.copy(sniffed = it) }
+                }
+            }
+            BookResult.Opened(OpenBook(ArchivePages(session), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
+        } catch (e: Throwable) {
+            session.close()
+            throw e
+        }
+    }
+
+    /** Opens the image files of a folder (docs/spec.md section 3.10). [files] are the files directly inside it. */
+    suspend fun openFolder(files: List<FolderFile>, decoding: ImageDecoding): BookResult {
+        val pages = withContext(Dispatchers.IO) {
+            files.mapIndexedNotNull { i, file ->
+                val page = PageEntry(-1, i, file.name.toByteArray(Charsets.UTF_8), file.name, file.size, sniffed = null)
+                when (pageCandidate(file.name, isDirectory = false)) {
+                    PageCandidate.Image -> page
+                    PageCandidate.Excluded -> null
+                    PageCandidate.Sniff -> sniffPrefix(file)?.let { page.copy(sniffed = it) }
+                }
+            }
+        }
+        return BookResult.Opened(OpenBook(FolderPages(files), sortedPages(pages), indexError = null, decoding))
+    }
+
+    /** Opens the ZIP document at [uri]. A provider that cannot seek gets the document copied into [copyDir]. */
+    suspend fun openDocument(resolver: ContentResolver, uri: Uri, copyDir: File, decoding: ImageDecoding): BookResult {
+        val source = when (val opened = safely { resolver.openByteSource(uri, copyDir) }) {
+            is Safely.Done -> opened.value
+            is Safely.Failed -> return BookResult.Failed(opened.reason)
+        }
+        return openArchive(source, decoding)
+    }
+
+    /**
+     * Opens the folder [documentId] of the tree [treeUri], or the root of the tree when it is null, as a folder
+     * book. Sub-folders are not part of it.
+     */
+    suspend fun openTreeFolder(
+        resolver: ContentResolver,
+        treeUri: Uri,
+        documentId: String?,
+        copyDir: File,
+        decoding: ImageDecoding,
+    ): BookResult {
+        val listed = safely { resolver.listChildren(treeUri, documentId ?: DocumentsContract.getTreeDocumentId(treeUri)) }
+        val children = when (listed) {
+            is Safely.Done -> listed.value
+            is Safely.Failed -> return BookResult.Failed(listed.reason)
+        }
+        val files = children.filterNot { it.isDirectory }.map { child ->
+            FolderFile(child.name, child.size) { resolver.openByteSource(child.uri, copyDir) }
+        }
+        return openFolder(files, decoding)
+    }
+
+    private fun sniffPrefix(file: FolderFile) = try {
+        file.open().use { source ->
+            val prefix = ByteBuffer.allocate(SNIFF_BYTES)
+            while (prefix.hasRemaining() && source.read(prefix.position().toLong(), prefix) > 0) Unit
+            sniffImage(prefix.array().copyOf(prefix.position()))
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private sealed interface Safely<out T> {
+        class Done<T>(val value: T) : Safely<T>
+
+        class Failed(val reason: BookFailure) : Safely<Nothing>
+    }
+
+    private suspend fun <T> safely(block: () -> T): Safely<T> = withContext(Dispatchers.IO) {
+        try {
+            Safely.Done(block())
+        } catch (_: FileNotFoundException) {
+            Safely.Failed(BookFailure.NotFound)
+        } catch (_: SecurityException) {
+            Safely.Failed(BookFailure.NoPermission)
+        } catch (_: NoRoomForCopyException) {
+            Safely.Failed(BookFailure.NoRoomForCopy)
+        } catch (_: IOException) {
+            Safely.Failed(BookFailure.ReadError)
+        } catch (_: IllegalArgumentException) {
+            Safely.Failed(BookFailure.NotFound)
+        }
+    }
+
+    private const val SNIFF_BYTES = 32
+}
+
+private fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
+    ArchiveFailure.Corrupt -> BookFailure.Corrupt
+    ArchiveFailure.Truncated -> BookFailure.Truncated
+    ArchiveFailure.ReadError -> BookFailure.ReadError
+}
+
+private class ArchivePages(private val session: ArchiveSession) : PageBytes {
+    override suspend fun read(page: PageEntry): PageResult<ByteArray> =
+        when (val result = session.read(page.entryIndex)) {
+            is EntryResult.Data -> PageResult.Ready(result.bytes)
+            else -> result.pageFailure()!!
+        }
+
+    override fun close() = session.close()
+}
+
+private class FolderPages(private val files: List<FolderFile>) : PageBytes {
+    override suspend fun read(page: PageEntry): PageResult<ByteArray> = withContext(Dispatchers.IO) {
+        try {
+            files[page.entryIndex].open().use(::readAll)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            readError
+        }
+    }
+
+    private fun readAll(source: ByteSource): PageResult<ByteArray> {
+        if (source.size > ArchiveSession.MAX_ENTRY_BYTES) return tooLargeEntry(source.size)
+        val buffer = ByteBuffer.allocate(source.size.toInt())
+        while (buffer.hasRemaining()) {
+            if (source.read(buffer.position().toLong(), buffer) < 0) return PageResult.Failed(FailureReason.Truncated, retryable = false)
+        }
+        return PageResult.Ready(buffer.array())
+    }
+
+    override fun close() = Unit
+}

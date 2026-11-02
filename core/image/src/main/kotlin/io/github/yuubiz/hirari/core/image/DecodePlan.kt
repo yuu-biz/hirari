@@ -73,12 +73,7 @@ fun planDecode(
     budgetBytes: Long,
     maxSide: Int = DecodeLimits.MAX_BITMAP_SIDE,
 ): DecodePlan {
-    val pixels = width.toLong() * height
-    if (width <= 0 || height <= 0 || width > DecodeLimits.MAX_DECLARED_SIDE || height > DecodeLimits.MAX_DECLARED_SIDE ||
-        pixels > DecodeLimits.MAX_DECLARED_PIXELS
-    ) {
-        return DecodePlan.Refuse(UnsupportedKind.TooLarge(width, height, pixels * 4))
-    }
+    dimensionRefusal(width, height)?.let { return DecodePlan.Refuse(it) }
     val scale = minOf(1.0, target.width / width.toDouble(), target.height / height.toDouble(), maxSide / maxOf(width, height).toDouble())
     val needed = PixelSize(
         (width * scale).roundToInt().coerceIn(1, width),
@@ -90,6 +85,14 @@ fun planDecode(
         sample *= 2
     }
     return DecodePlan.Decode(sample, needed, shrinkToFit(needed, PixelSize(sampled(width, sample), sampled(height, sample))))
+}
+
+/** Why dimensions declared in a header cannot be real, or null when they can. */
+internal fun dimensionRefusal(width: Int, height: Int): UnsupportedKind.TooLarge? {
+    val pixels = width.toLong() * height
+    val plausible = width > 0 && height > 0 && width <= DecodeLimits.MAX_DECLARED_SIDE &&
+        height <= DecodeLimits.MAX_DECLARED_SIDE && pixels <= DecodeLimits.MAX_DECLARED_PIXELS
+    return if (plausible) null else UnsupportedKind.TooLarge(width, height, pixels * 4)
 }
 
 /** The decoder output size for [side] at [sample], rounded up as the decoders do. */
