@@ -54,6 +54,18 @@ class NaturalOrderTest {
     }
 
     @Test
+    fun caseVariantsReachTheNumberComparison() = assertSorted("Σ1.jpg", "ς2.jpg")
+
+    @Test
+    fun stringTiesFallBackToUtf8Bytes() = assertSorted("Ａ.jpg", "𝒜.jpg")
+
+    @Test
+    fun pageTiesWithEqualBytesFallBackToTheStoredOrder() {
+        fun entry(stored: Int) = PageEntry(0, stored, byteArrayOf(0x41), "same", 0, 0, null)
+        assertEquals(listOf(1, 3), listOf(entry(3), entry(1)).sortedWith(NaturalPageOrder).map { it.entryIndex })
+    }
+
+    @Test
     fun pageTiesFallBackToRawBytes() {
         fun entry(raw: Int) = PageEntry(0, 0, byteArrayOf(raw.toByte()), "same", 0, 0, null)
         val sorted = listOf(entry(0xE3), entry(0x41)).sortedWith(NaturalPageOrder)

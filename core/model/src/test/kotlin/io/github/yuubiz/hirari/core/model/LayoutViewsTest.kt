@@ -109,6 +109,31 @@ class LayoutViewsTest {
     }
 
     @Test
+    fun viewsFollowTheModeRules(): Unit = runBlocking {
+        checkAll(arbSample) { sample ->
+            fun isWide(page: Int) = (sample.shapes[page] as? PageShape.Known)?.isWide == true
+            for (view in sample.views) {
+                when (sample.settings.mode) {
+                    LayoutMode.Single -> assertTrue(view is One, "Single gives only One: $view")
+                    LayoutMode.SplitWide -> when (view) {
+                        is One -> assertTrue(!isWide(view.page), "a wide page is split: $view")
+                        is Half -> assertTrue(isWide(view.page), "only wide pages are split: $view")
+                        is Two -> error("SplitWide never pairs: $view")
+                    }
+                    LayoutMode.Spread -> {
+                        assertTrue(view !is Half, "Spread never splits: $view")
+                        if (view is Two) {
+                            assertTrue(!isWide(view.earlier) && !isWide(view.later), "a wide page stands alone: $view")
+                            assertTrue(!(sample.settings.coverAlone && view.earlier == 0), "the cover stands alone: $view")
+                        }
+                    }
+                    LayoutMode.Auto -> error("Auto is resolved before layout")
+                }
+            }
+        }
+    }
+
+    @Test
     fun anchorHeadsAView(): Unit = runBlocking {
         checkAll(arbSample) { sample ->
             val heads = sample.views.filter { it !is Half || it.part == First }.map { it.pages.first() }

@@ -4,14 +4,16 @@ import java.math.BigInteger
 import java.text.Normalizer
 import java.util.Locale
 
-/** Natural order of names (docs/spec.md section 3.5). Ties fall back to the original strings. */
+/** Natural order of names (docs/spec.md section 3.5). Ties fall back to the UTF-8 bytes of the names. */
 val NaturalOrder: Comparator<String> = Comparator { a, b ->
-    compareNatural(a, b).takeIf { it != 0 } ?: a.compareTo(b)
+    compareNatural(a, b).takeIf { it != 0 } ?: compareUnsigned(a.encodeToByteArray(), b.encodeToByteArray())
 }
 
-/** Natural order of page names. Ties fall back to the raw name bytes. */
+/** Natural order of page names. Ties fall back to the raw name bytes, then to the stored order. */
 val NaturalPageOrder: Comparator<PageEntry> = Comparator { a, b ->
-    compareNatural(a.name, b.name).takeIf { it != 0 } ?: compareUnsigned(a.rawName, b.rawName)
+    compareNatural(a.name, b.name).takeIf { it != 0 }
+        ?: compareUnsigned(a.rawName, b.rawName).takeIf { it != 0 }
+        ?: a.entryIndex.compareTo(b.entryIndex)
 }
 
 private fun compareNatural(a: String, b: String): Int {
@@ -26,6 +28,7 @@ private fun compareNatural(a: String, b: String): Int {
 
 private fun components(name: String): List<List<Token>> =
     Normalizer.normalize(name, Normalizer.Form.NFKC)
+        .uppercase(Locale.ROOT)
         .lowercase(Locale.ROOT)
         .split('/', '\\')
         .map(::tokenize)
