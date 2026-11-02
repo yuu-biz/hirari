@@ -40,6 +40,13 @@ class SearchTest {
     }
 
     @Test
+    fun `a match that ends on the first half of a kuno-ji-ten marks the pair`() {
+        val source = "title\nabc／＼de／＼／＼f\n"
+        assertEquals(listOf("c／＼"), ranges(source, "c〳"))
+        assertEquals(listOf("／＼／＼"), ranges(source, "〵〳"))
+    }
+
+    @Test
     fun `a line whose folded text is many times longer than the line is searched within a bounded memory`() {
         val source = "title\n" + "ﷺ".repeat(3_000_000) + "end\n"
         val result = searchText(parseAozora(source), "end")
