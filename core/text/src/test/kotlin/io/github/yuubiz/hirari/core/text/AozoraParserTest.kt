@@ -106,6 +106,30 @@ class AozoraParserTest {
     }
 
     @Test
+    fun `a gaiji number too large for an int stays as the unknown mark`() {
+        val huge = "9".repeat(30)
+        assertEquals("※※※", paragraph("※［＃丸$huge］※［＃ローマ数字$huge］※［＃小文字ローマ数字$huge］").text)
+    }
+
+    @Test
+    fun `a notation number too large for an int is clamped by the layout and a malformed kanji number is an ordinary note`() {
+        assertEquals(Int.MAX_VALUE, (paragraph("［＃${"9".repeat(30)}字下げ］本") as Paragraph).indent)
+        assertEquals(Int.MAX_VALUE, (paragraph("［＃地から${"９".repeat(30)}字上げ］本") as Paragraph).bottom?.raise)
+        val malformed = paragraph("［＃一二字下げ］本")
+        assertEquals("本", malformed.text)
+        assertEquals(0, malformed.indent)
+        assertEquals(12, paragraph("［＃十二字下げ］本").indent)
+    }
+
+    @Test
+    fun `a ruby bar does not reach across a page break`() {
+        val blocks = body("あいうえお｜漢字［＃改ページ］あ《る》")
+        val after = blocks.last() as Paragraph
+        assertEquals("あ", after.text)
+        assertEquals(listOf(Span.Ruby(0, 1, "る")), after.spans)
+    }
+
+    @Test
     fun `kunoji marks become their vertical forms`() {
         assertEquals("いろ〳〵だん〴〵", paragraph("いろ／＼だん／″＼").text)
     }

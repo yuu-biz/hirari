@@ -68,13 +68,19 @@ private val raiseBlock = Regex("""ここから地から${NUMBER}字上げ""")
 private val reference = Regex("""「(.+)」(は|に|の左に)(.+)""")
 private val picture = Regex("""（([^（）]+)）入る$""")
 
-private fun number(s: String): Int {
-    s.toIntOrNull()?.let { return it }
+private val kanjiNumber = Regex("""([一二三四五六七八九])?十([一二三四五六七八九])?|[一二三四五六七八九]""")
+
+/**
+ * The value of a notation number: digits, saturating at [Int.MAX_VALUE] since every use clamps it to the page, or a
+ * kanji number up to 99. Null for a kanji run that is no such number, such as `一二`.
+ */
+private fun number(s: String): Int? {
+    if (s[0] in '0'..'9') return s.toIntOrNull() ?: Int.MAX_VALUE
+    val match = kanjiNumber.matchEntire(s) ?: return null
     val digits = "一二三四五六七八九"
-    val ten = s.indexOf('十')
-    if (ten < 0) return digits.indexOf(s.single()) + 1
-    val tens = if (ten == 0) 1 else digits.indexOf(s[0]) + 1
-    val ones = if (ten == s.lastIndex) 0 else digits.indexOf(s.last()) + 1
+    if ('十' !in s) return digits.indexOf(s) + 1
+    val tens = match.groupValues[1].takeIf(String::isNotEmpty)?.let { digits.indexOf(it) + 1 } ?: 1
+    val ones = match.groupValues[2].takeIf(String::isNotEmpty)?.let { digits.indexOf(it) + 1 } ?: 0
     return tens * 10 + ones
 }
 
@@ -88,14 +94,17 @@ private fun parseCommand(rawNote: String): Command {
         "ここから地付き" -> return Command.BottomBlock(0)
         "ここで地付き終わり", "ここで字上げ終わり" -> return Command.BottomBlockEnd
     }
-    indent.matchEntire(note)?.let { return Command.Indent(number(it.groupValues[1])) }
+    indent.matchEntire(note)?.let { return number(it.groupValues[1])?.let(Command::Indent) ?: Command.Ignored }
     indentBlock.matchEntire(note)?.let {
         val first = number(it.groupValues[1])
-        return Command.IndentBlock(first, it.groupValues[2].takeIf(String::isNotEmpty)?.let(::number) ?: first)
+        val wrap = if (it.groupValues[2].isEmpty()) first else number(it.groupValues[2])
+        return if (first == null || wrap == null) Command.Ignored else Command.IndentBlock(first, wrap)
     }
-    indentBlockFlush.matchEntire(note)?.let { return Command.IndentBlock(0, number(it.groupValues[1])) }
-    raise.matchEntire(note)?.let { return Command.Bottom(number(it.groupValues[1])) }
-    raiseBlock.matchEntire(note)?.let { return Command.BottomBlock(number(it.groupValues[1])) }
+    indentBlockFlush.matchEntire(note)?.let {
+        return number(it.groupValues[1])?.let { wrap -> Command.IndentBlock(0, wrap) } ?: Command.Ignored
+    }
+    raise.matchEntire(note)?.let { return number(it.groupValues[1])?.let(Command::Bottom) ?: Command.Ignored }
+    raiseBlock.matchEntire(note)?.let { return number(it.groupValues[1])?.let(Command::BottomBlock) ?: Command.Ignored }
     reference.matchEntire(rawNote)?.let { match ->
         val (target, particle, word) = match.destructured
         val style = styleOf(word, if (particle == "の左に") MarkSide.Left else MarkSide.Right)
@@ -216,7 +225,9 @@ private class AozoraParser(private val source: String, private val gaiji: JisX02
                         line.spans += Span.InlineImage(line.text.length, command.path)
                         line.append("￼", p)
                     } else {
-                        line = apply(command, line, p, close + 1)
+                        val next = apply(command, line, p, close + 1)
+                        if (next !== line) rubyStart = null
+                        line = next
                     }
                     barrier = line.text.length
                     p = close + 1

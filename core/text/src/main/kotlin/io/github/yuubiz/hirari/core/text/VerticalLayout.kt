@@ -351,11 +351,10 @@ class VerticalLayout(
         if (length <= params.height + EPSILON || atoms.size == 1) return listOf(whole)
         val count = minOf(atoms.size, kotlin.math.ceil(length / params.height).toInt())
         val rubyPoints = ruby.codePoints().toArray()
+        fun share(size: Int, k: Int): Int = (size.toLong() * k / count).toInt()
         return (0 until count).map { k ->
-            val from = atoms.size * k / count
-            val to = atoms.size * (k + 1) / count
-            val text = String(rubyPoints, rubyPoints.size * k / count, rubyPoints.size * (k + 1) / count - rubyPoints.size * k / count)
-            rubyPiece(atoms.subList(from, to), text, leadFree && k == 0, tailFree && k == count - 1)
+            val text = String(rubyPoints, share(rubyPoints.size, k), share(rubyPoints.size, k + 1) - share(rubyPoints.size, k))
+            rubyPiece(atoms.subList(share(atoms.size, k), share(atoms.size, k + 1)), text, leadFree && k == 0, tailFree && k == count - 1)
         }
     }
 

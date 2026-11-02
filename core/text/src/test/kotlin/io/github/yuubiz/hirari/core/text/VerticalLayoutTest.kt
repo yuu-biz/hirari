@@ -93,6 +93,14 @@ class VerticalLayoutTest {
     }
 
     @Test
+    fun `a ruby base of tens of thousands of characters splits without overflowing`() {
+        val doc = parseAozora("題\n｜" + "漢".repeat(50_000) + "《あ》\n")
+        val tiny = LayoutParams(width = 100f, height = 10f, fontSize = 10f)
+        val first = VerticalLayout(doc, tiny, FixedGlyphMetrics).pages().first()
+        assertEquals(0, first.start)
+    }
+
+    @Test
     fun `an empty book has one empty page`() {
         assertEquals(listOf(TextPage(PageContent.Lines(emptyList()), 0, 0)), VerticalLayout(parseAozora(""), params(20f), FixedGlyphMetrics).pages().toList())
     }

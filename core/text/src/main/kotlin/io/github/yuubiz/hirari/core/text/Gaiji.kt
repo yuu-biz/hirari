@@ -48,10 +48,10 @@ private fun circledNumber(n: Int): String? = when (n) {
 /** The gaiji that 4.9 lets a note name in words: circled and Roman numbers, voiced kana, and era ligatures. */
 private fun namedGaiji(description: String): String? {
     val name = normalizeDigits(description)
-    circled.matchEntire(name)?.let { return circledNumber(it.groupValues[1].toInt()) }
+    circled.matchEntire(name)?.let { return it.groupValues[1].toIntOrNull()?.let(::circledNumber) }
     roman.matchEntire(name)?.let { match ->
-        val n = match.groupValues[2].toInt()
-        if (n !in 1..12) return null
+        val n = match.groupValues[2].toIntOrNull()
+        if (n == null || n !in 1..12) return null
         return String(Character.toChars((if (match.groupValues[1].isEmpty()) 0x2160 else 0x2170) + n - 1))
     }
     voiced.matchEntire(name)?.let { match ->
