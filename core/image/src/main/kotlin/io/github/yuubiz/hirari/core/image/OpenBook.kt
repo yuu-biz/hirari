@@ -50,9 +50,17 @@ class OpenBook internal constructor(
         }
     }
 
-    /** The page at [index] scaled to fit [target], in pixels, decoded from [raw] when it is given. */
-    suspend fun page(index: Int, target: PixelSize, raw: RawPage? = null): PageResult<PreparedImage> =
-        withBytes(index, raw) { data, isActive -> decodePage(data, target, decoding.budgetBytes, isActive) }
+    /**
+     * The page at [index] scaled to fit [target], in pixels, decoded from [raw] when it is given. With
+     * [Tiling.AsPlanned] an image narrower than 1:3 comes as [PreparedImage.Tiled] (docs/spec.md section 3.7).
+     */
+    suspend fun page(
+        index: Int,
+        target: PixelSize,
+        raw: RawPage? = null,
+        tiling: Tiling = Tiling.Never,
+    ): PageResult<PreparedImage> =
+        withBytes(index, raw) { data, isActive -> decodePage(data, target, decoding, tiling, isActive) }
 
     /** The size of the page at [index], from the image header alone (docs/spec.md sections 2.5 and 5.3). */
     suspend fun shape(index: Int, raw: RawPage? = null): PageResult<PageShape.Known> =

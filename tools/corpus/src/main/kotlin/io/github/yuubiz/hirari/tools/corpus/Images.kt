@@ -180,6 +180,9 @@ internal fun imageCases(): List<ImageCase> {
         ImageCase("animated.webp", animatedWebp(120, 180, listOf(0xcc3333, 0x3333cc)), ExpectedPage.Ready(120, 180)),
         ImageCase("codestream.jxl", byteArrayOf(0xff.toByte(), 0x0a) + ByteArray(64), ExpectedPage.ImageFeature("JPEG XL")),
         ImageCase("tall.png", tallPng(800, 50_000), ExpectedPage.Ready(800, 50_000)),
+        // Stored wide and turned upright by EXIF, which the tiles must do themselves.
+        ImageCase("tall-rotated.jpg", withExifOrientation(jpeg(quadrants(1500, 300)), 6), ExpectedPage.Ready(300, 1500)),
+        ImageCase("rotated.jpg", withExifOrientation(jpeg(quadrants(600, 400)), 8), ExpectedPage.Ready(400, 600)),
     ) + listOf(1, 4, 8, 16, 24, 32).map { bits ->
         ImageCase("bmp-%02d-bit.bmp".format(bits), bmp(203, 301, bits), ExpectedPage.Ready(203, 301))
     } + heifCases()
@@ -193,6 +196,16 @@ private fun heifCases() = listOf(
     ImageCase("ftyp-only.heic", ftypOnly("heic", "mif1", "heic"), ExpectedPage.ImageFeature("HEIF")),
     ImageCase("ftyp-only.avif", ftypOnly("avif", "mif1", "avif"), ExpectedPage.ImageFeature("AVIF")),
 )
+
+/** Four flat colors, one a quadrant, so that a turned or mirrored part shows in the wrong colors. */
+private fun quadrants(width: Int, height: Int): BufferedImage {
+    val image = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+    val colors = intArrayOf(0xd03030, 0x30d030, 0x3030d0, 0xe0e0e0)
+    for (y in 0 until height) for (x in 0 until width) {
+        image.setRGB(x, y, colors[(if (x < width / 2) 0 else 1) + (if (y < height / 2) 0 else 2)])
+    }
+    return image
+}
 
 private fun rotated(image: BufferedImage): BufferedImage {
     val out = BufferedImage(image.height, image.width, image.type, image.colorModel as IndexColorModel)

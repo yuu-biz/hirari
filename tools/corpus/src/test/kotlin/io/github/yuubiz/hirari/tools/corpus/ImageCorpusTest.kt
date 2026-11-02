@@ -14,7 +14,9 @@ class ImageCorpusTest {
         for (case in ready) {
             val image = ImageIO.read(case.bytes.inputStream()) ?: error("the JDK cannot read ${case.name}")
             val page = case.page as ExpectedPage.Ready
-            assertEquals(page.width to page.height, image.width to image.height, case.name)
+            // The JDK ignores EXIF orientation, so a turned image reads at its stored size.
+            val shown = if ("rotated" in case.name) image.height to image.width else image.width to image.height
+            assertEquals(page.width to page.height, shown, case.name)
         }
     }
 

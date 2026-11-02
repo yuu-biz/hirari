@@ -16,28 +16,28 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Decodes [bytes] to fit [target] by the steps of docs/spec.md section 3.7, on the calling thread. [isActive]
- * is checked once the header is read, which is the last point `ImageDecoder` can stop.
+ * is checked once the header is read, which is the last point `ImageDecoder` can stop. With [Tiling.AsPlanned],
+ * an image narrower than 1:3 becomes tiles instead.
  */
 internal fun decodePage(
     bytes: ByteArray,
     target: PixelSize,
-    budgetBytes: Long,
+    decoding: ImageDecoding,
+    tiling: Tiling,
     isActive: () -> Boolean,
 ): PageResult<PreparedImage> {
     val (type, codec) = when (val found = platformCodec(bytes)) {
         is Found.Decodable -> found
         is Found.Undecodable -> return found.result
     }
-    val averagingLimit = codec.averagingLimit
     val bytesPerPixel = if (isSixteenBitPng(bytes)) 8 else 4
-    return decoding(type, codec, bytes) {
-        try {
-            decodeOnce(bytes, target, averagingLimit, bytesPerPixel, budgetBytes, isActive, extraSample = 1)
-        } catch (_: OutOfMemoryError) {
-            try {
-                decodeOnce(bytes, target, averagingLimit, bytesPerPixel, budgetBytes, isActive, extraSample = 2)
-            } catch (_: OutOfMemoryError) {
-                readError
+    return converted(type, codec, bytes) {
+        val shape = if (tiling == Tiling.AsPlanned) header(bytes) else null
+        if (shape != null && isElongated(shape.width, shape.height)) {
+            tiled(bytes, shape, codec, bytesPerPixel, decoding, isActive)
+        } else {
+            retryingOnce { extraSample ->
+                decodeOnce(bytes, target, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes, isActive, extraSample)
             }
         }
     }
@@ -49,14 +49,58 @@ internal fun decodeShape(bytes: ByteArray): PageResult<PageShape.Known> {
         is Found.Decodable -> found
         is Found.Undecodable -> return found.result
     }
-    return decoding(type, codec, bytes) {
-        try {
-            ImageDecoder.decodeBitmap(source(bytes)) { _, info, _ -> throw HeaderRead(info.size.width, info.size.height) }
-            corrupt
-        } catch (header: HeaderRead) {
-            dimensionRefusal(header.width, header.height)?.let { PageResult.Unsupported(it) }
-                ?: PageResult.Ready(PageShape.Known(header.width, header.height))
+    return converted(type, codec, bytes) { PageResult.Ready(header(bytes)) }
+}
+
+/** The size from the header of [bytes], or [Refused] when it cannot be real. */
+private fun header(bytes: ByteArray): PageShape.Known {
+    try {
+        ImageDecoder.decodeBitmap(source(bytes)) { _, info, _ -> throw HeaderRead(info.size.width, info.size.height) }
+    } catch (header: HeaderRead) {
+        dimensionRefusal(header.width, header.height)?.let { throw Refused(it) }
+        return PageShape.Known(header.width, header.height)
+    }
+    throw IOException("the decoder passed the header without reporting it")
+}
+
+/**
+ * The image as tiles: read from [bytes] region by region when the platform can, and otherwise cut from one
+ * bitmap of the whole image, scaled down only as far as the budget needs (docs/spec.md section 3.7).
+ */
+private fun tiled(
+    bytes: ByteArray,
+    shape: PageShape.Known,
+    codec: Codec.Platform,
+    bytesPerPixel: Int,
+    decoding: ImageDecoding,
+    isActive: () -> Boolean,
+): PageResult<PreparedImage> {
+    if (codec.regions) {
+        RegionTiles.open(bytes, decoding)?.let { return PageResult.Ready(PreparedImage.Tiled(it, PageShape.Known(it.size.width, it.size.height))) }
+    }
+    val full = PixelSize(shape.width, shape.height)
+    return when (
+        val whole = retryingOnce { extraSample ->
+            decodeOnce(bytes, full, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes, isActive, extraSample, maxSide = Int.MAX_VALUE)
         }
+    ) {
+        is PageResult.Ready -> {
+            val bitmap = (whole.image as PreparedImage.Whole).bitmap
+            PageResult.Ready(PreparedImage.Tiled(SlicedTiles(bitmap, full, decoding), shape))
+        }
+        is PageResult.Failed -> whole
+        is PageResult.Unsupported -> whole
+    }
+}
+
+/** [decode] at the planned sample size, and once more at twice it when memory runs out (docs/spec.md section 6.1). */
+private inline fun retryingOnce(decode: (extraSample: Int) -> PageResult<PreparedImage>): PageResult<PreparedImage> = try {
+    decode(1)
+} catch (_: OutOfMemoryError) {
+    try {
+        decode(2)
+    } catch (_: OutOfMemoryError) {
+        readError
     }
 }
 
@@ -80,7 +124,7 @@ private fun platformCodec(bytes: ByteArray): Found {
  * decoder calls malformed is an unsupported feature when the device may lack the decoder for [type], or when
  * the JPEG frame header names a coding process 8-bit decoders lack (section 3.6).
  */
-private inline fun <T> decoding(type: ImageType, codec: Codec.Platform, bytes: ByteArray, block: () -> PageResult<T>): PageResult<T> {
+private inline fun <T> converted(type: ImageType, codec: Codec.Platform, bytes: ByteArray, block: () -> PageResult<T>): PageResult<T> {
     val result = try {
         block()
     } catch (e: CancellationException) {
@@ -111,6 +155,7 @@ private fun decodeOnce(
     budgetBytes: Long,
     isActive: () -> Boolean,
     extraSample: Int,
+    maxSide: Int = DecodeLimits.MAX_BITMAP_SIDE,
 ): PageResult<PreparedImage> {
     var planned: DecodePlan.Decode? = null
     var shape: PageShape.Known? = null
@@ -118,7 +163,7 @@ private fun decodeOnce(
         if (!isActive()) throw CancellationException("cancelled at the header")
         val width = info.size.width
         val height = info.size.height
-        when (val plan = planDecode(width, height, target, averagingLimit, bytesPerPixel, budgetBytes)) {
+        when (val plan = planDecode(width, height, target, averagingLimit, bytesPerPixel, budgetBytes, maxSide)) {
             is DecodePlan.Refuse -> throw Refused(plan.kind)
             is DecodePlan.Decode -> {
                 planned = plan

@@ -91,6 +91,12 @@ internal fun flatJpeg(width: Int, height: Int, process: JpegProcess): ByteArray 
         byteArrayOf(0xff.toByte(), 0xd9.toByte())
 }
 
+/** [jpeg] with an Exif segment right after its start whose only tag is the [orientation] of docs/spec.md section 3.6. */
+internal fun withExifOrientation(jpeg: ByteArray, orientation: Int): ByteArray {
+    val tiff = ascii("MM") + u16be(42) + u32be(8) + u16be(1) + u16be(0x0112) + u16be(3) + u32be(1) + u16be(orientation) + u16be(0) + u32be(0)
+    return jpeg.copyOf(2) + segment(0xe1, ascii("Exif") + byteArrayOf(0, 0) + tiff) + jpeg.copyOfRange(2, jpeg.size)
+}
+
 /** A JPEG with four components and no color conversion, which decoders take for CMYK. */
 internal fun cmykJpeg(width: Int, height: Int): ByteArray {
     val raster = Raster.createInterleavedRaster(DataBuffer.TYPE_BYTE, width, height, 4, null)

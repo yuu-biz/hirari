@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import android.graphics.Bitmap
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
@@ -61,6 +62,7 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
             sizeProblem(result.image, target)?.let { problems += "${page.name}: $it" }
             val shape = describe(book.shape(page.index))
             if (shape != actual) problems += "${page.name}: shape gave $shape"
+            problems += tileProblems(book, page.index, target, result.image).map { "${page.name}: $it" }
         }
         when (val raw = book.raw(page.index)) {
             is PageResult.Ready -> {
@@ -71,6 +73,72 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
         }
     }
     return problems
+}
+
+/**
+ * How the page at [index] read with tiles allowed differs from [whole]: only an image narrower than 1:3 comes as
+ * tiles, of the same shape, and the visible tiles at the top and the bottom of a fit-width view each have their
+ * planned size and about the colors of the same part of [whole].
+ */
+private suspend fun tileProblems(book: OpenBook, index: Int, target: PixelSize, whole: PreparedImage): List<String> {
+    val shape = whole.shape
+    val result = book.page(index, target, tiling = Tiling.AsPlanned)
+    val image = (result as? PageResult.Ready)?.image ?: return listOf("with tiles gave ${describe(result)}")
+    if (image.shape != shape) return listOf("with tiles gave the shape ${image.shape}")
+    if (image !is PreparedImage.Tiled) {
+        return if (isElongated(shape.width, shape.height)) listOf("not tiled") else emptyList()
+    }
+    if (!isElongated(shape.width, shape.height)) return listOf("tiled")
+    val bitmap = (whole as PreparedImage.Whole).bitmap
+    return image.source.use { source ->
+        val size = source.size
+        val scale = target.width / size.width.toDouble()
+        val viewHeight = minOf(size.height, (target.height / scale).toInt())
+        listOf(0, size.height - viewHeight).flatMap { top ->
+            source.plan(PixelRect(0, top, size.width, top + viewHeight), scale).visible.mapNotNull { key ->
+                tileProblem(source, key, bitmap)?.let { "tile $key: $it" }
+            }
+        }
+    }
+}
+
+private suspend fun tileProblem(source: TileSource, key: TileKey, whole: Bitmap): String? {
+    val tile = when (val result = source.tile(key)) {
+        is PageResult.Ready -> result.image
+        else -> return describe(result).joinToString(" ")
+    }
+    val rect = tileRect(key, source.size)
+    val width = (rect.width + key.sample - 1) / key.sample
+    val height = (rect.height + key.sample - 1) / key.sample
+    if (tile.width != width || tile.height != height) return "${tile.width}x${tile.height}, expected ${width}x$height"
+    val across = whole.width / source.size.width.toDouble()
+    val down = whole.height / source.size.height.toDouble()
+    val part = PixelRect(
+        (rect.left * across).toInt(),
+        (rect.top * down).toInt(),
+        maxOf((rect.right * across).toInt(), (rect.left * across).toInt() + 1),
+        maxOf((rect.bottom * down).toInt(), (rect.top * down).toInt() + 1),
+    )
+    val expected = meanColor(whole, part)
+    val actual = meanColor(tile, PixelRect(0, 0, tile.width, tile.height))
+    val off = expected.indices.maxOf { kotlin.math.abs(expected[it] - actual[it]) }
+    return if (off <= COLOR_TOLERANCE) null else "mean color ${actual.toList()}, the whole image has ${expected.toList()}"
+}
+
+/** The tiles and the scaled-down whole image filter differently, so their means agree only roughly. */
+private const val COLOR_TOLERANCE = 40
+
+private fun meanColor(bitmap: Bitmap, rect: PixelRect): IntArray {
+    val software = if (bitmap.config == Bitmap.Config.HARDWARE) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
+    val pixels = IntArray(rect.width * rect.height)
+    software.getPixels(pixels, 0, rect.width, rect.left, rect.top, rect.width, rect.height)
+    val sums = LongArray(3)
+    for (pixel in pixels) {
+        sums[0] += (pixel shr 16) and 0xff
+        sums[1] += (pixel shr 8) and 0xff
+        sums[2] += pixel and 0xff
+    }
+    return IntArray(3) { (sums[it] / pixels.size).toInt() }
 }
 
 /** The results [fields] allow, which are more than one when they are split by `|` fields. */
