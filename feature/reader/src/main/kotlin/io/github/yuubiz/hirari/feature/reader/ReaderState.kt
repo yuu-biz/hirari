@@ -5,6 +5,8 @@ import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Pagination
 import io.github.yuubiz.hirari.core.model.PaginationEvent
 import io.github.yuubiz.hirari.core.model.Point
+import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.model.rotated
 
 /** Where the screen rests in the current view. */
 sealed interface Place {
@@ -99,7 +101,7 @@ data class ReaderState(
     fun reduce(event: ReaderEvent): ReaderState = when (event) {
         is ReaderEvent.Act -> settled().act(event.action, event.nowMs)
         is ReaderEvent.GoTo -> settled().moved(PaginationEvent.GoTo(event.page))
-        is ReaderEvent.ShapeLearned -> relaid(pagination.reduce(PaginationEvent.ShapeLearned(event.page, event.shape)))
+        is ReaderEvent.ShapeLearned -> relaid(pagination.reduce(PaginationEvent.ShapeLearned(event.page, event.shape.rotated(config.rotation))))
         is ReaderEvent.ViewportChanged ->
             if (event.viewport == viewport) {
                 this
@@ -198,8 +200,10 @@ data class ReaderState(
 
     private fun configured(next: ReaderConfig): ReaderState {
         if (next == config) return this
-        val modeChanged = next.scaleMode != config.scaleMode || next.capAtOriginal != config.capAtOriginal
-        val layout = pagination.reduce(PaginationEvent.SettingsChanged(next.layout))
+        val turned = next.rotation != config.rotation
+        val modeChanged = turned || next.scaleMode != config.scaleMode || next.capAtOriginal != config.capAtOriginal
+        val shapes = if (next.rotation.swapsSides == config.rotation.swapsSides) pagination else pagination.reduce(PaginationEvent.ShapesChanged(swapped(pagination.shapes)))
+        val layout = shapes.reduce(PaginationEvent.SettingsChanged(next.layout))
         val viewChanged = layout.current != current
         return settled().copy(
             pagination = layout,
@@ -242,6 +246,9 @@ data class ReaderState(
         val position = Point((anchor.x + from.x) * rx - anchor.x, (anchor.y + from.y) * ry - anchor.y)
         return copy(zoom = nextZoom, place = Place.Panned(after.clamp(position)))
     }
+
+    private fun swapped(shapes: List<PageShape>): List<PageShape> =
+        shapes.map { if (it is PageShape.Known) it.rotated(Rotation.Quarter) else it }
 
     companion object {
         fun open(pageCount: Int, start: Int, config: ReaderConfig, viewport: Viewport): ReaderState =

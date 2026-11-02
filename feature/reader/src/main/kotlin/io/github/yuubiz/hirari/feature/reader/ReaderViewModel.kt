@@ -3,7 +3,6 @@ package io.github.yuubiz.hirari.feature.reader
 import android.app.ActivityManager
 import android.app.Application
 import android.content.ComponentCallbacks2
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
@@ -35,8 +34,11 @@ import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderCommand
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingPosition
+import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.StartAt
+import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.documentBookId
 import io.github.yuubiz.hirari.core.model.folderBookId
 import io.github.yuubiz.hirari.core.model.locationBookId
@@ -116,8 +118,8 @@ class ReaderViewModel(
     var state: ReaderState? by mutableStateOf(null)
         private set
 
-    /** The requested orientation of the `画面の向き` command, which outlives the activity turning. */
-    var orientation: Int by mutableIntStateOf(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
+    /** `画面の向き`: the setting until the book opens, then the reader's, which outlives the activity turning. */
+    var orientation: ReaderOrientation by mutableStateOf(ReaderOrientation.System)
         private set
 
     /** Changes whenever a view is prepared or dropped, or a page fails. */
@@ -151,6 +153,7 @@ class ReaderViewModel(
         val prefetcher: Prefetcher<Bitmap>,
         val services: ReaderServices,
         val progress: ProgressLog,
+        val overrides: OverridesWriter,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -222,15 +225,6 @@ class ReaderViewModel(
 
     fun act(action: ReaderAction, nowMs: Long) = dispatch(ReaderEvent.Act(action, nowMs))
 
-    /** The `画面の向き` command: follow the device, then portrait, then landscape. */
-    fun nextOrientation() {
-        orientation = when (orientation) {
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
-    }
-
     fun retry(page: Int) {
         opened?.prefetcher?.retry(page)
     }
@@ -241,7 +235,6 @@ class ReaderViewModel(
         when (val effect = current.config.effectOf(command)) {
             is CommandEffect.Configure -> dispatch(ReaderEvent.ConfigChanged(effect.config))
             CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
-            CommandEffect.NextOrientation -> nextOrientation()
             CommandEffect.NotYet -> return false
         }
         return true
@@ -267,6 +260,7 @@ class ReaderViewModel(
         val services = services.await()
         val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
         val settings = services.storage.settings.settings.first()
+        orientation = settings.readerOrientation
         val located = withContext(Dispatchers.IO) {
             openBook(services, copyDir).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
@@ -306,7 +300,8 @@ class ReaderViewModel(
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved))
+        val writer = OverridesWriter(id, overrides, services.storage.books, services.appScope)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer)
         stops.attach(session)
         phase = ReaderPhase.Reading
         start()
@@ -358,6 +353,10 @@ class ReaderViewModel(
             book.prefetcher.update(after.prefetchInput(paused = stripShown))
         }
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
+        orientation = after.config.orientation
+        if (before != null && before.config.rotation != after.config.rotation) {
+            book.overrides.update { it.copy(rotation = after.config.rotation.takeUnless { r -> r == Rotation.None }) }
+        }
     }
 
     private suspend fun openBook(services: ReaderServices, copyDir: File): Located = when (val book = request.book) {

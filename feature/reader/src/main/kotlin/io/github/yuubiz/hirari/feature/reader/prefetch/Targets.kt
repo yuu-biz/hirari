@@ -13,7 +13,7 @@ import kotlin.math.roundToInt
 fun ReaderState.prefetchTarget(view: PageView): ViewTarget? {
     val geometry = preparedGeometry(view) ?: return null
     val sizes = geometry.pages.map { PixelSize(it.width.roundToInt().coerceAtLeast(1), it.height.roundToInt().coerceAtLeast(1)) }
-    return ViewTarget(view, sizes, (view as? PageView.Half)?.part?.side(config.direction))
+    return ViewTarget(view, sizes, PageSteps((view as? PageView.Half)?.part?.side(config.direction), config.rotation))
 }
 
 /** Every view on screen: the current one, both views of a turn or a return, and the neighbor a finger pulls in. */

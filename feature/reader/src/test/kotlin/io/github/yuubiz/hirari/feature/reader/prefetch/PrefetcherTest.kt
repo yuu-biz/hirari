@@ -8,7 +8,6 @@ import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReadingDirection
-import io.github.yuubiz.hirari.core.model.Side
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
 import io.github.yuubiz.hirari.feature.reader.LANDSCAPE
 import io.github.yuubiz.hirari.feature.reader.PORTRAIT
@@ -50,7 +49,7 @@ private class FakeLoader(
 
     override suspend fun shape(page: Int): PageResult<PageShape.Known> = shapes[page] ?: PageResult.Ready(TALL)
 
-    override suspend fun prepare(page: Int, size: PixelSize, crop: Side?): PageResult<String> {
+    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps): PageResult<String> {
         try {
             gate?.await()
             pageGates[page]?.await()

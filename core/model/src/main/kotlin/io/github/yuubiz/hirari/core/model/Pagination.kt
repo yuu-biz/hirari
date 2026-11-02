@@ -8,6 +8,9 @@ sealed interface PaginationEvent {
     data class ShapeLearned(val page: Int, val shape: PageShape.Known) : PaginationEvent
     data class SettingsChanged(val settings: LayoutSettings) : PaginationEvent
     data class OrientationChanged(val orientation: ScreenOrientation) : PaginationEvent
+
+    /** Every shape at once, as after the pages were rotated. The views are laid out again from the current one. */
+    data class ShapesChanged(val shapes: List<PageShape>) : PaginationEvent
 }
 
 /** The views of an open book and the one on screen (docs/spec.md section 2.5). */
@@ -42,6 +45,10 @@ class Pagination private constructor(
             if (event.settings == settings) this else relayoutFromCurrent(event.settings, orientation)
         is PaginationEvent.OrientationChanged ->
             if (event.orientation == orientation) this else relayoutFromCurrent(settings, event.orientation)
+        is PaginationEvent.ShapesChanged -> {
+            require(event.shapes.size == shapes.size) { "${event.shapes.size} shapes for ${shapes.size} pages" }
+            if (event.shapes == shapes) this else relayoutFromCurrent(settings, orientation, event.shapes)
+        }
     }
 
     private fun moveTo(index: Int): Pagination =
@@ -55,7 +62,7 @@ class Pagination private constructor(
         return layout(shapes, settings, orientation, newAnchor, keep = current, fallback = newAnchor)
     }
 
-    private fun relayoutFromCurrent(settings: LayoutSettings, orientation: ScreenOrientation): Pagination {
+    private fun relayoutFromCurrent(settings: LayoutSettings, orientation: ScreenOrientation, shapes: List<PageShape> = this.shapes): Pagination {
         val head = current.pages.first()
         return layout(shapes, settings, orientation, anchor = head, keep = current, fallback = head)
     }

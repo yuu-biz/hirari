@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import kotlinx.coroutines.delay
 
 /** The default `readerBackground` (docs/spec.md section 4.10). */
@@ -201,10 +202,14 @@ private fun HideSystemBars() {
 }
 
 @Composable
-private fun ScreenOrientationLock(orientation: Int) {
+private fun ScreenOrientationLock(orientation: ReaderOrientation) {
     val activity = LocalView.current.context.findActivity()
     DisposableEffect(activity, orientation) {
-        activity?.requestedOrientation = orientation
+        activity?.requestedOrientation = when (orientation) {
+            ReaderOrientation.System -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            ReaderOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            ReaderOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
         onDispose { }
     }
     DisposableEffect(activity) {

@@ -159,6 +159,19 @@ class PaginationTest {
     }
 
     @Test
+    fun rotatedShapesLayTheBookOutAgainFromTheHeadOfTheCurrentView() {
+        val state = book("TTTTT").after(Next)
+        assertEquals(Two(2, 3), state.current)
+        val turned = state.reduce(PaginationEvent.ShapesChanged(state.shapes.map { (it as PageShape.Known).rotated(Rotation.Quarter) }))
+        assertEquals(List(5) { One(it) }, turned.views)
+        assertEquals(One(2), turned.current)
+        assertEquals(2, turned.anchor)
+        val back = turned.reduce(PaginationEvent.ShapesChanged(state.shapes))
+        assertEquals(Two(2, 3), back.current)
+        assertSame(back, back.reduce(PaginationEvent.ShapesChanged(back.shapes)))
+    }
+
+    @Test
     fun changingTheDirectionKeepsTheSecondHalf() {
         val state = book("WT", splitWide(RightToLeft)).after(Next)
         assertEquals(Half(0, Second), state.current)

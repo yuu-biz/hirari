@@ -5,7 +5,9 @@ import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.ReaderCommand
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.ScreenOrientation
 import io.github.yuubiz.hirari.core.model.Size
@@ -32,6 +34,9 @@ data class ReaderConfig(
     val barHeightDp: Float = 60f,
     val gutter: Gutter = Gutter.Gap,
     val commandBarItems: List<ReaderCommand> = ReaderCommand.Defaults,
+    /** The book's rotation (docs/spec.md section 2.9), which has no global setting. */
+    val rotation: Rotation = Rotation.None,
+    val orientation: ReaderOrientation = ReaderOrientation.System,
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -56,6 +61,8 @@ data class ReaderConfig(
             volumeKeys = settings.volumeKeys,
             barHeightDp = settings.barHeightDp.toFloat(),
             commandBarItems = settings.commandBarItems,
+            rotation = overrides.rotation ?: Rotation.None,
+            orientation = settings.readerOrientation,
         )
     }
 }

@@ -6,7 +6,23 @@ enum class ScaleMode { FitScreen, FitWidth, FitHeight, Original, Stretch }
 
 enum class TrimStrength { Off, Weak, Medium, Strong, Strongest }
 
-enum class Rotation(val degrees: Int) { None(0), Quarter(90), Half(180), ThreeQuarters(270) }
+/** A clockwise turn of the pages. */
+enum class Rotation(val degrees: Int) {
+    None(0),
+    Quarter(90),
+    Half(180),
+    ThreeQuarters(270),
+    ;
+
+    /** Whether width and height trade places. */
+    val swapsSides: Boolean get() = degrees % 180 != 0
+
+    /** 90 degrees further clockwise. */
+    fun next(): Rotation = entries[(ordinal + 1) % entries.size]
+}
+
+/** The shape of a page turned by [rotation]. */
+fun PageShape.Known.rotated(rotation: Rotation): PageShape.Known = if (rotation.swapsSides) PageShape.Known(height, width) else this
 
 data class ImageAdjust(
     /** −5 to +5. One scale for gamma and brightness. */

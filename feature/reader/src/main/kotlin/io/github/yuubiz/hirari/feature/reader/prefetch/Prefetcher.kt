@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
+import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.Side
 import io.github.yuubiz.hirari.feature.reader.Turn
 import kotlinx.coroutines.CoroutineScope
@@ -25,10 +26,16 @@ sealed interface PreparedPage<out T> {
 }
 
 /**
- * The pixel size of each page of [view] in reading order, and for a half the side of its page it shows. A view
- * prepared for other sizes, before the screen turned or the scale mode changed, is stale.
+ * What is done to a page after it is scaled, in the order of docs/spec.md section 4.8: the [rotation], then for a
+ * half the side of the turned page it shows ([crop]).
  */
-data class ViewTarget(val view: PageView, val sizes: List<PixelSize>, val crop: Side? = null) {
+data class PageSteps(val crop: Side? = null, val rotation: Rotation = Rotation.None)
+
+/**
+ * The pixel size of each page of [view] in reading order, as shown, and the [steps] that make it. A view prepared
+ * for other sizes or steps, before the screen turned or the scale mode or the rotation changed, is stale.
+ */
+data class ViewTarget(val view: PageView, val sizes: List<PixelSize>, val steps: PageSteps = PageSteps()) {
     val bytes: Long get() = sizes.sumOf { it.width.toLong() * it.height * 4 }
 }
 
@@ -38,8 +45,8 @@ class PreparedView<out T>(val target: ViewTarget, val pages: List<PreparedPage<T
 interface PageLoader<T> {
     suspend fun shape(page: Int): PageResult<PageShape.Known>
 
-    /** The pixels of [page] at [size]. With [crop], [size] is that half of the page. */
-    suspend fun prepare(page: Int, size: PixelSize, crop: Side?): PageResult<T>
+    /** The pixels of [page] at [size] as shown, made by [steps]. With a crop, [size] is that half of the page. */
+    suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps): PageResult<T>
 }
 
 /** What the reader shows, for the next plan. [targets] gives `null` for a view whose shapes are not known. */
@@ -182,7 +189,7 @@ class Prefetcher<T>(
         val pages = arrayOfNulls<PreparedPage<T>>(target.view.pages.size)
         try {
             coroutineScope {
-                target.view.pages.forEachIndexed { i, page -> launch { pages[i] = preparePage(page, target.sizes[i], target.crop) } }
+                target.view.pages.forEachIndexed { i, page -> launch { pages[i] = preparePage(page, target.sizes[i], target.steps) } }
             }
         } catch (e: CancellationException) {
             pages.forEach { if (it is PreparedPage.Image) release(it.image) }
@@ -195,9 +202,9 @@ class Prefetcher<T>(
         listener.onChanged()
     }
 
-    private suspend fun preparePage(page: Int, size: PixelSize, crop: Side?): PreparedPage<T> {
+    private suspend fun preparePage(page: Int, size: PixelSize, steps: PageSteps): PreparedPage<T> {
         failures[page]?.let { return PreparedPage.Error(it) }
-        return when (val result = loader.prepare(page, size, crop)) {
+        return when (val result = loader.prepare(page, size, steps)) {
             is PageResult.Ready -> PreparedPage.Image(result.image)
             is PageResult.Failed -> PreparedPage.Error(result).also { failures[page] = result }
             is PageResult.Unsupported -> PreparedPage.Error(result).also { failures[page] = result }

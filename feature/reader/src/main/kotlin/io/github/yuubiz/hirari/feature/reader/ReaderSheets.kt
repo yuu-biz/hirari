@@ -1,6 +1,5 @@
 package io.github.yuubiz.hirari.feature.reader
 
-import android.content.pm.ActivityInfo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.ReaderCommand
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.delay
 
@@ -249,7 +249,7 @@ internal fun MenuSheet(viewModel: ReaderViewModel, state: ReaderState, onCloseMe
                 onCloseReader()
                 return
             }
-            MenuItem.Orientation -> viewModel.nextOrientation()
+            MenuItem.Orientation -> viewModel.command(ReaderCommand.Orientation, android.os.SystemClock.uptimeMillis())
             MenuItem.MirrorControls -> viewModel.command(ReaderCommand.MirrorControls, android.os.SystemClock.uptimeMillis())
             else -> return
         }
@@ -294,10 +294,10 @@ private fun MenuRow(item: MenuItem, value: String?, onClick: () -> Unit) {
 @Composable
 private fun MenuItem.value(viewModel: ReaderViewModel, state: ReaderState): String? = when (this) {
     MenuItem.Orientation -> stringResource(
-        when (viewModel.orientation) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> R.string.orientation_portrait
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> R.string.orientation_landscape
-            else -> R.string.orientation_device
+        when (state.config.orientation) {
+            ReaderOrientation.Portrait -> R.string.orientation_portrait
+            ReaderOrientation.Landscape -> R.string.orientation_landscape
+            ReaderOrientation.System -> R.string.orientation_device
         },
     )
     MenuItem.MirrorControls -> stringResource(if (state.config.mirrored) R.string.menu_on else R.string.menu_off)
