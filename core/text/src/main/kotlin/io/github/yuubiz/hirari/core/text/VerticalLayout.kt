@@ -60,7 +60,7 @@ private class Piece(
 }
 
 /** Per display unit of a paragraph, what its spans make of it. */
-private class ParagraphStyles(paragraph: Paragraph) {
+private class ParagraphStyles(val paragraph: Paragraph) {
     private val n = paragraph.text.length
     val scale = FloatArray(n) { if (paragraph.isTitle) HEADING_SCALE else 1f }
     val bold = BooleanArray(n)
@@ -96,6 +96,24 @@ private class ParagraphStyles(paragraph: Paragraph) {
     }
 
     fun isFree(atom: Atom): Boolean = (atom.from until atom.to).none { inRuby[it] || rightMarks[it] }
+}
+
+/**
+ * The spans of a paragraph that touch a stretch of it, for stretches that move forward. Each span is looked at when the
+ * stretch reaches it and when it leaves, so laying out every line costs the spans once and not once per line.
+ */
+private class SpanSweep(private val spans: List<Span>) {
+    private val byStart = spans.indices.sortedBy { spans[it].start }
+    private var next = 0
+    private val active = ArrayList<Int>()
+
+    /** The spans over display indices `from until to`, in their order in the paragraph. */
+    fun overlapping(from: Int, to: Int): List<Span> {
+        while (next < byStart.size && spans[byStart[next]].start < to) active += byStart[next++]
+        active.removeAll { spans[it].end <= from }
+        active.sort()
+        return active.map(spans::get)
+    }
 }
 
 /**
@@ -204,75 +222,108 @@ class VerticalLayout(
         return lines.map { it.copy(x = it.x - left / 2) }
     }
 
-    /** The columns of [paragraph], with [TextLine.x] still unset. */
-    private fun layoutParagraph(paragraph: Paragraph): List<TextLine> {
+    /**
+     * The columns of [paragraph], with [TextLine.x] still unset. They come one at a time, so the first page of a very
+     * long line costs the page and not the line.
+     */
+    private fun layoutParagraph(paragraph: Paragraph): Sequence<TextLine> {
         if (paragraph.text.isEmpty()) {
-            return listOf(TextLine(0f, fontSize, 0f, 0f, emptyList(), emptyList(), emptyList(), emptyList(), paragraph.start, paragraph.end))
+            return sequenceOf(TextLine(0f, fontSize, 0f, 0f, emptyList(), emptyList(), emptyList(), emptyList(), paragraph.start, paragraph.end))
         }
-        val styles = ParagraphStyles(paragraph)
-        val units = units(paragraph, styles)
-        val bottom = paragraph.bottom
-        val splitAt = if (bottom == null) units.size else units.indexOfFirst { it.atoms.first().from >= bottom.from }.let { if (it < 0) units.size else it }
-        val head = breakLines(units, 0, splitAt) { if (it == 0) paragraph.indent else paragraph.wrapIndent }
-        val bottomAt = params.height - (bottom?.raise ?: 0) * fontSize
-        val tail = if (splitAt < units.size) breakLines(units, splitAt, units.size) { 0 } else emptyList()
-        val lines = ArrayList<TextLine>()
-        head.forEach { (range, indent) -> lines += placeLine(paragraph, styles, units, range, indent * fontSize) }
-        val lastHead = head.lastOrNull()
-        val onlyTail = tail.singleOrNull()?.first
-        if (lastHead != null && onlyTail != null &&
-            lineLength(units, lastHead.first) + lastHead.second * fontSize + fontSize + lineLength(units, onlyTail) <= bottomAt + EPSILON
-        ) {
-            lines[lines.lastIndex] = placeLine(
-                paragraph, styles, units, lastHead.first.first..onlyTail.last, lastHead.second * fontSize, onlyTail.first, bottomAt,
-            )
-        } else {
-            tail.forEach { (range, _) -> lines += placeLine(paragraph, styles, units, range, 0f, range.first, bottomAt) }
-        }
-        lines[0] = lines[0].copy(start = paragraph.start)
-        lines[lines.lastIndex] = lines.last().copy(end = paragraph.end)
-        return lines
+        return sequence {
+            val styles = ParagraphStyles(paragraph)
+            val units = UnitCursor(styles)
+            val sweep = SpanSweep(paragraph.spans)
+            val bottom = paragraph.bottom
+            val bottomAt = params.height - (bottom?.raise ?: 0) * fontSize
+            val head = breakLines(units, { bottom != null && it.atoms.first().from >= bottom.from }) {
+                if (it == 0) paragraph.indent else paragraph.wrapIndent
+            }
+            var lastHead: BrokenLine? = null
+            for (line in head) {
+                lastHead?.let { yield(placeLine(paragraph, sweep, it.pieces, it.indent * fontSize)) }
+                lastHead = line
+            }
+            val tail = breakLines(units, { false }) { 0 }.iterator()
+            val firstTail = if (tail.hasNext()) tail.next() else null
+            val onlyTail = firstTail?.takeIf { !tail.hasNext() }
+            if (lastHead != null && onlyTail != null &&
+                lineLength(lastHead.pieces) + lastHead.indent * fontSize + fontSize + lineLength(onlyTail.pieces) <= bottomAt + EPSILON
+            ) {
+                yield(placeLine(paragraph, sweep, lastHead.pieces + onlyTail.pieces, lastHead.indent * fontSize, lastHead.pieces.size, bottomAt))
+                return@sequence
+            }
+            lastHead?.let { yield(placeLine(paragraph, sweep, it.pieces, it.indent * fontSize)) }
+            if (firstTail != null) {
+                yield(placeLine(paragraph, sweep, firstTail.pieces, 0f, 0, bottomAt))
+                for (line in tail) yield(placeLine(paragraph, sweep, line.pieces, 0f, 0, bottomAt))
+            }
+        }.rebased(paragraph.start, paragraph.end)
     }
 
-    /** The length of units [range] when they make a line by themselves. */
-    private fun lineLength(units: List<Piece>, range: IntRange): Float {
-        var length = units[range.first].lead
-        for (i in range) length += units[i].pitch
-        return length - units[range.last].gap + units[range.last].tail
+    /** [start] and [end] stand for the first and last column, which also hold the notes around the line. */
+    private fun Sequence<TextLine>.rebased(start: Int, end: Int): Sequence<TextLine> = sequence {
+        var held: TextLine? = null
+        for (line in this@rebased) {
+            held?.let { yield(it) }
+            held = if (held == null) line.copy(start = start) else line
+        }
+        held?.let { yield(it.copy(end = end)) }
     }
 
-    /** Greedy line breaking with push-out kinsoku. Each line's unit range and indent in ems. */
-    private fun breakLines(units: List<Piece>, from: Int, to: Int, indentOf: (Int) -> Int): List<Pair<IntRange, Int>> {
-        val result = ArrayList<Pair<IntRange, Int>>()
+    /** The length of [pieces] when they make a line by themselves. */
+    private fun lineLength(pieces: List<Piece>): Float {
+        var length = pieces.first().lead
+        for (piece in pieces) length += piece.pitch
+        return length - pieces.last().gap + pieces.last().tail
+    }
+
+    private class BrokenLine(val pieces: List<Piece>, val indent: Int)
+
+    /**
+     * Greedy line breaking with push-out kinsoku, one line at a time, over the pieces of [units] that [isTail] does not
+     * reject. [indentOf] gives a line's indent in ems from its number.
+     */
+    private fun breakLines(units: UnitCursor, isTail: (Piece) -> Boolean, indentOf: (Int) -> Int): Sequence<BrokenLine> = sequence {
         val maxIndent = maxOf(0, (params.height / fontSize).toInt() - 2)
-        var i = from
-        while (i < to) {
-            val indent = indentOf(result.size).coerceIn(0, maxIndent)
+        fun pull(): Piece? {
+            val next = units.peek() ?: return null
+            return if (isTail(next)) null else units.take()
+        }
+        var buffer = ArrayList<Piece>()
+        var number = 0
+        while (true) {
+            if (buffer.isEmpty()) buffer.add(pull() ?: break)
+            val indent = indentOf(number).coerceIn(0, maxIndent)
             val limit = params.height - indent * fontSize
-            var j = i + 1
-            var length = units[i].lead + units[i].extent
-            while (j < to) {
-                val next = length + units[j - 1].gap + units[j].extent
-                if (next + units[j].tail > limit + EPSILON) break
+            var j = 1
+            var length = buffer[0].lead + buffer[0].extent
+            var overflow = false
+            while (true) {
+                if (j == buffer.size) buffer.add(pull() ?: break)
+                val next = length + buffer[j - 1].gap + buffer[j].extent
+                if (next + buffer[j].tail > limit + EPSILON) {
+                    overflow = true
+                    break
+                }
                 length = next
                 j++
             }
-            if (j < to) {
+            if (overflow) {
                 var b = j
-                while (b > i + 1 && (units[b].noStart || units[b - 1].noEnd)) b--
-                if (!units[b].noStart && !units[b - 1].noEnd) j = b
+                while (b > 1 && (buffer[b].noStart || buffer[b - 1].noEnd)) b--
+                if (!buffer[b].noStart && !buffer[b - 1].noEnd) j = b
             }
-            result += (i until j) to indent
-            i = j
+            yield(BrokenLine(ArrayList(buffer.subList(0, j)), indent))
+            buffer = ArrayList(buffer.subList(j, buffer.size))
+            number++
         }
-        return result
     }
 
     private fun placeLine(
         paragraph: Paragraph,
-        styles: ParagraphStyles,
-        units: List<Piece>,
-        range: IntRange,
+        sweep: SpanSweep,
+        pieces: List<Piece>,
         offset: Float,
         bottomFrom: Int = -1,
         bottomAt: Float = 0f,
@@ -280,10 +331,9 @@ class VerticalLayout(
         val glyphs = ArrayList<Glyph>()
         val atoms = ArrayList<Atom>()
         val rubies = ArrayList<RubyRun>()
-        var y = offset + units[range.first].lead
-        for (i in range) {
-            if (i == bottomFrom) y = bottomAt - lineLength(units, i..range.last) + units[i].lead
-            val unit = units[i]
+        var y = offset + pieces.first().lead
+        for ((i, unit) in pieces.withIndex()) {
+            if (i == bottomFrom) y = bottomAt - lineLength(pieces.subList(i, pieces.size)) + unit.lead
             val share = unit.spread / unit.atoms.size
             var atomY = y + share / 2
             for (atom in unit.atoms) {
@@ -299,7 +349,7 @@ class VerticalLayout(
         }
         val emphasis = ArrayList<EmphasisRun>()
         val sideLines = ArrayList<SideLineRun>()
-        for (span in paragraph.spans) {
+        for (span in sweep.overlapping(atoms.first().from, atoms.last().from + 1)) {
             val covered = atoms.indices.filter { atoms[it].from >= span.start && atoms[it].from < span.end }
             if (covered.isEmpty()) continue
             when (span) {
@@ -317,7 +367,7 @@ class VerticalLayout(
         val leftBand = if (MarkSide.Left in marks) params.rubySize else 0f
         return TextLine(
             0f, glyphs.maxOf { it.size }, rightBand, leftBand, glyphs, rubies, emphasis, sideLines,
-            units[range.first].start, units[range.last].end,
+            pieces.first().start, pieces.last().end,
         )
     }
 
@@ -330,25 +380,43 @@ class VerticalLayout(
         return List(ems) { glyph.y + glyph.advance * (it + 0.5f) / ems }
     }
 
-    private fun units(paragraph: Paragraph, styles: ParagraphStyles): List<Piece> {
-        val atoms = atoms(paragraph, styles)
-        val units = ArrayList<Piece>(atoms.size)
-        var a = 0
-        while (a < atoms.size) {
-            val ruby = styles.rubyAt[atoms[a].from]
-            if (ruby == null) {
-                units += Piece(listOf(atoms[a]))
-                a++
-                continue
-            }
-            var b = a
-            while (b < atoms.size && atoms[b].from < ruby.end) b++
-            val leadFree = a > 0 && styles.isFree(atoms[a - 1])
-            val tailFree = b < atoms.size && styles.isFree(atoms[b])
-            units += rubyPieces(atoms.subList(a, b).toList(), ruby.text, leadFree, tailFree)
-            a = b
+    /**
+     * The pieces of a paragraph, made as they are asked for. A ruby group needs the atom before it and the atom after
+     * it, which is all the lookahead there is.
+     */
+    private inner class UnitCursor(private val styles: ParagraphStyles) {
+        private val atoms = AtomCursor(styles)
+        private val queue = ArrayDeque<Piece>()
+        private var previous: Atom? = null
+
+        fun peek(): Piece? {
+            while (queue.isEmpty()) if (!fill()) return null
+            return queue.first()
         }
-        return units
+
+        fun take(): Piece? = peek()?.also { queue.removeFirst() }
+
+        private fun fill(): Boolean {
+            val first = atoms.take() ?: return false
+            val ruby = styles.rubyAt[first.from]
+            if (ruby == null) {
+                queue.addLast(Piece(listOf(first)))
+                previous = first
+                return true
+            }
+            val group = arrayListOf(first)
+            while (true) {
+                val next = atoms.peek() ?: break
+                if (next.from >= ruby.end) break
+                group += next
+                atoms.take()
+            }
+            val leadFree = previous?.let(styles::isFree) == true
+            val tailFree = atoms.peek()?.let(styles::isFree) == true
+            rubyPieces(group, ruby.text, leadFree, tailFree).forEach(queue::addLast)
+            previous = group.last()
+            return true
+        }
     }
 
     /**
@@ -378,18 +446,29 @@ class VerticalLayout(
         return Piece(atoms, ruby, length, excess - lead - tail, lead, tail)
     }
 
-    private fun atoms(paragraph: Paragraph, styles: ParagraphStyles): List<Atom> {
-        val text = paragraph.text
-        val result = ArrayList<Atom>(text.length)
-        val add = { content: GlyphContent, from: Int, to: Int, extent: Float ->
-            val size = styles.scale[from] * fontSize
-            result += Atom(
-                content, from, to, paragraph.sourceStart(from), paragraph.sourceStart(to), size, styles.bold[from], extent,
-                params.letterGap * size, text[from], text[to - 1],
-            )
+    /** The atoms of a paragraph, made as they are asked for. One step may make several, such as the words of a run. */
+    private inner class AtomCursor(private val styles: ParagraphStyles) {
+        private val text = styles.paragraph.text
+        private val queue = ArrayDeque<Atom>()
+        private var i = 0
+
+        fun peek(): Atom? {
+            while (queue.isEmpty() && i < text.length) step()
+            return queue.firstOrNull()
         }
-        var i = 0
-        while (i < text.length) {
+
+        fun take(): Atom? = peek()?.also { queue.removeFirst() }
+
+        private fun step() {
+            val add = { content: GlyphContent, from: Int, to: Int, extent: Float ->
+                val size = styles.scale[from] * fontSize
+                queue.addLast(
+                    Atom(
+                        content, from, to, styles.paragraph.sourceStart(from), styles.paragraph.sourceStart(to), size, styles.bold[from], extent,
+                        params.letterGap * size, text[from], text[to - 1],
+                    ),
+                )
+            }
             val size = styles.scale[i] * fontSize
             val groupEnd = styles.groupEnd[i]
             val image = styles.image[i]
@@ -426,7 +505,6 @@ class VerticalLayout(
                 }
             }
         }
-        return result
     }
 
     private fun latinRun(text: String, from: Int, to: Int, size: Float, bold: Boolean, add: (GlyphContent, Int, Int, Float) -> Unit) {

@@ -120,6 +120,21 @@ class VerticalLayoutTest {
     }
 
     @Test
+    fun `the first page of one huge line is laid out without the rest of the line`() {
+        val line = "Hello world 漢字《かんじ》の「話」。".repeat(20_000)
+        val huge = parseAozora("題\n$line\n")
+        var laidOut = 0
+        val counting = GlyphMetrics { text, size, bold -> laidOut++; FixedGlyphMetrics.width(text, size, bold) }
+        val first = VerticalLayout(huge, params(20f), counting).pages().first()
+        val firstOnly = laidOut
+        val all = VerticalLayout(huge, params(20f), counting).pages().toList()
+        assertEquals(all.first(), first)
+        assertTrue(firstOnly * 20 < laidOut - firstOnly, "first page measured $firstOnly of ${laidOut - firstOnly}")
+        all.zipWithNext { a, b -> assertEquals(a.end, b.start) }
+        assertEquals(huge.sourceLength, all.last().end)
+    }
+
+    @Test
     fun `an empty book has one empty page`() {
         assertEquals(listOf(TextPage(PageContent.Lines(emptyList()), 0, 0)), VerticalLayout(parseAozora(""), params(20f), FixedGlyphMetrics).pages().toList())
     }
