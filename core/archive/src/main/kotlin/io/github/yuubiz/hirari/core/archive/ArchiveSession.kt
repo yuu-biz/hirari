@@ -9,6 +9,7 @@ import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.max
 import kotlin.math.min
@@ -36,18 +37,19 @@ class ArchiveSession private constructor(
     // Touched only on the session thread.
     private var cursor: Cursor = if (listing.error == null) Cursor.Before(entries.size) else Cursor.Closed
 
-    @Volatile
-    private var closed = false
+    private val closed = AtomicBoolean(false)
 
     /**
      * The bytes of the entry at [entryIndex], or why they cannot be read. Stops with [EntryResult.TooLarge] once
      * the entry declares or reaches more than [maxBytes].
      */
     suspend fun read(entryIndex: Int, maxBytes: Int = MAX_ENTRY_BYTES): EntryResult {
-        check(!closed) { "the session is closed" }
+        check(!closed.get()) { "the session is closed" }
         val entry = entries[entryIndex]
         refusal(entry, maxBytes)?.let { return it }
         return withContext(dispatcher) {
+            // A dispatch rejected by the shut-down executor resumes on another thread after the handle is freed.
+            if (closed.get()) throw CancellationException("the session is closed")
             archive.begin(coroutineContext.job)
             when (val failure = moveTo(entryIndex)) {
                 null -> readData(entry, maxBytes)
@@ -58,8 +60,7 @@ class ArchiveSession private constructor(
 
     /** Frees the handle and closes the source after the call in progress, if any, returns. */
     override fun close() {
-        if (closed) return
-        closed = true
+        if (!closed.compareAndSet(false, true)) return
         release(archive, executor)
     }
 
