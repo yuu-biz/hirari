@@ -23,7 +23,6 @@ import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
 import kotlin.coroutines.cancellation.CancellationException
 import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
@@ -146,7 +145,7 @@ class SmbjPlaces(
     override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource {
         if (!localNetwork.granted()) throw SmbConnectException(SmbConnectFailure.Unreachable, "local network not granted")
         val server = shares.server(place) { login(place.user, place.credential) }
-        return withContext(Dispatchers.IO) { server.open(normalizePath("${place.basePath}/$path")) }
+        return openOwned(Dispatchers.IO) { server.open(normalizePath("${place.basePath}/$path")) }
     }
 
     override suspend fun forget(id: LocationId) = shares.forget(id)

@@ -30,6 +30,8 @@ import java.io.FileNotFoundException
 import java.nio.charset.Charset
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 
 /** One entry of an archive as the archive list reads it (docs/spec.md section 4.7). */
@@ -123,12 +125,10 @@ class DeviceArchives(private val resolver: ContentResolver, private val cacheDir
             when (place) {
                 is LibraryLocation.SafTree -> {
                     if (!place.permissionHeld) return ArchiveOpenResult.Failed(ArchiveFailure.NoPermission)
-                    withContext(Dispatchers.IO) {
-                        val tree = Uri.parse(place.treeUri.value)
-                        val id = documentId ?: resolver.findDocumentId(tree, path) ?: throw FileNotFoundException()
-                        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                        resolver.openByteSource(uri, File(cacheDir, "copy")) to UriString(uri.toString())
-                    }
+                    val tree = Uri.parse(place.treeUri.value)
+                    val id = documentId ?: withContext(Dispatchers.IO) { resolver.findDocumentId(tree, path) } ?: throw FileNotFoundException()
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                    openOwned(Dispatchers.IO) { resolver.openByteSource(uri, File(cacheDir, "copy")) } to UriString(uri.toString())
                 }
                 is LibraryLocation.SmbShare -> smb.open(place, path) to null
             }
@@ -172,6 +172,20 @@ private class SessionContents(private val session: ArchiveSession, override val 
     }
 
     override fun close() = session.close()
+}
+
+/**
+ * [open] on [context]. When the caller is cancelled after [open] made its handle, `withContext` drops the handle; it
+ * is closed here before the cancellation goes on, so a file or a remote handle is never left open.
+ */
+internal suspend fun <T : Closeable> openOwned(context: CoroutineContext, open: () -> T): T {
+    val made = AtomicReference<T?>()
+    try {
+        return withContext(context) { open().also(made::set) }
+    } catch (e: CancellationException) {
+        made.get()?.close()
+        throw e
+    }
 }
 
 /** The charsets a user may choose for the names (docs/spec.md section 3.4), with their labels. */
