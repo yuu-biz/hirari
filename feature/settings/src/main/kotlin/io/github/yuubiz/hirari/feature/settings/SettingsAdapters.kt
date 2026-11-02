@@ -26,6 +26,7 @@ fun settingsServices(storage: Storage, context: Context): SettingsServices {
         clearThumbnails = storage.thumbnails::clear,
         clearExtraction = { ExtractionCache.under(application.cacheDir).clear() },
         about = { BundledAbout(application).load() },
+        fonts = StorageFonts(storage.fonts, application.contentResolver),
     )
 }
 

@@ -68,6 +68,26 @@ private val commandChoices: List<Option<ReaderCommand>> = listOf(
 ).map { (command, label) -> Option(command, label) }
 
 /**
+ * 本文の書体. The table offers the two system typefaces; the dialog adds the fonts the user imported
+ * (docs/spec.md section 4.10), which only the screen knows.
+ */
+internal val TypefaceSetting: ChoiceSetting<TextTypeface> = ChoiceSetting(
+    key = GlobalSettings::textTypeface.name,
+    group = SettingGroup.Text,
+    label = "本文の書体",
+    options = listOf(Option(TextTypeface.Mincho, "明朝体"), Option(TextTypeface.Gothic, "ゴシック体")),
+    read = GlobalSettings::textTypeface,
+    write = { s, v -> s.copy(textTypeface = v) },
+    describe = { value ->
+        when (value) {
+            TextTypeface.Mincho -> "明朝体"
+            TextTypeface.Gothic -> "ゴシック体"
+            is TextTypeface.Imported -> "取り込んだ書体（${value.fileName}）"
+        }
+    },
+)
+
+/**
  * Every setting of docs/spec.md section 4.10 that has an effect to choose, in the order and under the groups of the
  * spec. The breath control settings are not here until the feature exists (milestone M6).
  */
@@ -187,23 +207,7 @@ val SettingsTable: List<Setting> = buildList {
     )
 
     val text = SettingGroup.Text
-    add(
-        ChoiceSetting(
-            key = GlobalSettings::textTypeface.name,
-            group = text,
-            label = "本文の書体",
-            options = listOf(Option(TextTypeface.Mincho, "明朝体"), Option(TextTypeface.Gothic, "ゴシック体")),
-            read = GlobalSettings::textTypeface,
-            write = { s, v -> s.copy(textTypeface = v) },
-            describe = { value ->
-                when (value) {
-                    TextTypeface.Mincho -> "明朝体"
-                    TextTypeface.Gothic -> "ゴシック体"
-                    is TextTypeface.Imported -> "取り込んだ書体（${value.fileName}）"
-                }
-            },
-        ),
-    )
+    add(TypefaceSetting)
     add(slider(GlobalSettings::textSizeSp, text, "文字の大きさ", { _ -> GlobalSettings.TEXT_SIZE_SP.toList() }, { "$it sp" }) { s, v -> s.copy(textSizeSp = v) })
     add(
         slider(

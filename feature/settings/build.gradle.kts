@@ -75,6 +75,7 @@ androidComponents {
 dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:archive"))
+    implementation(project(":core:source"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

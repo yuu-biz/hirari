@@ -64,6 +64,9 @@
     <string name="import_start">読み込む</string>
     <string name="import_done">設定を読み込みました。</string>
 
+    <string name="settings_import_font">書体を取り込む</string>
+    <string name="font_imported">書体「%1$s」を取り込み、本文の書体にしました。</string>
+
     <string name="clear_thumbnails_done">サムネイルのキャッシュを消しました。</string>
     <string name="clear_extraction_done">展開キャッシュを消しました。%1$s を空けました。</string>
     <string name="clear_extraction_nothing">消す展開キャッシュはありませんでした。</string>
@@ -75,4 +78,7 @@
     <string name="problem_apply_failed">読み込みに失敗しました。もう一度試してください。</string>
     <string name="problem_cannot_clear">消せませんでした。</string>
     <string name="problem_cannot_save">設定を保存できませんでした。</string>
+    <string name="problem_not_a_font">書体のファイルではありません。TTF、OTF、TTC のファイルを選んでください。</string>
+    <string name="problem_no_room_for_font">空き容量が足りないので、書体を取り込めませんでした。</string>
+    <string name="problem_cannot_read_font">書体のファイルを読めませんでした。</string>
 </resources>

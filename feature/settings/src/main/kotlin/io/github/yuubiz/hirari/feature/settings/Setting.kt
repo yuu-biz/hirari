@@ -56,7 +56,10 @@ class ChoiceSetting<T>(
     val read: (GlobalSettings) -> T,
     val write: (GlobalSettings, T) -> GlobalSettings,
     val describe: (T) -> String = { value -> options.firstOrNull { it.value == value }?.label ?: value.toString() },
-) : Setting(key, group, label, note, minSdk)
+) : Setting(key, group, label, note, minSdk) {
+    /** This setting with [more] after its own options. */
+    fun plusOptions(more: List<Option<T>>) = ChoiceSetting(key, group, label, note, minSdk, options + more, read, write, describe)
+}
 
 /** A number that moves along [values]. The values depend on the settings, as the tap band does on the tap layout. */
 class SliderSetting<T>(

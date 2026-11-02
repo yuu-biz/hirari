@@ -67,6 +67,9 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
     val openDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.prepareImport(UriString(uri.toString()))
     }
+    val openFont = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importFont(UriString(uri.toString()))
+    }
 
     Scaffold(
         topBar = {
@@ -110,7 +113,9 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                     item(key = "about") { ActionRow(stringResource(R.string.settings_about), null) { aboutDialog = true } }
                 }
                 openedSetting?.let { key ->
-                    SettingsTable.firstOrNull { it.key == key }?.let { SettingDialog(it, settings, viewModel::change) { openedSetting = null } }
+                    SettingsTable.firstOrNull { it.key == key }?.let {
+                        SettingDialog(it, settings, ui.fonts, { openFont.launch(FONT_MIME_TYPES) }, viewModel::change) { openedSetting = null }
+                    }
                 }
             }
         }

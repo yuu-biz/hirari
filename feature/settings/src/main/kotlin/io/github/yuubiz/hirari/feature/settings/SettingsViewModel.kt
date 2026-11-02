@@ -2,9 +2,11 @@ package io.github.yuubiz.hirari.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.data.FontImport
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ImportChanges
 import io.github.yuubiz.hirari.core.data.SettingsRepository
+import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +63,8 @@ class SettingsServices(
 
     /** The version, build date and changes that このアプリについて shows. Runs its I/O off the main thread. */
     val about: suspend () -> AboutInfo,
+
+    val fonts: FontLibrary,
 )
 
 sealed interface SettingsLoad {
@@ -72,9 +76,9 @@ sealed interface SettingsLoad {
     data class Ready(val settings: GlobalSettings) : SettingsLoad
 }
 
-enum class Step { Exporting, Reading, Applying, ClearingThumbnails, ClearingExtraction }
+enum class Step { Exporting, Reading, Applying, ClearingThumbnails, ClearingExtraction, ImportingFont }
 
-enum class Problem { CannotWrite, CannotRead, TooLarge, NotASettingsFile, ApplyFailed, CannotClear, CannotSave }
+enum class Problem { CannotWrite, CannotRead, TooLarge, NotASettingsFile, ApplyFailed, CannotClear, CannotSave, NotAFont, NoRoomForFont, CannotReadFont }
 
 sealed interface ActionResult {
     data class Exported(val includedReading: Boolean) : ActionResult
@@ -84,6 +88,9 @@ sealed interface ActionResult {
     data object ThumbnailsCleared : ActionResult
 
     data class ExtractionCleared(val freedBytes: Long) : ActionResult
+
+    /** The font is stored as [fileName] and is now the text typeface. */
+    data class FontImported(val fileName: String) : ActionResult
 
     data class Failed(val problem: Problem) : ActionResult
 }
@@ -100,8 +107,16 @@ sealed interface ActionState {
     data class Done(val result: ActionResult) : ActionState
 }
 
-/** [saveFailures] counts the changes that could not be written, so a control can go back to the stored value. */
-data class SettingsUiState(val load: SettingsLoad, val action: ActionState, val saveFailures: Int = 0)
+/**
+ * [saveFailures] counts the changes that could not be written, so a control can go back to the stored value.
+ * [fonts] are the file names of the imported fonts.
+ */
+data class SettingsUiState(
+    val load: SettingsLoad,
+    val action: ActionState,
+    val saveFailures: Int = 0,
+    val fonts: List<String> = emptyList(),
+)
 
 /**
  * Holds the state of the settings screen. All file and database work runs on [io]; the settings repository is safe
@@ -122,8 +137,49 @@ class SettingsViewModel(
 
     private val saveFailures = MutableStateFlow(0)
 
-    val state: StateFlow<SettingsUiState> = combine(load, action, saveFailures, ::SettingsUiState)
+    private val fonts = MutableStateFlow<List<String>>(emptyList())
+
+    val state: StateFlow<SettingsUiState> = combine(load, action, saveFailures, fonts, ::SettingsUiState)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SettingsUiState(SettingsLoad.Loading, ActionState.Idle))
+
+    init {
+        viewModelScope.launch { refreshFonts() }
+    }
+
+    /** Copies the font at [uri] into the imported fonts and, once stored, makes it the text typeface. */
+    fun importFont(uri: UriString) {
+        if (!begin(Step.ImportingFont)) return
+        viewModelScope.launch {
+            val outcome = try {
+                services.fonts.import(uri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                FontImport.Unreadable
+            }
+            if (outcome is FontImport.Imported) refreshFonts()
+            finish(
+                if (outcome is FontImport.Imported && !use(outcome.fileName)) ActionResult.Failed(Problem.CannotSave) else outcome.toResult(),
+            )
+        }
+    }
+
+    private suspend fun use(fileName: String): Boolean = try {
+        services.settings.update { it.copy(textTypeface = TextTypeface.Imported(fileName)) }
+        true
+    } catch (e: IOException) {
+        false
+    }
+
+    private suspend fun refreshFonts() {
+        fonts.value = try {
+            services.fonts.list()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            fonts.value
+        }
+    }
 
     /** Writes the settings [transform] makes from the stored ones; the repository moves numbers to allowed values. */
     fun change(transform: (GlobalSettings) -> GlobalSettings) {

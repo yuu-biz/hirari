@@ -1,9 +1,11 @@
 package io.github.yuubiz.hirari.feature.settings
 
+import io.github.yuubiz.hirari.core.data.FontImport
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ImportChanges
 import io.github.yuubiz.hirari.core.data.SettingsRepository
 import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -27,9 +29,25 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-@OptIn(ExperimentalCoroutinesApi::class)
 private val NO_ABOUT: suspend () -> AboutInfo = { AboutInfo(null, null, null) }
 
+private class FakeFonts : FontLibrary {
+    val stored = mutableListOf("a.ttf")
+    var outcome: FontImport = FontImport.Imported("new.ttf")
+    var failure: Exception? = null
+    val imported = mutableListOf<UriString>()
+
+    override suspend fun list(): List<String> = stored.toList()
+
+    override suspend fun import(uri: UriString): FontImport {
+        imported += uri
+        failure?.let { throw it }
+        (outcome as? FontImport.Imported)?.let { stored += it.fileName }
+        return outcome
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
     private class FakeSettings(initial: GlobalSettings = GlobalSettings()) : SettingsRepository {
         val stored = MutableStateFlow(initial)
@@ -93,6 +111,7 @@ class SettingsViewModelTest {
     private val settings = FakeSettings()
     private val documents = FakeDocuments()
     private val transfer = FakeTransfer()
+    private val fonts = FakeFonts()
     private var thumbnailsCleared = 0
     private var thumbnailFailure: Exception? = null
     private var extractionFreed = 0L
@@ -118,6 +137,7 @@ class SettingsViewModelTest {
                 extractionFreed
             },
             about = NO_ABOUT,
+            fonts = fonts,
         ),
         io = UnconfinedTestDispatcher(scope.testScheduler),
     ).also { vm -> scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { vm.state.collect {} } }
@@ -139,7 +159,7 @@ class SettingsViewModelTest {
 
             override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = Unit
         }
-        val vm = SettingsViewModel(SettingsServices(broken, transfer, documents, clearThumbnails = {}, clearExtraction = { 0L }, about = NO_ABOUT), UnconfinedTestDispatcher(testScheduler))
+        val vm = SettingsViewModel(SettingsServices(broken, transfer, documents, clearThumbnails = {}, clearExtraction = { 0L }, about = NO_ABOUT, fonts = FakeFonts()), UnconfinedTestDispatcher(testScheduler))
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertEquals(SettingsLoad.Failed, vm.state.value.load)
     }
@@ -269,7 +289,7 @@ class SettingsViewModelTest {
     @Test
     fun `a second action waits while one is running`() = runTest {
         val vm = SettingsViewModel(
-            SettingsServices(settings, transfer, documents, clearThumbnails = { thumbnailsCleared++ }, clearExtraction = { 0L }, about = NO_ABOUT),
+            SettingsServices(settings, transfer, documents, clearThumbnails = { thumbnailsCleared++ }, clearExtraction = { 0L }, about = NO_ABOUT, fonts = FakeFonts()),
             StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
@@ -321,7 +341,7 @@ class SettingsViewModelTest {
     fun `clearing the extraction cache shows a working state and ignores a second request`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val vm = SettingsViewModel(
-            SettingsServices(settings, transfer, documents, clearThumbnails = {}, clearExtraction = { gate.await(); 7L }, about = NO_ABOUT),
+            SettingsServices(settings, transfer, documents, clearThumbnails = {}, clearExtraction = { gate.await(); 7L }, about = NO_ABOUT, fonts = FakeFonts()),
             StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
@@ -333,5 +353,66 @@ class SettingsViewModelTest {
         gate.complete(Unit)
         advanceUntilIdle()
         assertEquals(ActionState.Done(ActionResult.ExtractionCleared(7)), vm.state.value.action)
+    }
+
+    @Test
+    fun `the imported fonts are listed for the typeface dialog`() = runTest {
+        val vm = viewModel(this)
+        assertEquals(listOf("a.ttf"), vm.state.value.fonts)
+    }
+
+    @Test
+    fun `an imported font becomes the text typeface and joins the list`() = runTest {
+        val vm = viewModel(this)
+        vm.importFont(uri)
+        assertEquals(ActionState.Done(ActionResult.FontImported("new.ttf")), vm.state.value.action)
+        assertEquals(TextTypeface.Imported("new.ttf"), settings.stored.value.textTypeface)
+        assertEquals(listOf("a.ttf", "new.ttf"), vm.state.value.fonts)
+    }
+
+    @Test
+    fun `a file that is no font changes nothing and says why`() = runTest {
+        val vm = viewModel(this)
+        fonts.outcome = FontImport.NotAFont
+        vm.importFont(uri)
+        assertEquals(ActionState.Done(ActionResult.Failed(Problem.NotAFont)), vm.state.value.action)
+        assertEquals(TextTypeface.Mincho, settings.stored.value.textTypeface)
+        assertEquals(listOf("a.ttf"), vm.state.value.fonts)
+    }
+
+    @Test
+    fun `a font that does not fit and one that cannot be read are told apart`() = runTest {
+        val vm = viewModel(this)
+        fonts.outcome = FontImport.NoRoom
+        vm.importFont(uri)
+        assertEquals(ActionState.Done(ActionResult.Failed(Problem.NoRoomForFont)), vm.state.value.action)
+        vm.dismissResult()
+
+        fonts.outcome = FontImport.Unreadable
+        vm.importFont(uri)
+        assertEquals(ActionState.Done(ActionResult.Failed(Problem.CannotReadFont)), vm.state.value.action)
+        vm.dismissResult()
+
+        fonts.failure = IOException("provider")
+        vm.importFont(uri)
+        assertEquals(ActionState.Done(ActionResult.Failed(Problem.CannotReadFont)), vm.state.value.action)
+        assertEquals(TextTypeface.Mincho, settings.stored.value.textTypeface)
+    }
+
+    @Test
+    fun `a stored font whose setting cannot be saved is reported as unsaved but stays listed`() = runTest {
+        val vm = viewModel(this)
+        settings.failure = IOException("disk")
+        vm.importFont(uri)
+        assertEquals(ActionState.Done(ActionResult.Failed(Problem.CannotSave)), vm.state.value.action)
+        assertEquals(listOf("a.ttf", "new.ttf"), vm.state.value.fonts)
+    }
+
+    @Test
+    fun `every import outcome has a result`() {
+        assertEquals(ActionResult.FontImported("x.otf"), FontImport.Imported("x.otf").toResult())
+        assertEquals(ActionResult.Failed(Problem.NotAFont), FontImport.NotAFont.toResult())
+        assertEquals(ActionResult.Failed(Problem.NoRoomForFont), FontImport.NoRoom.toResult())
+        assertEquals(ActionResult.Failed(Problem.CannotReadFont), FontImport.Unreadable.toResult())
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rgb
+import io.github.yuubiz.hirari.core.model.TextTypeface
 
 /**
  * Draws the row of [setting]. Rows that need a choice open their dialog through [onOpen]; the others edit in place.
@@ -68,8 +70,16 @@ internal fun SettingRow(
 
 /** The dialog of the choice, color or command list [setting]; nothing for a row that edits in place. */
 @Composable
-internal fun SettingDialog(setting: Setting, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit, onClose: () -> Unit) {
+internal fun SettingDialog(
+    setting: Setting,
+    settings: GlobalSettings,
+    importedFonts: List<String>,
+    onImportFont: () -> Unit,
+    onChange: ((GlobalSettings) -> GlobalSettings) -> Unit,
+    onClose: () -> Unit,
+) {
     when (setting) {
+        TypefaceSetting -> TypefaceDialog(importedFonts, settings, onImportFont, onChange, onClose)
         is ChoiceSetting<*> -> ChoiceDialog(setting, settings, onChange, onClose)
         is ColorSetting<*> -> ColorDialog(setting, settings, onChange, onClose)
         is OrderedSetSetting -> CommandsDialog(setting, settings, onChange, onClose)
@@ -163,15 +173,41 @@ private fun CommandsRow(setting: OrderedSetSetting, settings: GlobalSettings, on
     SummaryRow(setting, items.joinToString("、") { setting.labelOf(it) }.ifEmpty { stringResource(R.string.settings_command_empty) }, onOpen)
 }
 
+/** 本文の書体: the system typefaces, the imported fonts, and a button to import another. */
 @Composable
-private fun <T> ChoiceDialog(setting: ChoiceSetting<T>, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit, onClose: () -> Unit) {
+private fun TypefaceDialog(
+    importedFonts: List<String>,
+    settings: GlobalSettings,
+    onImportFont: () -> Unit,
+    onChange: ((GlobalSettings) -> GlobalSettings) -> Unit,
+    onClose: () -> Unit,
+) {
+    val setting = TypefaceSetting.plusOptions(importedFonts.map { Option(TextTypeface.Imported(it), it) })
+    ChoiceDialog(setting, settings, onChange, onClose) {
+        TextButton(
+            onClick = {
+                onClose()
+                onImportFont()
+            },
+        ) { Text(stringResource(R.string.settings_import_font)) }
+    }
+}
+
+@Composable
+private fun <T> ChoiceDialog(
+    setting: ChoiceSetting<T>,
+    settings: GlobalSettings,
+    onChange: ((GlobalSettings) -> GlobalSettings) -> Unit,
+    onClose: () -> Unit,
+    extraButton: (@Composable () -> Unit)? = null,
+) {
     val current = setting.read(settings)
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(setting.label) },
         text = {
             LazyColumn {
-                items(setting.options, key = { it.label }) { option ->
+                itemsIndexed(setting.options, key = { index, _ -> index }) { _, option ->
                     RadioRow(option.label, option.value == current) {
                         onChange { setting.write(it, option.value) }
                         onClose()
@@ -180,6 +216,7 @@ private fun <T> ChoiceDialog(setting: ChoiceSetting<T>, settings: GlobalSettings
             }
         },
         confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.settings_close)) } },
+        dismissButton = extraButton,
     )
 }
 

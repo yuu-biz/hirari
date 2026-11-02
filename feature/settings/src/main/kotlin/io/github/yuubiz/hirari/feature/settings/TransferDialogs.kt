@@ -119,6 +119,7 @@ private fun ActionResult.message(): String = when (this) {
         } else {
             stringResource(R.string.clear_extraction_done, Formatter.formatShortFileSize(LocalContext.current, freedBytes))
         }
+    is ActionResult.FontImported -> stringResource(R.string.font_imported, fileName)
     is ActionResult.Failed -> stringResource(
         when (problem) {
             Problem.CannotWrite -> R.string.problem_cannot_write
@@ -128,6 +129,9 @@ private fun ActionResult.message(): String = when (this) {
             Problem.ApplyFailed -> R.string.problem_apply_failed
             Problem.CannotClear -> R.string.problem_cannot_clear
             Problem.CannotSave -> R.string.problem_cannot_save
+            Problem.NotAFont -> R.string.problem_not_a_font
+            Problem.NoRoomForFont -> R.string.problem_no_room_for_font
+            Problem.CannotReadFont -> R.string.problem_cannot_read_font
         },
     )
 }
