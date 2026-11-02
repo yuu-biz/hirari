@@ -19,7 +19,6 @@ import io.github.yuubiz.hirari.feature.library.DeviceArchives
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
-import android.net.ConnectivityManager
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
 import io.github.yuubiz.hirari.feature.text.TextReaderServices
