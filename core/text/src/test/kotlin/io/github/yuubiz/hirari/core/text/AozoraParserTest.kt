@@ -112,7 +112,7 @@ class AozoraParserTest {
     }
 
     @Test
-    fun `a notation number too large for an int is clamped by the layout and a malformed kanji number is an ordinary note`() {
+    fun `a notation number too large for an int saturates and a malformed kanji number is an ordinary note`() {
         assertEquals(Int.MAX_VALUE, (paragraph("［＃${"9".repeat(30)}字下げ］本") as Paragraph).indent)
         assertEquals(Int.MAX_VALUE, (paragraph("［＃地から${"９".repeat(30)}字上げ］本") as Paragraph).bottom?.raise)
         val malformed = paragraph("［＃一二字下げ］本")
