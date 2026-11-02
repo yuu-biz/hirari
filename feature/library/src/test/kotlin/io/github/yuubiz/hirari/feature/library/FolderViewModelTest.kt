@@ -46,7 +46,7 @@ class FolderViewModelTest {
 
     @Test
     fun `a book read in the reader changes its mark on the list without listing again`() = runTest {
-        val first = book(place.id, "作品/1巻.zip")
+        val first = book(place.id, "作品/1巻.zip").copy(id = locationBookId(place, "作品/1巻.zip"))
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(file("1巻.zip"), file("2巻.zip"))
         val list = viewModel()
@@ -123,13 +123,18 @@ class FolderViewModelTest {
     }
 
     @Test
-    fun `marking a row read or unread writes its book's progress`() = runTest {
+    fun `marking a book never opened writes its progress and changes its mark`() = runTest {
         fixture.locations.rows.value = listOf(place)
-        fixture.lister.folders["作品"] = listOf(file("1巻.zip"))
+        fixture.lister.folders["作品"] = listOf(file("1巻.zip"), file("2巻.zip"))
         val list = viewModel()
-        val row = list.shown().rows.single()
+        val row = list.shown().rows.first()
 
         list.mark(row, ReadState.Read)
         assertEquals(ReadState.Read, fixture.books.progress.value[locationBookId(place, "作品/1巻.zip")]?.state)
+        assertEquals(listOf(ReadMark.Read, ReadMark.Unread), list.shown().rows.map { it.mark })
+
+        list.mark(list.shown().rows.first(), ReadState.Unread)
+        assertEquals(listOf(ReadMark.Unread, ReadMark.Unread), list.shown().rows.map { it.mark })
+        assertEquals(1, fixture.lister.calls)
     }
 }

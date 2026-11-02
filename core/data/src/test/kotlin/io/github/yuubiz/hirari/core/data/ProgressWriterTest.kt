@@ -27,6 +27,8 @@ class ProgressWriterTest {
 
         override fun observe(book: BookId): Flow<BookProgress?> = emptyFlow()
 
+        override fun observe(books: Collection<BookId>): Flow<Map<BookId, BookProgress>> = emptyFlow()
+
         override suspend fun mark(book: BookId, state: ReadState, at: Instant) = error("unused")
 
         override suspend fun save(progress: Collection<BookProgress>) {

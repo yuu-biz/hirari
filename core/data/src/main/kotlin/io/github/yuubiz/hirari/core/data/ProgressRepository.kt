@@ -4,6 +4,8 @@ import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.ReadState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.time.Instant
 
@@ -12,6 +14,12 @@ interface ProgressRepository {
     suspend fun get(book: BookId): BookProgress?
 
     fun observe(book: BookId): Flow<BookProgress?>
+
+    /**
+     * The progress of each of [books] that has any, whether or not the index knows the book: a book marked from
+     * the file list before it was ever opened has progress only (docs/spec.md section 4.3).
+     */
+    fun observe(books: Collection<BookId>): Flow<Map<BookId, BookProgress>>
 
     /** Replaces the stored progress of each book in [progress]. */
     suspend fun save(progress: Collection<BookProgress>)
@@ -27,6 +35,12 @@ internal class RoomProgressRepository(private val dao: BookProgressDao) : Progre
     override suspend fun get(book: BookId): BookProgress? = dao.get(book.value)?.toModel()
 
     override fun observe(book: BookId): Flow<BookProgress?> = dao.observe(book.value).map { it?.toModel() }
+
+    override fun observe(books: Collection<BookId>): Flow<Map<BookId, BookProgress>> {
+        val chunks = books.map { it.value }.distinct().chunked(MAX_BOUND).map { ids -> dao.observe(ids) }
+        if (chunks.isEmpty()) return flowOf(emptyMap())
+        return combine(chunks) { parts -> parts.flatMap { it }.associate { row -> BookId(row.bookId) to row.toModel() } }
+    }
 
     override suspend fun save(progress: Collection<BookProgress>) {
         if (progress.isNotEmpty()) dao.upsert(progress.map { it.toRow() })

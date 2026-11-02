@@ -35,6 +35,9 @@ internal interface BookProgressDao {
     @Query("SELECT * FROM book_progress WHERE book_id = :bookId")
     fun observe(bookId: String): Flow<BookProgressRow?>
 
+    @Query("SELECT * FROM book_progress WHERE book_id IN (:bookIds)")
+    fun observe(bookIds: List<String>): Flow<List<BookProgressRow>>
+
     @Query("SELECT * FROM book_progress")
     suspend fun all(): List<BookProgressRow>
 

@@ -67,7 +67,7 @@ class FileItemsTest {
     }
 
     @Test
-    fun `rows take their path in the place and their read state from the index`() {
+    fun `rows take their path in the place, their read state from the progress, and pages from the index`() {
         val place = LocationId(1)
         val reading = book(place, "作品/1巻.zip")
         val read = book(place, "作品/2巻.zip")
@@ -77,7 +77,7 @@ class FileItemsTest {
             LibraryBook(read, null, reading(read, viewStart = 9, state = ReadState.Read)),
             LibraryBook(folderBook, null, null),
         )
-        val rows = listOf(file("1巻.zip"), file("2巻.zip"), file("3巻.zip"), dir("画像"), dir("別"), file("表紙.jpg")).toRows("作品", byName).withMarks(indexed)
+        val rows = listOf(file("1巻.zip"), file("2巻.zip"), file("3巻.zip"), dir("画像"), dir("別"), file("表紙.jpg")).toRows("作品", byName).withMarks(indexed, indexed.progressByPath())
 
         assertEquals(listOf("作品/別", "作品/画像", "作品/1巻.zip", "作品/2巻.zip", "作品/3巻.zip", "作品/表紙.jpg"), rows.map { it.path })
         assertEquals(

@@ -30,6 +30,8 @@ class ListingTimingTest {
         LibraryBook(book, null, reading(book, viewStart = 3))
     }
 
+    private val progress = indexed.progressByPath()
+
     private fun medianNanos(runs: Int, block: () -> Unit): Long {
         repeat(20) { block() }
         return (1..runs).map { System.nanoTime().also { block() }.let { System.nanoTime() - it } }.sorted()[runs / 2]
@@ -43,7 +45,7 @@ class ListingTimingTest {
 
         val sortName = medianNanos(31) { entries.toRows("作品", byName) }
         val sortDate = medianNanos(31) { entries.toRows("作品", byDate) }
-        val mark = medianNanos(31) { rows.withMarks(indexed) }
+        val mark = medianNanos(31) { rows.withMarks(indexed, progress) }
         val filter = medianNanos(31) { rows.filtered("第1") }
 
         println("1000 entries, median ms: sort by name %.2f, by date %.2f, marks %.2f, filter %.2f".format(sortName / 1e6, sortDate / 1e6, mark / 1e6, filter / 1e6))

@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LibraryView
@@ -115,11 +116,21 @@ class FolderViewModel(
 
     private fun shown(services: LibraryServices, entries: List<FolderEntry>, layout: Flow<Layout>): Flow<FolderContent> {
         val sorted = layout.map { it.ordering }.distinctUntilChanged().map { entries.toRows(folder.path, it) }.flowOn(compute)
-        val marked = combine(sorted, services.books.inFolder(folder.location, folder.path)) { rows, indexed -> rows.withMarks(indexed) }
-            .flowOn(compute)
+        val marked = combine(sorted, services.books.inFolder(folder.location, folder.path), progressOf(services, sorted)) { rows, indexed, progress ->
+            rows.withMarks(indexed, progress)
+        }.flowOn(compute)
         return combine(marked, query, layout) { rows, query, layout ->
             FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.thumbSize, layout.ordering.sort, layout.ordering.foldersFirst)
         }.flowOn(compute)
+    }
+
+    /** The progress of the books and texts of the [rows] by path, which a book marked before it was ever opened has too. */
+    private fun progressOf(services: LibraryServices, rows: Flow<List<FileRow>>): Flow<Map<String, BookProgress>> {
+        val tree = place.value ?: return flowOf(emptyMap())
+        return rows
+            .map { list -> list.filter { it.item is FileItem.Archive || it.item is FileItem.Text }.associateBy({ locationBookId(tree, it.path) }, { it.path }) }
+            .distinctUntilChanged()
+            .flatMapLatest { paths -> services.progress.observe(paths.keys).map { found -> found.mapKeys { (id, _) -> paths.getValue(id) } } }
     }
 
     /** Lists the folder again, as after a failure. */

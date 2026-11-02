@@ -57,6 +57,9 @@ internal fun book(location: LocationId, path: String, pages: Int? = 10, containe
 internal fun reading(book: Book, viewStart: Int, pages: Int = 10, state: ReadState = ReadState.Reading, at: Instant = T0) =
     BookProgress(book.id, state, ReadingPosition.Image(viewStart, pages), at)
 
+internal fun List<LibraryBook>.progressByPath(): Map<String, BookProgress> =
+    mapNotNull { book -> book.progress?.let { (book.book.source as BookSource.InLocation).path to it } }.toMap()
+
 internal class FakeLocations : LocationRepository {
     val rows = MutableStateFlow<List<LibraryLocation>>(emptyList())
     val pins = MutableStateFlow<List<PinnedFolder>>(emptyList())
@@ -139,6 +142,8 @@ internal class FakeBooks : BookRepository {
         override suspend fun get(book: BookId): BookProgress? = progress.value[book]
 
         override fun observe(book: BookId): Flow<BookProgress?> = progress.map { it[book] }
+
+        override fun observe(books: Collection<BookId>): Flow<Map<BookId, BookProgress>> = progress.map { it.filterKeys(books::contains) }
 
         override suspend fun save(progress: Collection<BookProgress>) = put(*progress.toTypedArray())
 

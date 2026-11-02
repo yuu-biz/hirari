@@ -7,6 +7,7 @@ import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Test
@@ -50,6 +51,15 @@ class RoomProgressRepositoryTest {
         )
         repository.save(saved)
         assertEquals(saved, saved.map { repository.get(it.book) })
+    }
+
+    @Test
+    fun `the progress of many books comes back by book, past the bound of one query`() = runTest {
+        val saved = (0..MAX_BOUND + 10).map { progress("b$it", ReadState.Read, null) }
+        repository.save(saved)
+        val asked = (0..MAX_BOUND + 20).map { BookId("b$it") }
+        assertEquals(saved.associateBy { it.book }, repository.observe(asked).first())
+        assertEquals(emptyMap(), repository.observe(emptyList()).first())
     }
 
     @Test

@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.LibraryBook
+import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.NaturalOrder
@@ -113,17 +114,18 @@ fun sizeText(bytes: Long): String {
 private val SIZE_UNITS = listOf("B", "KB", "MB", "GB", "TB")
 
 /**
- * The read state of each row from the books the index holds directly in the folder (docs/spec.md section 7).
- * A book the index does not know is unread; a folder is marked only once it was read as a book, and an image
- * file never.
+ * The read state of each row (docs/spec.md sections 4.3 and 7). A book or text takes it from its [progress] by
+ * path, which it has once read or marked, whether or not the index knows it; without progress it is unread. A
+ * folder is marked only once the index holds it as a book, and an image file never. The page count comes from
+ * the books the index holds directly in the folder.
  */
-fun List<FileRow>.withMarks(indexed: List<LibraryBook>): List<FileRow> {
+fun List<FileRow>.withMarks(indexed: List<LibraryBook>, progress: Map<String, BookProgress>): List<FileRow> {
     val byPath = HashMap<String, LibraryBook>(indexed.size * 2)
     for (book in indexed) (book.book.source as? BookSource.InLocation)?.let { byPath[it.path] = book }
     return map { row ->
         val known = byPath[row.path]
         val mark = when (row.item) {
-            is FileItem.Archive, is FileItem.Text -> known?.progress.mark()
+            is FileItem.Archive, is FileItem.Text -> progress[row.path].mark()
             is FileItem.Folder -> known?.let { it.progress.mark() }
             is FileItem.Image -> null
         }
