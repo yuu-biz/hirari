@@ -17,7 +17,10 @@ import kotlin.math.roundToInt
  * A view laid out in image pixels before scaling. [pages] holds one rectangle per page in reading
  * order, placed where the page sits on screen, as `scrollStops` takes them.
  */
-data class ViewContent(val size: Size, val pages: List<Rect>)
+data class ViewContent(val size: Size, val pages: List<Rect>) {
+    /** The page rectangles in screen pixels at [scale]. */
+    fun pagesAt(scale: Scale): List<Rect> = pages.map { Rect(it.left * scale.x, it.top * scale.y, it.right * scale.x, it.bottom * scale.y) }
+}
 
 /**
  * Lays out [view] (docs/spec.md section 4.8, 見開き). A pair grows its lower page to the height
