@@ -147,8 +147,12 @@ internal fun imageCases(): List<ImageCase> {
     return listOf(
         ImageCase("baseline.jpg", jpeg(rgbHalftone(600, 900)), ExpectedPage.Ready(600, 900)),
         ImageCase("progressive.jpg", progressive, ExpectedPage.Ready(600, 900)),
-        // The platform decoder fills the scans that never arrived, so the page shows at the quality it reached.
-        ImageCase("progressive-truncated.jpg", progressive.copyOf(progressive.size * 3 / 5), ExpectedPage.Ready(600, 900)),
+        // API 37 decodes the scans that arrived and API 28 reports the stream as malformed.
+        ImageCase(
+            "progressive-truncated.jpg",
+            progressive.copyOf(progressive.size * 3 / 5),
+            ExpectedPage.OneOf(listOf(ExpectedPage.Ready(600, 900), ExpectedPage.Fails(Failure.Corrupt))),
+        ),
         ImageCase("large.jpg", jpeg(rgbHalftone(2400, 3600)), ExpectedPage.Ready(2400, 3600)),
         ImageCase("spread.jpg", jpeg(rgbHalftone(1800, 1200)), ExpectedPage.Ready(1800, 1200)),
         ImageCase("one-pixel.jpg", jpeg(rgbHalftone(1, 1)), ExpectedPage.Ready(1, 1)),

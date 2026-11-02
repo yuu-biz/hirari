@@ -55,7 +55,8 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
         val millis = (System.nanoTime() - started) / 1_000_000
         if (millis > PAGE_LIMIT_MILLIS) problems += "${page.name}: took $millis ms"
         val actual = describe(result)
-        if (actual != wanted.drop(1)) problems += "${page.name}: expected ${wanted.drop(1)}, got $actual"
+        val options = alternatives(wanted.drop(1))
+        if (actual !in options) problems += "${page.name}: expected ${options.joinToString(" or ")}, got $actual"
         if (result is PageResult.Ready) {
             sizeProblem(result.image, target)?.let { problems += "${page.name}: $it" }
             val shape = describe(book.shape(page.index))
@@ -64,6 +65,10 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
     }
     return problems
 }
+
+/** The results [fields] allow, which are more than one when they are split by `|` fields. */
+private fun alternatives(fields: List<String>): List<List<String>> =
+    fields.fold(listOf(emptyList<String>())) { acc, field -> if (field == "|") acc + listOf(emptyList()) else acc.dropLast(1) + listOf(acc.last() + field) }
 
 /** Why the bitmap of [image] is not the size that fits [target], or null when it is. */
 private fun sizeProblem(image: PreparedImage, target: PixelSize): String? {
