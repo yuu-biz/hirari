@@ -255,8 +255,12 @@ class VerticalLayout(
             }
             lastHead?.let { yield(placeLine(paragraph, sweep, it.pieces, it.indent * fontSize)) }
             if (firstTail != null) {
-                yield(placeLine(paragraph, sweep, firstTail.pieces, 0f, 0, bottomAt))
-                for (line in tail) yield(placeLine(paragraph, sweep, line.pieces, 0f, 0, bottomAt))
+                var held: BrokenLine = firstTail
+                for (line in tail) {
+                    yield(placeLine(paragraph, sweep, held.pieces, 0f))
+                    held = line
+                }
+                yield(placeLine(paragraph, sweep, held.pieces, 0f, 0, bottomAt))
             }
         }.rebased(paragraph.start, paragraph.end)
     }

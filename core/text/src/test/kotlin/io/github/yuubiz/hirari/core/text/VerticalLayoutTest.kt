@@ -180,6 +180,39 @@ class VerticalLayoutTest {
         assertEquals("あ:U|12:T|い:U|3:U|4:U|5:U|う:U|!!:T|x:U|??:T|え:U|89:T| :U|a:U|b:U|c:U", shown(LatinMode.Upright))
     }
 
+    private fun placedLines(doc: TextDocument, params: LayoutParams): List<List<TextLine>> =
+        VerticalLayout(doc, params, FixedGlyphMetrics).pages().map { lines(it) }.toList()
+
+    private fun TextLine.text() = glyphs.joinToString("") { (it.content as GlyphContent.Chars).text }
+
+    @Test
+    fun `a bottom-aligned part that wraps starts on the next line and only the last line meets the bottom`() {
+        val tight = LayoutParams(width = 1000f, height = 50f, fontSize = 10f, letterGap = 0f)
+        val lines = placedLines(parseAozora("題\n本文［＃地付き］あいうえお、かき"), tight).flatten()
+        assertEquals(listOf("題", "本文", "あいうえ", "お、かき"), lines.map { it.text() })
+        assertEquals(listOf(0f, 0f), lines.subList(1, 3).map { it.glyphs.first().y })
+        assertEquals(10f, lines[3].glyphs.first().y)
+        assertEquals(50f, lines[3].glyphs.last().let { it.y + it.advance })
+    }
+
+    @Test
+    fun `lines of a bottom-aligned part before the last stay at the top across a page boundary`() {
+        val tight = LayoutParams(width = 40f, height = 50f, fontSize = 10f, letterGap = 0f)
+        val pages = placedLines(parseAozora("題\n本文［＃地付き］あいうえお、かきくけこさし"), tight)
+        assertEquals(listOf(listOf("題", "本文", "あいうえ"), listOf("お、かきく", "けこさし")), pages.map { page -> page.map { it.text() } })
+        assertEquals(listOf(0f, 0f), pages[0].drop(1).map { it.glyphs.first().y })
+        assertEquals(0f, pages[1][0].glyphs.first().y)
+        assertEquals(10f, pages[1][1].glyphs.first().y)
+    }
+
+    @Test
+    fun `a bottom-aligned part that fits after the text on the same line is still joined to its line`() {
+        val tight = LayoutParams(width = 1000f, height = 100f, fontSize = 10f, letterGap = 0f)
+        val lines = placedLines(parseAozora("題\n本文［＃地付き］署名"), tight).flatten()
+        assertEquals(listOf("題", "本文署名"), lines.map { it.text() })
+        assertEquals(80f, lines[1].glyphs[2].y)
+    }
+
     @Test
     fun `an empty book has one empty page`() {
         assertEquals(listOf(TextPage(PageContent.Lines(emptyList()), 0, 0)), VerticalLayout(parseAozora(""), params(20f), FixedGlyphMetrics).pages().toList())
