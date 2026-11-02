@@ -95,8 +95,8 @@ private fun tiled(
     }
 }
 
-/** [decode] at the planned sample size, and once more at twice it when memory runs out (docs/spec.md section 6.1). */
-private inline fun retryingOnce(decode: (extraSample: Int) -> PageResult<PreparedImage>): PageResult<PreparedImage> = try {
+/** [decode] at the planned size, and once more at a reduction of 2 on each side when memory runs out (docs/spec.md section 6.1). */
+internal inline fun <T> retryingOnce(decode: (reduction: Int) -> PageResult<T>): PageResult<T> = try {
     decode(1)
 } catch (_: OutOfMemoryError) {
     try {

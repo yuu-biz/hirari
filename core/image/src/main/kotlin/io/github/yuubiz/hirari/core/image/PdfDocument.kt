@@ -43,12 +43,11 @@ internal class PdfDocument private constructor(
      */
     fun render(index: Int, target: PixelSize, budgetBytes: Long): PageResult<PreparedImage> = renderer.openPage(index).use { page ->
         val shape = shapes[index]
-        var scale = minOf(target.width / shape.width.toDouble(), target.height / shape.height.toDouble())
-        val pixels = shape.width * scale * shape.height * scale
-        if (pixels * 4 > budgetBytes / 2) scale *= Math.sqrt(budgetBytes / 2 / 4 / pixels)
-        val width = (shape.width * scale).roundToInt().coerceAtLeast(1)
-        val height = (shape.height * scale).roundToInt().coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        drawPdfPage(shape, target, budgetBytes) { size -> PageResult.Ready(PreparedImage.Whole(draw(page, size), shape)) }
+    }
+
+    private fun draw(page: PdfRenderer.Page, size: PixelSize): Bitmap {
+        val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
         try {
             bitmap.eraseColor(Color.WHITE)
             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
@@ -57,7 +56,7 @@ internal class PdfDocument private constructor(
             bitmap.recycle()
             throw e
         }
-        PageResult.Ready(PreparedImage.Whole(bitmap, shape))
+        return bitmap
     }
 
     /** Closes the renderer on its thread after the calls already queued, which closes the document. */
@@ -137,4 +136,24 @@ private class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorCa
     }
 
     override fun onRelease() = source.close()
+}
+
+/**
+ * Draws a PDF page of [shape] with [draw], at the size that fits [target], enlarged when it is smaller, and
+ * smaller when it would take more than half of [budgetBytes]. When memory runs out it draws once more at half
+ * that size on each side, and fails with a read error if that runs out too (docs/spec.md section 6.1).
+ */
+internal fun <T> drawPdfPage(
+    shape: PageShape.Known,
+    target: PixelSize,
+    budgetBytes: Long,
+    draw: (PixelSize) -> PageResult<T>,
+): PageResult<T> {
+    var scale = minOf(target.width / shape.width.toDouble(), target.height / shape.height.toDouble())
+    val pixels = shape.width * scale * shape.height * scale
+    if (pixels * 4 > budgetBytes / 2) scale *= Math.sqrt(budgetBytes / 2 / 4 / pixels)
+    val size = PixelSize((shape.width * scale).roundToInt().coerceAtLeast(1), (shape.height * scale).roundToInt().coerceAtLeast(1))
+    return retryingOnce { reduction ->
+        draw(PixelSize((size.width / reduction).coerceAtLeast(1), (size.height / reduction).coerceAtLeast(1)))
+    }
 }
