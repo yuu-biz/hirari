@@ -9,6 +9,7 @@ import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.image.RawPage
 import io.github.yuubiz.hirari.core.image.Tiling
 import io.github.yuubiz.hirari.core.model.PageResult
+import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -56,7 +57,7 @@ internal class BookThumbnailMaker(private val decoding: ImageDecoding) : Thumbna
         }
         val bitmap = (image as PreparedImage.Whole).bitmap
         return try {
-            withContext(decoding.dispatcher) { encode(bitmap, direction) }
+            withContext(decoding.dispatcher) { encode(bitmap, shape, direction) }
         } catch (e: CancellationException) {
             bitmap.recycle()
             throw e
@@ -64,10 +65,10 @@ internal class BookThumbnailMaker(private val decoding: ImageDecoding) : Thumbna
     }
 
     /** Recycles [source] and anything cut from it. */
-    private fun encode(source: Bitmap, direction: ReadingDirection): Made {
+    private fun encode(source: Bitmap, shape: PageShape.Known, direction: ReadingDirection): Made {
         var shown = source
         try {
-            coverCrop(source.width, source.height, direction)?.let { crop ->
+            coverCrop(shape, source.width, direction)?.let { crop ->
                 shown = Bitmap.createBitmap(source, crop.left, 0, crop.width, source.height)
             }
             val out = ByteArrayOutputStream(OUTPUT_HINT_BYTES)

@@ -1,7 +1,9 @@
 package io.github.yuubiz.hirari.core.image.thumbnail
 
 import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.image.DecodePlan
 import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.image.planDecode
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -52,25 +54,36 @@ class CoverTest {
         }
     }
 
+    private val wide = PageShape.Known(2400, 1700)
+
     @Test
     fun aCoverBoundOnTheRightShowsItsRightHalfAndOneBoundOnTheLeftItsLeftHalf() {
-        assertEquals(CropBox(left = 50, width = 50), coverCrop(100, 60, ReadingDirection.RightToLeft))
-        assertEquals(CropBox(left = 0, width = 50), coverCrop(100, 60, ReadingDirection.LeftToRight))
+        assertEquals(CropBox(left = 50, width = 50), coverCrop(wide, 100, ReadingDirection.RightToLeft))
+        assertEquals(CropBox(left = 0, width = 50), coverCrop(wide, 100, ReadingDirection.LeftToRight))
     }
 
     @Test
     fun theTwoHalvesOfAnOddWidthStayInsideTheImage() {
-        val right = coverCrop(101, 60, ReadingDirection.RightToLeft)!!
-        val left = coverCrop(101, 60, ReadingDirection.LeftToRight)!!
+        val right = coverCrop(wide, 101, ReadingDirection.RightToLeft)!!
+        val left = coverCrop(wide, 101, ReadingDirection.LeftToRight)!!
         assertEquals(50, right.width)
         assertEquals(101, right.left + right.width)
         assertEquals(50, left.left + left.width)
     }
 
     @Test
-    fun anImageThatIsNotWiderThanHighIsNotCut() {
-        assertNull(coverCrop(60, 100, ReadingDirection.RightToLeft))
-        assertNull(coverCrop(100, 100, ReadingDirection.LeftToRight))
+    fun aPageThatIsNotWiderThanHighIsNotCut() {
+        assertNull(coverCrop(PageShape.Known(600, 1000), 180, ReadingDirection.RightToLeft))
+        assertNull(coverCrop(PageShape.Known(1000, 1000), 300, ReadingDirection.LeftToRight))
+    }
+
+    @Test
+    fun aWidePageIsCutEvenWhenItsDecodeRoundsToASquare() {
+        val shape = PageShape.Known(1001, 1000)
+        val plan = planDecode(1001, 1000, coverTarget(shape, 300), averagingLimit = 8, bytesPerPixel = 4, budgetBytes = 64L shl 20)
+        val decoded = (plan as DecodePlan.Decode).output
+        assertEquals(PixelSize(300, 300), decoded)
+        assertEquals(CropBox(left = 150, width = 150), coverCrop(shape, decoded.width, ReadingDirection.RightToLeft))
     }
 
     @Test

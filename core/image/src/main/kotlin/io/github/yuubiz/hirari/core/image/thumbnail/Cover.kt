@@ -27,11 +27,12 @@ internal fun coverTarget(shape: PageShape.Known, sizePx: Int): PixelSize =
 internal data class CropBox(val left: Int, val width: Int)
 
 /**
- * The half of a cover scanned as a spread that is its front (docs/spec.md section 4.4): the right half for a
- * book bound on the right, the left half for one bound on the left. `null` when the image is not wider than high.
+ * The half of a cover scanned as a spread that is its front (docs/spec.md section 4.4), in a decode of [shape]
+ * [width] pixels wide: the right half for a book bound on the right, the left half for one bound on the left.
+ * `null` when the page is not wider than high. The page decides, not the decode, which rounding can make square.
  */
-internal fun coverCrop(width: Int, height: Int, direction: ReadingDirection): CropBox? {
-    if (width <= height) return null
+internal fun coverCrop(shape: PageShape.Known, width: Int, direction: ReadingDirection): CropBox? {
+    if (!shape.isWide) return null
     val half = width / 2
     return CropBox(left = if (direction == ReadingDirection.RightToLeft) width - half else 0, width = half)
 }
