@@ -22,12 +22,10 @@ import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.BookId
-import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
-import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.ScaleMode
@@ -117,7 +115,7 @@ class ReaderViewModel(
         val config: ReaderConfig,
         val prefetcher: Prefetcher<Bitmap>,
         val services: ReaderServices,
-        var read: Boolean,
+        val progress: ProgressLog,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -206,6 +204,7 @@ class ReaderViewModel(
         application.unregisterComponentCallbacks(trimCallbacks)
         val book = opened ?: return
         book.prefetcher.close()
+        book.services.progress.flush()
         book.services.appScope.launch { book.book.close() }
     }
 
@@ -232,7 +231,9 @@ class ReaderViewModel(
             phase = ReaderPhase.NoPages
             return
         }
+        // A reader closed moments ago may still hold this book's latest position in the writer's window.
         val saved = try {
+            services.progress.flush().join()
             services.storage.progress.get(id)
         } catch (e: CancellationException) {
             services.appScope.launch { book.close() }
@@ -249,7 +250,7 @@ class ReaderViewModel(
         }
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
-        opened = Opened(book, id, start, config, prefetcher, services, read = saved?.state == ReadState.Read)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved))
         phase = ReaderPhase.Reading
         start()
     }
@@ -271,14 +272,7 @@ class ReaderViewModel(
         ) {
             book.prefetcher.update(after.prefetchInput(paused = false))
         }
-        if (before == null || before.current != after.current) save(book, after)
-    }
-
-    /** Opening makes the book Reading, and showing its last view makes it Read (docs/spec.md section 2.7). */
-    private fun save(book: Opened, state: ReaderState) {
-        if (state.isLastView) book.read = true
-        val position = ReadingPosition.Image(state.current.pages.first(), book.book.pages.size)
-        book.services.progress.submit(BookProgress(book.id, if (book.read) ReadState.Read else ReadState.Reading, position, Instant.now()))
+        book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
     }
 
     private suspend fun openBook(services: ReaderServices, copyDir: File): Pair<BookId, BookResult> = when (ref) {

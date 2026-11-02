@@ -53,7 +53,12 @@ data class ReaderState(
     val recentTurns: List<Turn> = emptyList(),
 ) {
     val current: PageView get() = pagination.current
-    val isLastView: Boolean get() = pagination.currentIndex == pagination.views.lastIndex
+    /**
+     * The last view is on screen and the shapes of its pages are known, so no layout to come makes it another
+     * view. Before that, a lone wide page still shows as one view that later splits in two halves.
+     */
+    val showsLastView: Boolean
+        get() = pagination.currentIndex == pagination.views.lastIndex && current.pages.all { pagination.shapes[it] is PageShape.Known }
 
     fun geometry(view: PageView = current): ViewGeometry? =
         ViewGeometry.of(view, pagination.shapes, config, viewport, zoom.factor)
