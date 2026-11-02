@@ -29,15 +29,17 @@ import kotlin.math.min
  * order from the entry read last are deleted, and reading one of those again starts another pass from the top.
  *
  * Files are written under a temporary name and renamed when complete, so a file named by an index is always a
- * whole entry, and two sessions of one book (the reader's and the thumbnail's) can share [dir].
+ * whole entry, and two sessions of one book (the reader's and the thumbnail's) can share [dir]. Neither deletes a
+ * file that a read of the other waits for ([Waits]).
  */
 internal class Extraction(
     private val archive: ArchiveHandle,
     private val dispatcher: CoroutineDispatcher,
     private val entries: List<ArchiveEntry>,
-    private val dir: File,
+    dir: File,
     private val clock: () -> Long = System::currentTimeMillis,
     private val maxCacheBytes: Long = MAX_CACHE_BYTES,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ArchiveSession.EntryReader {
     private sealed interface Slot {
         /** The pass has not reached the entry yet. */
@@ -58,12 +60,10 @@ internal class Extraction(
         class Retry(val result: EntryResult) : Slot
     }
 
+    private val dir = dir.absoluteFile.normalize()
     private val lock = Any()
     private val slots = Array<Slot>(entries.size) { Slot.Pending }
     private var anchor = 0
-
-    /** The reads waiting for each entry. Eviction spares their files, which may be larger than the limit. */
-    private val waiting = IntArray(entries.size)
     private var cachedBytes = 0L
     private var limit = maxCacheBytes
 
@@ -96,12 +96,13 @@ internal class Extraction(
 
     override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult {
         val index = entry.entryIndex
-        synchronized(lock) {
-            anchor = index
-            waiting[index]++
-            if (slots[index] is Slot.Retry) slots[index] = Slot.Evicted
-        }
+        val file = fileOf(index)
+        Waits.enter(file)
         try {
+            synchronized(lock) {
+                anchor = index
+                if (slots[index] is Slot.Retry) slots[index] = Slot.Evicted
+            }
             while (true) {
                 val seen = changes.value
                 if (!scope.isActive) throw CancellationException("the session is closed")
@@ -115,7 +116,7 @@ internal class Extraction(
                 changes.first { it != seen }
             }
         } finally {
-            if (synchronized(lock) { --waiting[index] == 0 }) trimLater()
+            if (Waits.leave(file)) trimLater()
         }
     }
 
@@ -125,7 +126,7 @@ internal class Extraction(
         dispatcher.dispatch(EmptyCoroutineContext) { touch() }
     }
 
-    private suspend fun readFile(slot: Slot.Cached, maxBytes: Int): EntryResult? = withContext(Dispatchers.IO) {
+    private suspend fun readFile(slot: Slot.Cached, maxBytes: Int): EntryResult? = withContext(io) {
         if (slot.size > maxBytes) return@withContext EntryResult.TooLarge(slot.size)
         try {
             EntryResult.Data(slot.file.readBytes())
@@ -146,7 +147,7 @@ internal class Extraction(
         limit = min(dir.usableSpace / 10, maxCacheBytes)
         change {
             for (i in slots.indices) {
-                val file = File(dir, i.toString())
+                val file = fileOf(i)
                 if (slots[i] == Slot.Pending && file.isFile) cache(i, file)
             }
         }
@@ -196,7 +197,7 @@ internal class Extraction(
             } finally {
                 sink.close()
             }
-            val file = File(dir, index.toString())
+            val file = fileOf(index)
             val exceeded = sink.exceeded
             complete = status == Status.OK && sink.failure == null && part.renameTo(file)
             val slot = when {
@@ -257,12 +258,13 @@ internal class Extraction(
     }
 
     private fun evictOverLimit() {
-        while (cachedBytes > limit) {
-            val farthest = slots.indices.filter { slots[it] is Slot.Cached && waiting[it] == 0 }.maxByOrNull { abs(it - anchor) } ?: return
-            val slot = slots[farthest] as Slot.Cached
-            slot.file.delete()
-            slots[farthest] = Slot.Evicted
+        if (cachedBytes <= limit) return
+        for (index in slots.indices.filter { slots[it] is Slot.Cached }.sortedByDescending { abs(it - anchor) }) {
+            val slot = slots[index] as Slot.Cached
+            if (!Waits.deleteUnlessWaited(slot.file)) continue
+            slots[index] = Slot.Evicted
             cachedBytes -= slot.size
+            if (cachedBytes <= limit) return
         }
     }
 
@@ -270,6 +272,8 @@ internal class Extraction(
         synchronized(lock) { block() }
         changes.update { it + 1 }
     }
+
+    private fun fileOf(index: Int) = File(dir, index.toString())
 
     private fun touch() {
         dir.setLastModified(clock())
@@ -310,5 +314,35 @@ internal class Extraction(
         const val IDLE_MILLIS = 24L * 60 * 60 * 1000
         const val PART_MILLIS = 60L * 60 * 1000
         const val PART = ".part"
+    }
+}
+
+/**
+ * The reads waiting for each entry file, across the sessions of the process, so that a session sharing a book's
+ * directory deletes no file a read of the other is about to open (docs/spec.md section 3.3). A file has a count
+ * only while a read waits for it.
+ */
+private object Waits {
+    private val counts = HashMap<File, Int>()
+
+    @Synchronized
+    fun enter(file: File) {
+        counts[file] = (counts[file] ?: 0) + 1
+    }
+
+    /** Returns whether no read waits for [file] any longer. */
+    @Synchronized
+    fun leave(file: File): Boolean {
+        val left = counts.getValue(file) - 1
+        if (left == 0) counts.remove(file) else counts[file] = left
+        return left == 0
+    }
+
+    /** Deletes [file] unless a read waits for it, and returns whether it did. */
+    @Synchronized
+    fun deleteUnlessWaited(file: File): Boolean {
+        if (file in counts) return false
+        file.delete()
+        return true
     }
 }

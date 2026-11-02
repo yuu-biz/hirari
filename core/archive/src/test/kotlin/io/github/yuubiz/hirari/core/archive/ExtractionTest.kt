@@ -1,5 +1,10 @@
 package io.github.yuubiz.hirari.core.archive
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -13,7 +18,9 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
 
 class ExtractionTest {
     @get:Rule
@@ -88,6 +95,47 @@ class ExtractionTest {
     }
 
     @Test
+    fun `a session sharing the directory spares the file a read of the other session is about to open`() {
+        val dir = temp.newFolder("book")
+        val io = HeldDispatcher()
+        val started = CountDownLatch(1)
+        val readerArchive = FakeArchive(MemorySource(pages.flatMap { it.second.toList() }.toByteArray()) { started.await() }, pages)
+        val reader = Extraction(readerArchive, dispatcher, entries(pages), dir, maxCacheBytes = 1000, io = io)
+        val read = CoroutineScope(Dispatchers.Default).async(start = CoroutineStart.UNDISPATCHED) {
+            withTimeout(5_000) { reader.read(entries(pages)[0], ArchiveSession.MAX_ENTRY_BYTES) }
+        }
+        started.countDown()
+        val opening = io.next()
+        executor.submit {}.get(5, TimeUnit.SECONDS)
+
+        val thumbnailExecutor = Executors.newSingleThreadExecutor()
+        val thumbnail = Extraction(
+            FakeArchive(MemorySource(pages.flatMap { it.second.toList() }.toByteArray()), pages),
+            thumbnailExecutor.asCoroutineDispatcher(),
+            entries(pages),
+            dir,
+            maxCacheBytes = 1000,
+        )
+        assertData(pages[2].second, thumbnail.readNow(2))
+        thumbnailExecutor.submit {}.get(5, TimeUnit.SECONDS)
+
+        opening.run()
+        while (!read.isCompleted) io.poll()?.run()
+        assertData(pages[0].second, runBlocking { read.await() })
+        assertEquals("opens of the reader's archive", 1, readerArchive.opens.get())
+
+        reader.close()
+        thumbnail.close()
+        thumbnailExecutor.shutdown()
+        assertTrue(thumbnailExecutor.awaitTermination(5, TimeUnit.SECONDS))
+        val later = extraction(dir, maxCacheBytes = 1000)
+        assertData(pages[2].second, later.readNow(2))
+        executor.submit {}.get(5, TimeUnit.SECONDS)
+        assertTrue("cached ${cachedBytes(dir)} bytes", cachedBytes(dir) <= 1000)
+        later.close()
+    }
+
+    @Test
     fun `a cache directory removed while the book is open is extracted again`() {
         val dir = temp.newFolder("book")
         val extraction = extraction(dir)
@@ -119,5 +167,16 @@ class ExtractionTest {
         assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
 
         assertEquals(emptyList<String>(), dir.listFiles()!!.map { it.name })
+    }
+
+    /** Holds each block dispatched to it until the test runs it. */
+    private class HeldDispatcher : CoroutineDispatcher() {
+        private val held = LinkedBlockingQueue<Runnable>()
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) = held.put(block)
+
+        fun next(): Runnable = held.poll(5, TimeUnit.SECONDS) ?: error("nothing was dispatched")
+
+        fun poll(): Runnable? = held.poll(100, TimeUnit.MILLISECONDS)
     }
 }
