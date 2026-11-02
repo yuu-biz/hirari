@@ -19,7 +19,6 @@ add_library(archive STATIC
     ${LIBARCHIVE_DIR}/archive_rb.c
     ${LIBARCHIVE_DIR}/archive_read.c
     ${LIBARCHIVE_DIR}/archive_read_add_passphrase.c
-    ${LIBARCHIVE_DIR}/archive_read_open_fd.c
     ${LIBARCHIVE_DIR}/archive_read_support_format_zip.c
     ${LIBARCHIVE_DIR}/archive_string.c
     ${LIBARCHIVE_DIR}/archive_string_sprintf.c

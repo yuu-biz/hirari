@@ -418,7 +418,7 @@ interface ByteSource : Closeable {
 
 ### 3.3 書庫の読み込み
 
-書庫の読み込みには libarchive を JNI 経由で使う。libarchive にはファイルパスを渡さず、`ByteSource` を読むコールバック（read、seek、skip）を渡す。
+書庫の読み込みには libarchive を JNI 経由で使う。libarchive にはファイルパスを渡さず、`ByteSource` を読むコールバック（read、seek、skip）を渡す。端末内のファイルにも `archive_read_open_fd` の経路は設けない。API 37 のエミュレータで、300 エントリで 92 MB の ZIP について、開いて索引を作る時間、全エントリを読む時間、最後のエントリだけを読む時間を両方の経路で 7 回ずつ交互に測り、中央値に差が見えなかったためである（全エントリを読む時間の中央値はコールバックが 1,891 ms、`archive_read_open_fd` が 1,907 ms。実機では未計測）。
 
 | 形式 | 必須の対応 | 扱い |
 |---|---|---|
@@ -1642,7 +1642,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | kotest-property 6.2.6 | `:core:model` のプロパティテスト | Apache-2.0。kotest の各モジュールと kotlinx-coroutines（core、test、debug、jdk8）、kotlinx-serialization-core、xmlutil、java-diff-utils、opentest4j、byte-buddy、kotlin-reflect、JetBrains の annotations、rgxgen（Apache-2.0）、kotlin-rgxgen、classgraph（MIT）、JNA（LGPL-2.1-or-later と Apache-2.0 の二重ライセンスのうち Apache-2.0 を選ぶ）を伴う。6.2.6 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit と AndroidX Test（runner、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
 
-libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 20 個の `.c` と 22 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
+libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 19 個の `.c` と 22 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
 
 - ビルドするファイルは、次の項目に挙げる部分を除いて BSD-2-Clause である。目録の SPDX 識別子は `BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0` とする。
 - `archive_entry.c` のファイルフラグの部分は、カリフォルニア大学の BSD-3-Clause である。
