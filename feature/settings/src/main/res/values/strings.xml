@@ -2,4 +2,65 @@
 <resources>
     <string name="licenses_title">ライセンス</string>
     <string name="licenses_back">戻る</string>
+
+    <string name="settings_title">設定</string>
+    <string name="settings_back">戻る</string>
+    <string name="settings_load_failed">設定を読み込めませんでした。アプリを開き直してください。</string>
+    <string name="settings_working">処理しています</string>
+    <string name="settings_close">閉じる</string>
+    <string name="settings_cancel">やめる</string>
+    <string name="settings_apply">決定</string>
+
+    <string name="settings_group_data">データとライセンス</string>
+    <string name="settings_export">設定を書き出す</string>
+    <string name="settings_export_summary">設定を JSON ファイルに保存します。</string>
+    <string name="settings_import">設定を読み込む</string>
+    <string name="settings_import_summary">書き出した設定のファイルを選びます。</string>
+    <string name="settings_clear_thumbnails">サムネイルのキャッシュを消す</string>
+    <string name="settings_clear_thumbnails_summary">サムネイルは必要になったときに作り直します。</string>
+    <string name="settings_licenses">ライセンス</string>
+
+    <string name="settings_custom_color">任意の色</string>
+    <string name="settings_custom_color_hint">#RRGGBB の形で入力します。</string>
+    <string name="settings_custom_color_label">色</string>
+    <string name="settings_command_selected">選んだ項目</string>
+    <string name="settings_command_available">選べる項目</string>
+    <string name="settings_command_empty">項目がありません。</string>
+    <string name="settings_command_full">項目は %1$d 個までです。</string>
+    <string name="settings_command_up">%1$s を上へ</string>
+    <string name="settings_command_down">%1$s を下へ</string>
+    <string name="settings_command_remove">%1$s を外す</string>
+    <string name="settings_command_add">%1$s を加える</string>
+
+    <string name="export_title">設定を書き出す</string>
+    <string name="export_body">全体の設定、コマンドバーの項目、本ごとの設定、SMB サーバーの接続先を書き出します。ユーザー名、ドメイン、パスワードは書き出しません。</string>
+    <string name="export_include_reading">読書位置、しおり、履歴も含める</string>
+    <string name="export_choose_place">保存先を選ぶ</string>
+    <string name="export_done">設定を書き出しました。</string>
+    <string name="export_done_with_reading">設定を書き出しました。読書位置、しおり、履歴を含みます。</string>
+
+    <string name="import_title">設定を読み込む</string>
+    <string name="import_intro">このファイルを読み込むと、次のとおり変わります。全体の設定は、ファイルの内容に置き換わります。</string>
+    <string name="import_total">変わる項目: 合計 %1$d</string>
+    <string name="import_settings">全体の設定: %1$d 項目</string>
+    <string name="import_overrides">本ごとの設定: %1$d 冊</string>
+    <string name="import_servers">SMB サーバー: %1$d 件を加える</string>
+    <string name="import_progress">読書位置: %1$d 件</string>
+    <string name="import_bookmarks">しおり: %1$d 件を加える</string>
+    <string name="import_history">履歴: %1$d 件</string>
+    <string name="import_no_reading">このファイルに、反映される読書位置、しおり、履歴はありません。</string>
+    <string name="import_servers_note">加えるサーバーは匿名の接続先です。ユーザー名とパスワードは、サーバーの編集画面で入れ直してください。</string>
+    <string name="import_nothing">変わる項目はありません。</string>
+    <string name="import_start">読み込む</string>
+    <string name="import_done">設定を読み込みました。</string>
+
+    <string name="clear_thumbnails_done">サムネイルのキャッシュを消しました。</string>
+
+    <string name="problem_cannot_write">書き出せませんでした。保存先を変えて、もう一度試してください。</string>
+    <string name="problem_cannot_read">ファイルを読めませんでした。</string>
+    <string name="problem_too_large">ファイルが大きすぎます。設定のファイルではありません。</string>
+    <string name="problem_not_a_settings_file">設定のファイルではありません。何も変えていません。</string>
+    <string name="problem_apply_failed">読み込みに失敗しました。もう一度試してください。</string>
+    <string name="problem_cannot_clear">消せませんでした。</string>
+    <string name="problem_cannot_save">設定を保存できませんでした。</string>
 </resources>
