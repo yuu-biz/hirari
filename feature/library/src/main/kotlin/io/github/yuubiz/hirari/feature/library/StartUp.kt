@@ -13,6 +13,7 @@ import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReopenLastBook
 import io.github.yuubiz.hirari.core.model.address
 import kotlinx.coroutines.flow.first
+import kotlin.coroutines.cancellation.CancellationException
 
 /** The last book a start offers again (docs/spec.md section 4.3, 起動時の動作). */
 sealed interface Reopen {
@@ -44,10 +45,16 @@ const val FAILED_STARTS = 3
  * Counts this start and plans it. A start [restoring] the screens the system kept keeps them. After
  * [FAILED_STARTS] unfinished starts in a row, it forgets the last folder, puts the view back to its default, and
  * starts at home without the last book, even over kept screens. The places first take the grants the system
- * holds now, so a place that lost its grant is not opened (docs/spec.md section 7).
+ * holds now, so a place that lost its grant is not opened (docs/spec.md section 7). When the system does not
+ * answer, the stored grants stand until the next start, since a start that fails here would never be counted.
  */
 suspend fun LibraryServices.planStart(restoring: Boolean = false): StartPlan {
-    locations.syncGrants(grants.held())
+    try {
+        locations.syncGrants(grants.held())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+    }
     val record = launch.beginStart()
     if (record.unfinishedStarts >= FAILED_STARTS) {
         launch.setLastFolder(null)

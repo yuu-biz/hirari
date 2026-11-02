@@ -92,6 +92,14 @@ class StartUpTest {
     }
 
     @Test
+    fun `when the system does not tell the grants the start goes by the stored ones`() = runTest {
+        given(ReopenLastBook.Off)
+        fixture.grants.heldFails = true
+        assertEquals(StartPlan.Open(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
+        assertEquals(1, fixture.launch.record.unfinishedStarts)
+    }
+
+    @Test
     fun `a text book is not reopened before the text reader exists`() = runTest {
         given(ReopenLastBook.Immediately, lastFolder = null)
         fixture.books.put(last.copy(format = BookFormat.Text(null)))

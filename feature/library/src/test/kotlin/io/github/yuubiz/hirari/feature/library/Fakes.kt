@@ -208,7 +208,9 @@ internal class FakeGrants : TreeGrants {
         held.remove(tree)
     }
 
-    override suspend fun held(): Set<UriString> = held.toSet()
+    var heldFails = false
+
+    override suspend fun held(): Set<UriString> = if (heldFails) throw IllegalStateException("the system did not answer") else held.toSet()
 
     override suspend fun name(tree: UriString): String = names[tree] ?: tree.value.substringAfterLast('/')
 }
