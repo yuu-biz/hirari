@@ -59,5 +59,8 @@ val corpusAssets = tasks.register<CorpusAssets>("corpusAssets") {
 androidComponents {
     onVariants { variant ->
         variant.androidTest?.sources?.assets?.addGeneratedSourceDirectory(corpusAssets, CorpusAssets::outputDir)
+        // The fuzzer's watchdog logic has no Android dependency, so the device test and a JVM test compile the same file.
+        variant.androidTest?.sources?.kotlin?.addStaticSourceDirectory("src/fuzzGuard/kotlin")
+        variant.hostTests.values.forEach { it.sources.kotlin?.addStaticSourceDirectory("src/fuzzGuard/kotlin") }
     }
 }

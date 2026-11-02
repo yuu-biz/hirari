@@ -38,6 +38,7 @@ class FuzzTest {
     private val slowMillis = arguments.getString("fuzzSlowMillis")?.toLong() ?: 3000L
     private val targets = Target.parse(arguments.getString("fuzzTargets") ?: Target.defaults)
 
+    private val guard = InputGuard()
     private val counts = HashMap<String, Int>()
     private val signatures = HashSet<String>()
     private var slowSaved = 0
@@ -105,18 +106,20 @@ class FuzzTest {
 
     /** Runs [input] and returns the milliseconds it took. */
     private fun execute(runner: Runner, watchdog: Watchdog, target: Target, iteration: Long, from: String, input: ByteArray): Long {
-        File(out, "current.txt").writeText("target=${target.id} seed=$seed iteration=$iteration from=$from bytes=${input.size}\n")
-        File(out, "current.bin").writeBytes(input)
         val random = SplittableRandom(Mutator.mix(seed xor EXEC_STREAM, iteration))
         val started = System.nanoTime()
-        watchdog.startedAt = started
-        try {
+        val description = "target=${target.id} seed=$seed iteration=$iteration from=$from bytes=${input.size}\n"
+        if (!guard.begin(RunningInput(started, description, input), ::saveCurrent)) parkUntilKilled()
+        val failure = try {
             runner.run(target, input, random)
+            null
         } catch (e: Throwable) {
-            watchdog.startedAt = 0
-            record(if (e is OutOfMemoryError) "oom" else "exception", target, iteration, from, input, e.stackTraceToString(), e)
+            e
         }
-        watchdog.startedAt = 0
+        if (!guard.end()) parkUntilKilled()
+        if (failure != null) {
+            record(if (failure is OutOfMemoryError) "oom" else "exception", target, iteration, from, input, failure.stackTraceToString(), failure)
+        }
         val millis = (System.nanoTime() - started) / 1_000_000
         if (millis > slowMillis && slowSaved < MAX_SLOW) {
             slowSaved++
@@ -158,6 +161,17 @@ class FuzzTest {
         )
     }
 
+    /** Writes the input before it runs, so that when libarchive or libjxl kill the process the reproducer is on disk. */
+    private fun saveCurrent(input: RunningInput) {
+        File(out, "current.txt").writeText(input.description)
+        File(out, "current.bin").writeBytes(input.bytes)
+    }
+
+    /** The watchdog has claimed an input and is about to end the process, so nothing more may run or be saved. */
+    private fun parkUntilKilled(): Nothing {
+        while (true) Thread.sleep(1000)
+    }
+
     private fun clearRunFiles() {
         for (name in listOf("current.bin", "current.txt", "timeout.txt", "stats.txt", "replay-index.txt")) File(out, name).delete()
     }
@@ -165,10 +179,11 @@ class FuzzTest {
     private fun hash(text: String): String =
         MessageDigest.getInstance("SHA-1").digest(text.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
 
-    /** Saves the stacks and ends the process when one input runs past the time limit. */
+    /**
+     * Saves the stacks and ends the process when one input runs past the time limit. The input it saves is the one it
+     * claimed from [guard], and `current.bin` and `current.txt` are those of that input too.
+     */
     private inner class Watchdog : Thread("fuzz-watchdog") {
-        @Volatile var startedAt = 0L
-
         @Volatile var stop = false
 
         init {
@@ -178,19 +193,19 @@ class FuzzTest {
         override fun run() {
             while (!stop) {
                 sleep(250)
-                val started = startedAt
-                if (started != 0L && (System.nanoTime() - started) / 1_000_000 > timeoutMillis) {
-                    File(out, "timeout.txt").writeText(
-                        buildString {
-                            appendLine("an input ran for more than $timeoutMillis ms; see current.txt")
-                            for ((thread, frames) in getAllStackTraces()) {
-                                appendLine("--- ${thread.name}")
-                                frames.forEach { appendLine("    at $it") }
-                            }
-                        },
-                    )
-                    Process.killProcess(Process.myPid())
-                }
+                val input = guard.claim(System.nanoTime(), timeoutMillis * 1_000_000) ?: continue
+                saveCurrent(input)
+                File(out, "timeout.txt").writeText(
+                    buildString {
+                        appendLine("an input ran for more than $timeoutMillis ms")
+                        append(input.description)
+                        for ((thread, frames) in getAllStackTraces()) {
+                            appendLine("--- ${thread.name}")
+                            frames.forEach { appendLine("    at $it") }
+                        }
+                    },
+                )
+                Process.killProcess(Process.myPid())
             }
         }
     }
