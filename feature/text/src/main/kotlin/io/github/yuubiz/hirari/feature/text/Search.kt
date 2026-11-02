@@ -88,5 +88,9 @@ private fun hit(paragraph: Paragraph, from: Int, to: Int): SearchHit {
     val contextStart = maxOf(0, from - SEARCH_CONTEXT_CHARS)
     val contextEnd = minOf(text.length, to + SEARCH_CONTEXT_CHARS)
     val context = text.substring(contextStart, contextEnd).replace(OBJECT_REPLACEMENT, ' ')
-    return SearchHit(paragraph.sourceStart(from), paragraph.sourceStart(to), context, from - contextStart, to - contextStart)
+    val start = paragraph.sourceStart(from)
+    // The halves of a くの字点 share one source offset, so the range reaches the next offset that differs.
+    var next = to
+    while (next < text.length && paragraph.sourceStart(next) <= start) next++
+    return SearchHit(start, paragraph.sourceStart(next), context, from - contextStart, to - contextStart)
 }

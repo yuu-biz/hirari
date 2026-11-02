@@ -30,4 +30,12 @@ class SearchTest {
         val hit = searchText(parseAozora("題\n新しいｶﾞｲﾄﾞを読む。\n"), "ガイド").hits.single()
         assertEquals("ｶﾞｲﾄﾞ", hit.context.substring(hit.matchStart, hit.matchEnd))
     }
+
+    @Test
+    fun `a match on one half of a kuno-ji-ten marks the pair`() {
+        val source = "title\n／＼abc\n"
+        assertEquals(listOf("／＼"), ranges(source, "〳"))
+        assertEquals(listOf("／＼"), ranges(source, "〵"))
+        assertEquals(listOf("／＼"), ranges(source, "〳〵"))
+    }
 }
