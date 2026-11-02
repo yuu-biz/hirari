@@ -165,6 +165,21 @@ class FolderViewModelTest {
     }
 
     @Test
+    fun `a retry after the reconnects gave up reconnects the server before it lists again`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "", null, null, null)
+        fixture.locations.rows.value = listOf(server)
+        fixture.smb.folders[""] = emptyList()
+        fixture.smb.lost = true
+        val list = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(server.id, ""), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        assertEquals(FolderContent.Failed(ListFailure.Unreachable), list.state.value.content)
+
+        list.load()
+        assertEquals(listOf(server.id), fixture.smb.reconnects)
+        assertEquals(0, list.shown().total)
+    }
+
+    @Test
     fun `marking a book never opened writes its progress and changes its mark`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(file("1巻.zip"), file("2巻.zip"))

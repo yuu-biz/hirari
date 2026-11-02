@@ -257,10 +257,15 @@ internal class FakeLister : FolderLister {
     }
 }
 
-/** SMB places by path below their folder; what each test was asked with, and the forgotten places. */
+/**
+ * SMB places by path below their folder; what each test was asked with, and the forgotten places. A [lost] server
+ * fails every listing as unreachable until a [reconnect] finds it back.
+ */
 internal class FakeSmb : SmbPlaces {
     val folders = mutableMapOf<String, List<FolderEntry>>()
     var failure: ListFailure? = null
+    var lost = false
+    val reconnects = mutableListOf<LocationId>()
     var result: SmbTestResult = SmbTestResult.Connected
     val listed = mutableListOf<Pair<LibraryLocation.SmbShare, String>>()
     val tests = mutableListOf<Triple<SmbServer, String?, CredentialRef?>>()
@@ -268,9 +273,15 @@ internal class FakeSmb : SmbPlaces {
 
     override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
         listed += place to path
+        if (lost) return Listing.Failed(ListFailure.Unreachable)
         failure?.let { return Listing.Failed(it) }
         val entries = folders[path] ?: return Listing.Failed(ListFailure.NotFound)
         return Listing.Listed(null, entries)
+    }
+
+    override suspend fun reconnect(place: LibraryLocation.SmbShare) {
+        reconnects += place.id
+        lost = false
     }
 
     override suspend fun test(server: SmbServer, password: CharArray?, stored: CredentialRef?): SmbTestResult {

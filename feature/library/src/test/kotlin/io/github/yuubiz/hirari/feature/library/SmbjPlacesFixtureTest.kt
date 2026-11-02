@@ -5,11 +5,15 @@ import io.github.yuubiz.hirari.core.data.StoredSecret
 import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
+import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -17,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
 
 /**
@@ -26,6 +31,8 @@ import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
 class SmbjPlacesFixtureTest {
     private val host = System.getProperty("hirari.smb.host")
     private val port = System.getProperty("hirari.smb.port")?.toInt() ?: 445
+    private val container = System.getProperty("hirari.smb.container")
+    private var paused = false
     private val scope = CoroutineScope(SupervisorJob())
     private val credentials = MemoryCredentials()
     private var allowed = true
@@ -35,7 +42,17 @@ class SmbjPlacesFixtureTest {
     fun fixture() = assumeTrue("SMB fixture not configured (tools/smb-fixture/fixture.sh props)", host != null)
 
     @After
-    fun stop() = scope.cancel()
+    fun stop() {
+        if (paused) docker("unpause")
+        scope.cancel()
+    }
+
+    private fun docker(command: String) {
+        val process = ProcessBuilder("docker", command, container).redirectErrorStream(true).start()
+        process.inputStream.readAllBytes()
+        check(process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0) { "docker $command failed" }
+        paused = command == "pause"
+    }
 
     private fun place(share: String, folder: String = "", user: String? = null, credential: CredentialRef? = null) =
         LibraryLocation.SmbShare(LocationId(1), "NAS", host!!, port, share, folder, null, user, credential)
@@ -81,6 +98,26 @@ class SmbjPlacesFixtureTest {
         credentials.replace(ref, PASSWORD.toCharArray())
         places.forget(nas.id)
         assertTrue("big.bin" in places.list(nas, "").names())
+    }
+
+    @Test
+    fun `a retry after every reconnect failed connects again once the server is back`() = runBlocking {
+        assumeTrue("SMB fixture container not named (-Dhirari.smb.container)", container != null)
+        val shares = SmbShares(scope, timeouts = SmbTimeouts(connect = 2.seconds, request = 3.seconds))
+        val quick = SmbjPlaces(shares, credentials, { true }, scope)
+        val nas = place("public")
+        assertTrue("big.bin" in quick.list(nas, "").names())
+
+        docker("pause")
+        assertEquals(Listing.Failed(ListFailure.Unreachable), quick.list(nas, ""))
+        val server = shares.server(nas) { error("the place keeps its server") }
+        withTimeout(60_000) { server.state.first { it == SmbConnectionState.Lost } }
+        docker("unpause")
+
+        assertEquals(Listing.Failed(ListFailure.Unreachable), quick.list(nas, ""), "a listing alone waits for a retry")
+        quick.reconnect(nas)
+        assertEquals(SmbConnectionState.Connected, server.state.value)
+        assertTrue("big.bin" in quick.list(nas, "").names())
     }
 
     private class MemoryCredentials : CredentialStore {

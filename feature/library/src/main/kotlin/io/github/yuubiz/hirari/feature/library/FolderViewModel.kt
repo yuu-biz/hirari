@@ -122,7 +122,7 @@ class FolderViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), FolderUi("", folder.path, FolderContent.Loading))
 
     init {
-        load()
+        list(reconnect = false)
     }
 
     private fun shown(services: LibraryServices, entries: List<FolderEntry>, layout: Flow<Layout>): Flow<FolderContent> {
@@ -144,8 +144,13 @@ class FolderViewModel(
             .flatMapLatest { paths -> services.progress.observe(paths.keys).map { found -> found.mapKeys { (id, _) -> paths.getValue(id) } } }
     }
 
-    /** Lists the folder again, as after a failure. */
-    fun load() {
+    /**
+     * 読み直す: lists the folder again, as after a failure. A server whose reconnects all failed is reconnected
+     * first (docs/spec.md section 6.5), which the slow listing's progress and 取り消し cover.
+     */
+    fun load() = list(reconnect = true)
+
+    private fun list(reconnect: Boolean) {
         loading?.cancel()
         listing.value = ListingState.Loading
         loading = viewModelScope.launch {
@@ -160,7 +165,10 @@ class FolderViewModel(
                 null -> Listing.Failed(ListFailure.NotFound)
                 is LibraryLocation.SafTree ->
                     if (location.permissionHeld) services.folders.list(location.treeUri, folder.path, folder.documentId) else Listing.Failed(ListFailure.NoPermission)
-                is LibraryLocation.SmbShare -> services.smb.list(location, folder.path)
+                is LibraryLocation.SmbShare -> {
+                    if (reconnect) services.smb.reconnect(location)
+                    services.smb.list(location, folder.path)
+                }
             }
             slow.cancel()
             if (result is Listing.Listed) folderDocumentId = result.folderDocumentId

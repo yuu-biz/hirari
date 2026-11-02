@@ -15,6 +15,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbAddress
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectFailure
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectResult
+import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
 import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbRequestException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
@@ -23,6 +24,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import java.io.FileNotFoundException
 import kotlin.coroutines.cancellation.CancellationException
 import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
@@ -54,6 +56,12 @@ sealed interface SmbTestResult {
 interface SmbPlaces {
     /** The children of the folder at [path], counted from the place's own folder. */
     suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing
+
+    /**
+     * The user's retry of docs/spec.md section 6.5: when every reconnect of the place's server failed, starts them
+     * over from the first and waits until one connects or all fail again. Does nothing to a server that is not lost.
+     */
+    suspend fun reconnect(place: LibraryLocation.SmbShare)
 
     /**
      * Connects to the share of [server] and opens its folder. [password] is what the form holds, which this call
@@ -124,6 +132,19 @@ class SmbjPlaces(
         } catch (_: Exception) {
             Listing.Failed(ListFailure.ReadError)
         }
+    }
+
+    override suspend fun reconnect(place: LibraryLocation.SmbShare) {
+        if (!localNetwork.granted()) return
+        val server = try {
+            shares.server(place) { login(place.user, place.credential) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return
+        }
+        server.retry()
+        server.state.first { it !is SmbConnectionState.Reconnecting }
     }
 
     override suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult {
