@@ -25,20 +25,26 @@ import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
+import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReadingPosition
-import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.documentBookId
 import io.github.yuubiz.hirari.core.model.folderBookId
+import io.github.yuubiz.hirari.core.model.locationBookId
+import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
+import io.github.yuubiz.hirari.core.source.findDocumentId
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.feature.reader.prefetch.Prefetcher
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchDepths
@@ -66,20 +72,22 @@ class ReaderServices(
     val appScope: CoroutineScope,
 )
 
-/** A book picked through SAF: one document, or the image files of one folder tree. */
-sealed interface BookRef {
-    val uri: Uri
-
-    /**
-     * The book's path for the page bar: the last segment of its URI, which a device's storage gives as
-     * `primary:Manga/Book.zip` (docs/spec.md section 4.8, ページバー).
-     */
-    val path: String get() = uri.lastPathSegment ?: uri.toString()
-
-    data class Document(override val uri: Uri) : BookRef
-
-    data class Folder(override val uri: Uri) : BookRef
+/**
+ * The book's path for the page bar (docs/spec.md section 4.8, ページバー). A picked book shows the last segment of
+ * its URI, which a device's storage gives as `primary:Manga/Book.zip`; a book in a place shows the place's name
+ * and the path inside it once the place is read.
+ */
+private fun BookAddress.initialPath(): String = when (this) {
+    is BookAddress.Document -> Uri.parse(uri.value).let { it.lastPathSegment ?: uri.value }
+    is BookAddress.Tree -> Uri.parse(uri.value).let { it.lastPathSegment ?: uri.value }
+    is BookAddress.InLocation -> normalizePath(path)
 }
+
+/**
+ * Where an opened book was found: its id, the source the index records, and the document whose name and dates
+ * describe it (for a folder, the folder's own document).
+ */
+private class Located(val id: BookId, val source: BookSource, val documentUri: Uri, val folder: Boolean, val result: BookResult)
 
 sealed interface ReaderPhase {
     data object Opening : ReaderPhase
@@ -100,7 +108,7 @@ sealed interface ReaderPhase {
 class ReaderViewModel(
     private val application: Application,
     private val services: Deferred<ReaderServices>,
-    private val ref: BookRef,
+    private val request: OpenBookRequest,
 ) : ViewModel() {
     var phase: ReaderPhase by mutableStateOf(ReaderPhase.Opening)
         private set
@@ -164,7 +172,8 @@ class ReaderViewModel(
 
     val pageNames: List<String> get() = opened?.book?.pages?.map { it.name }.orEmpty()
 
-    val bookPath: String get() = ref.path
+    var bookPath: String by mutableStateOf(request.book.initialPath())
+        private set
 
     fun showStrip(shown: Boolean) {
         if (stripShown == shown) return
@@ -259,10 +268,11 @@ class ReaderViewModel(
         val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
         val settings = services.storage.settings.settings.first()
         val config = ReaderConfig.of(settings)
-        val (id, result) = withContext(Dispatchers.IO) {
-            openBook(services, copyDir).also { (_, result) -> (result as? BookResult.Opened)?.let { bookOwner.take(it.book) } }
+        val located = withContext(Dispatchers.IO) {
+            openBook(services, copyDir).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
-        val book = when (result) {
+        val id = located.id
+        val book = when (val result = located.result) {
             is BookResult.Failed -> {
                 phase = ReaderPhase.Failed(result.reason)
                 return
@@ -278,8 +288,12 @@ class ReaderViewModel(
         val openedAt = Instant.now()
         services.progress.flush().join()
         val saved = services.storage.progress.get(id)
-        val indexed = withContext(Dispatchers.IO) { describe(id, book) }
-        val start = (saved?.position as? ReadingPosition.Image)?.viewStart?.coerceIn(book.pages.indices) ?: 0
+        val indexed = withContext(Dispatchers.IO) { describe(located, book) }
+        val start = when (val at = request.start) {
+            StartAt.Saved -> (saved?.position as? ReadingPosition.Image)?.viewStart
+            is StartAt.Page -> at.index
+            is StartAt.Image -> book.pages.indexOfFirst { it.name.substringAfterLast('/') == at.name }.takeIf { it >= 0 }
+        }?.coerceIn(book.pages.indices) ?: 0
         val lowRam = application.getSystemService(ActivityManager::class.java).isLowRamDevice
         val listener = object : Prefetcher.Listener {
             override fun onShape(page: Int, shape: PageShape.Known) = dispatch(ReaderEvent.ShapeLearned(page, shape))
@@ -301,27 +315,24 @@ class ReaderViewModel(
      * The index entry of the opened [book] (docs/spec.md section 2.2). What the provider does not report stays
      * unknown: no name falls back to the path, no size to 0, and no modification time to the epoch.
      */
-    private suspend fun describe(id: BookId, book: OpenBook): Book {
-        val documentUri = when (ref) {
-            is BookRef.Document -> ref.uri
-            is BookRef.Folder -> DocumentsContract.buildDocumentUriUsingTree(ref.uri, DocumentsContract.getTreeDocumentId(ref.uri))
-        }
+    private suspend fun describe(located: Located, book: OpenBook): Book {
         val info = try {
-            application.contentResolver.documentInfo(documentUri)
+            application.contentResolver.documentInfo(located.documentUri)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             null
         }
-        val size = when (ref) {
-            is BookRef.Document -> info?.size ?: 0L
-            is BookRef.Folder -> book.pages.sumOf { it.declaredSize ?: 0L }
+        val size = if (located.folder) book.pages.sumOf { it.declaredSize ?: 0L } else info?.size ?: 0L
+        val fallbackName = when (val source = located.source) {
+            is BookSource.InLocation -> source.path.substringAfterLast('/')
+            is BookSource.External -> request.book.initialPath()
         }
         return Book(
-            id = id,
-            source = BookSource.External(UriString(ref.uri.toString())),
+            id = located.id,
+            source = located.source,
             format = BookFormat.Images(book.container),
-            title = info?.name ?: ref.path,
+            title = info?.name ?: fallbackName,
             byteSize = size,
             modified = info?.lastModifiedMs?.let(Instant::ofEpochMilli) ?: Instant.EPOCH,
             pageCount = book.pages.size,
@@ -348,25 +359,60 @@ class ReaderViewModel(
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
     }
 
-    private suspend fun openBook(services: ReaderServices, copyDir: File): Pair<BookId, BookResult> = when (ref) {
-        is BookRef.Folder -> {
-            val id = folderBookId(UriString(ref.uri.toString()))
-            id to Books.openTreeFolder(application.contentResolver, ref.uri, null, copyDir, services.decoding)
+    private suspend fun openBook(services: ReaderServices, copyDir: File): Located = when (val book = request.book) {
+        is BookAddress.Tree -> {
+            val tree = Uri.parse(book.uri.value)
+            openFolder(folderBookId(book.uri), BookSource.External(book.uri), tree, DocumentsContract.getTreeDocumentId(tree), services, copyDir)
         }
-        is BookRef.Document -> {
-            val source = try {
-                application.contentResolver.openByteSource(ref.uri, copyDir)
-            } catch (e: Exception) {
-                return BookId("") to BookResult.Failed(e.openFailure())
-            }
-            val id = try {
-                documentBookId(prefixOf(source), source.size)
-            } catch (e: Exception) {
-                source.close()
-                return BookId("") to BookResult.Failed(e.openFailure())
-            }
-            id to Books.openBook(source, services.decoding)
+        is BookAddress.Document -> openDocument(id = null, BookSource.External(book.uri), Uri.parse(book.uri.value), services, copyDir)
+        is BookAddress.InLocation -> openInLocation(book, services, copyDir)
+    }
+
+    /** A book in a SAF place, by its path inside the place (docs/spec.md section 2.2). */
+    private suspend fun openInLocation(book: BookAddress.InLocation, services: ReaderServices, copyDir: File): Located {
+        val path = normalizePath(book.path)
+        val source = BookSource.InLocation(book.location, path)
+        fun failed(reason: BookFailure) = Located(BookId(""), source, Uri.EMPTY, book.folder, BookResult.Failed(reason))
+        val location = services.storage.locations.get(book.location) as? LibraryLocation.SafTree ?: return failed(BookFailure.NotFound)
+        if (!location.permissionHeld) return failed(BookFailure.NoPermission)
+        withContext(Dispatchers.Main) { bookPath = if (path.isEmpty()) location.displayName else "${location.displayName}/$path" }
+        val tree = Uri.parse(location.treeUri.value)
+        val documentId = try {
+            book.documentId ?: application.contentResolver.findDocumentId(tree, path)
+        } catch (e: Exception) {
+            return failed(e.openFailure())
+        } ?: return failed(BookFailure.NotFound)
+        val id = locationBookId(location, path)
+        return if (book.folder) {
+            openFolder(id, source, tree, documentId, services, copyDir)
+        } else {
+            openDocument(id, source, DocumentsContract.buildDocumentUriUsingTree(tree, documentId), services, copyDir)
         }
+    }
+
+    private suspend fun openFolder(id: BookId, source: BookSource, tree: Uri, documentId: String, services: ReaderServices, copyDir: File) = Located(
+        id = id,
+        source = source,
+        documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId),
+        folder = true,
+        result = Books.openTreeFolder(application.contentResolver, tree, documentId, copyDir, services.decoding),
+    )
+
+    /** A picked document has no lasting address, so its [id] comes from its first bytes when the caller has none. */
+    private suspend fun openDocument(id: BookId?, source: BookSource, uri: Uri, services: ReaderServices, copyDir: File): Located {
+        fun failed(e: Exception) = Located(BookId(""), source, uri, folder = false, BookResult.Failed(e.openFailure()))
+        val bytes = try {
+            application.contentResolver.openByteSource(uri, copyDir)
+        } catch (e: Exception) {
+            return failed(e)
+        }
+        val bookId = id ?: try {
+            documentBookId(prefixOf(bytes), bytes.size)
+        } catch (e: Exception) {
+            bytes.close()
+            return failed(e)
+        }
+        return Located(bookId, source, uri, folder = false, Books.openBook(bytes, services.decoding))
     }
 
     private fun prefixOf(source: ByteSource): ByteArray {

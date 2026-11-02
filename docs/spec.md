@@ -413,7 +413,8 @@ interface ByteSource : Closeable {
 - SMB の `ByteSource` は、サーバーと共有ごとに 1 本の接続を一覧や他の本と共有する。読み込みは 128 KB に揃えたブロックで取り、最後のブロックを持っておいて、libarchive の 4 KB と 64 KB の読み込みをそこから返す。ブロックの大きさは基準 NAS で見直す (要検証)。
 - SMB の読み込みは、接続が切れたとき、応答がないとき、再接続している間は `ConnectionLostException` を投げる。読み込み層はこれを `Failed(ConnectionLost, retryable = true)` にする（6.5 節）。ファイルがなくなったときは `FileNotFoundException`、サーバーが拒んだそれ以外の要求は `SmbRequestException` を投げ、接続は切れたとみなさない。
 - SAF の文書は `ContentResolver.openFileDescriptor` で開く。`ParcelFileDescriptor.getStatSize` が負（パイプかソケット）ならシークできないとみなし、`cacheDir/copy/` に複製する。複製は開いた直後にファイル名を消すので、`ByteSource` を閉じると消える。複製で空き容量が 64 MB を切るときは、そこで止めて開かない (要検証。残す量)。
-- フォルダの一覧は、`DocumentsContract.buildChildDocumentsUriUsingTree` への 1 回のクエリで、文書 ID、表示名、MIME タイプ、大きさを得る。ファイルごとの Binder 呼び出しはしない。
+- フォルダの一覧は、`DocumentsContract.buildChildDocumentsUriUsingTree` への 1 回のクエリで、文書 ID、表示名、MIME タイプ、大きさ、更新日時を得る。ファイルごとの Binder 呼び出しはしない。
+- 文書 ID はプロバイダが決める値で、パスから作れない。場所の中の本を、索引のパス（履歴、しおり、続きを読むから開くとき）だけで開くときは、ツリーの最上位から名前を NFC に揃えて 1 段ずつ一覧で探す。ファイル一覧から開くときは、一覧で得た文書 ID をそのまま使う。
 
 ### 3.2 形式の判定
 
@@ -907,7 +908,7 @@ M1 には項目を選ぶ設定画面がないので、パネルには M1 で動�
 - 単位 u の 5 dp は既定値であり、試作で調整する (要検証)。
 - 滑らせる向きは綴じ方向だけで決め、「左右を反転」では変えない。
 - 端の 24 dp 以内で押したときは、指が一度その範囲を出てから戻ったときに端のページを選ぶ。押したときの指の位置で先頭や最終ページに飛ばないためである。
-- M1 の本のパスは、本の URI の最後の区切りとする。端末のストレージでは `primary:Manga/本.zip` の形になる。場所からのパスは M2 で出す。
+- 場所を通さずに選んだ本のパスは、本の URI の最後の区切りとする。端末のストレージでは `primary:Manga/本.zip` の形になる。場所の中の本のパスは、場所の表示名と場所の中のパスを `/` でつないだもの（例 `漫画/作品/1巻.zip`）とする。
 
 ページパネルは次のものを持つ。外側をタップするか戻る操作で閉じる。
 

@@ -21,14 +21,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
-import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
+import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.OpenBookRequest
+import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.HirariTheme
 import io.github.yuubiz.hirari.feature.library.HomeScreen
-import io.github.yuubiz.hirari.feature.reader.BookRef
 import io.github.yuubiz.hirari.feature.reader.KeyRelay
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
@@ -36,15 +38,6 @@ import io.github.yuubiz.hirari.feature.settings.LicenseScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private const val HOME = "home"
-private const val LICENSES = "licenses"
-private const val READER = "reader/{kind}/{uri}"
-private const val DOCUMENT = "document"
-private const val FOLDER = "folder"
-
-/** The reader route for the document or folder tree at [uri]. */
-internal fun readerRoute(folder: Boolean, uri: Uri): String = "reader/${if (folder) FOLDER else DOCUMENT}/${Uri.encode(uri.toString())}"
 
 /** ZIP and CBZ as providers label them (docs/spec.md section 3.1). */
 private val DOCUMENT_TYPES = arrayOf("application/zip", "application/x-cbz", "application/vnd.comicbook+zip", "application/octet-stream")
@@ -64,24 +57,24 @@ class MainActivity : ComponentActivity() {
                     if (uri == null) return
                     scope.launch {
                         withContext(Dispatchers.IO) { keepPermission(uri) }
-                        nav.navigate(readerRoute(folder, uri))
+                        val book = UriString(uri.toString()).let { if (folder) BookAddress.Tree(it) else BookAddress.Document(it) }
+                        nav.navigate(OpenBookRequest(book).toReaderRoute())
                     }
                 }
                 val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, folder = false) }
                 val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { open(it, folder = true) }
-                NavHost(nav, startDestination = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: HOME) {
-                    composable(HOME) {
+                NavHost(nav, startDestination = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: HomeRoute) {
+                    composable<HomeRoute> {
                         HomeScreen(
                             onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
                             onOpenFolder = { pickFolder.launch(null) },
-                            actions = { HomeMenu(onLicenses = { nav.navigate(LICENSES) }, onOpen = nav::navigate) },
+                            actions = { HomeMenu(onLicenses = { nav.navigate(LicensesRoute) }, onOpen = { nav.navigate(it) }) },
                         )
                     }
-                    composable(LICENSES) { LicenseScreen(onBack = { nav.popBackStack() }) }
-                    composable(READER) { entry ->
-                        val uri = entry.arguments?.getString("uri").orEmpty().toUri()
-                        val ref = if (entry.arguments?.getString("kind") == FOLDER) BookRef.Folder(uri) else BookRef.Document(uri)
-                        val reader = viewModel { ReaderViewModel(app, app.services, ref) }
+                    composable<LicensesRoute> { LicenseScreen(onBack = { nav.popBackStack() }) }
+                    composable<ReaderRoute> { entry ->
+                        val request = entry.toRoute<ReaderRoute>().toRequest()
+                        val reader = viewModel { ReaderViewModel(app, app.services, request) }
                         ReaderScreen(reader, keys, onClose = { if (!nav.popBackStack()) finish() })
                     }
                     prototypeRoutes()
@@ -118,7 +111,7 @@ class MainActivity : ComponentActivity() {
 
 /** Until the settings screen exists, the license screen is opened from here (docs/spec.md M0). */
 @Composable
-private fun HomeMenu(onLicenses: () -> Unit, onOpen: (String) -> Unit) {
+private fun HomeMenu(onLicenses: () -> Unit, onOpen: (Any) -> Unit) {
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }) { Text(stringResource(R.string.menu)) }
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

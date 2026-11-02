@@ -6,6 +6,7 @@ import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import io.github.yuubiz.hirari.core.model.normalizePath
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.io.IOException
@@ -68,7 +69,7 @@ private const val SPACE_CHECK_INTERVAL: Long = 1L shl 20
 
 /**
  * A direct child of a folder in a document tree. [uri] is a document URI inside the tree, which
- * [openByteSource] opens. [size] is null when the provider does not report it.
+ * [openByteSource] opens. [size] and [lastModifiedMs] are null when the provider does not report them.
  */
 class DocumentChild(
     val uri: Uri,
@@ -76,6 +77,7 @@ class DocumentChild(
     val name: String,
     val mimeType: String?,
     val size: Long?,
+    val lastModifiedMs: Long? = null,
 ) {
     val isDirectory: Boolean get() = mimeType == Document.MIME_TYPE_DIR
 }
@@ -103,6 +105,7 @@ fun ContentResolver.listChildren(
                 name = it.getString(1) ?: id,
                 mimeType = it.getString(2),
                 size = if (it.isNull(3)) null else it.getLong(3),
+                lastModifiedMs = if (it.isNull(4)) null else it.getLong(4).takeIf { ms -> ms > 0 },
             )
         }
         children
@@ -148,4 +151,22 @@ private val CHILD_COLUMNS = arrayOf(
     Document.COLUMN_DISPLAY_NAME,
     Document.COLUMN_MIME_TYPE,
     Document.COLUMN_SIZE,
+    Document.COLUMN_LAST_MODIFIED,
 )
+
+/**
+ * The document id of [path] inside the tree [treeUri], found one name at a time from the top of the tree, or
+ * null when a name is missing. Document ids are the provider's own, so a path is the only lasting address of a
+ * book in a place (docs/spec.md section 2.2). One query per folder on the way, so never call it on the main
+ * thread.
+ *
+ * @throws SecurityException when the permission to the tree is gone.
+ * @throws IOException when the provider gives no result.
+ */
+fun ContentResolver.findDocumentId(treeUri: Uri, path: String): String? {
+    var id = DocumentsContract.getTreeDocumentId(treeUri)
+    for (name in normalizePath(path).split('/').filter { it.isNotEmpty() }) {
+        id = listChildren(treeUri, id).firstOrNull { normalizePath(it.name) == name }?.documentId ?: return null
+    }
+    return id
+}

@@ -1,6 +1,7 @@
 plugins {
     id("hirari.android.application")
     id("hirari.android.compose")
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
