@@ -94,7 +94,14 @@ internal class SmbjConnector(
         }
         try {
             val session = try {
-                connection.authenticate(authentication())
+                authentication().let { context ->
+                    // smbj copies the password into the context and keeps it; wipe the copy once used.
+                    try {
+                        connection.authenticate(context)
+                    } finally {
+                        context.password?.fill('\u0000')
+                    }
+                }
             } catch (e: SMBApiException) {
                 throw SmbConnectException(SmbConnectFailure.AuthenticationFailed, e.status.name)
             }

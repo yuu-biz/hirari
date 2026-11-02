@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.source.smb
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -196,8 +197,13 @@ class SmbServer internal constructor(
             for ((index, wait) in RECONNECT_DELAYS.withIndex()) {
                 mutableState.value = SmbConnectionState.Reconnecting(index + 1)
                 delay(wait)
+                var made: ShareConnection? = null
                 val connection = try {
-                    withContext(io) { connector.connect() }
+                    withContext(io) { connector.connect().also { made = it } }
+                } catch (e: CancellationException) {
+                    // withContext drops a connection made just before the cancel; it is ours to close.
+                    made?.closeNow()
+                    throw e
                 } catch (e: IOException) {
                     continue
                 }
