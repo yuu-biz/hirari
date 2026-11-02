@@ -49,6 +49,12 @@ data class ViewTarget(val view: PageView, val sizes: List<PixelSize>, val steps:
 
 class PreparedView<out T>(val target: ViewTarget, val pages: List<PreparedPage<T>>)
 
+/**
+ * A view to prepare: its [target], and for each page whether its margins are read on the way. Turning the trim on
+ * or off changes [scans] and not the target, so a view being prepared then starts again with the scans it now needs.
+ */
+private data class Preparation(val target: ViewTarget, val scans: List<Boolean>)
+
 /** The pixels [PageLoader.prepare] made, and the margins it read from the whole turned page when asked to. */
 class MadePage<out T>(val image: T, val margins: MarginScan? = null)
 
@@ -172,7 +178,10 @@ class Prefetcher<R, T>(
         for (job in plan.jobs) {
             when (job) {
                 is PrefetchJob.ReadShape -> wanted[job] = { launchShape(job.page) }
-                is PrefetchJob.PrepareView -> input.targets(job.view)?.let { target -> wanted[target] = { launchPrepare(target) } }
+                is PrefetchJob.PrepareView -> input.targets(job.view)?.let { target ->
+                    val preparation = Preparation(target, job.view.pages.map(input.readsMargins))
+                    wanted[preparation] = { launchPrepare(preparation) }
+                }
                 is PrefetchJob.ReadRaw -> if (job.page !in failedRaws) wanted[job] = { launchRaw(job.page) }
             }
         }
@@ -294,23 +303,24 @@ class Prefetcher<R, T>(
     }
 
     /**
-     * Prepares [target] and puts it in the cache, then reports the margins read on the way. A report changes the
-     * target of the view, so it comes after this job is done with it.
+     * Prepares [preparation] and puts it in the cache, then reports the margins read on the way. A report changes
+     * the target of the view, so it comes after this job is done with it.
      */
-    private fun launchPrepare(target: ViewTarget): Job = scope.launch {
+    private fun launchPrepare(preparation: Preparation): Job = scope.launch {
+        val target = preparation.target
         val pages = arrayOfNulls<PreparedPage<T>>(target.view.pages.size)
         val margins = arrayOfNulls<MarginScan>(target.view.pages.size)
         try {
             coroutineScope {
                 target.view.pages.forEachIndexed { i, page ->
-                    launch { pages[i] = preparePage(page, target.sizes[i], target.steps[i]) { margins[i] = it } }
+                    launch { pages[i] = preparePage(page, target.sizes[i], target.steps[i], preparation.scans[i]) { margins[i] = it } }
                 }
             }
         } catch (e: CancellationException) {
             pages.forEach { if (it is PreparedPage.Image) release(it.image) }
             throw e
         }
-        running.remove(target)
+        running.remove(preparation)
         cache.put(target.view, PreparedView(target, pages.map { it!! }))?.let { old ->
             old.pages.forEach { if (it is PreparedPage.Image) release(it.image) }
         }
@@ -318,11 +328,10 @@ class Prefetcher<R, T>(
         margins.forEachIndexed { i, scan -> if (scan != null) listener.onMargins(target.view.pages[i], scan) }
     }
 
-    private suspend fun preparePage(page: Int, size: PixelSize, steps: PageSteps, read: (MarginScan) -> Unit): PreparedPage<T> {
+    private suspend fun preparePage(page: Int, size: PixelSize, steps: PageSteps, readMargins: Boolean, read: (MarginScan) -> Unit): PreparedPage<T> {
         val made = steps.copy(part = PagePart.Whole)
         val raw = rawFor(page)
         failures[page]?.let { if (page in failedShapes || page in failedRaws || failedSteps[page] == made) return PreparedPage.Error(it) }
-        val readMargins = last?.readsMargins?.invoke(page) == true
         return when (val result = loader.prepare(page, size, steps, raw, readMargins)) {
             is PageResult.Ready -> PreparedPage.Image(result.image.image).also {
                 result.image.margins?.let(read)

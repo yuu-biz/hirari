@@ -383,6 +383,21 @@ class PrefetcherTest {
     }
 
     @Test
+    fun turningTrimOnWhileViewsArePreparedReadsTheirMargins() = runTest {
+        val loader = FakeLoader().apply {
+            gate = CompletableDeferred()
+            (0 until 3).forEach { margins[it] = DEEP_BOTTOM }
+        }
+        val reader = reader(pages = 3, loader = loader)
+        runCurrent()
+        reader.apply(ReaderEvent.ConfigChanged(reader.state.config.copy(trim = TrimStrength.Strongest)))
+        loader.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(mapOf(0 to 1, 1 to 1, 2 to 1), loader.marginReads)
+        assertEquals(0.8f, reader.prefetcher[PageView.One(0)]!!.target.steps.single().part.bottom, 0.002f)
+    }
+
+    @Test
     fun aPageWithNothingToCutIsNotPreparedAgainOnceItsMarginsAreRead() = runTest {
         val bleeding = scanOf(PixelSize(300, 450), PixelRect(0, 0, 300, 450))
         val loader = FakeLoader().apply { margins[0] = bleeding }
