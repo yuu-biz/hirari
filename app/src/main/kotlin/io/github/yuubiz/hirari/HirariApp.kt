@@ -12,14 +12,12 @@ import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.feature.library.LibraryServices
-import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
 import io.github.yuubiz.hirari.feature.library.DeviceArchives
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
-import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
 import io.github.yuubiz.hirari.feature.text.TextReaderServices
 import kotlinx.coroutines.CoroutineScope
@@ -47,27 +45,25 @@ class HirariApp : Application() {
     lateinit var text: Deferred<TextReaderServices>
         private set
 
-    /** One connection per SMB place, which the file lists share (docs/spec.md section 3.1). */
-    lateinit var smbShares: Deferred<SmbShares>
-        private set
-
     /** The last start of this process; it outlives an activity recreated before the start finished. */
     internal var start: AppStart? = null
 
     override fun onCreate() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) enableStrictMode()
         super.onCreate()
+        val storage = appScope.async { Storage(this@HirariApp) }
+        val smbPool = appScope.async {
+            SmbServerPool(storage.await().credentials, appScope, getSystemService(ConnectivityManager::class.java).networkAvailable())
+        }
         services = appScope.async {
-            val storage = Storage(this@HirariApp)
+            val storage = storage.await()
             appScope.launch { reconcile(storage) }
             val siblings = FolderSiblings(storage.locations, SafFolderLister(contentResolver), storage.settings)
-            val smb = SmbServerPool(storage.credentials, appScope, getSystemService(ConnectivityManager::class.java).networkAvailable())
-            ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope, siblings, smb)
+            ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope, siblings, smbPool.await())
         }
-        smbShares = appScope.async { SmbShares(appScope, getSystemService(ConnectivityManager::class.java).networkAvailable()) }
         library = appScope.async {
             val storage = services.await().storage
-            val smb = SmbjPlaces(smbShares.await(), storage.credentials, AndroidLocalNetwork(this@HirariApp), appScope)
+            val smb = SmbjPlaces(smbPool.await().shares, storage.credentials, AndroidLocalNetwork(this@HirariApp), appScope)
             LibraryServices(
                 locations = storage.locations,
                 books = storage.books,

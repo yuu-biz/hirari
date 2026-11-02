@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
+import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +37,7 @@ class SmbjPlacesFixtureTest {
     private val scope = CoroutineScope(SupervisorJob())
     private val credentials = MemoryCredentials()
     private var allowed = true
-    private val places = SmbjPlaces(SmbShares(scope), credentials, { allowed }, scope)
+    private val places = SmbjPlaces(SmbShares({ credentials.smbLogin(it.user, it.credential) }, scope), credentials, { allowed }, scope)
 
     @Before
     fun fixture() = assumeTrue("SMB fixture not configured (tools/smb-fixture/fixture.sh props)", host != null)
@@ -103,14 +104,14 @@ class SmbjPlacesFixtureTest {
     @Test
     fun `a retry after every reconnect failed connects again once the server is back`() = runBlocking {
         assumeTrue("SMB fixture container not named (-Dhirari.smb.container)", container != null)
-        val shares = SmbShares(scope, timeouts = SmbTimeouts(connect = 2.seconds, request = 3.seconds))
+        val shares = SmbShares({ SmbLogin.Guest }, scope, timeouts = SmbTimeouts(connect = 2.seconds, request = 3.seconds))
         val quick = SmbjPlaces(shares, credentials, { true }, scope)
         val nas = place("public")
         assertTrue("big.bin" in quick.list(nas, "").names())
 
         docker("pause")
         assertEquals(Listing.Failed(ListFailure.Unreachable), quick.list(nas, ""))
-        val server = shares.server(nas) { error("the place keeps its server") }
+        val server = shares.server(nas)
         withTimeout(60_000) { server.state.first { it == SmbConnectionState.Lost } }
         docker("unpause")
 

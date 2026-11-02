@@ -11,6 +11,7 @@ import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
+import io.github.yuubiz.hirari.core.source.smb.PasswordUnreadableException
 import io.github.yuubiz.hirari.core.source.smb.SmbAddress
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectFailure
@@ -93,10 +94,31 @@ class AndroidLocalNetwork(private val context: Context) : LocalNetwork {
         context.checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
 }
 
-/** The stored password of a server cannot be opened. */
-private class PasswordUnreadableException : java.io.IOException("the stored password cannot be opened")
+/**
+ * How to log on as [user] with the password stored under [credential], the one way the library and the reader read
+ * it (docs/spec.md sections 4.5 and 6.5). Guest without a user name. A user without a stored password logs on with
+ * an empty one. The secret is wiped here, since [SmbLogin.Password] keeps its own copy.
+ *
+ * @throws PasswordUnreadableException when the password cannot be opened or its row is gone, as after a restore to
+ *   another device, which leaves the passwords behind (section 7)
+ */
+suspend fun CredentialStore.smbLogin(user: String?, credential: CredentialRef?): SmbLogin {
+    user ?: return SmbLogin.Guest
+    credential ?: return SmbLogin.Password(user, CharArray(0))
+    return when (val stored = read(credential)) {
+        is StoredSecret.Found -> try {
+            SmbLogin.Password(user, stored.secret)
+        } finally {
+            stored.secret.fill('\u0000')
+        }
+        StoredSecret.Missing, StoredSecret.Unreadable -> throw PasswordUnreadableException()
+    }
+}
 
-/** [SmbPlaces] over the shared [shares], with the passwords from [credentials] and nowhere else. */
+/**
+ * [SmbPlaces] over the process's [shares], which log on with [smbLogin]. [credentials] gives the stored password to
+ * a connection test.
+ */
 class SmbjPlaces(
     private val shares: SmbShares,
     private val credentials: CredentialStore,
@@ -107,7 +129,7 @@ class SmbjPlaces(
     override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
         if (!localNetwork.granted()) return Listing.Failed(ListFailure.NoLocalNetwork)
         return try {
-            val server = shares.server(place) { login(place.user, place.credential) }
+            val server = shares.server(place)
             val entries = server.list(normalizePath("${place.basePath}/$path")).map {
                 FolderEntry(it.name, documentId = null, directory = it.isDirectory, size = it.size, modified = it.modified)
             }
@@ -137,7 +159,7 @@ class SmbjPlaces(
     override suspend fun reconnect(place: LibraryLocation.SmbShare) {
         if (!localNetwork.granted()) return
         val server = try {
-            shares.server(place) { login(place.user, place.credential) }
+            shares.server(place)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -152,7 +174,7 @@ class SmbjPlaces(
             if (!localNetwork.granted()) return SmbTestResult.Failed(SmbTestFailure.NoLocalNetwork)
             val user = server.user
             val login = try {
-                if (password != null && user != null) SmbLogin.Password(user, password) else login(user, stored)
+                if (password != null && user != null) SmbLogin.Password(user, password) else credentials.smbLogin(user, stored)
             } catch (_: PasswordUnreadableException) {
                 return SmbTestResult.Failed(SmbTestFailure.PasswordUnreadable)
             }
@@ -165,7 +187,7 @@ class SmbjPlaces(
 
     override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource {
         if (!localNetwork.granted()) throw SmbConnectException(SmbConnectFailure.Unreachable, "local network not granted")
-        val server = shares.server(place) { login(place.user, place.credential) }
+        val server = shares.server(place)
         return openOwned(Dispatchers.IO) { server.open(normalizePath("${place.basePath}/$path")) }
     }
 
@@ -196,24 +218,6 @@ class SmbjPlaces(
             } catch (_: ConnectionLostException) {
                 SmbTestResult.Failed(SmbTestFailure.Unreachable)
             }
-        }
-    }
-
-    /**
-     * Guest without a user name (docs/spec.md section 4.5). A user without a stored password logs on with an empty
-     * one. The secret is wiped here, since [SmbLogin.Password] keeps its own copy.
-     */
-    private suspend fun login(user: String?, credential: CredentialRef?): SmbLogin {
-        user ?: return SmbLogin.Guest
-        credential ?: return SmbLogin.Password(user, CharArray(0))
-        return when (val stored = credentials.read(credential)) {
-            is StoredSecret.Found -> try {
-                SmbLogin.Password(user, stored.secret)
-            } finally {
-                stored.secret.fill('\u0000')
-            }
-            StoredSecret.Missing -> SmbLogin.Password(user, CharArray(0))
-            StoredSecret.Unreadable -> throw PasswordUnreadableException()
         }
     }
 }

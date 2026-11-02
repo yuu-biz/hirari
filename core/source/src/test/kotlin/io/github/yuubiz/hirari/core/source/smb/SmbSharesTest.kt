@@ -15,11 +15,11 @@ import kotlin.test.assertSame
 
 class SmbSharesTest {
     private val scope = CoroutineScope(SupervisorJob())
-    private val shares = SmbShares(scope)
-    private val place = LibraryLocation.SmbShare(LocationId(1), "NAS", "nas.local", 445, "books", "", null, null, null)
     private var logins = 0
+    private val shares = SmbShares({ logins++.let { SmbLogin.Guest } }, scope)
+    private val place = LibraryLocation.SmbShare(LocationId(1), "NAS", "nas.local", 445, "books", "", null, null, null)
 
-    private suspend fun server(of: LibraryLocation.SmbShare = place) = shares.server(of) { logins++.let { SmbLogin.Guest } }
+    private suspend fun server(of: LibraryLocation.SmbShare = place) = shares.server(of)
 
     @After
     fun stop() = scope.cancel()
@@ -44,5 +44,14 @@ class SmbSharesTest {
         assertFailsWith<ConnectionLostException> { moved.list("") }
         assertNotSame(moved, server(place.copy(host = "nas2.local")))
         assertEquals(3, logins)
+    }
+
+    @Test
+    fun `an unreadable password makes no server and the next request reads it again`() = runBlocking {
+        var readable = false
+        val shares = SmbShares({ if (readable) SmbLogin.Guest else throw PasswordUnreadableException() }, scope)
+        assertFailsWith<PasswordUnreadableException> { shares.server(place) }
+        readable = true
+        assertEquals(SmbConnectionState.Idle, shares.server(place).state.value)
     }
 }

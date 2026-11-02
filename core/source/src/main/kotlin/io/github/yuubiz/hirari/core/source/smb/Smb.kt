@@ -70,6 +70,9 @@ data class SmbEntry(
  */
 class ConnectionLostException(message: String) : IOException(message)
 
+/** The stored password of a place cannot be opened, as after a restore to another device (docs/spec.md section 7). */
+class PasswordUnreadableException : IOException("the stored password cannot be opened")
+
 /** Connecting or logging on failed for [failure]. */
 class SmbConnectException(val failure: SmbConnectFailure, detail: String) : IOException("SMB connect failed: $failure ($detail)")
 
