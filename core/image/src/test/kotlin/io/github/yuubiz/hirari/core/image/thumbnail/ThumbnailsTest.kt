@@ -639,7 +639,7 @@ class ThumbnailsTest {
     }
 
     @Test
-    fun aFolderShowingAnotherImageThanItFoundFirstKeepsItHeld() = runTest {
+    fun aFolderCoverThatObserveShowsSurvivesEvictionOfItsImageAndOfAllElse() = runTest {
         val thumbnails = thumbnails()
         launch { thumbnails.thumbnail(request(book("a"))) }
         runCurrent()
@@ -649,6 +649,7 @@ class ThumbnailsTest {
         val job = launch { thumbnails.observe(request(folder(item("a"), item("b")))).collect { seen += it } }
         runCurrent()
         val shown = seen.single() as ThumbResult.Ready
+        assertEquals("a", shows(shown))
         store.evictUnheld()
         assertTrue("the shown thumbnail was evicted", store.get(shown.key) is StoredThumb.Hit)
         job.cancel()
