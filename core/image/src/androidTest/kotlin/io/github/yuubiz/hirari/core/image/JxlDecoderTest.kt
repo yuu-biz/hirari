@@ -71,9 +71,12 @@ class JxlDecoderTest {
 
     @Test
     fun sampleSizeAveragesSquaresOfPixels() {
-        val bitmap = decoded("lossy_quadrants.jxl", sampleSize = 2)
-        assertEquals(128 to 64, bitmap.width to bitmap.height)
-        assertQuadrants(bitmap, tolerance = 12)
+        // 16 is the largest square whose sums fit in 16 bits, 32 the smallest that needs 32.
+        for (sampleSize in listOf(2, 16, 32)) {
+            val bitmap = decoded("lossy_quadrants.jxl", sampleSize)
+            assertEquals(256 / sampleSize to 128 / sampleSize, bitmap.width to bitmap.height)
+            assertQuadrants(bitmap, tolerance = 12)
+        }
     }
 
     @Test

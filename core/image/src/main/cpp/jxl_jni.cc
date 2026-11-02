@@ -147,8 +147,11 @@ struct Sink {
     uint32_t shift;
     bool premultiply;
     // Per output pixel and channel, the sum of its source pixels. Null when shift is 0.
-    uint32_t* sums;
+    void* sums;
     bool out_of_range = false;
+
+    // 16 bits hold the sum of a 16 x 16 square of 8-bit values, so only larger squares need 32.
+    static size_t SumSize(uint32_t shift) { return shift > 4 ? sizeof(uint32_t) : sizeof(uint16_t); }
 
     static uint32_t Premultiplied(uint32_t channel, uint32_t alpha) { return (channel * alpha + 127) / 255; }
 
@@ -172,20 +175,23 @@ struct Sink {
             }
             return;
         }
-        uint32_t* row = sums + static_cast<size_t>(y >> shift) * out_width * 4;
+        if (SumSize(shift) == sizeof(uint32_t)) {
+            Accumulate<uint32_t>(x, y, count, in);
+        } else {
+            Accumulate<uint16_t>(x, y, count, in);
+        }
+    }
+
+    template <typename Sum>
+    void Accumulate(size_t x, size_t y, size_t count, const uint8_t* in) {
+        Sum* row = static_cast<Sum*>(sums) + static_cast<size_t>(y >> shift) * out_width * 4;
         for (size_t i = 0; i < count; i++, in += 4) {
-            uint32_t* sum = row + ((x + i) >> shift) * 4;
+            Sum* sum = row + ((x + i) >> shift) * 4;
             uint32_t alpha = in[3];
-            if (premultiply) {
-                sum[0] += Premultiplied(in[0], alpha);
-                sum[1] += Premultiplied(in[1], alpha);
-                sum[2] += Premultiplied(in[2], alpha);
-            } else {
-                sum[0] += in[0];
-                sum[1] += in[1];
-                sum[2] += in[2];
-            }
-            sum[3] += alpha;
+            sum[0] = static_cast<Sum>(sum[0] + (premultiply ? Premultiplied(in[0], alpha) : in[0]));
+            sum[1] = static_cast<Sum>(sum[1] + (premultiply ? Premultiplied(in[1], alpha) : in[1]));
+            sum[2] = static_cast<Sum>(sum[2] + (premultiply ? Premultiplied(in[2], alpha) : in[2]));
+            sum[3] = static_cast<Sum>(sum[3] + alpha);
         }
     }
 
@@ -193,14 +199,23 @@ struct Sink {
     // is less than 4^shift at the right and bottom edges.
     void Finish() {
         if (shift == 0) return;
+        if (SumSize(shift) == sizeof(uint32_t)) {
+            Divide<uint32_t>();
+        } else {
+            Divide<uint16_t>();
+        }
+    }
+
+    template <typename Sum>
+    void Divide() {
         for (uint32_t oy = 0; oy < out_height; oy++) {
             uint32_t rows = ((oy + 1) << shift > height ? height : (oy + 1) << shift) - (oy << shift);
-            const uint32_t* sum = sums + static_cast<size_t>(oy) * out_width * 4;
+            const Sum* sum = static_cast<const Sum*>(sums) + static_cast<size_t>(oy) * out_width * 4;
             uint8_t* out = pixels + static_cast<size_t>(oy) * stride;
             for (uint32_t ox = 0; ox < out_width; ox++) {
                 uint32_t columns = ((ox + 1) << shift > width ? width : (ox + 1) << shift) - (ox << shift);
                 uint32_t count = rows * columns;
-                for (int c = 0; c < 4; c++) *out++ = static_cast<uint8_t>((*sum++ + count / 2) / count);
+                for (int c = 0; c < 4; c++) *out++ = static_cast<uint8_t>((uint32_t{*sum++} + count / 2) / count);
             }
         }
     }
@@ -267,8 +282,8 @@ jint Decode(JNIEnv* env, const Bytes& bytes, jobject bitmap, uint32_t shift, Mem
                 sink.premultiply = basic.alpha_bits != 0 && !basic.alpha_premultiplied;
                 has_alpha = basic.alpha_bits != 0;
                 if (shift > 0) {
-                    size_t size = static_cast<size_t>(info.width) * info.height * 4 * sizeof(uint32_t);
-                    sink.sums = static_cast<uint32_t*>(Allocate(&memory, size));
+                    size_t size = static_cast<size_t>(info.width) * info.height * 4 * Sink::SumSize(shift);
+                    sink.sums = Allocate(&memory, size);
                     if (sink.sums == nullptr) {
                         result = kOverLimit;
                         running = false;
