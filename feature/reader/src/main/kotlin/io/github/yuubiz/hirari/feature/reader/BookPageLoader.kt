@@ -102,12 +102,17 @@ private fun sharpenedBitmap(bitmap: Bitmap): Bitmap {
     if (bitmap.config == Bitmap.Config.HARDWARE) return bitmap
     val width = bitmap.width
     val out = if (bitmap.isMutable) bitmap else Bitmap.createBitmap(width, bitmap.height, Bitmap.Config.ARGB_8888)
-    sharpenRows(
-        width,
-        bitmap.height,
-        read = { y, row -> bitmap.getPixels(row, 0, width, 0, y, width, 1) },
-        write = { y, row -> out.setPixels(row, 0, width, 0, y, width, 1) },
-    )
+    try {
+        sharpenRows(
+            width,
+            bitmap.height,
+            read = { y, row -> bitmap.getPixels(row, 0, width, 0, y, width, 1) },
+            write = { y, row -> out.setPixels(row, 0, width, 0, y, width, 1) },
+        )
+    } catch (e: Throwable) {
+        if (out !== bitmap) out.recycle()
+        throw e
+    }
     return out
 }
 
