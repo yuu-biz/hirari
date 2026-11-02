@@ -125,7 +125,7 @@ class SettingsTransfer internal constructor(
                 .mapNotNull { (book, value) -> (value as? JsonObject)?.let { BookId(book) to it.toBookOverrides() } }
                 .toMap(),
             servers = file.entries(SERVERS, ServerJson.serializer()).mapNotNull { it.toServer() },
-            progress = file.entries(PROGRESS, ProgressJson.serializer()).mapNotNull { it.toRow() },
+            progress = file.entries(PROGRESS, ProgressJson.serializer()).mapNotNull { it.toRow() }.newestPerBook(),
             bookmarks = file.entries(BOOKMARKS, BookmarkJson.serializer()).mapNotNull { it.toRow() },
             history = file.entries(HISTORY, HistoryJson.serializer()).map { HistoryRow(it.book, it.openedAt) },
         )

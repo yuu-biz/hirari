@@ -34,6 +34,14 @@ class RoomProgressRepositoryTest {
     }
 
     @Test
+    fun `upsertNewer keeps the newest of several rows for one book`() = runTest {
+        val old = progress("dup", ReadState.Reading, ReadingPosition.Image(2, 100)).copy(updatedAt = Instant.ofEpochMilli(3)).toRow()
+        val new = progress("dup", ReadState.Reading, ReadingPosition.Image(70, 100)).copy(updatedAt = Instant.ofEpochMilli(5)).toRow()
+        database.bookProgress().upsertNewer(listOf(new, old))
+        assertEquals(new.toModel(), repository.get(BookId("dup")))
+    }
+
+    @Test
     fun `each kind of position reads back unchanged`() = runTest {
         val saved = listOf(
             progress("image", ReadState.Reading, ReadingPosition.Image(viewStart = 12, pageCount = 200)),

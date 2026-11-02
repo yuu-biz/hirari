@@ -44,9 +44,13 @@ internal interface BookProgressDao {
     /** Stores each row of [rows] that is newer than the stored progress of its book. */
     @Transaction
     suspend fun upsertNewer(rows: List<BookProgressRow>) {
-        upsert(rows.filter { row -> get(row.bookId).let { it == null || it.updatedAt < row.updatedAt } })
+        upsert(rows.newestPerBook().filter { row -> get(row.bookId).let { it == null || it.updatedAt < row.updatedAt } })
     }
 }
+
+/** The row with the latest [BookProgressRow.updatedAt] of each book, so that no older row of a book is stored after a newer one. */
+internal fun List<BookProgressRow>.newestPerBook(): List<BookProgressRow> =
+    groupBy { it.bookId }.values.map { rows -> rows.reduce { newest, row -> if (row.updatedAt > newest.updatedAt) row else newest } }
 
 internal fun ReadingPosition?.columns(): Triple<PositionKind?, Long, Long> = when (this) {
     null -> Triple(null, 0L, 0L)

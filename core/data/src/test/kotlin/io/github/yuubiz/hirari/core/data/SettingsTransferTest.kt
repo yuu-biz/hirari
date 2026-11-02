@@ -155,6 +155,19 @@ class SettingsTransferTest {
     }
 
     @Test
+    fun `two entries for one book import the newest whatever their order`() = runBlocking {
+        fun entry(at: Int, viewStart: Int) =
+            """{"book": "dup", "state": "Reading", "position": {"type": "image", "viewStart": $viewStart, "pageCount": 100}, "updatedAt": ${at(at.toLong()).toEpochMilli()}}"""
+        for (entries in listOf(listOf(entry(5, 70), entry(3, 20)), listOf(entry(3, 20), entry(5, 70)))) {
+            withStorage { storage ->
+                val changes = storage.import("""{"format": 1, "progress": [${entries.joinToString()}]}""")
+                assertEquals(1, changes.progress)
+                assertEquals(BookProgress(BookId("dup"), ReadState.Reading, ReadingPosition.Image(70, 100), at(5)), storage.progress.get(BookId("dup")))
+            }
+        }
+    }
+
+    @Test
     fun `a bad value or entry falls back alone and the rest imports`() = runBlocking {
         val file = """
             {"format": 7, "future": {"x": 1},

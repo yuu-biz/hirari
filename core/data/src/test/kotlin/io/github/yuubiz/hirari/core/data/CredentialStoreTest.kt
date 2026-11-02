@@ -4,15 +4,26 @@ import android.content.Context
 import androidx.room3.Room
 import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.model.CredentialRef
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import kotlin.concurrent.thread
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -68,6 +79,48 @@ class CredentialStoreTest {
         assertEquals(StoredSecret.Unreadable, store.read(first))
 
         assertEquals(StoredSecret.Unreadable, EncryptedCredentialStore(dao, softwareCipher()).read(second))
+    }
+
+    @Test
+    fun `a secret is wiped when the reader is cancelled as the cipher returns`() = runTest {
+        val ref = store.store("wipe me".toCharArray())
+        val job = Job()
+        var plain: ByteArray? = null
+        val cancelling = object : SecretCipher({ error("unused") }) {
+            override fun open(sealed: SealedSecret, aad: ByteArray) = cipher.open(sealed, aad).also {
+                plain = it
+                job.cancel()
+            }
+        }
+        val reader = EncryptedCredentialStore(dao, cancelling, Dispatchers.Unconfined)
+        val result = async(job, start = CoroutineStart.UNDISPATCHED) { runCatching { reader.read(ref) } }
+        result.join()
+        assertEquals("wipe me".length, plain!!.size)
+        assertTrue(plain!!.all { it == 0.toByte() }, "the decrypted bytes were left in memory")
+    }
+
+    @Test
+    fun `two first uses at once make one key`() {
+        var key: SecretKey? = null
+        val created = AtomicInteger()
+        val inCreate = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val results = arrayOfNulls<SecretKey>(2)
+        fun first() = getOrCreateKey(load = { key }, create = {
+            created.incrementAndGet()
+            inCreate.countDown()
+            release.await(5, TimeUnit.SECONDS)
+            KeyGenerator.getInstance("AES").apply { init(256) }.generateKey().also { key = it }
+        })
+        val a = thread { results[0] = first() }
+        assertTrue(inCreate.await(5, TimeUnit.SECONDS))
+        val b = thread { results[1] = first() }
+        b.join(200)
+        release.countDown()
+        a.join(5000)
+        b.join(5000)
+        assertEquals(1, created.get())
+        assertSame(results[0], results[1])
     }
 
     @Test

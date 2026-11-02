@@ -3,6 +3,8 @@ package io.github.yuubiz.hirari.core.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.model.BookId
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Rule
@@ -11,6 +13,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import kotlin.coroutines.CoroutineContext
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -82,6 +85,63 @@ class ThumbnailCacheTest {
         shown.close()
         cache.put(key("d"), bytes(80))
         assertEquals(listOf(false, false, true), listOf("a", "c", "d").map { cache.isHit(it) })
+    }
+
+    @Test
+    fun `a hold taken while the eviction decides keeps the thumbnail`() = runTest {
+        var cache: DiskThumbnailCache? = null
+        var armed = false
+        var fired = false
+        fun fire() {
+            if (armed && !fired) {
+                fired = true
+                cache!!.hold(key("a"))
+            }
+        }
+        val dao = object : ThumbDao by index.thumbs() {
+            override suspend fun byAge() = index.thumbs().byAge().also { armed = true }
+
+            override suspend fun delete(digest: String) {
+                fire()
+                index.thumbs().delete(digest)
+            }
+        }
+        val io = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                fire()
+                block.run()
+            }
+        }
+        cache = DiskThumbnailCache(dir, dao, limitBytes = 100, now = { Instant.ofEpochSecond(++clock) }, io = io)
+        cache.put(key("a"), bytes(40))
+        cache.put(key("b"), bytes(40))
+        cache.put(key("c"), bytes(40))
+        assertTrue(fired)
+        assertTrue(cache.isHit("a"))
+        assertTrue(File(dir, "${key("a").digest}.webp").isFile)
+        assertEquals(listOf(false, true), listOf("b", "c").map { cache.isHit(it) })
+    }
+
+    @Test
+    fun `a thumbnail stored while get finds the file missing keeps its row`() = runTest {
+        var cache: DiskThumbnailCache? = null
+        var checked = false
+        val io = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                block.run()
+                if (!checked) {
+                    checked = true
+                    runBlocking { cache!!.put(key("a"), bytes(40)) }
+                }
+            }
+        }
+        cache = DiskThumbnailCache(dir, index.thumbs(), limitBytes = 100, now = { Instant.ofEpochSecond(++clock) }, io = io)
+        index.thumbs().upsert(ThumbRow(key("a").digest, 10, 1, failed = false))
+        cache.get(key("a"))
+        assertTrue(checked)
+        assertTrue(File(dir, "${key("a").digest}.webp").isFile)
+        assertEquals(40L, index.thumbs().totalBytes())
+        assertTrue(cache.isHit("a"))
     }
 
     @Test

@@ -68,7 +68,10 @@ interface ThumbnailCache {
     /** サムネイルを作り直す: forgets the thumbnail or the failure, so the next [get] is a miss. */
     suspend fun remove(key: ThumbKey)
 
-    /** Keeps [key] out of eviction while a screen shows it. Close the hold when the item leaves the screen. */
+    /**
+     * Keeps [key] out of eviction while a screen shows it. Close the hold when the item leaves the screen.
+     * Hold before [get]: a thumbnail that [get] returned for a held key is not evicted afterwards.
+     */
     fun hold(key: ThumbKey): Closeable
 
     /** サムネイルのディスクキャッシュを消す. */
@@ -141,12 +144,26 @@ internal class DiskThumbnailCache(
         val row = dao.get(key.digest) ?: return ThumbLookup.Miss
         if (row.failed) return ThumbLookup.Failed
         val file = fileOf(row.digest)
-        if (!withContext(io) { file.isFile }) {
-            dao.delete(row.digest)
-            return ThumbLookup.Miss
-        }
+        if (!withContext(io) { file.isFile }) return forgetIfStillMissing(row.digest)
         dao.touch(row.digest, now().toEpochMilli())
         return ThumbLookup.Hit(file)
+    }
+
+    /**
+     * A [put] may have written the file after the check that found it missing, so the check is made again
+     * under the write lock before the row goes.
+     */
+    private suspend fun forgetIfStillMissing(digest: String): ThumbLookup = writing.withLock {
+        val row = dao.get(digest) ?: return@withLock ThumbLookup.Miss
+        if (row.failed) return@withLock ThumbLookup.Failed
+        val file = fileOf(digest)
+        if (withContext(io) { file.isFile }) {
+            dao.touch(digest, now().toEpochMilli())
+            ThumbLookup.Hit(file)
+        } else {
+            dao.delete(digest)
+            ThumbLookup.Miss
+        }
     }
 
     override suspend fun put(key: ThumbKey, webp: ByteArray): File = writing.withLock {
@@ -168,8 +185,14 @@ internal class DiskThumbnailCache(
         for (row in dao.byAge()) {
             if (total <= limitBytes) break
             if (held.containsKey(row.digest)) continue
-            withContext(io) { fileOf(row.digest).delete() }
+            // The row goes first, then the hold is looked at again: a screen that held the thumbnail and then
+            // called get either found no row, or holds it now, and the row is put back.
             dao.delete(row.digest)
+            if (held.containsKey(row.digest)) {
+                dao.upsert(row)
+                continue
+            }
+            withContext(io) { fileOf(row.digest).delete() }
             total -= row.bytes
         }
     }

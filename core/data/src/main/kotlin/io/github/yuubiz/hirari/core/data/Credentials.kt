@@ -22,6 +22,7 @@ import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.security.ProviderException
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -35,8 +36,8 @@ internal class SealedSecret(val iv: ByteArray, val ciphertext: ByteArray)
  * encryption requires, so the same code runs with a software key in JVM tests. [aad] binds a sealed secret
  * to its alias, so swapping rows does not hand one server another server's password.
  */
-internal class SecretCipher(private val key: () -> SecretKey) {
-    fun seal(plain: ByteArray, aad: ByteArray): SealedSecret {
+internal open class SecretCipher(private val key: () -> SecretKey) {
+    open fun seal(plain: ByteArray, aad: ByteArray): SealedSecret {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key())
         cipher.updateAAD(aad)
@@ -44,7 +45,7 @@ internal class SecretCipher(private val key: () -> SecretKey) {
     }
 
     /** Throws [GeneralSecurityException] when the key is gone or the data does not match it. */
-    fun open(sealed: SealedSecret, aad: ByteArray): ByteArray {
+    open fun open(sealed: SealedSecret, aad: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(TAG_BITS, sealed.iv))
         cipher.updateAAD(aad)
@@ -60,20 +61,34 @@ internal class SecretCipher(private val key: () -> SecretKey) {
 private const val KEYSTORE = "AndroidKeyStore"
 private const val KEY_ALIAS = "hirari.credentials"
 
+private val keyLock = Any()
+
+/**
+ * The key that [load] finds, or else the one [create] makes. The lookup and the creation are one step under a lock,
+ * because two first uses at once would each make a key under the same alias; the second would replace the first,
+ * and what was sealed with the first could never be opened.
+ */
+internal fun getOrCreateKey(load: () -> SecretKey?, create: () -> SecretKey): SecretKey =
+    synchronized(keyLock) { load() ?: create() }
+
 /** The one Keystore key of the credential store, made on first use. It never leaves the device. */
-internal fun keystoreKey(): SecretKey {
-    val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-    (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
-    val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
-    generator.init(
-        KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256)
-            .build(),
-    )
-    return generator.generateKey()
-}
+internal fun keystoreKey(): SecretKey = getOrCreateKey(
+    load = {
+        val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
+        store.getKey(KEY_ALIAS, null) as? SecretKey
+    },
+    create = {
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
+        generator.init(
+            KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build(),
+        )
+        generator.generateKey()
+    },
+)
 
 sealed interface StoredSecret {
     /** The caller clears [secret] with `fill('\u0000')` when done. */
@@ -160,18 +175,20 @@ internal class EncryptedCredentialStore(
 
     override suspend fun read(ref: CredentialRef): StoredSecret {
         val row = dao.get(ref.alias) ?: return StoredSecret.Missing
-        val plain = try {
-            withContext(io) { cipher.open(SealedSecret(row.iv, row.ciphertext), ref.alias.encodeToByteArray()) }
+        // A coroutine cancelled while its withContext returns loses the returned value, so the plaintext is
+        // handed over through a holder that the finally block can always reach.
+        val opened = AtomicReference<ByteArray?>()
+        try {
+            withContext(io) { opened.set(cipher.open(SealedSecret(row.iv, row.ciphertext), ref.alias.encodeToByteArray())) }
+            val plain = checkNotNull(opened.get())
+            return StoredSecret.Found(plain.toChars())
         } catch (_: GeneralSecurityException) {
             return StoredSecret.Unreadable
         } catch (_: ProviderException) {
             // The Keystore reports some failures, such as a key it cannot load, as this unchecked exception.
             return StoredSecret.Unreadable
-        }
-        return try {
-            StoredSecret.Found(plain.toChars())
         } finally {
-            plain.fill(0)
+            opened.getAndSet(null)?.fill(0)
         }
     }
 
