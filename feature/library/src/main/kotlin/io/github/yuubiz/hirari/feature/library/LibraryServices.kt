@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.data.BookmarkRepository
 import io.github.yuubiz.hirari.core.data.HistoryRepository
+import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.data.SettingsRepository
@@ -56,5 +57,6 @@ class LibraryServices(
     val settings: SettingsRepository,
     val grants: TreeGrants,
     val folders: FolderLister,
+    val launch: LaunchRepository,
     val clock: () -> Instant = Instant::now,
 )

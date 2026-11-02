@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -31,16 +32,20 @@ import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.HirariTheme
 import io.github.yuubiz.hirari.feature.library.FolderActions
+import io.github.yuubiz.hirari.feature.library.FolderContent
 import io.github.yuubiz.hirari.feature.library.FolderScreen
 import io.github.yuubiz.hirari.feature.library.FolderViewModel
 import io.github.yuubiz.hirari.feature.library.HomeActions
 import io.github.yuubiz.hirari.feature.library.HomeScreen
 import io.github.yuubiz.hirari.feature.library.HomeViewModel
+import io.github.yuubiz.hirari.feature.library.Loadable
 import io.github.yuubiz.hirari.feature.reader.KeyRelay
+import io.github.yuubiz.hirari.feature.reader.ReaderPhase
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.LicenseScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -54,6 +59,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = application as HirariApp
+        val debugStart = prototypeStartRoute(intent) ?: debugBookRoute(intent)
+        val fresh = savedInstanceState == null && debugStart == null
+        if (fresh) app.start = StartGate { app.appScope.launch { app.library.await().launch.finishStart() } }
         setContent {
             HirariTheme {
                 val nav = rememberNavController()
@@ -68,9 +76,10 @@ class MainActivity : ComponentActivity() {
                 }
                 val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, folder = false) }
                 val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { open(it, folder = true) }
-                NavHost(nav, startDestination = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: HomeRoute) {
-                    composable<HomeRoute> {
+                NavHost(nav, startDestination = debugStart ?: HomeRoute) {
+                    composable<HomeRoute> { entry ->
                         val home = viewModel { HomeViewModel(app.library) }
+                        ReportSettled(nav, entry, app) { home.state.first { it.shelf is Loadable.Ready } }
                         HomeScreen(
                             home,
                             HomeActions(
@@ -91,6 +100,7 @@ class MainActivity : ComponentActivity() {
                         val route = entry.toRoute<FolderRoute>()
                         val key = route.toKey()
                         val folder = viewModel { FolderViewModel(app.library, key) }
+                        ReportSettled(nav, entry, app) { folder.state.first { it.content is FolderContent.Shown || it.content is FolderContent.Failed } }
                         FolderScreen(
                             folder,
                             FolderActions(
@@ -106,10 +116,12 @@ class MainActivity : ComponentActivity() {
                     composable<ReaderRoute> { entry ->
                         val request = entry.toRoute<ReaderRoute>().toRequest()
                         val reader = viewModel { ReaderViewModel(app, app.services, request) }
+                        ReportSettled(nav, entry, app) { snapshotFlow { reader.phase }.first { it != ReaderPhase.Opening } }
                         ReaderScreen(reader, keys, onClose = { if (!nav.popBackStack()) finish() })
                     }
                     prototypeRoutes()
                 }
+                StartUp(nav, app, fresh)
             }
         }
     }

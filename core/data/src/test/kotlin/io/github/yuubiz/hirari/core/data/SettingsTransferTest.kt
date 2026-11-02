@@ -57,8 +57,9 @@ class SettingsTransferTest {
         val file = File(folder.newFolder(), "settings.json")
         try {
             val settings = openSettings(CoroutineScope(Dispatchers.IO + job)) { file }
+            val launch = openLaunch(CoroutineScope(Dispatchers.IO + job)) { File(folder.newFolder(), "launch.json") }
             val thumbnails = DiskThumbnailCache(folder.newFolder(), thumbs.thumbs())
-            return block(Storage(database, credentials, softwareCipher(), settings, thumbnails), database)
+            return block(Storage(database, credentials, softwareCipher(), settings, launch, thumbnails), database)
         } finally {
             job.cancelAndJoin()
             database.close()

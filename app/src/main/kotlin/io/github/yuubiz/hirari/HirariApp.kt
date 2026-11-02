@@ -36,6 +36,9 @@ class HirariApp : Application() {
     lateinit var library: Deferred<LibraryServices>
         private set
 
+    /** The start in progress; it outlives an activity recreated before the start finished. */
+    internal var start: StartGate? = null
+
     override fun onCreate() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) enableStrictMode()
         super.onCreate()
@@ -55,6 +58,7 @@ class HirariApp : Application() {
                 settings = storage.settings,
                 grants = SafTreeGrants(contentResolver),
                 folders = SafFolderLister(contentResolver),
+                launch = storage.launch,
             )
         }
     }

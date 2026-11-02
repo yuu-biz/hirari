@@ -8,6 +8,9 @@ import io.github.yuubiz.hirari.core.data.FolderCover
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.HistoryItem
 import io.github.yuubiz.hirari.core.data.HistoryRepository
+import io.github.yuubiz.hirari.core.data.LastFolder
+import io.github.yuubiz.hirari.core.data.LaunchRecord
+import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.LibraryBook
 import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.PasswordChange
@@ -219,6 +222,20 @@ internal class FakeLister : FolderLister {
     }
 }
 
+internal class FakeLaunch : LaunchRepository {
+    var record = LaunchRecord()
+
+    override suspend fun beginStart(): LaunchRecord = record.also { record = it.copy(unfinishedStarts = it.unfinishedStarts + 1) }
+
+    override suspend fun finishStart() {
+        record = record.copy(unfinishedStarts = 0)
+    }
+
+    override suspend fun setLastFolder(folder: LastFolder?) {
+        record = record.copy(lastFolder = folder)
+    }
+}
+
 internal class Fixture {
     val locations = FakeLocations()
     val books = FakeBooks()
@@ -227,5 +244,6 @@ internal class Fixture {
     val settings = FakeSettings()
     val grants = FakeGrants()
     val lister = FakeLister()
-    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, clock = { T0 })
+    val launch = FakeLaunch()
+    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, launch, clock = { T0 })
 }

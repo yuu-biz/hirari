@@ -5,4 +5,7 @@
     <string name="menu_licenses">ライセンス</string>
     <string name="menu_open_file">ファイルを開く</string>
     <string name="menu_open_folder">フォルダを開く</string>
+    <string name="reopen_title">前回の本を開きますか</string>
+    <string name="reopen_open">開く</string>
+    <string name="reopen_skip">開かない</string>
 </resources>

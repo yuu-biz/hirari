@@ -10,6 +10,7 @@ class Storage internal constructor(
     credentialDatabase: CredentialDatabase,
     cipher: SecretCipher,
     settingsStore: DataStore<GlobalSettings>,
+    launchStore: DataStore<StoredLaunch>,
     /** The thumbnail disk cache. */
     val thumbnails: ThumbnailCache,
 ) {
@@ -18,12 +19,15 @@ class Storage internal constructor(
         credentialDatabase = openCredentialDatabase(context),
         cipher = SecretCipher(::keystoreKey),
         settingsStore = openSettings(context.applicationContext),
+        launchStore = openLaunch(context.applicationContext),
         thumbnails = DiskThumbnailCache(File(context.cacheDir, "thumbs"), openThumbnailIndex(context).thumbs()),
     )
 
     val progress: ProgressRepository = RoomProgressRepository(database.bookProgress())
 
     val settings: SettingsRepository = DataStoreSettingsRepository(settingsStore)
+
+    val launch: LaunchRepository = DataStoreLaunchRepository(launchStore)
 
     val credentials: CredentialStore = EncryptedCredentialStore(credentialDatabase.credentials(), cipher)
 
