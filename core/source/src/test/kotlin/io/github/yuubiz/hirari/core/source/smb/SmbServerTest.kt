@@ -222,6 +222,24 @@ class SmbServerTest {
     }
 
     @Test
+    fun `a closed server is lost to an open source and never reconnects`() = runTest {
+        val networkAvailable = MutableSharedFlow<Unit>()
+        val server = server(networkAvailable)
+        val source = server.open("book.zip")
+        assertArrayEquals(bytes.copyOf(100), source.readAt(0, 100))
+        server.close()
+        assertEquals(Lost, server.state.value)
+        assertThrows(ConnectionLostException::class.java) { source.readAt(SMB_READ_BLOCK.toLong(), 100) }
+        assertThrows(ConnectionLostException::class.java) { server.open("book.zip") }
+
+        server.retry()
+        networkAvailable.emit(Unit)
+        settle()
+        assertEquals(Lost, server.state.value)
+        assertEquals(1, connector.attempts.get())
+    }
+
+    @Test
     fun `closing forgets the password and the login never prints it`() = runTest {
         val password = "s3cret-pass".toCharArray()
         val login = SmbLogin.Password("someone", password)

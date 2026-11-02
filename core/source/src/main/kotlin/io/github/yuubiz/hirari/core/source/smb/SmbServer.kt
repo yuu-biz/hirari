@@ -39,7 +39,8 @@ const val MAX_REQUESTS_PER_SERVER = 4
  * reconnects after each of [RECONNECT_DELAYS]. Requests made meanwhile fail at once with the same exception
  * instead of waiting. When every attempt fails, the state becomes [SmbConnectionState.Lost] until
  * [networkAvailable] emits or [retry] is called, which starts the attempts over. Open sources reopen their file
- * on the new connection by themselves.
+ * on the new connection by themselves. A closed server stays [SmbConnectionState.Lost] for good, and its requests
+ * fail with [ConnectionLostException].
  *
  * Requests block, so call them off the main thread. [scope] runs the reconnect attempts; [close] cancels them.
  */
@@ -119,7 +120,7 @@ class SmbServer internal constructor(
         val last = synchronized(lock) {
             if (closed) return
             closed = true
-            mutableState.value = SmbConnectionState.Idle
+            mutableState.value = SmbConnectionState.Lost
             link.also { link = null }
         }
         job.cancel()
@@ -159,7 +160,7 @@ class SmbServer internal constructor(
     // The first connect holds connecting, not lock, so close and the other requests' bookkeeping never wait on it.
     private fun currentLink(): Link {
         fun existing(): Link? = synchronized(lock) {
-            check(!closed) { "the server is closed" }
+            if (closed) throw ConnectionLostException("the server is closed")
             if (link == null && mutableState.value != SmbConnectionState.Idle) throw ConnectionLostException("SMB is reconnecting")
             link
         }
@@ -195,7 +196,7 @@ class SmbServer internal constructor(
         reconnecting?.cancel()
         reconnecting = scope.launch {
             for ((index, wait) in RECONNECT_DELAYS.withIndex()) {
-                mutableState.value = SmbConnectionState.Reconnecting(index + 1)
+                synchronized(lock) { if (!closed) mutableState.value = SmbConnectionState.Reconnecting(index + 1) }
                 delay(wait)
                 var made: ShareConnection? = null
                 val connection = try {
@@ -217,7 +218,7 @@ class SmbServer internal constructor(
                 }
                 return@launch
             }
-            mutableState.value = SmbConnectionState.Lost
+            synchronized(lock) { if (!closed) mutableState.value = SmbConnectionState.Lost }
         }
     }
 }

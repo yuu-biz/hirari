@@ -31,7 +31,7 @@ sealed interface SmbLogin {
 
 /** The connection to one server, as the reader overlay shows it (docs/spec.md sections 4.8 and 6.5). */
 sealed interface SmbConnectionState {
-    /** Not connected yet, or closed. The next request connects. */
+    /** Not connected yet. The next request connects. */
     data object Idle : SmbConnectionState
 
     data object Connected : SmbConnectionState
@@ -39,7 +39,10 @@ sealed interface SmbConnectionState {
     /** The connection broke and attempt [attempt] of [RECONNECT_DELAYS] is waiting or running. */
     data class Reconnecting(val attempt: Int) : SmbConnectionState
 
-    /** Every reconnect attempt failed. Waits for a network change or [SmbServer.retry]. */
+    /**
+     * Every reconnect attempt failed, and the server waits for a network change or [SmbServer.retry]. A closed
+     * server, as after its place was edited or removed, is lost for good.
+     */
     data object Lost : SmbConnectionState
 }
 

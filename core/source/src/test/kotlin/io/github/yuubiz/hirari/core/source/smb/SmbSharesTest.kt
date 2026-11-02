@@ -37,10 +37,11 @@ class SmbSharesTest {
         val first = server()
         val moved = server(place.copy(host = "nas2.local"))
         assertNotSame(first, moved)
-        assertFailsWith<IllegalStateException> { first.list("") }
+        assertFailsWith<ConnectionLostException> { first.list("") }
+        assertEquals(SmbConnectionState.Lost, first.state.value)
 
         shares.forget(place.id)
-        assertFailsWith<IllegalStateException> { moved.list("") }
+        assertFailsWith<ConnectionLostException> { moved.list("") }
         assertNotSame(moved, server(place.copy(host = "nas2.local")))
         assertEquals(3, logins)
     }
