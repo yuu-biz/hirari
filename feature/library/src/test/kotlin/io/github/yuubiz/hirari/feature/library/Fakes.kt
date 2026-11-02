@@ -35,12 +35,14 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import java.nio.charset.Charset
 import java.time.Instant
 
 internal val T0: Instant = Instant.parse("2026-01-01T00:00:00Z")
@@ -156,9 +158,11 @@ internal class FakeBooks : BookRepository {
 
     override suspend fun setCover(id: BookId, entry: Int?) = Unit
 
-    override fun overrides(id: BookId): Flow<BookOverrides> = MutableStateFlow(BookOverrides())
+    val overrides = MutableStateFlow<Map<BookId, BookOverrides>>(emptyMap())
 
-    override suspend fun setOverrides(id: BookId, overrides: BookOverrides) = Unit
+    override fun overrides(id: BookId): Flow<BookOverrides> = overrides.map { it[id] ?: BookOverrides() }
+
+    override suspend fun setOverrides(id: BookId, overrides: BookOverrides) = this.overrides.update { it + (id to overrides) }
 
     val progressRepository = object : ProgressRepository {
         override suspend fun get(book: BookId): BookProgress? = progress.value[book]
@@ -273,8 +277,47 @@ internal class FakeSmb : SmbPlaces {
         return result
     }
 
+    override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource = throw java.io.FileNotFoundException(path)
+
     override suspend fun forget(id: LocationId) {
         forgotten += id
+    }
+}
+
+/**
+ * An archive whose entry names read as [names] gives them for each charset, in stored order. The detected charset is
+ * [detected]; the reader decodes in [reader].
+ */
+internal class FakeContents(
+    private val names: Map<Charset, List<String>>,
+    private val detected: Charset,
+    private val reader: Charset = detected,
+    override val documentUri: UriString? = UriString("content://tree/manga/document/book.zip"),
+) : ArchiveContents {
+    var closed = false
+
+    override val entries: List<ArchiveItem> = names.getValue(detected).indices.map { ArchiveItem(it, byteArrayOf(it.toByte()), 100L + it, isDirectory = false, unreadable = false) }
+
+    override fun charset(override: Charset?, fallback: Charset): Charset = override ?: detected
+
+    override fun readerCharset(): Charset = reader
+
+    override fun name(item: ArchiveItem, charset: Charset): String = names.getValue(charset)[item.entryIndex]
+
+    override suspend fun isImage(item: ArchiveItem): Boolean = false
+
+    override fun close() {
+        closed = true
+    }
+}
+
+internal class FakeArchives : ArchiveOpener {
+    var result: ArchiveOpenResult = ArchiveOpenResult.Failed(ArchiveFailure.NotFound)
+    val opened = mutableListOf<Pair<String, BookId>>()
+
+    override suspend fun open(place: LibraryLocation, path: String, documentId: String?, book: BookId): ArchiveOpenResult {
+        opened += path to book
+        return result
     }
 }
 
@@ -301,6 +344,7 @@ internal class Fixture {
     val grants = FakeGrants()
     val lister = FakeLister()
     val smb = FakeSmb()
+    val archives = FakeArchives()
     val launch = FakeLaunch()
-    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, launch, { tree, id -> UriString("${tree.value}/document/$id") }, clock = { T0 })
+    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, { tree, id -> UriString("${tree.value}/document/$id") }, clock = { T0 })
 }

@@ -70,6 +70,7 @@ class LibraryServices(
     val grants: TreeGrants,
     val folders: FolderLister,
     val smb: SmbPlaces,
+    val archives: ArchiveOpener,
     val launch: LaunchRepository,
     val documents: DocumentUris,
     val clock: () -> Instant = Instant::now,

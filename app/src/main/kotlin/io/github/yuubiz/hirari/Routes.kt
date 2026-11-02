@@ -10,6 +10,7 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import android.net.Uri
+import io.github.yuubiz.hirari.feature.library.ArchiveKey
 import io.github.yuubiz.hirari.feature.library.FolderKey
 import io.github.yuubiz.hirari.feature.library.TextAddress
 import io.github.yuubiz.hirari.feature.text.TextBookRef
@@ -37,6 +38,14 @@ internal data class SmbServerRoute(val location: Long? = null)
 internal data class FolderRoute(val location: Long, val path: String, val documentId: String? = null, val reveal: String? = null) {
     fun toKey() = FolderKey(LocationId(location), path, documentId)
 }
+
+/** 書庫内一覧 of an archive book in a place (docs/spec.md section 4.7). */
+@Serializable
+internal data class ArchiveRoute(val location: Long, val path: String, val documentId: String? = null) {
+    fun toKey() = ArchiveKey(LocationId(location), path, documentId)
+}
+
+internal fun ArchiveKey.toRoute() = ArchiveRoute(location.value, path, documentId)
 
 internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.value, path, documentId, reveal)
 

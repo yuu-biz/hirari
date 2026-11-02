@@ -59,6 +59,7 @@ import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
 class FolderActions(
     val openBook: (OpenBookRequest) -> Unit,
     val openText: (TextAddress) -> Unit,
+    val openArchive: (ArchiveKey) -> Unit,
     val openFolder: (FolderKey) -> Unit,
     val openAncestor: (String) -> Unit,
     val close: () -> Unit,
@@ -140,6 +141,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                 sheetFor = null
                 when (action) {
                     SheetAction.Open -> open(row)
+                    SheetAction.Contents -> actions.openArchive(ArchiveKey(model.folder.location, row.path, row.item.entry.documentId))
                     SheetAction.FromStart -> open(row, StartAt.Page(0))
                     SheetAction.MarkRead -> model.mark(row, ReadState.Read)
                     SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)
@@ -236,13 +238,14 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-private enum class SheetAction { Open, FromStart, MarkRead, MarkUnread, Pin }
+private enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
 private fun RowSheet(row: FileRow, onAction: (SheetAction) -> Unit) {
     val actions = buildList {
         add(SheetAction.Open to R.string.sheet_open)
+        if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
         if (row.item is FileItem.Archive && row.mark != null && row.mark != ReadMark.Unread) add(SheetAction.FromStart to R.string.sheet_from_start)
         if (row.item is FileItem.Archive || row.item is FileItem.Text) {
             if (row.mark != ReadMark.Read) add(SheetAction.MarkRead to R.string.sheet_mark_read)

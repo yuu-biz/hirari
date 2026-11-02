@@ -15,6 +15,7 @@ import io.github.yuubiz.hirari.feature.library.LibraryServices
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
+import io.github.yuubiz.hirari.feature.library.DeviceArchives
 import io.github.yuubiz.hirari.feature.library.SafDocumentUris
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
@@ -64,6 +65,7 @@ class HirariApp : Application() {
         smbShares = appScope.async { SmbShares(appScope, getSystemService(ConnectivityManager::class.java).networkAvailable()) }
         library = appScope.async {
             val storage = services.await().storage
+            val smb = SmbjPlaces(smbShares.await(), storage.credentials, AndroidLocalNetwork(this@HirariApp), appScope)
             LibraryServices(
                 locations = storage.locations,
                 books = storage.books,
@@ -73,7 +75,8 @@ class HirariApp : Application() {
                 settings = storage.settings,
                 grants = SafTreeGrants(contentResolver),
                 folders = SafFolderLister(contentResolver),
-                smb = SmbjPlaces(smbShares.await(), storage.credentials, AndroidLocalNetwork(this@HirariApp), appScope),
+                smb = smb,
+                archives = DeviceArchives(contentResolver, cacheDir, smb),
                 launch = storage.launch,
                 documents = SafDocumentUris,
             )

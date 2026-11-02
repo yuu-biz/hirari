@@ -34,6 +34,10 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.HirariTheme
+import io.github.yuubiz.hirari.feature.library.ArchiveActions
+import io.github.yuubiz.hirari.feature.library.ArchiveScreen
+import io.github.yuubiz.hirari.feature.library.ArchiveUi
+import io.github.yuubiz.hirari.feature.library.ArchiveViewModel
 import io.github.yuubiz.hirari.feature.library.FolderActions
 import io.github.yuubiz.hirari.feature.library.FolderContent
 import io.github.yuubiz.hirari.feature.library.FolderScreen
@@ -128,6 +132,7 @@ class MainActivity : ComponentActivity() {
                                 FolderActions(
                                     openBook = { nav.navigate(it.toReaderRoute()) },
                                     openText = { nav.navigate(it.toRoute()) },
+                                    openArchive = { nav.navigate(it.toRoute()) },
                                     openFolder = { nav.navigate(it.toRoute()) },
                                     openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null), from = key.path) },
                                     close = { nav.popBackStack() },
@@ -141,6 +146,21 @@ class MainActivity : ComponentActivity() {
                         val id = entry.toRoute<SmbServerRoute>().location?.let(::LocationId)
                         val form = viewModel { SmbServerViewModel(app.library, id) }
                         SmbServerScreen(form, onClose = { nav.popBackStack() })
+                    }
+                    composable<ArchiveRoute> { entry ->
+                        Kept(app) {
+                            val key = entry.toRoute<ArchiveRoute>().toKey()
+                            val archive = viewModel { ArchiveViewModel(app.library, key) }
+                            ReportSettled(nav, entry, app) { archive.state.first { it.content !is ArchiveUi.Loading } }
+                            ArchiveScreen(
+                                archive,
+                                ArchiveActions(
+                                    openBook = { nav.navigate(it.toReaderRoute()) },
+                                    openText = { nav.navigate(it.toRoute()) },
+                                    close = { nav.popBackStack() },
+                                ),
+                            )
+                        }
                     }
                     composable<LicensesRoute> { entry ->
                         ReportSettled(nav, entry, app) {}

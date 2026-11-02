@@ -20,7 +20,10 @@ import io.github.yuubiz.hirari.core.source.smb.SmbRequestException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
+import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
 import kotlin.coroutines.cancellation.CancellationException
 import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
@@ -59,6 +62,13 @@ interface SmbPlaces {
      */
     suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult
 
+    /**
+     * Opens the file at [path], counted from the place's folder, for random access.
+     *
+     * @throws java.io.IOException as [SmbServer.open] does, and when the system blocks the local network.
+     */
+    suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource
+
     /** Drops the connection of the place [id], so the next request logs on with what is stored now. */
     suspend fun forget(id: LocationId)
 }
@@ -77,7 +87,7 @@ class AndroidLocalNetwork(private val context: Context) : LocalNetwork {
 }
 
 /** The stored password of a server cannot be opened. */
-private class PasswordUnreadableException : Exception()
+private class PasswordUnreadableException : java.io.IOException("the stored password cannot be opened")
 
 /** [SmbPlaces] over the shared [shares], with the passwords from [credentials] and nowhere else. */
 class SmbjPlaces(
@@ -131,6 +141,12 @@ class SmbjPlaces(
         } finally {
             password?.fill('\u0000')
         }
+    }
+
+    override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource {
+        if (!localNetwork.granted()) throw SmbConnectException(SmbConnectFailure.Unreachable, "local network not granted")
+        val server = shares.server(place) { login(place.user, place.credential) }
+        return withContext(Dispatchers.IO) { server.open(normalizePath("${place.basePath}/$path")) }
     }
 
     override suspend fun forget(id: LocationId) = shares.forget(id)
