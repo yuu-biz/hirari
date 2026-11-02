@@ -32,7 +32,7 @@ fun standardPage(page: Int): ByteArray {
             image.setRGB(x, y, (g shl 16) or (g shl 8) or g)
         }
     }
-    return jpeg(image, quality = 0.75f)
+    return jpeg(image, quality = 0.6f)
 }
 
 private const val NOISE = 7.0

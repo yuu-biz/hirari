@@ -30,13 +30,13 @@ class ImageCorpusTest {
 
     @Test
     fun `a standard page is a JPEG of the size in section 5_1 near 1_5 MB`() {
-        for (page in listOf(0, 9)) {
+        for (page in listOf(0, 1, 2, 9)) {
             val bytes = standardPage(page)
             val image = ImageIO.read(bytes.inputStream())
             val width = if (isStandardSpread(page)) 3200 else 1600
             assertEquals(width to 2400, image.width to image.height)
             val perPage = bytes.size * 1600L / width
-            assertTrue(perPage in 1_000_000..2_000_000, "page $page is ${bytes.size} bytes")
+            assertTrue(perPage in 1_200_000..1_800_000, "page $page is ${bytes.size} bytes")
         }
         assertEquals(STANDARD_SPREADS, (0 until STANDARD_PAGES).count(::isStandardSpread))
     }

@@ -1492,7 +1492,7 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 コーパスは生成スクリプト（`tools/corpus`）で決定的に作る。第三者のファイルは、ライセンスが許す場合だけ入れる。漫画の実ページは入れず、生成した画像を使う。画像は網点に似た模様にし、縮小のモアレが見えるようにする。
 
 - 期待する結果の目録は 2 つある。`expected.tsv` は書庫の層（エントリの一覧と各エントリのバイト列）の結果、`pages.tsv` は本を開く層（ページの一覧と各ページの `PageResult`）の結果である。
-- 標準コーパス（5.1 節）は約 300 MB になるので、端末の試験が持つコーパスには入れない。`./gradlew :tools:corpus:generateStandardCorpus` で `tools/corpus/build/standard-corpus/standard.zip` に作る。網点に乱数の雑音を足し、1 枚を約 1.5 MB にする。
+- 標準コーパス（5.1 節）は約 350 MB になるので、端末の試験が持つコーパスには入れない。`./gradlew :tools:corpus:generateStandardCorpus` で `tools/corpus/build/standard-corpus/standard.zip` に作る。網点に乱数の雑音を足し、JPEG の品質 0.6 で 1 枚を約 1.5 MB にする（単ページは 1.2〜1.8 MB に入ることを試験で確かめる）。
 
 コーパスには少なくとも次のものを入れる。
 

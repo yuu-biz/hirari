@@ -16,7 +16,7 @@ tasks.register<JavaExec>("generateCorpus") {
     argumentProviders += CommandLineArgumentProvider { listOf(outputDir.get().asFile.absolutePath) }
 }
 
-// The standard corpus of docs/spec.md section 5.1 is about 300 MB, so it stays out of the corpus the device
+// The standard corpus of docs/spec.md section 5.1 is about 350 MB, so it stays out of the corpus the device
 // tests carry and is generated only when asked for.
 tasks.register<JavaExec>("generateStandardCorpus") {
     val outputDir = layout.buildDirectory.dir("standard-corpus")
