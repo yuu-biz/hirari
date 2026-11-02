@@ -41,11 +41,16 @@ class ImageDecoding(val budgetBytes: Long, parallelism: Int, internal val storag
         const val DECODE_TIMEOUT_MILLIS: Long = 10_000
 
         fun forDevice(context: Context): ImageDecoding {
-            val activityManager = context.getSystemService(ActivityManager::class.java)
-            val memory = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
-            val budget = MemoryBudget.bytes(activityManager.memoryClass, memory.totalMem, activityManager.isLowRamDevice)
+            val budget = deviceBudget(context)
             val parallelism = MemoryBudget.decodeParallelism(Runtime.getRuntime().availableProcessors(), budget)
             return ImageDecoding(budget, parallelism, context.getSystemService(StorageManager::class.java))
+        }
+
+        /** The memory budget of docs/spec.md section 5.3 for this device. */
+        internal fun deviceBudget(context: Context): Long {
+            val activityManager = context.getSystemService(ActivityManager::class.java)
+            val memory = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
+            return MemoryBudget.bytes(activityManager.memoryClass, memory.totalMem, activityManager.isLowRamDevice)
         }
     }
 }

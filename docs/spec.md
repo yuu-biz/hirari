@@ -1904,7 +1904,7 @@ RAR、7z、tar の書庫は次のように作る。
 | 入出力 | `Dispatchers.IO` | SAF、Room、DataStore |
 | SMB | サーバーごとに同時 4 件までの要求（公平なセマフォ） | SMB の読み込み、一覧、ファイルを開く要求 |
 | デコード | `Dispatchers.Default.limitedParallelism(n)` | デコード、縮小、トリミング |
-| サムネイル | リーダーとは別の `Dispatchers.Default.limitedParallelism(2)`（メモリ予算が 128 MB 未満なら 1）。同時に作る数はローカルで 2、SMB で 1 | サムネイルのデコード、切り出し、WebP の符号化 |
+| サムネイル | リーダーとは別の `Dispatchers.Default.limitedParallelism(2)`（メモリ予算が 128 MB 未満なら 1）。同時に作る数はローカルで 2、SMB で 1。デコードのメモリ予算は、5.3 節の予算の半分とする | サムネイルのデコード、切り出し、WebP の符号化 |
 | 書庫のセッション | セッションごとに 1 本のスレッドに閉じ込める | libarchive の呼び出し |
 | PDF のセッション | 文書ごとに 1 本のスレッドに閉じ込める | `PdfRenderer` の呼び出し |
 

@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image.thumbnail
 
 import android.content.Context
+import android.os.storage.StorageManager
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.model.NaturalOrder
 import kotlinx.coroutines.CoroutineDispatcher
@@ -178,7 +179,7 @@ class Thumbnails internal constructor(
     private suspend fun folder(folder: ThumbSubject.Folder, request: ThumbRequest, mode: Mode): ThumbResult? {
         val key = ThumbnailKey(folder.id, folder.modified, byteSize = 0, FOLDER_COVER, request.sizePx, request.direction)
         if (mode == Mode.Remake) store.remove(key) else if (store.get(key) == StoredThumb.Failed) return ThumbResult.Failed
-        if (mode == Mode.CacheOnly) return search(folder, request, mode, key)
+        if (mode == Mode.CacheOnly) return withContext(io) { search(folder, request, mode, key) }
         return flights.join(key, request.priority) { checkNotNull(search(folder, request, mode, key)) }
     }
 
@@ -271,9 +272,9 @@ class Thumbnails internal constructor(
          * device with little memory), and PDF support.
          */
         fun forDevice(context: Context, store: ThumbnailStore): Thumbnails {
-            val reader = ImageDecoding.forDevice(context)
-            val parallelism = if (reader.budgetBytes < LOW_MEMORY_BYTES) 1 else ThumbLane.Local.parallelism
-            return create(store, ImageDecoding(reader.budgetBytes / 2, parallelism, reader.storage))
+            val budget = ImageDecoding.deviceBudget(context)
+            val parallelism = if (budget < LOW_MEMORY_BYTES) 1 else ThumbLane.Local.parallelism
+            return create(store, ImageDecoding(budget / 2, parallelism, context.getSystemService(StorageManager::class.java)))
         }
 
         private const val LOW_MEMORY_BYTES = 128L shl 20
