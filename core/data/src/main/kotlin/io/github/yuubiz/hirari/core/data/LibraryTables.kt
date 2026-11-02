@@ -214,9 +214,10 @@ internal interface HistoryDao {
     @Query("DELETE FROM history WHERE book_id NOT IN (SELECT book_id FROM history ORDER BY opened_at DESC LIMIT :limit)")
     suspend fun keepNewest(limit: Int)
 
+    /** Writes [row] unless the book already has a time as new or newer, so a late write of an older session loses. */
     @Transaction
     suspend fun record(row: HistoryRow, limit: Int) {
-        upsert(listOf(row))
+        if (get(row.bookId)?.let { it.openedAt >= row.openedAt } != true) upsert(listOf(row))
         keepNewest(limit)
     }
 

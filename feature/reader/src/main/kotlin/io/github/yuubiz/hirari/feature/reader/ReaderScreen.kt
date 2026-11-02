@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.yuubiz.hirari.core.image.BookFailure
@@ -58,6 +60,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
     val close by rememberUpdatedState(onClose)
     HideSystemBars()
     ScreenOrientationLock(viewModel.orientation)
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
 
     fun dismiss() {
         val panelOpen = ui.commandBar.panelVisible || ui.sheet != null

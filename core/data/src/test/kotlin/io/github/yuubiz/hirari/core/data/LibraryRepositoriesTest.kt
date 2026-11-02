@@ -200,6 +200,22 @@ class LibraryRepositoriesTest {
     }
 
     @Test
+    fun `two sessions of one book finishing in reverse order leave the newer time`() = runTest {
+        history.record(BookId("other"), at(2), limit = 2)
+        history.record(BookId("a"), at(5), limit = 2)
+        history.record(BookId("a"), at(3), limit = 2)
+        val entries = history.observe(HistorySort.Newest).first().map { it.entry }
+        assertEquals(listOf("a" to at(5), "other" to at(2)), entries.map { it.book.value to it.openedAt })
+    }
+
+    @Test
+    fun `recording the same time again changes nothing`() = runTest {
+        history.record(BookId("a"), at(5), limit = 2)
+        history.record(BookId("a"), at(5), limit = 2)
+        assertEquals(listOf("a" to at(5)), history.observe(HistorySort.Newest).first().map { it.entry.book.value to it.entry.openedAt })
+    }
+
+    @Test
     fun `history sorts by path in natural order and shows the place`() = runTest {
         val place = locations.addSafTree("Manga", UriString("content://tree/1"))
         books.record(book("v10", place, "s/vol10.zip"))

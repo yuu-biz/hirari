@@ -82,7 +82,7 @@ class ReadingSessionTest {
     fun closingMovesTheBookToTheHistoryWithTheTimeItOpened() = runTest {
         val session = session(limit = 20)
         advanceUntilIdle()
-        session.close()
+        session.stop()
         advanceUntilIdle()
         assertEquals(listOf("book b1 3", "history b1 1000 20"), log)
     }
@@ -90,8 +90,20 @@ class ReadingSessionTest {
     @Test
     fun closingBeforeTheIndexWriteRunsStillWritesTheBookFirstAndTheHistoryOnce() = runTest {
         val session = session()
-        session.close()
-        session.close()
+        session.stop()
+        session.stop()
+        advanceUntilIdle()
+        assertEquals(listOf("book b1 3", "history b1 1000 100"), log)
+    }
+
+    @Test
+    fun stoppingWritesTheHistoryAndTheLaterCloseWritesNothingMore() = runTest {
+        val session = session()
+        advanceUntilIdle()
+        session.stop()
+        advanceUntilIdle()
+        assertEquals(listOf("book b1 3", "history b1 1000 100"), log)
+        session.stop()
         advanceUntilIdle()
         assertEquals(listOf("book b1 3", "history b1 1000 100"), log)
     }
@@ -100,7 +112,7 @@ class ReadingSessionTest {
     fun aFailedIndexWriteDoesNotKeepTheBookOutOfTheHistory() = runTest {
         books.failing = true
         val session = session()
-        session.close()
+        session.stop()
         advanceUntilIdle()
         assertEquals(listOf("history b1 1000 100"), log)
     }

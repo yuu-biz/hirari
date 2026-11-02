@@ -238,12 +238,17 @@ class ReaderViewModel(
         return true
     }
 
+    /** The reader left the screen. The process may end before [onCleared], so the history is written now. */
+    fun onStop() {
+        opened?.session?.stop()
+    }
+
     override fun onCleared() {
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
         opened?.let {
             it.prefetcher.close()
-            it.session.close()
+            it.session.stop()
             it.services.progress.flush()
         }
         bookOwner.release()

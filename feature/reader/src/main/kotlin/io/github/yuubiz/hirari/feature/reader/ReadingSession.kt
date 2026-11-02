@@ -12,8 +12,8 @@ import kotlinx.coroutines.launch
 
 /**
  * What the reader leaves in the index for one opened book: the book in the index when it opens (docs/spec.md
- * section 2.2), and its place in the history when it closes (sections 2.8 and 4.6), stamped with the time it
- * opened. [scope] outlives the screen, so the writes finish after the reader is gone. A failed write is dropped:
+ * section 2.2), and its place in the history when the reader stops or closes (sections 2.8 and 4.6), stamped with
+ * the time it opened. [scope] outlives the screen, so the writes finish after the reader is gone. A failed write is dropped:
  * the index and the history are conveniences, and reading the book again writes them again.
  */
 internal class ReadingSession(
@@ -24,12 +24,12 @@ internal class ReadingSession(
     private val history: HistoryRepository,
     private val scope: CoroutineScope,
 ) {
-    private val closed = AtomicBoolean(false)
+    private val stopped = AtomicBoolean(false)
     private val indexed: Job = scope.launch { quietly { books.record(book) } }
 
-    /** Moves the book to the newest place of the history. Closing twice writes once. */
-    fun close() {
-        if (!closed.compareAndSet(false, true)) return
+    /** Moves the book to the newest place of the history. Stopping again, or closing after a stop, writes nothing more. */
+    fun stop() {
+        if (!stopped.compareAndSet(false, true)) return
         scope.launch {
             indexed.join()
             quietly { history.record(book.id, openedAt, historyLimit) }
