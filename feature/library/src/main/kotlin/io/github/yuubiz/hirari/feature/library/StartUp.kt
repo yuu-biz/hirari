@@ -45,8 +45,9 @@ suspend fun LibraryServices.planStart(): StartPlan {
         settings.update { it.copy(libraryView = GlobalSettings().libraryView) }
         return StartPlan()
     }
-    val reopen = settings.settings.first().reopenLastBook
-    val last = if (reopen == ReopenLastBook.Off) null else history.observe(HistorySort.Newest).first().firstOrNull()
+    val current = settings.settings.first()
+    val reopen = current.reopenLastBook
+    val last = if (reopen == ReopenLastBook.Off || current.historyLimit == 0) null else history.observe(HistorySort.Newest).first().firstOrNull()
     return decideStart(record, reopen, last, locations.locations.first())
 }
 

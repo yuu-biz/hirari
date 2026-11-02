@@ -22,11 +22,11 @@ class StartUpTest {
     private val last = book(place.id, "作品/2巻.zip")
     private val request = OpenBookRequest(BookAddress.InLocation(place.id, "作品/2巻.zip", folder = false))
 
-    private fun given(reopen: ReopenLastBook, lastFolder: LastFolder? = folder, unfinished: Int = 0) {
+    private fun given(reopen: ReopenLastBook, lastFolder: LastFolder? = folder, unfinished: Int = 0, historyLimit: Int = 100) {
         fixture.locations.rows.value = listOf(place)
         fixture.books.put(last)
         fixture.history.entries.value = listOf(HistoryEntry(last.id, T0))
-        fixture.settings.value.value = fixture.settings.value.value.copy(reopenLastBook = reopen, libraryView = LibraryView.List)
+        fixture.settings.value.value = fixture.settings.value.value.copy(reopenLastBook = reopen, libraryView = LibraryView.List, historyLimit = historyLimit)
         fixture.launch.record = LaunchRecord(unfinished, lastFolder)
     }
 
@@ -40,6 +40,12 @@ class StartUpTest {
 
         given(ReopenLastBook.Immediately, lastFolder = null)
         assertEquals(StartPlan(reopen = Reopen.Now(request)), fixture.services.planStart())
+    }
+
+    @Test
+    fun `with no history kept there is no last book, even one the history still holds`() = runTest {
+        given(ReopenLastBook.Immediately, historyLimit = 0)
+        assertEquals(StartPlan(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
     }
 
     @Test
