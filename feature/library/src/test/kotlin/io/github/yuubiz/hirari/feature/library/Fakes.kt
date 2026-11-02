@@ -31,6 +31,7 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.UriString
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -208,9 +209,11 @@ internal class FakeGrants : TreeGrants {
 internal class FakeLister : FolderLister {
     val folders = mutableMapOf<String, List<FolderEntry>>()
     var calls = 0
+    var delayMs = 0L
 
     override suspend fun list(tree: UriString, path: String, documentId: String?): Listing {
         calls++
+        if (delayMs > 0) delay(delayMs)
         val entries = folders[path] ?: return Listing.Failed(ListFailure.NotFound)
         return Listing.Listed(documentId ?: "doc:$path", entries)
     }

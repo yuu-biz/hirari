@@ -29,6 +29,8 @@ import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.model.LibrarySort
+import io.github.yuubiz.hirari.core.model.LibraryView
 
 /**
  * Where a cover goes. Thumbnails arrive in a later unit (docs/spec.md section 4.4); until then the slot shows
@@ -69,6 +71,20 @@ fun Book.kindLabel(): String? = when (val format = format) {
 fun LibraryLocation.address(): String? = when (this) {
     is LibraryLocation.SafTree -> null
     is LibraryLocation.SmbShare -> "smb://${user?.let { "$it@" }.orEmpty()}$host${if (port == 445) "" else ":$port"}/$share/"
+}
+
+@StringRes
+fun LibrarySort.label(): Int = when (this) {
+    LibrarySort.Name -> R.string.sort_name
+    LibrarySort.Newest -> R.string.sort_newest
+    LibrarySort.Oldest -> R.string.sort_oldest
+}
+
+@StringRes
+fun LibraryView.label(): Int = when (this) {
+    LibraryView.Grid -> R.string.view_grid
+    LibraryView.ThumbnailList -> R.string.view_thumbnail_list
+    LibraryView.List -> R.string.view_list
 }
 
 @StringRes

@@ -5,6 +5,12 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.normalizePath
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.toRoute
+import io.github.yuubiz.hirari.feature.library.FolderKey
+import io.github.yuubiz.hirari.feature.library.childToward
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -13,9 +19,33 @@ internal data object HomeRoute
 @Serializable
 internal data object LicensesRoute
 
-/** A folder of a SAF place (docs/spec.md section 4.3). Without [documentId] the list looks the path up. */
+/**
+ * A folder of a SAF place (docs/spec.md section 4.3). Without [documentId] the list looks the path up. [reveal] is
+ * the path of a row the list scrolls to when it first shows.
+ */
 @Serializable
-internal data class FolderRoute(val location: Long, val path: String, val documentId: String? = null)
+internal data class FolderRoute(val location: Long, val path: String, val documentId: String? = null, val reveal: String? = null) {
+    fun toKey() = FolderKey(LocationId(location), path, documentId)
+}
+
+internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.value, path, documentId, reveal)
+
+/**
+ * Goes up from the folder at [from] to the folder [to] of the same place (docs/spec.md section 4.3, 上部バー and
+ * 戻ったとき). The folders below [to] on top of the back stack are popped. When [to] is under them, it keeps its
+ * scroll position; when it is not, as above a pinned folder, it opens scrolled to the folder the way down went
+ * through.
+ */
+internal fun NavController.goUpTo(to: FolderKey, from: String) {
+    while (true) {
+        val top = currentBackStackEntry?.takeIf { it.destination.hasRoute<FolderRoute>() }?.toRoute<FolderRoute>() ?: break
+        if (top.location != to.location.value) break
+        if (normalizePath(top.path) == normalizePath(to.path)) return
+        if (childToward(to.path, top.path) == null) break
+        popBackStack()
+    }
+    navigate(to.toRoute(reveal = childToward(to.path, from)))
+}
 
 /**
  * The reader's arguments, flattened for the navigation arguments. [toRequest] and [toReaderRoute] convert at

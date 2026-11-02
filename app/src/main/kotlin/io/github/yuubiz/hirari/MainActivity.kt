@@ -30,6 +30,9 @@ import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.HirariTheme
+import io.github.yuubiz.hirari.feature.library.FolderActions
+import io.github.yuubiz.hirari.feature.library.FolderScreen
+import io.github.yuubiz.hirari.feature.library.FolderViewModel
 import io.github.yuubiz.hirari.feature.library.HomeActions
 import io.github.yuubiz.hirari.feature.library.HomeScreen
 import io.github.yuubiz.hirari.feature.library.HomeViewModel
@@ -72,7 +75,7 @@ class MainActivity : ComponentActivity() {
                             home,
                             HomeActions(
                                 openBook = { nav.navigate(it.toReaderRoute()) },
-                                openFolder = {},
+                                openFolder = { nav.navigate(it.toRoute()) },
                                 menu = {
                                     HomeMenu(
                                         onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
@@ -82,6 +85,21 @@ class MainActivity : ComponentActivity() {
                                     )
                                 },
                             ),
+                        )
+                    }
+                    composable<FolderRoute> { entry ->
+                        val route = entry.toRoute<FolderRoute>()
+                        val key = route.toKey()
+                        val folder = viewModel { FolderViewModel(app.library, key) }
+                        FolderScreen(
+                            folder,
+                            FolderActions(
+                                openBook = { nav.navigate(it.toReaderRoute()) },
+                                openFolder = { nav.navigate(it.toRoute()) },
+                                openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null), from = key.path) },
+                                close = { nav.popBackStack() },
+                            ),
+                            reveal = route.reveal,
                         )
                     }
                     composable<LicensesRoute> { LicenseScreen(onBack = { nav.popBackStack() }) }

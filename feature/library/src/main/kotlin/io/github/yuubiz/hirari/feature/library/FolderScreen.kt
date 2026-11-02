@@ -1,0 +1,265 @@
+package io.github.yuubiz.hirari.feature.library
+
+import androidx.annotation.StringRes
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.yuubiz.hirari.core.model.LibrarySort
+import io.github.yuubiz.hirari.core.model.LibraryView
+import io.github.yuubiz.hirari.core.model.OpenBookRequest
+import io.github.yuubiz.hirari.core.model.ReadState
+import io.github.yuubiz.hirari.core.model.StartAt
+import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
+
+/** What the file list asks of the app. [openAncestor] goes up to the folder at that path of the same place. */
+class FolderActions(
+    val openBook: (OpenBookRequest) -> Unit,
+    val openFolder: (FolderKey) -> Unit,
+    val openAncestor: (String) -> Unit,
+    val close: () -> Unit,
+)
+
+/** [reveal] is the path of a row to scroll to when the list first shows (docs/spec.md section 4.3, 戻ったとき). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String? = null) {
+    val state by model.state.collectAsStateWithLifecycle()
+    var filtering by rememberSaveable { mutableStateOf(false) }
+    var sheetFor by remember { mutableStateOf<FileRow?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val resources = LocalResources.current
+    LaunchedEffect(state.notice) {
+        val notice = state.notice ?: return@LaunchedEffect
+        snackbar.showSnackbar(resources.getString(notice.message()))
+        model.dismissNotice()
+    }
+
+    fun open(row: FileRow, start: StartAt = StartAt.Saved) {
+        when (val target = model.open(row, start)) {
+            is FileTarget.Folder -> {
+                filtering = false
+                actions.openFolder(target.key)
+            }
+            is FileTarget.Book -> actions.openBook(target.request)
+            null -> Unit
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Breadcrumbs(state.placeName, state.path, actions.openAncestor) },
+                navigationIcon = { TextButton(onClick = actions.close) { Text("←") } },
+                actions = {
+                    TextButton(onClick = {
+                        filtering = !filtering
+                        if (!filtering) model.setFilter("")
+                    }) { Text(stringResource(R.string.folder_filter)) }
+                    (state.content as? FolderContent.Shown)?.let { ListMenu(it, model) }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            val shown = state.content as? FolderContent.Shown
+            if (filtering && shown != null) {
+                OutlinedTextField(
+                    value = shown.filter,
+                    onValueChange = model::setFilter,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    placeholder = { Text(stringResource(R.string.folder_filter_hint)) },
+                    singleLine = true,
+                )
+            }
+            when (val content = state.content) {
+                FolderContent.Loading -> Unit
+                FolderContent.SlowLoading -> SlowLoading {
+                    model.cancel()
+                    actions.close()
+                }
+                is FolderContent.Failed -> ListFailed(content.reason, onRetry = model::load)
+                is FolderContent.Shown -> if (content.rows.isEmpty()) {
+                    EmptyNote(if (content.total == 0) R.string.folder_empty else R.string.folder_no_match)
+                } else {
+                    FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it })
+                }
+            }
+        }
+    }
+    sheetFor?.let { row ->
+        ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
+            RowSheet(row) { action ->
+                sheetFor = null
+                when (action) {
+                    SheetAction.Open -> open(row)
+                    SheetAction.FromStart -> open(row, StartAt.Page(0))
+                    SheetAction.MarkRead -> model.mark(row, ReadState.Read)
+                    SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)
+                    SheetAction.Pin -> model.pin(row)
+                }
+            }
+        }
+    }
+}
+
+/** The path with each folder a step up (docs/spec.md section 4.3, 上部バー). */
+@Composable
+private fun Breadcrumbs(placeName: String, path: String, onPick: (String) -> Unit) {
+    val names = path.split('/').filter { it.isNotEmpty() }
+    Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        val steps = listOf(placeName to "") + names.mapIndexed { i, name -> name to names.take(i + 1).joinToString("/") }
+        steps.forEachIndexed { i, (name, at) ->
+            if (i > 0) Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val last = i == steps.lastIndex
+            TextButton(onClick = { onPick(at) }, enabled = !last) {
+                Text(name, maxLines = 1, fontWeight = if (last) FontWeight.Bold else null)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { open = true }) { Text("⋮") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            MenuHeader(R.string.folder_sort)
+            LibrarySort.entries.forEach { sort ->
+                Choice(sort.label(), sort == shown.sort) {
+                    open = false
+                    model.setSort(sort)
+                }
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.folder_folders_first)) },
+                leadingIcon = { Checkbox(checked = shown.foldersFirst, onCheckedChange = null) },
+                onClick = { model.setFoldersFirst(!shown.foldersFirst) },
+            )
+            HorizontalDivider()
+            MenuHeader(R.string.folder_view)
+            LibraryView.entries.forEach { view ->
+                Choice(view.label(), view == shown.view) {
+                    open = false
+                    model.setView(view)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuHeader(@StringRes text: Int) {
+    Text(stringResource(text), Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+private fun Choice(@StringRes label: Int, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(stringResource(label), fontWeight = if (selected) FontWeight.Bold else null) },
+        leadingIcon = { Text(if (selected) "✓" else " ") },
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun SlowLoading(onCancel: () -> Unit) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator()
+        OutlinedButton(onClick = onCancel, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.cancel)) }
+    }
+}
+
+@Composable
+private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
+    val message = when (reason) {
+        ListFailure.NoPermission -> R.string.folder_failed_permission
+        ListFailure.NotFound -> R.string.folder_failed_missing
+        ListFailure.ReadError -> R.string.folder_failed_read
+    }
+    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(message), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.folder_retry)) }
+    }
+}
+
+private enum class SheetAction { Open, FromStart, MarkRead, MarkUnread, Pin }
+
+/** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
+@Composable
+private fun RowSheet(row: FileRow, onAction: (SheetAction) -> Unit) {
+    val actions = buildList {
+        add(SheetAction.Open to R.string.sheet_open)
+        if (row.item is FileItem.Archive && row.mark != null && row.mark != ReadMark.Unread) add(SheetAction.FromStart to R.string.sheet_from_start)
+        if (row.item is FileItem.Archive || row.item is FileItem.Text) {
+            if (row.mark != ReadMark.Read) add(SheetAction.MarkRead to R.string.sheet_mark_read)
+            if (row.mark != ReadMark.Unread) add(SheetAction.MarkUnread to R.string.sheet_mark_unread)
+        }
+        if (row.item is FileItem.Folder) add(SheetAction.Pin to R.string.sheet_pin)
+    }
+    Column(Modifier.padding(bottom = 24.dp)) {
+        Text(row.item.entry.name, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        actions.forEach { (action, label) ->
+            ListItem(
+                headlineContent = { Text(stringResource(label)) },
+                modifier = Modifier.combinedClickable(onClick = { onAction(action) }),
+            )
+        }
+    }
+}
+
+/** The pressed background of docs/spec.md section 4.3; focus and Enter come with the click (方向キー). */
+@Composable
+internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: () -> Unit): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val colors = LocalLibraryColors.current
+    return this
+        .then(if (pressed) Modifier.background(colors.itemPressed) else Modifier)
+        .combinedClickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick, onLongClick = onLongClick)
+}
