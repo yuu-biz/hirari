@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable<FolderRoute> { entry ->
-                        Kept(app) {
+                        Kept(app, entry) {
                             val route = entry.toRoute<FolderRoute>()
                             val key = route.toKey()
                             val folder = viewModel { FolderViewModel(app.library, key) }
@@ -136,7 +136,7 @@ class MainActivity : ComponentActivity() {
                         storage?.let { SettingsScreen(it, onBack = { nav.popBackStack() }, onOpenLicenses = { nav.navigate(LicensesRoute) }) }
                     }
                     composable<ReaderRoute> { entry ->
-                        Kept(app) {
+                        Kept(app, entry) {
                             val request = entry.toRoute<ReaderRoute>().toRequest()
                             val reader = viewModel { ReaderViewModel(app, app.services, request) }
                             ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent() }.first { it } }

@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.onEach
  */
 internal class AppStart(val restoring: Boolean, val plan: Deferred<StartPlan>, finish: () -> Unit) {
     val gate = StartGate(finish)
+    val kept = KeptScreens(restoring)
 
     /** The plan is on the back stack, which the activity keeps from then on. */
     var applied by mutableStateOf(false)
@@ -36,13 +37,8 @@ internal class AppStart(val restoring: Boolean, val plan: Deferred<StartPlan>, f
 
     var asking by mutableStateOf<Reopen.Ask?>(null)
 
-    /**
-     * The screens the system kept wait for the plan, which may drop them: a kept folder or book that made the app
-     * fail must not start loading before then.
-     */
-    val holding: Boolean get() = restoring && !applied
-
     fun apply(nav: NavController, plan: StartPlan) {
+        kept.decide(adopt = plan !is StartPlan.Open)
         if (plan is StartPlan.Open) {
             if (restoring) nav.popBackStack<HomeRoute>(inclusive = false)
             plan.folder?.let { nav.navigate(it.toRoute(reveal = plan.reveal)) }
@@ -100,10 +96,10 @@ private fun NavBackStackEntry.lastFolder(): TopFolder? = when {
     else -> null
 }
 
-/** A screen that loads a folder or a book, composed only once the start no longer holds kept screens back. */
+/** The screen of [entry], which loads a folder or a book, composed only when the start lets it load. */
 @Composable
-internal fun Kept(app: HirariApp, content: @Composable () -> Unit) {
-    if (app.start?.holding != true) content()
+internal fun Kept(app: HirariApp, entry: NavBackStackEntry, content: @Composable () -> Unit) {
+    if (app.start?.kept?.loads(entry.id) != false) content()
 }
 
 /** Tells the start in progress that the screen of [entry] has shown its content, once [settles] returns. */

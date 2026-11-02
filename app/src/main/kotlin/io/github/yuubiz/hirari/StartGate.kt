@@ -1,5 +1,9 @@
 package io.github.yuubiz.hirari
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 /** How the activity came up, which says whether it is a start (docs/spec.md section 4.3, 起動時の動作). */
 internal enum class StartKind {
     /** Nothing kept: a start that plans what to open. */
@@ -45,5 +49,34 @@ internal class StartGate(private val finish: () -> Unit) {
         if (done || !applied || top == null || top !in settled) return
         done = true
         finish()
+    }
+}
+
+/** What a restoring start does with the screens the system kept (docs/spec.md section 4.3, 起動時の動作). */
+private enum class Verdict { Pending, Adopted, Discarded }
+
+/**
+ * The screens the system kept, which wait until the start's plan adopts or discards them: a kept folder or book
+ * that made the app fail must not load before then. A discarded screen never loads, even while it is composed
+ * to leave. Screens are known by back stack entry id. Main thread only.
+ */
+internal class KeptScreens(restoring: Boolean) {
+    private var verdict by mutableStateOf(if (restoring) Verdict.Pending else Verdict.Adopted)
+
+    /** The screens shown before the verdict; only screens the system kept are on the back stack then. */
+    private val restored = HashSet<String>()
+
+    /** Whether the screen of [entry] may load now. A screen asking before the verdict is one the system kept. */
+    fun loads(entry: String): Boolean = when (verdict) {
+        Verdict.Pending -> {
+            restored += entry
+            false
+        }
+        Verdict.Adopted -> true
+        Verdict.Discarded -> entry !in restored
+    }
+
+    fun decide(adopt: Boolean) {
+        if (verdict == Verdict.Pending) verdict = if (adopt) Verdict.Adopted else Verdict.Discarded
     }
 }
