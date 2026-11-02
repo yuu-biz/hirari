@@ -1,0 +1,324 @@
+package io.github.yuubiz.hirari.feature.reader
+
+import android.content.pm.ActivityInfo
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.model.ReadingDirection
+import kotlinx.coroutines.delay
+
+private val SheetBackground = Color(0xF0202028)
+private val SheetText = Color.White
+private val SheetDisabled = Color(0xFF8A8A90)
+internal val ThumbnailWidth = 60.dp
+internal val ThumbnailHeight = 85.dp
+
+/** A tap outside the sheet closes it, and the reader under it gets no touch. */
+@Composable
+private fun Scrim(onClose: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0x33000000))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+    ) { content() }
+}
+
+/** [page] fitted into the thumbnail size, decoded small the first time it is asked for. */
+@Composable
+internal fun Thumbnail(viewModel: ReaderViewModel, page: Int, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
+    val size = with(density) { PixelSize(ThumbnailWidth.roundToPx(), ThumbnailHeight.roundToPx()) }
+    val bitmap by produceState(viewModel.cachedThumbnail(page), page) {
+        if (value == null) value = viewModel.thumbnail(page, size)
+    }
+    Box(modifier.size(ThumbnailWidth, ThumbnailHeight).background(Color(0xFF404048)), contentAlignment = Alignment.Center) {
+        bitmap?.takeUnless { it.isRecycled }?.let {
+            Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+        }
+    }
+}
+
+/** ページパネル (docs/spec.md section 4.8, ページバー). Each control moves the reader at once. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PagePanelSheet(viewModel: ReaderViewModel, state: ReaderState, sheet: ReaderSheet.Pages, onClose: () -> Unit) {
+    val pageCount = state.pagination.shapes.size
+    val head = state.current.pages.min()
+    fun goTo(page: Int) = viewModel.dispatch(ReaderEvent.GoTo(page))
+    fun act(action: ReaderAction) = viewModel.act(action, android.os.SystemClock.uptimeMillis())
+
+    DisposableEffect(viewModel) {
+        viewModel.showStrip(true)
+        onDispose { viewModel.showStrip(false) }
+    }
+
+    Scrim(onClose) {
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(SheetBackground)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .padding(vertical = 8.dp),
+        ) {
+            ReadingOrder(state.config.direction) {
+                ThumbnailStrip(viewModel, state, head, ::goTo)
+                PageSlider(head, pageCount, ::goTo)
+            }
+            PageNumberRow(head, pageCount, ::goTo)
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.Center) {
+                SheetButton(R.string.page_panel_first) { act(ReaderAction.First) }
+                SheetButton(R.string.page_panel_last) { act(ReaderAction.Last) }
+                SheetButton(R.string.page_panel_shift_back) { act(ReaderAction.Shift(forward = false)) }
+                SheetButton(R.string.page_panel_shift_forward) { act(ReaderAction.Shift(forward = true)) }
+                SheetButton(R.string.page_panel_previous_book, enabled = false) {}
+                SheetButton(R.string.page_panel_next_book, enabled = false) {}
+                SheetButton(R.string.command_bookmarks, enabled = false) {}
+                SheetButton(R.string.page_panel_undo) { goTo(sheet.openedOn) }
+                SheetButton(R.string.panel_close, onClick = onClose)
+            }
+        }
+    }
+}
+
+/** The strip and the slider run in the reading direction, so a right-to-left book starts at the right. */
+@Composable
+private fun ReadingOrder(direction: ReadingDirection, content: @Composable () -> Unit) {
+    val layout = if (direction == ReadingDirection.RightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr
+    CompositionLocalProvider(LocalLayoutDirection provides layout) { content() }
+}
+
+@Composable
+private fun ThumbnailStrip(viewModel: ReaderViewModel, state: ReaderState, head: Int, goTo: (Int) -> Unit) {
+    val pages = state.pagination.shapes.indices.toList()
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = (head - 2).coerceAtLeast(0))
+    LaunchedEffect(head) {
+        val visible = list.layoutInfo.visibleItemsInfo.map { it.index }
+        if (head !in visible.dropLast(1).drop(1)) list.animateScrollToItem((head - 2).coerceAtLeast(0))
+    }
+    LazyRow(state = list, contentPadding = PaddingValues(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        itemsIndexed(pages, key = { _, page -> page }) { _, page ->
+            val current = page in state.current.pages
+            Column(
+                Modifier
+                    .clickable { goTo(page) }
+                    .semantics { contentDescription = "p. ${page + 1}" }
+                    .padding(2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Thumbnail(viewModel, page, if (current) Modifier.border(2.dp, Color.White) else Modifier)
+                Text("${page + 1}", color = if (current) SheetText else SheetDisabled, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+/** Dragging shows the page under the thumb every [PagePanel.PREVIEW_MS], and letting go settles there. */
+@Composable
+private fun PageSlider(head: Int, pageCount: Int, goTo: (Int) -> Unit) {
+    var dragged by remember { mutableStateOf<Float?>(null) }
+    val dragging = dragged != null
+    LaunchedEffect(dragging) {
+        var shown = head
+        while (true) {
+            val page = dragged?.let { PagePanel.atSlider(it, pageCount) } ?: break
+            if (page != shown) {
+                goTo(page)
+                shown = page
+            }
+            delay(PagePanel.PREVIEW_MS)
+        }
+    }
+    Slider(
+        value = dragged ?: head.toFloat(),
+        onValueChange = { dragged = it },
+        onValueChangeFinished = {
+            dragged?.let { goTo(PagePanel.atSlider(it, pageCount)) }
+            dragged = null
+        },
+        valueRange = 0f..(pageCount - 1).coerceAtLeast(1).toFloat(),
+        enabled = pageCount > 1,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+    )
+}
+
+@Composable
+private fun PageNumberRow(head: Int, pageCount: Int, goTo: (Int) -> Unit) {
+    val focus = LocalFocusManager.current
+    val numberLabel = stringResource(R.string.page_panel_number)
+    var text by remember(head) { mutableStateOf("${head + 1}") }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        for (step in PagePanel.STEPS.take(3)) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it.filter(Char::isDigit) },
+            singleLine = true,
+            suffix = { Text("/ $pageCount", color = SheetDisabled) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
+            keyboardActions = KeyboardActions(onGo = {
+                PagePanel.typed(text, pageCount)?.let(goTo)
+                focus.clearFocus()
+            }),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = SheetText, textAlign = TextAlign.End),
+            modifier = Modifier.weight(2.2f).semantics { contentDescription = numberLabel },
+        )
+        for (step in PagePanel.STEPS.drop(3)) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
+    }
+}
+
+@Composable
+private fun StepButton(step: Int, modifier: Modifier, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(horizontal = 2.dp)) {
+        Text(if (step < 0) "−${-step}" else "+$step", color = SheetText, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun SheetButton(label: Int, enabled: Boolean = true, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = enabled) {
+        Text(stringResource(label), color = if (enabled) SheetText else SheetDisabled)
+    }
+}
+
+/** メニュー (docs/spec.md section 4.8). Items of later milestones show disabled under their names. */
+@Composable
+internal fun MenuSheet(viewModel: ReaderViewModel, state: ReaderState, onCloseMenu: () -> Unit, onCloseReader: () -> Unit) {
+    fun run(item: MenuItem) {
+        when (item) {
+            MenuItem.RestoreAndClose -> {
+                viewModel.restorePosition()
+                onCloseReader()
+                return
+            }
+            MenuItem.Orientation -> viewModel.nextOrientation()
+            MenuItem.MirrorControls -> viewModel.command(ReaderCommand.MirrorControls, android.os.SystemClock.uptimeMillis())
+            else -> return
+        }
+        onCloseMenu()
+    }
+
+    Scrim(onCloseMenu) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val width: Dp = menuWidthDp(maxWidth.value, maxHeight.value).dp
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .width(width)
+                    .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 8.dp),
+            ) {
+                MenuItem.entries.groupBy { it.group }.values.forEachIndexed { i, items ->
+                    if (i > 0) HorizontalDivider(color = Color(0x33FFFFFF), modifier = Modifier.padding(vertical = 4.dp))
+                    for (item in items) MenuRow(item, item.value(viewModel, state)) { run(item) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuRow(item: MenuItem, value: String?, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = item.available, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(item.label), color = if (item.available) SheetText else SheetDisabled, modifier = Modifier.weight(1f))
+        if (value != null) Text(value, color = SheetDisabled)
+    }
+}
+
+@Composable
+private fun MenuItem.value(viewModel: ReaderViewModel, state: ReaderState): String? = when (this) {
+    MenuItem.Orientation -> stringResource(
+        when (viewModel.orientation) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> R.string.orientation_portrait
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> R.string.orientation_landscape
+            else -> R.string.orientation_device
+        },
+    )
+    MenuItem.MirrorControls -> stringResource(if (state.config.mirrored) R.string.menu_on else R.string.menu_off)
+    else -> null
+}
+
+private val MenuItem.label: Int
+    get() = when (this) {
+        MenuItem.AddBookmark -> R.string.command_add_bookmark
+        MenuItem.Bookmarks -> R.string.command_bookmarks
+        MenuItem.BookSettings -> R.string.command_book_settings
+        MenuItem.SetCover -> R.string.command_set_cover
+        MenuItem.SetCoverFromRange -> R.string.menu_set_cover_from_range
+        MenuItem.SharePage -> R.string.command_share_page
+        MenuItem.RestoreAndClose -> R.string.menu_restore_and_close
+        MenuItem.AutoPlay -> R.string.command_auto_play
+        MenuItem.Breath -> R.string.command_breath
+        MenuItem.Orientation -> R.string.command_orientation
+        MenuItem.MirrorControls -> R.string.command_mirror_controls
+        MenuItem.Guide -> R.string.menu_guide
+        MenuItem.Settings -> R.string.command_settings
+        MenuItem.EditCommandBar -> R.string.command_edit_command_bar
+        MenuItem.About -> R.string.menu_about
+    }

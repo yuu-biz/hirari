@@ -60,8 +60,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
     ScreenOrientationLock(viewModel.orientation)
 
     fun dismiss() {
-        when (dismissTarget(guideShown = false, panelOpen = ui.commandBar.panelVisible, opening = viewModel.phase == ReaderPhase.Opening)) {
-            DismissTarget.Panel -> ui.commandBar = CommandBarState.Closed
+        val panelOpen = ui.commandBar.panelVisible || ui.sheet != null
+        when (dismissTarget(guideShown = false, panelOpen = panelOpen, opening = viewModel.phase == ReaderPhase.Opening)) {
+            DismissTarget.Panel -> ui.closePanels()
             DismissTarget.Guide, DismissTarget.Opening, DismissTarget.Reader -> close()
         }
     }
@@ -70,13 +71,13 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
         keys.handler = handler@{ event ->
             val pressed = event.action == KeyEvent.ACTION_DOWN
             val config = viewModel.state?.config ?: ReaderConfig()
-            when (val result = config.keys.onKey(event.keyCode, pressed, event.isShiftPressed)) {
+            when (val result = config.keys.onKey(event.keyCode, pressed, event.isShiftPressed, ui.sheet)) {
                 KeyResult.NotHandled -> false
                 KeyResult.Consumed -> true
                 is KeyResult.Act -> {
                     when (val action = result.action) {
                         ReaderAction.Dismiss -> dismiss()
-                        ReaderAction.OpenMenu -> ui.message = R.string.reader_not_yet
+                        ReaderAction.OpenMenu -> ui.toggleMenu()
                         else -> viewModel.act(action, SystemClock.uptimeMillis())
                     }
                     true
@@ -99,6 +100,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
             ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), onClose)
             ReaderPhase.Reading -> viewModel.state?.let { state ->
                 ReaderSurface(viewModel, state, ui, onClose)
+                when (val sheet = ui.sheet) {
+                    is ReaderSheet.Pages -> PagePanelSheet(viewModel, state, sheet, onClose = { ui.sheet = null })
+                    ReaderSheet.Menu -> MenuSheet(viewModel, state, onCloseMenu = { ui.sheet = null }, onCloseReader = onClose)
+                    null -> Unit
+                }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
             }
         }
@@ -126,7 +132,20 @@ private const val MESSAGE_MS = 1500L
 internal class ReaderUi {
     var commandBar: CommandBarState by mutableStateOf(CommandBarState.Closed)
     var pageBar: PageBarState by mutableStateOf(PageBarState.Idle)
+    var sheet: ReaderSheet? by mutableStateOf(null)
     var message: Int? by mutableStateOf(null)
+
+    fun closePanels() {
+        commandBar = CommandBarState.Closed
+        sheet = null
+    }
+
+    /** The Menu key and the panel's メニュー: the menu opens over anything else, and the key closes it again. */
+    fun toggleMenu() {
+        val open = sheet == ReaderSheet.Menu
+        closePanels()
+        if (!open) sheet = ReaderSheet.Menu
+    }
 }
 
 private val BookFailure.message: Int

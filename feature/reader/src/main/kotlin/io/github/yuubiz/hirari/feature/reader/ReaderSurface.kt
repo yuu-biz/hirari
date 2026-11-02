@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -39,6 +40,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -111,7 +114,13 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         )
     }
 
-    Canvas(Modifier.fillMaxSize().pointerInput(input) { with(input) { handle() } }) {
+    val label = pageLabel(state.current, state.pagination.shapes.size)
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .semantics { contentDescription = label }
+            .pointerInput(input) { with(input) { handle() } },
+    ) {
         viewModel.prepared
         val now = if (state.transition != null || state.stopTravel != null) frameMs else Long.MAX_VALUE
         for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer)
@@ -144,6 +153,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         }
         (ui.pageBar as? PageBarState.Dragging)?.let { drag ->
             val name = viewModel.pageNames.getOrNull(drag.preview).orEmpty()
+            val color = if (drag.cancelled) Color.Gray else Color.White
             Column(
                 Modifier
                     .align(Alignment.TopCenter)
@@ -152,10 +162,18 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
                     .padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                val color = if (drag.cancelled) Color.Gray else Color.White
                 Text("${drag.preview + 1} / ${state.pagination.shapes.size}", color = color, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text(viewModel.bookPath, color = color, maxLines = 1, fontSize = 13.sp)
                 Text(name, color = color, maxLines = 1)
             }
+            Thumbnail(
+                viewModel,
+                drag.preview,
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = (state.config.barHeightDp + 8f).dp)
+                    .alpha(if (drag.cancelled) 0.4f else 1f),
+            )
         }
         if (ui.commandBar.panelVisible) CommandPanelView(state.commandPanel(), ui.commandBar)
     }

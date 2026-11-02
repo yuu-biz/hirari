@@ -47,4 +47,23 @@
     <string name="command_share_page">ページを共有</string>
     <string name="command_settings">設定</string>
     <string name="reader_not_yet">この操作はまだ使えません</string>
+
+    <string name="page_panel_first">先頭</string>
+    <string name="page_panel_last">末尾</string>
+    <string name="page_panel_shift_back">組ずらし（前）</string>
+    <string name="page_panel_shift_forward">組ずらし（後）</string>
+    <string name="page_panel_previous_book">前の本</string>
+    <string name="page_panel_next_book">次の本</string>
+    <string name="page_panel_undo">取り消す</string>
+    <string name="page_panel_number">ページ番号</string>
+
+    <string name="menu_restore_and_close">位置を戻して閉じる</string>
+    <string name="menu_set_cover_from_range">範囲を選んで表紙にする</string>
+    <string name="menu_guide">操作ガイド</string>
+    <string name="menu_about">このアプリについて</string>
+    <string name="menu_on">オン</string>
+    <string name="menu_off">オフ</string>
+    <string name="orientation_device">端末に従う</string>
+    <string name="orientation_portrait">縦</string>
+    <string name="orientation_landscape">横</string>
 </resources>

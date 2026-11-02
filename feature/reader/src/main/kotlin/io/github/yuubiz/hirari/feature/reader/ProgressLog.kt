@@ -13,9 +13,11 @@ import java.time.Instant
 class ProgressLog(private val book: BookId, private val pageCount: Int, private val opened: BookProgress?) {
     private var read = opened?.state == ReadState.Read
     private var stored: BookProgress? = opened?.takeIf { it.state != ReadState.Unread }
+    private var restoring = false
 
     /** The progress to save for [state], or `null` when the store already holds it. */
     fun next(state: ReaderState, now: Instant): BookProgress? {
+        if (restoring) return null
         if (state.showsLastView) read = true
         val position = ReadingPosition.Image(state.current.pages.first(), pageCount)
         val readState = if (read) ReadState.Read else ReadState.Reading
@@ -24,6 +26,12 @@ class ProgressLog(private val book: BookId, private val pageCount: Int, private 
         return BookProgress(book, readState, position, now).also { stored = it }
     }
 
-    /** The progress the book had before it opened, for 位置を戻して閉じる (docs/spec.md section 4.8). */
-    fun restored(now: Instant): BookProgress = opened ?: BookProgress(book, ReadState.Unread, null, now)
+    /**
+     * The progress the book had before it opened, for 位置を戻して閉じる (docs/spec.md section 4.8). The reader is
+     * closing, so [next] gives nothing after it.
+     */
+    fun restored(now: Instant): BookProgress {
+        restoring = true
+        return opened ?: BookProgress(book, ReadState.Unread, null, now)
+    }
 }

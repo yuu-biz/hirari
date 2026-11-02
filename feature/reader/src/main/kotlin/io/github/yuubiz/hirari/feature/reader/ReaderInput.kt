@@ -91,7 +91,7 @@ internal class ReaderInput(
         val now = SystemClock.uptimeMillis()
         when (item) {
             PanelItem.Close -> onClose()
-            PanelItem.Menu -> ui.message = R.string.reader_not_yet
+            PanelItem.Menu -> ui.toggleMenu()
             is PanelItem.Command -> if (!viewModel.command(item.command, now)) ui.message = R.string.reader_not_yet
         }
     }
@@ -112,7 +112,7 @@ internal class ReaderInput(
             ui.pageBar = step.state
             when (val effect = step.effect) {
                 is PageBarEffect.GoTo -> viewModel.dispatch(ReaderEvent.GoTo(effect.page))
-                PageBarEffect.OpenPagePanel -> ui.message = R.string.reader_not_yet
+                PageBarEffect.OpenPagePanel -> ui.sheet = ReaderSheet.Pages(openedOn = state().current.pages.min())
                 null -> Unit
             }
         }

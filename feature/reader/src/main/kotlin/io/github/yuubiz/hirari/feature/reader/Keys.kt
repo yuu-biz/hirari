@@ -53,10 +53,12 @@ sealed interface KeyResult {
 
 /**
  * The key bindings of docs/spec.md section 4.8 (キー操作). A repeat of a held key comes as another
- * press and turns again. [mirrored] is the `mirrorControls` setting.
+ * press and turns again. [mirrored] is the `mirrorControls` setting. While a [ReaderSheet] is up, the
+ * reader takes only the keys of [ReaderSheet.takes].
  */
 data class KeyBindings(val direction: ReadingDirection, val mirrored: Boolean, val volumeKeys: VolumeKeys) {
-    fun onKey(code: Int, pressed: Boolean, shift: Boolean = false): KeyResult {
+    fun onKey(code: Int, pressed: Boolean, shift: Boolean = false, sheet: ReaderSheet? = null): KeyResult {
+        if (sheet != null && !sheet.takes(code)) return KeyResult.NotHandled
         val action = actionFor(code, shift) ?: return KeyResult.NotHandled
         return if (pressed) KeyResult.Act(action) else KeyResult.Consumed
     }

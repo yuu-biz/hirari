@@ -20,6 +20,8 @@ import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.Books
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.OpenBook
+import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -60,6 +62,12 @@ class ReaderServices(
 /** A book picked through SAF: one document, or the image files of one folder tree. */
 sealed interface BookRef {
     val uri: Uri
+
+    /**
+     * The book's path for the page bar: the last segment of its URI, which a device's storage gives as
+     * `primary:Manga/Book.zip` (docs/spec.md section 4.8, ページバー).
+     */
+    val path: String get() = uri.lastPathSegment ?: uri.toString()
 
     data class Document(override val uri: Uri) : BookRef
 
@@ -104,6 +112,17 @@ class ReaderViewModel(
     private var opened: Opened? = null
     private var viewport: Viewport? = null
 
+    /** While the page panel's thumbnail strip is up, prefetch loads only the current view (docs/spec.md section 5.3). */
+    private var stripShown = false
+
+    /**
+     * Small decodes for the page panel and the page bar. Evicted ones are left to the collector, not recycled,
+     * since a strip cell may still draw one for a frame.
+     */
+    private val thumbnails = object : LinkedHashMap<Int, Bitmap>(THUMBNAILS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>) = size > THUMBNAILS
+    }
+
     private class Opened(
         val book: OpenBook,
         val id: BookId,
@@ -132,6 +151,31 @@ class ReaderViewModel(
     }
 
     val pageNames: List<String> get() = opened?.book?.pages?.map { it.name }.orEmpty()
+
+    val bookPath: String get() = ref.path
+
+    fun showStrip(shown: Boolean) {
+        if (stripShown == shown) return
+        stripShown = shown
+        val current = state ?: return
+        opened?.prefetcher?.update(current.prefetchInput(paused = shown))
+    }
+
+    fun cachedThumbnail(page: Int): Bitmap? = thumbnails[page]
+
+    /** [page] fitted into [size], or `null` for a page that does not decode. */
+    suspend fun thumbnail(page: Int, size: PixelSize): Bitmap? {
+        thumbnails[page]?.let { return it }
+        val book = opened?.book ?: return null
+        val image = (book.page(page, size) as? PageResult.Ready)?.image as? PreparedImage.Whole ?: return null
+        return image.bitmap.also { thumbnails[page] = it }
+    }
+
+    /** 位置を戻して閉じる: the book gets back the position and state it had when it opened. The screen closes next. */
+    fun restorePosition() {
+        val book = opened ?: return
+        book.services.progress.submit(book.progress.restored(Instant.now()))
+    }
 
     fun preparedView(view: PageView) = opened?.prefetcher?.get(view)
 
@@ -184,6 +228,7 @@ class ReaderViewModel(
 
     override fun onCleared() {
         application.unregisterComponentCallbacks(trimCallbacks)
+        thumbnails.clear()
         val book = opened ?: return
         book.prefetcher.close()
         book.services.progress.flush()
@@ -252,7 +297,7 @@ class ReaderViewModel(
         if (before == null || before.pagination !== after.pagination || before.shownViews != after.shownViews ||
             before.viewport != after.viewport || before.config != after.config
         ) {
-            book.prefetcher.update(after.prefetchInput(paused = false))
+            book.prefetcher.update(after.prefetchInput(paused = stripShown))
         }
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
     }
@@ -284,6 +329,8 @@ class ReaderViewModel(
         return prefix.array().copyOf(prefix.position())
     }
 }
+
+private const val THUMBNAILS = 64
 
 private fun Exception.openFailure(): BookFailure = when (this) {
     is FileNotFoundException, is IllegalArgumentException -> BookFailure.NotFound

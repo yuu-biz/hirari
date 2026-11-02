@@ -79,8 +79,10 @@ class ProgressLogTest {
     fun restoringGivesBackWhatTheBookHadWhenItOpened() {
         val before = stored(ReadState.Reading, 1, 3)
         val log = ProgressLog(BOOK, pageCount = 3, opened = before)
-        log.next(readerOf(List(3) { TALL }, SINGLE, PORTRAIT, start = 2), NOW)
+        val moved = readerOf(List(3) { TALL }, SINGLE, PORTRAIT, start = 2)
+        log.next(moved, NOW)
         assertEquals(before, log.restored(NOW))
+        assertNull(log.next(moved.turned(Turn.Back), NOW), "nothing after the restore overwrites it")
     }
 
     @Test
