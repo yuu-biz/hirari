@@ -250,6 +250,7 @@ class TextReaderModelTest {
         val model = model(bytes = ByteArray(60 shl 20) { 'a'.code.toByte() })
         settle()
         assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), model.state.value)
+        assertEquals(1, closed)
         model.close()
         assertEquals(1, closed)
     }
@@ -307,8 +308,23 @@ class TextReaderModelTest {
         val model = model(fonts = FakeFonts(metrics = { _, _, _ -> throw OutOfMemoryError() }))
         settle()
         assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), model.state.value)
+        assertEquals(1, closed)
+        assertEquals(1, history.stops)
         settings.value = settings.value.copy(textSizeSp = 30)
         settle()
         assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), model.state.value)
+        model.close()
+        assertEquals(1, closed)
+        assertEquals(1, history.stops)
+    }
+
+    @Test
+    fun `a text too large for the heap after it is read releases its source at once`() = runTest {
+        val model = model(sampleText(), heapBudget = 1L shl 20)
+        settle()
+        assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), model.state.value)
+        assertEquals(1, closed)
+        model.close()
+        assertEquals(1, closed)
     }
 }

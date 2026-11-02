@@ -195,15 +195,29 @@ internal class TextReaderModel(
         null
     }
 
+    /** The reading ends here: what it holds goes, and so does the source, which nothing can read from again. */
     private fun fail(reason: TextFailure) {
         layoutJob?.cancel()
         fillJob?.cancel()
         searchJob?.cancel()
         document = null
+        contents = emptyList()
         run = null
         setter = null
         window = emptyMap()
+        pendingTurn = null
+        search = SearchState.Idle
+        highlight = null
+        release()
         _state.value = TextReaderUiState.Failed(reason)
+    }
+
+    /** Stops the history and closes the source, once. */
+    private fun release() {
+        val text = opened ?: return
+        opened = null
+        history.stop()
+        text.close()
     }
 
     fun onViewport(next: Viewport) {
@@ -314,9 +328,7 @@ internal class TextReaderModel(
         fillJob?.cancel()
         searchJob?.cancel()
         writer.flush()
-        if (opened != null) history.stop()
-        opened?.close?.invoke()
-        opened = null
+        release()
     }
 
     private fun position(): ReadingPosition.Text? {
