@@ -1,5 +1,8 @@
 package io.github.yuubiz.hirari.core.data
 
+import io.github.yuubiz.hirari.core.model.TapLayout
+import io.github.yuubiz.hirari.core.model.TurnEffect
+import io.github.yuubiz.hirari.core.model.VolumeKeys
 import androidx.datastore.core.CorruptionException
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.ReadingDirection

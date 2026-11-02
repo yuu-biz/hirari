@@ -334,7 +334,7 @@ data class BookProgress(
 - 2 ページの組では、最終ページを含む組を表示した時点で `Read` になる。
 - `Read` の本を開くと、保存された位置（多くは最後のビュー）から始める。4.8 節の「本の端での動作」で「最初から読む」を選べる。
 - 拡大率とスクロール位置は保存しない。開き直すと拡大モードの倍率で、ビューの最初の停止点から表示する。
-- 位置はビューが変わるたびに保存する。書き込みは 500 ms ごとにまとめ、`onStop` で必ず書き出す。
+- 位置はビューが変わるたびに保存する。書き込みは 500 ms ごとにまとめ、`onStop` で必ず書き出す。書き込みは、前の書き込みのあとの最初の変化から 500 ms の間をまとめ、本ごとに最後の位置を書く。失敗した位置は捨てず、次の書き込みに回す。
 - テキストの位置は文字の通し番号で持つ。文字の大きさや画面の向きを変えても同じ文章から再開できる。
 - 文字コードを変えて並び順が変わったときは、`entryIndex` を介して位置を新しい番号に置き直す。
 
@@ -1572,12 +1572,12 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 | モジュール | 責務 | 依存してよいもの |
 |---|---|---|
 | `:app` | Application、依存の組み立て、画面遷移、マニフェスト、外部からの Intent | すべて |
-| `:core:model` | 2 章の型、`layoutViews`、`scrollStops`、自然順、設定のスキーマ。Android に依存しない | なし |
+| `:core:model` | 2 章の型、`layoutViews`、`scrollStops`、自然順、設定の値の型（列挙など）。Android に依存しない | なし |
 | `:core:source` | `ByteSource` の実装（SAF、SMB、キャッシュへの複製）、フォルダの一覧 | `:core:model` |
 | `:core:archive` | libarchive と JNI、`ArchiveSession`、エントリの索引、展開キャッシュ、名前の文字コード | `:core:model`、`:core:source` |
 | `:core:image` | 形式の判定、デコードの計画、各デコーダの接続、縮小、トリミング、タイル、PDF | `:core:model`、`:core:source`、`:core:archive` |
 | `:core:text` | 本文の文字コード、青空文庫記法の解析、縦書きの組版、ページ分割 | `:core:model` |
-| `:core:data` | Room、DataStore、資格情報の保存、設定の書き出しと読み込み | `:core:model` |
+| `:core:data` | Room、DataStore、資格情報の保存、設定の保存形式（`GlobalSettings`）、設定の書き出しと読み込み | `:core:model` |
 | `:core:ui` | テーマ、共通の Compose 部品 | `:core:model` |
 | `:feature:library` | ホーム、ファイル一覧、場所、履歴、しおり、書庫内一覧 | `:core:*` |
 | `:feature:reader` | リーダー画面、操作の判定、先読みの計画、重ねる表示 | `:core:*` |

@@ -4,13 +4,10 @@ import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.StopOrder
+import io.github.yuubiz.hirari.core.model.TapLayout
+import io.github.yuubiz.hirari.core.model.TurnEffect
+import io.github.yuubiz.hirari.core.model.VolumeKeys
 import kotlinx.serialization.Serializable
-
-enum class TapLayout { OneSideBand, BothSideBands, TopAndBottom, TopAndBottomBands }
-
-enum class TurnEffect { None, Slide, Cover, Fade }
-
-enum class VolumeKeys { Off, DownAdvances, UpAdvances }
 
 /**
  * The global settings of docs/spec.md section 4.10 that M1 uses. Property names are the internal names
