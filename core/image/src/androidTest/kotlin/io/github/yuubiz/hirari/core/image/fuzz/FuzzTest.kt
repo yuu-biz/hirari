@@ -66,7 +66,7 @@ class FuzzTest {
             val random = SplittableRandom(Mutator.mix(seed, iteration))
             val chosen = pool[random.nextInt(pool.size)]
             val input = if (random.nextInt(32) == 0) chosen.bytes else Mutator(random).mutate(chosen.bytes, pool[random.nextInt(pool.size)].bytes, maxInputBytes)
-            val millis = execute(runner, watchdog, target, iteration, chosen.name, input)
+            val millis = execute(runner, target, iteration, chosen.name, input)
             slowest = maxOf(slowest, millis)
             executed++
             perTarget.merge(target.id, 1L, Long::plus)
@@ -97,7 +97,7 @@ class FuzzTest {
         val files = File(directory!!).listFiles().orEmpty().sortedBy { it.name }
         for ((index, file) in files.withIndex()) {
             File(out, "replay-index.txt").writeText(index.toString())
-            execute(runner, watchdog, target, iteration, file.name, file.readBytes())
+            execute(runner, target, iteration, file.name, file.readBytes())
         }
         watchdog.stop = true
         Log.i(TAG, "replayed ${files.size} inputs, findings $counts")
@@ -105,7 +105,7 @@ class FuzzTest {
     }
 
     /** Runs [input] and returns the milliseconds it took. */
-    private fun execute(runner: Runner, watchdog: Watchdog, target: Target, iteration: Long, from: String, input: ByteArray): Long {
+    private fun execute(runner: Runner, target: Target, iteration: Long, from: String, input: ByteArray): Long {
         val random = SplittableRandom(Mutator.mix(seed xor EXEC_STREAM, iteration))
         val started = System.nanoTime()
         val description = "target=${target.id} seed=$seed iteration=$iteration from=$from bytes=${input.size}\n"
@@ -180,8 +180,9 @@ class FuzzTest {
         MessageDigest.getInstance("SHA-1").digest(text.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
 
     /**
-     * Saves the stacks and ends the process when one input runs past the time limit. The input it saves is the one it
-     * claimed from [guard], and `current.bin` and `current.txt` are those of that input too.
+     * Saves the stacks and ends the process when one input runs past the time limit. The input it describes in
+     * `timeout.txt` is the one it claimed from [guard], and `current.bin` and `current.txt`, written when that input
+     * began, stay those of it because the runner can no longer begin another.
      */
     private inner class Watchdog : Thread("fuzz-watchdog") {
         @Volatile var stop = false
@@ -194,12 +195,12 @@ class FuzzTest {
             while (!stop) {
                 sleep(250)
                 val input = guard.claim(System.nanoTime(), timeoutMillis * 1_000_000) ?: continue
-                saveCurrent(input)
+                val stacks = getAllStackTraces()
                 File(out, "timeout.txt").writeText(
                     buildString {
                         appendLine("an input ran for more than $timeoutMillis ms")
                         append(input.description)
-                        for ((thread, frames) in getAllStackTraces()) {
+                        for ((thread, frames) in stacks) {
                             appendLine("--- ${thread.name}")
                             frames.forEach { appendLine("    at $it") }
                         }
