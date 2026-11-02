@@ -19,8 +19,11 @@ class ArchiveEntry(
     val compression: String?,
 )
 
-/** Why reading failed, in the terms of docs/spec.md section 2.4. */
-enum class ArchiveFailure { Corrupt, Truncated, ReadError }
+/**
+ * Why reading failed, in the terms of docs/spec.md section 2.4. [ReadError] and [ConnectionLost] come from the
+ * source, so reading again may succeed (section 6.5).
+ */
+enum class ArchiveFailure { Corrupt, Truncated, ReadError, ConnectionLost }
 
 sealed interface OpenResult {
     class Opened(val session: ArchiveSession) : OpenResult

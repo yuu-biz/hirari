@@ -17,6 +17,7 @@ class FailuresTest {
             EntryResult.Failed(ArchiveFailure.Corrupt) to PageResult.Failed(FailureReason.Corrupt, retryable = false),
             EntryResult.Failed(ArchiveFailure.Truncated) to PageResult.Failed(FailureReason.Truncated, retryable = false),
             EntryResult.Failed(ArchiveFailure.ReadError) to PageResult.Failed(FailureReason.ReadError, retryable = true),
+            EntryResult.Failed(ArchiveFailure.ConnectionLost) to PageResult.Failed(FailureReason.ConnectionLost, retryable = true),
             EntryResult.Encrypted to PageResult.Unsupported(UnsupportedKind.Encrypted),
             EntryResult.UnsupportedCompression("lzma") to PageResult.Unsupported(UnsupportedKind.Compression("lzma")),
             EntryResult.TooLarge(300L shl 20) to PageResult.Unsupported(UnsupportedKind.TooLarge(0, 0, 300L shl 20)),

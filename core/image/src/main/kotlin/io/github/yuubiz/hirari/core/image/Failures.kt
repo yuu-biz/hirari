@@ -20,6 +20,7 @@ internal fun ArchiveFailure.pageFailure(): PageResult.Failed = when (this) {
     ArchiveFailure.Corrupt -> PageResult.Failed(FailureReason.Corrupt, retryable = false)
     ArchiveFailure.Truncated -> PageResult.Failed(FailureReason.Truncated, retryable = false)
     ArchiveFailure.ReadError -> readError
+    ArchiveFailure.ConnectionLost -> connectionLost
 }
 
 /** An entry or file over the size limit. Its dimensions are unknown, so they are 0. */
@@ -35,4 +36,5 @@ internal fun decodeFailure(error: Int): PageResult.Failed = when (error) {
 internal val notAnImage = PageResult.Unsupported(UnsupportedKind.NotAnImage)
 internal val corrupt = PageResult.Failed(FailureReason.Corrupt, retryable = false)
 internal val readError = PageResult.Failed(FailureReason.ReadError, retryable = true)
+internal val connectionLost = PageResult.Failed(FailureReason.ConnectionLost, retryable = true)
 internal val timedOut = PageResult.Failed(FailureReason.Timeout, retryable = true)

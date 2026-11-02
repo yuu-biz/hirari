@@ -225,7 +225,7 @@ private fun ArchiveFormat?.container(): Container = when (this) {
 private fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
     ArchiveFailure.Corrupt -> BookFailure.Corrupt
     ArchiveFailure.Truncated -> BookFailure.Truncated
-    ArchiveFailure.ReadError -> BookFailure.ReadError
+    ArchiveFailure.ReadError, ArchiveFailure.ConnectionLost -> BookFailure.ReadError
 }
 
 private class ArchivePages(private val session: ArchiveSession) : PageBytes {

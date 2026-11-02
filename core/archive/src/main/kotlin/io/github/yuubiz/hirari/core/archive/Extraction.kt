@@ -50,6 +50,12 @@ internal class Extraction(
 
         /** Reading the entry failed or was refused, which another pass would repeat. */
         class Settled(val result: EntryResult) : Slot
+
+        /**
+         * The source failed while the pass read the entry. The reads waiting give [result], and the next read
+         * starts another pass, which reads once the source does again (docs/spec.md section 6.5).
+         */
+        class Retry(val result: EntryResult) : Slot
     }
 
     private val lock = Any()
@@ -93,6 +99,7 @@ internal class Extraction(
         synchronized(lock) {
             anchor = index
             waiting[index]++
+            if (slots[index] is Slot.Retry) slots[index] = Slot.Evicted
         }
         try {
             while (true) {
@@ -100,6 +107,7 @@ internal class Extraction(
                 if (!scope.isActive) throw CancellationException("the session is closed")
                 when (val slot = synchronized(lock) { slots[index] }) {
                     is Slot.Settled -> return slot.result
+                    is Slot.Retry -> return slot.result
                     is Slot.Cached -> readFile(slot, maxBytes)?.let { return it } ?: evict(index, slot)
                     Slot.Evicted -> passes.trySend(Unit)
                     Slot.Pending -> Unit
@@ -195,8 +203,8 @@ internal class Extraction(
                 complete -> null
                 status == Status.PPMD -> Slot.Settled(EntryResult.UnsupportedCompression(PPMD))
                 exceeded != null -> Slot.Settled(EntryResult.TooLarge(exceeded))
-                status == Status.OK || sink.failure != null -> Slot.Settled(EntryResult.Failed(ArchiveFailure.ReadError))
-                else -> Slot.Settled(EntryResult.Failed(archive.failure()))
+                status == Status.OK || sink.failure != null -> failed(ArchiveFailure.ReadError)
+                else -> failed(archive.failure())
             }
             change {
                 if (slot == null) {
@@ -214,8 +222,13 @@ internal class Extraction(
 
     private fun settleFrom(from: Int, failure: ArchiveFailure) = change {
         for (i in from until slots.size) {
-            if (slots[i] == Slot.Pending || slots[i] == Slot.Evicted) slots[i] = Slot.Settled(EntryResult.Failed(failure))
+            if (slots[i] == Slot.Pending || slots[i] == Slot.Evicted) slots[i] = failed(failure)
         }
+    }
+
+    private fun failed(failure: ArchiveFailure): Slot = when (failure) {
+        ArchiveFailure.Corrupt, ArchiveFailure.Truncated -> Slot.Settled(EntryResult.Failed(failure))
+        ArchiveFailure.ReadError, ArchiveFailure.ConnectionLost -> Slot.Retry(EntryResult.Failed(failure))
     }
 
     private fun evict(index: Int, slot: Slot.Cached) {

@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.archive
 
 import io.github.yuubiz.hirari.core.source.ByteSource
+import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import kotlinx.coroutines.Job
 import java.nio.ByteBuffer
 import kotlin.coroutines.cancellation.CancellationException
@@ -102,6 +103,7 @@ internal class SourceReads(private val source: ByteSource) {
 
     fun failure(): ArchiveFailure = when {
         cancelled -> throw CancellationException("archive read cancelled")
+        readFailure is ConnectionLostException -> ArchiveFailure.ConnectionLost
         readFailure != null -> ArchiveFailure.ReadError
         endReached -> ArchiveFailure.Truncated
         else -> ArchiveFailure.Corrupt
