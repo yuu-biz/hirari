@@ -1,6 +1,9 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageShape
+import io.github.yuubiz.hirari.core.model.side
+import io.github.yuubiz.hirari.feature.reader.prefetch.PageSteps
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Pagination
 import io.github.yuubiz.hirari.core.model.PaginationEvent
@@ -55,6 +58,8 @@ data class ReaderState(
     val recentTurns: List<Turn> = emptyList(),
     /** 自動再生, while it plays. */
     val autoPlay: AutoPlay? = null,
+    /** ルーペ, while a finger holds it up. */
+    val loupe: Loupe? = null,
 ) {
     val current: PageView get() = pagination.current
     /**
@@ -96,6 +101,52 @@ data class ReaderState(
         return stopTravel?.move?.positionAt(nowMs) ?: positionOf(geometry, place)
     }
 
+    /**
+     * The page of the current view under the loupe's finger, by its place in the view, or the page nearest to the
+     * finger when it is between them. `null` without a loupe or before the view's shapes are known.
+     */
+    fun loupePage(nowMs: Long): Int? {
+        val finger = loupe?.finger ?: return null
+        val geometry = geometry() ?: return null
+        val x = finger.x + (positionAt(nowMs) ?: return null).x
+        return geometry.pages.indices.minBy { i ->
+            val rect = geometry.pages[i]
+            if (x < rect.left) rect.left - x else if (x > rect.right) x - rect.right else 0f
+        }
+    }
+
+    /** Screen pixels for each pixel of the image of the page at [index] of the current view, as it is turned. */
+    private fun displayScale(geometry: ViewGeometry, index: Int): Float {
+        val shape = pagination.shapes[current.pages[index]] as PageShape.Known
+        return geometry.pages[index].height / shape.height
+    }
+
+    /** What the loupe shows at [nowMs] (docs/spec.md section 4.8, ルーペ), or `null` without one. */
+    fun loupeView(nowMs: Long): LoupeView? {
+        val loupe = loupe ?: return null
+        val index = loupePage(nowMs) ?: return null
+        val scale = displayScale(geometry() ?: return null, index)
+        return LoupeView(loupe.rectAt(nowMs, viewport.size, config.loupeFrame), loupe.finger, config.loupeZoom.magnification(scale))
+    }
+
+    /**
+     * The page the loupe reads again at the size of its own image, for the magnifications of the source image. `null`
+     * when the loupe shows the prepared view: without a loupe, for a magnification of the screen, or when the prepared
+     * page already has a pixel for every pixel of the image.
+     */
+    fun loupeSource(): LoupeSource? {
+        if (!config.loupeZoom.readsSource) return null
+        val index = loupePage(Long.MAX_VALUE) ?: return null
+        val geometry = preparedGeometry(current) ?: return null
+        if (displayScale(geometry, index) >= 1f) return null
+        val page = current.pages[index]
+        val shape = pagination.shapes[page] as PageShape.Known
+        val half = current is PageView.Half
+        val size = PixelSize(if (half) (shape.width / 2).coerceAtLeast(1) else shape.width, shape.height)
+        val crop = (current as? PageView.Half)?.part?.side(config.direction)
+        return LoupeSource(current, index, size, PageSteps(crop, config.rotation, config.adjust.sharpen))
+    }
+
     /** The neighbor a turn toward [turn] reaches, or `null` at the edge of the book. */
     fun neighbor(turn: Turn): PageView? =
         pagination.views.getOrNull(pagination.currentIndex + if (turn == Turn.Forward) 1 else -1)
@@ -116,13 +167,18 @@ data class ReaderState(
                     stopTravel = null,
                     transition = null,
                     pull = null,
+                    loupe = null,
                 )
             }
         is ReaderEvent.ConfigChanged -> configured(event.config)
         is ReaderEvent.Tick -> copy(
             transition = transition?.takeUnless { it.animation.isDoneAt(event.nowMs) },
             stopTravel = stopTravel?.takeUnless { it.move.motion.isDoneAt(event.nowMs) },
+            loupe = loupe?.at(event.nowMs),
         )
+        is ReaderEvent.LoupeShown -> byHand().copy(loupe = Loupe.at(event.finger, viewport.size))
+        is ReaderEvent.LoupeMoved -> copy(loupe = loupe?.moved(event.finger, viewport.size, viewport.density, event.nowMs))
+        ReaderEvent.LoupeHidden -> copy(loupe = null)
         is ReaderEvent.Pan -> byHand().panned(event.dx, event.dy)
         is ReaderEvent.Pulling -> byHand().copy(pull = Pull(event.turn, neighbor(event.turn), event.pulledDp))
         is ReaderEvent.PullEnded -> released(event.commit, event.nowMs)
@@ -301,6 +357,13 @@ sealed interface ReaderEvent {
     /** [focus] is the point between the fingers, in screen pixels. */
     data class Zoom(val event: ZoomEvent, val focus: Point? = null) : ReaderEvent
 
+    /** A finger held still at [finger], in screen pixels, brings up the loupe. */
+    data class LoupeShown(val finger: Point) : ReaderEvent
+
+    data class LoupeMoved(val finger: Point, val nowMs: Long) : ReaderEvent
+
+    data object LoupeHidden : ReaderEvent
+
     /** 自動再生 starts; its first step comes one interval later. */
     data class AutoPlayStarted(val nowMs: Long) : ReaderEvent
 
@@ -313,3 +376,8 @@ sealed interface ReaderEvent {
 
 /** 自動再生 playing, with its next step at [dueAtMs]. */
 data class AutoPlay(val dueAtMs: Long)
+
+/** The page at [index] of [view], read at [size] with [steps] for the loupe. */
+data class LoupeSource(val view: PageView, val index: Int, val size: PixelSize, val steps: PageSteps) {
+    val page: Int get() = view.pages[index]
+}

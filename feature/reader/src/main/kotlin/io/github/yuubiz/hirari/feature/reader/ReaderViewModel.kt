@@ -58,6 +58,7 @@ import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchInput
 import io.github.yuubiz.hirari.feature.reader.prefetch.shownViews
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -162,6 +163,7 @@ class ReaderViewModel(
         val overrides: OverridesWriter,
         val globalAdjust: ImageAdjust,
         val shareDir: File,
+        val loader: BookPageLoader,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -351,7 +353,7 @@ class ReaderViewModel(
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val writer = OverridesWriter(id, overrides, services.storage.books, services.appScope)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, settings.adjust, shareDir)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, settings.adjust, shareDir, loader)
         stops.attach(session)
         phase = ReaderPhase.Reading
         start()
@@ -409,6 +411,35 @@ class ReaderViewModel(
         }
         if (before != null && before.config.adjust != after.config.adjust) {
             book.overrides.update { it.copy(adjust = after.config.adjust.takeUnless { a -> a == book.globalAdjust }) }
+        }
+        readForLoupe(book.loader, after.loupeSource())
+    }
+
+    /**
+     * The page under the loupe at the size of its own image, for the magnifications of the source image. Only the
+     * page under the finger is read, and only while the loupe is up; until it arrives the loupe stretches the
+     * prepared view.
+     */
+    var loupeDetail: LoupeDetail? by mutableStateOf(null)
+        private set
+
+    private var loupeWanted: LoupeSource? = null
+    private var loupeRead: Job? = null
+
+    private fun readForLoupe(loader: BookPageLoader, wanted: LoupeSource?) {
+        if (wanted == loupeWanted) return
+        loupeWanted = wanted
+        loupeRead?.cancel()
+        loupeRead = null
+        loupeDetail?.takeIf { it.source != wanted }?.let {
+            loupeDetail = null
+            recycleAfterFrames(it.bitmap)
+        }
+        if (wanted == null || loupeDetail != null) return
+        loupeRead = viewModelScope.launch {
+            val result = loader.prepare(wanted.page, wanted.size, wanted.steps)
+            val bitmap = (result as? PageResult.Ready)?.image ?: return@launch
+            if (loupeWanted == wanted) loupeDetail = LoupeDetail(wanted, bitmap) else bitmap.recycle()
         }
     }
 
@@ -482,6 +513,9 @@ private const val SHARE_AUTHORITY = ".share"
 
 /** Whether no reader has opened in this process yet. */
 private val firstReader = AtomicBoolean(true)
+
+/** The pixels of [source] for the loupe. */
+class LoupeDetail(val source: LoupeSource, val bitmap: Bitmap)
 
 /** A page written for other apps: its content URI and the MIME type to send it as. */
 data class SharedPage(val uri: Uri, val mimeType: String)

@@ -28,6 +28,8 @@ internal class ReaderInput(
     private val ui: ReaderUi,
     private val state: () -> ReaderState,
     private val haptic: () -> Unit,
+    /** The feedback of a hold that brings up the loupe. */
+    private val holdHaptic: () -> Unit,
     private val onClose: () -> Unit,
 ) {
     suspend fun PointerInputScope.handle() {
@@ -50,7 +52,7 @@ internal class ReaderInput(
             when (regions.regionAt(point)) {
                 ReaderRegion.CommandBar -> commandBar(down, current, slop)
                 ReaderRegion.PageBar -> pageBar(down, current, regions, slop)
-                ReaderRegion.TurnArea -> turnArea(down, current, regions, slop, viewConfiguration.longPressTimeoutMillis)
+                ReaderRegion.TurnArea -> turnArea(down, current, regions, slop)
                 null -> Unit
             }
         }
@@ -157,45 +159,78 @@ internal class ReaderInput(
         current: ReaderState,
         regions: ReaderRegions,
         slop: Float,
-        longPressMs: Long,
     ) {
         val density = current.viewport.density
         val config = current.config
-        val touch = TurnAreaTouch(config.direction, config.mirrored, config.swipeToTurn, slop, longPressMs)
+        val touch = TurnAreaTouch(config.direction, config.mirrored, config.swipeToTurn, slop, config.loupeHoldMs)
         val geometry = current.geometry()
         val position = current.positionAt(SystemClock.uptimeMillis())
         val (hiddenLeft, hiddenRight) = if (geometry != null && position != null) geometry.hidden(position) else Pair(0f, 0f)
         var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(down.position.dp(density), down.uptimeMillis, pullableSides(hiddenLeft, hiddenRight))).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
         var last = down.position
-        while (true) {
-            val event = awaitPointerEvent()
-            if (event.changes.count { it.pressed } >= 2) {
-                if (touchState is TouchState.Pulling) viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
-                pinch(event, down.id, density, slop)
-                return
-            }
-            val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
-            change.consume()
-            velocity.addPosition(change.uptimeMillis, change.position)
-            if (!change.pressed) {
-                val vx = velocity.calculateVelocity().x / density
-                when (val outcome = touch.reduce(touchState, TouchEvent.Up(change.position.dp(density), change.uptimeMillis, vx)).outcome) {
-                    is TouchOutcome.Tap -> tap(outcome.point, regions)
-                    is TouchOutcome.Commit -> viewModel.dispatch(ReaderEvent.PullEnded(commit = true, SystemClock.uptimeMillis()))
-                    is TouchOutcome.Return -> viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
-                    null -> Unit
+        val hold = HoldTimer(down.uptimeMillis, config.loupeHoldMs)
+        try {
+            while (true) {
+                val pressed = touchState is TouchState.Pressed
+                val event = awaitOrHold(hold, waiting = pressed)
+                if (pressed && hold.due) {
+                    val step = touch.reduce(touchState, TouchEvent.Hold(hold.at))
+                    touchState = step.state
+                    if (step.outcome is TouchOutcome.ShowLoupe) {
+                        holdHaptic()
+                        viewModel.dispatch(ReaderEvent.LoupeShown(Point(down.position.x, down.position.y)))
+                    }
                 }
-                return
+                event ?: continue
+                if (followed(event, down, touch, touchState, regions, velocity, density, slop)) return
+                val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
+                touchState = touch.reduce(touchState, TouchEvent.Move(change.position.dp(density))).state
+                when (val now = touchState) {
+                    is TouchState.Pulling -> viewModel.dispatch(ReaderEvent.Pulling(now.turn, now.pulled))
+                    TouchState.Scrolling -> viewModel.dispatch(ReaderEvent.Pan(change.position.x - last.x, change.position.y - last.y))
+                    is TouchState.Loupe -> viewModel.dispatch(ReaderEvent.LoupeMoved(Point(change.position.x, change.position.y), change.uptimeMillis))
+                    TouchState.Idle, is TouchState.Pressed -> Unit
+                }
+                last = change.position
             }
-            touchState = touch.reduce(touchState, TouchEvent.Move(change.position.dp(density))).state
-            when (val now = touchState) {
-                is TouchState.Pulling -> viewModel.dispatch(ReaderEvent.Pulling(now.turn, now.pulled))
-                TouchState.Scrolling -> viewModel.dispatch(ReaderEvent.Pan(change.position.x - last.x, change.position.y - last.y))
-                TouchState.Idle, is TouchState.Pressed -> Unit
-            }
-            last = change.position
+        } finally {
+            if (touchState is TouchState.Loupe) viewModel.dispatch(ReaderEvent.LoupeHidden)
         }
+    }
+
+    /**
+     * Feeds [event] to the touch in [state]; true once the touch is over, by a finger going up or a second one
+     * starting a pinch. While the loupe is up a second finger changes nothing.
+     */
+    private suspend fun AwaitPointerEventScope.followed(
+        event: PointerEvent,
+        down: PointerInputChange,
+        touch: TurnAreaTouch,
+        state: TouchState,
+        regions: ReaderRegions,
+        velocity: VelocityTracker,
+        density: Float,
+        slop: Float,
+    ): Boolean {
+        if (state !is TouchState.Loupe && event.changes.count { it.pressed } >= 2) {
+            if (state is TouchState.Pulling) viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
+            pinch(event, down.id, density, slop)
+            return true
+        }
+        val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
+        event.changes.forEach { it.consume() }
+        velocity.addPosition(change.uptimeMillis, change.position)
+        if (change.pressed) return false
+        val vx = velocity.calculateVelocity().x / density
+        when (val outcome = touch.reduce(state, TouchEvent.Up(change.position.dp(density), change.uptimeMillis, vx)).outcome) {
+            is TouchOutcome.Tap -> tap(outcome.point, regions)
+            is TouchOutcome.Commit -> viewModel.dispatch(ReaderEvent.PullEnded(commit = true, SystemClock.uptimeMillis()))
+            is TouchOutcome.Return -> viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
+            TouchOutcome.HideLoupe -> viewModel.dispatch(ReaderEvent.LoupeHidden)
+            is TouchOutcome.ShowLoupe, null -> Unit
+        }
+        return true
     }
 
     private fun tap(point: Point, regions: ReaderRegions) {
@@ -252,11 +287,12 @@ internal class ReaderInput(
 private fun Offset.dp(density: Float) = Point(x / density, y / density)
 
 /**
- * The [LONG_PRESS_MS] press of the bars. Small moves within the touch slop keep coming while a finger rests, so
- * the press is due by the clock of the events as well as by a timeout when none comes.
+ * A press held for [holdMs]: [LONG_PRESS_MS] on the bars, `loupeHoldMs` on the turn area. Small moves within the
+ * touch slop keep coming while a finger rests, so the press is due by the clock of the events as well as by a
+ * timeout when none comes.
  */
-private class HoldTimer(downAtMs: Long) {
-    val at = downAtMs + LONG_PRESS_MS
+private class HoldTimer(downAtMs: Long, holdMs: Long = LONG_PRESS_MS) {
+    val at = downAtMs + holdMs
     var lastMs = downAtMs
 
     val due: Boolean get() = lastMs >= at

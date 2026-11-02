@@ -41,28 +41,40 @@ fun pullTurn(side: Side, direction: ReadingDirection, mirrored: Boolean): Turn {
 }
 
 /**
- * One finger on the turn area (docs/spec.md section 4.8, タップ領域 and 端引きでめくる). Every
- * length is in dp. [swipeToTurn] off makes every drag a scroll.
+ * One finger on the turn area (docs/spec.md section 4.8, タップ領域, 端引きでめくる, and ルーペ). Every
+ * length is in dp. [swipeToTurn] off makes every drag a scroll. A finger held still for [holdMs], the
+ * `loupeHoldMs` setting, brings up the loupe; a release before then is a tap.
  */
 data class TurnAreaTouch(
     val direction: ReadingDirection,
     val mirrored: Boolean,
     val swipeToTurn: Boolean,
     val touchSlop: Float,
-    val longPressMs: Long,
+    val holdMs: Long,
 ) {
     fun reduce(state: TouchState, event: TouchEvent): TouchStep = when (event) {
         is TouchEvent.Down -> TouchStep(TouchState.Pressed(event.point, event.timeMs, event.pullable))
+        is TouchEvent.Hold ->
+            if (state is TouchState.Pressed && event.timeMs - state.downAtMs >= holdMs) {
+                TouchStep(TouchState.Loupe(state.origin), TouchOutcome.ShowLoupe(state.origin))
+            } else {
+                TouchStep(state)
+            }
         is TouchEvent.Move -> TouchStep(moved(state, event.point))
         is TouchEvent.Up -> when (val last = moved(state, event.point)) {
             is TouchState.Pressed ->
-                TouchStep(TouchState.Idle, if (event.timeMs - last.downAtMs < longPressMs) TouchOutcome.Tap(last.origin) else null)
+                TouchStep(TouchState.Idle, if (event.timeMs - last.downAtMs < holdMs) TouchOutcome.Tap(last.origin) else null)
             is TouchState.Pulling -> TouchStep(TouchState.Idle, release(last, event.velocityX))
+            is TouchState.Loupe -> TouchStep(TouchState.Idle, TouchOutcome.HideLoupe)
             TouchState.Idle, TouchState.Scrolling -> TouchStep(TouchState.Idle)
         }
         TouchEvent.Cancel -> TouchStep(
             TouchState.Idle,
-            (state as? TouchState.Pulling)?.let { TouchOutcome.Return(it.turn, it.pulled) },
+            when (state) {
+                is TouchState.Pulling -> TouchOutcome.Return(state.turn, state.pulled)
+                is TouchState.Loupe -> TouchOutcome.HideLoupe
+                else -> null
+            },
         )
     }
 
@@ -82,6 +94,7 @@ data class TurnAreaTouch(
             val dx = point.x - state.originX
             state.copy(travel = if (state.side == Side.Right) dx else -dx)
         }
+        is TouchState.Loupe -> TouchState.Loupe(point)
         TouchState.Idle, TouchState.Scrolling -> state
     }
 
@@ -105,12 +118,18 @@ sealed interface TouchState {
 
     /** The drag pans the view, or the pull is not allowed. */
     data object Scrolling : TouchState
+
+    /** The loupe is up and follows the finger at [finger]; the touch neither turns nor scrolls. */
+    data class Loupe(val finger: Point) : TouchState
 }
 
 sealed interface TouchEvent {
     /** [pullable] comes from [pullableSides]. */
     data class Down(val point: Point, val timeMs: Long, val pullable: Set<Side>) : TouchEvent
     data class Move(val point: Point) : TouchEvent
+
+    /** The finger is still down at [timeMs], sent once the hold of [TurnAreaTouch.holdMs] is due. */
+    data class Hold(val timeMs: Long) : TouchEvent
 
     /** [velocityX] is in dp per second, positive to the right. */
     data class Up(val point: Point, val timeMs: Long, val velocityX: Float) : TouchEvent
@@ -128,6 +147,12 @@ sealed interface TouchOutcome {
 
     /** Go back to rest from a pull of [pulled] dp toward [turn], in about [PULL_RETURN_MS]. */
     data class Return(val turn: Turn, val pulled: Float) : TouchOutcome
+
+    /** A hold at [point] brings up the loupe. */
+    data class ShowLoupe(val point: Point) : TouchOutcome
+
+    /** The finger of the loupe went up. */
+    data object HideLoupe : TouchOutcome
 }
 
 data class TouchStep(val state: TouchState, val outcome: TouchOutcome? = null)

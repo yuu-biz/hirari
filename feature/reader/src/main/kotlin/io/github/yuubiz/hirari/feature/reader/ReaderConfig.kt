@@ -5,6 +5,8 @@ import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
+import io.github.yuubiz.hirari.core.model.LoupeFrame
+import io.github.yuubiz.hirari.core.model.LoupeZoom
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
@@ -42,6 +44,9 @@ data class ReaderConfig(
     val adjust: ImageAdjust = ImageAdjust(),
     /** `autoPlaySeconds`: how long 自動再生 rests between steps. */
     val autoPlayMs: Long = 1500,
+    val loupeZoom: LoupeZoom = LoupeZoom.View200,
+    val loupeFrame: LoupeFrame = LoupeFrame.Small,
+    val loupeHoldMs: Long = 800,
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -70,6 +75,9 @@ data class ReaderConfig(
             orientation = settings.readerOrientation,
             adjust = overrides.adjust ?: settings.adjust,
             autoPlayMs = (settings.autoPlaySeconds * 1000).roundToLong(),
+            loupeZoom = settings.loupeZoom,
+            loupeFrame = settings.loupeFrame,
+            loupeHoldMs = settings.loupeHoldMs.toLong(),
         )
     }
 }

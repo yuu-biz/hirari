@@ -37,6 +37,9 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -96,8 +99,8 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
     val latest by rememberUpdatedState(state)
     val close by rememberUpdatedState(onClose)
 
-    LaunchedEffect(state.transition, state.stopTravel) {
-        if (state.transition == null && state.stopTravel == null) return@LaunchedEffect
+    LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move) {
+        if (state.transition == null && state.stopTravel == null && state.loupe?.move == null) return@LaunchedEffect
         while (true) {
             val now = withFrameMillis { it }
             frameMs = now
@@ -111,6 +114,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
             ui = ui,
             state = { latest },
             haptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+            holdHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
             onClose = { close() },
         )
     }
@@ -125,8 +129,9 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
             .pointerInput(input) { with(input) { handle() } },
     ) {
         viewModel.prepared
-        val now = if (state.transition != null || state.stopTravel != null) frameMs else Long.MAX_VALUE
+        val now = if (state.transition != null || state.stopTravel != null || state.loupe?.move != null) frameMs else Long.MAX_VALUE
         for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
+        state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter) }
     }
 
     val rest = if (state.transition == null && state.pull == null) state.positionAt(Long.MAX_VALUE) else null
@@ -187,14 +192,41 @@ private fun errorOf(viewModel: ReaderViewModel, view: PageView, index: Int, page
     return (prepared as? PreparedPage.Error)?.result ?: viewModel.failedPages[page]
 }
 
-private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, layer: Layer, colorFilter: ColorFilter?) {
+/**
+ * The loupe of [view]: the current view at rest, scaled about the finger into the loupe's frame, with the page read
+ * at its own size in place of its prepared pixels once that has arrived.
+ */
+private fun DrawScope.drawLoupe(viewModel: ReaderViewModel, state: ReaderState, view: LoupeView, nowMs: Long, colorFilter: ColorFilter?) {
+    val position = state.positionAt(nowMs) ?: return
+    val rect = view.rect
+    val topLeft = Offset(rect.left, rect.top)
+    val size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+    val m = view.magnification
+    val detail = viewModel.loupeDetail?.takeIf { it.source.view == state.current }
+    drawRect(ReaderBackground, topLeft, size)
+    clipRect(rect.left, rect.top, rect.right, rect.bottom) {
+        withTransform({
+            translate(view.center.x - view.finger.x * m, view.center.y - view.finger.y * m)
+            scale(m, m, pivot = Offset.Zero)
+        }) {
+            drawLayer(viewModel, state, Layer(state.current, position, 0f, 1f), colorFilter, detail)
+        }
+    }
+    drawRect(LoupeEdge, topLeft, size, style = Stroke(width = LOUPE_EDGE_DP * density))
+}
+
+private val LoupeEdge = Color(0xCCFFFFFF)
+private const val LOUPE_EDGE_DP = 2f
+
+private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, layer: Layer, colorFilter: ColorFilter?, detail: LoupeDetail? = null) {
     val geometry = state.geometry(layer.view) ?: return
     val prepared = viewModel.preparedView(layer.view)
     geometry.pages.forEachIndexed { i, rect ->
         val left = rect.left - layer.position.x + layer.shift
         val top = rect.top - layer.position.y
+        val sharper = detail?.takeIf { it.source.index == i }?.bitmap
         when (val page = prepared?.pages?.getOrNull(i)) {
-            is PreparedPage.Image<*> -> drawPage(page.image as Bitmap, left, top, rect, layer.alpha, colorFilter)
+            is PreparedPage.Image<*> -> drawPage(sharper ?: page.image as Bitmap, left, top, rect, layer.alpha, colorFilter)
             is PreparedPage.Error -> drawRect(CardBackground, Offset(left, top), androidx.compose.ui.geometry.Size(rect.width, rect.height), layer.alpha)
             null -> Unit
         }

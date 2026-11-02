@@ -21,7 +21,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class EdgePullTest {
-    private val rtl = TurnAreaTouch(RightToLeft, mirrored = false, swipeToTurn = true, touchSlop = 8f, longPressMs = 500)
+    private val rtl = TurnAreaTouch(RightToLeft, mirrored = false, swipeToTurn = true, touchSlop = 8f, holdMs = 500)
     private val both = setOf(Side.Left, Side.Right)
     private val origin = Point(200f, 400f)
 
