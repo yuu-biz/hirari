@@ -144,7 +144,8 @@ class ReaderViewModel(
     val failedPages: Map<Int, PageResult<Nothing>> get() = opened?.prefetcher?.failedPages.orEmpty()
 
     /** Every page failed, so the book shows one error for all of it (docs/spec.md section 4.8, ページのエラー表示). */
-    val allPagesFailed: Boolean get() = opened?.let { it.prefetcher.failedPages.size == it.book.pages.size } == true
+    val allPagesFailed: Boolean
+        get() = prepared.let { opened?.let { it.prefetcher.failedPages.size == it.book.pages.size } == true }
 
     fun onViewport(next: Viewport) {
         viewport = next
@@ -212,7 +213,13 @@ class ReaderViewModel(
         val services = services.await()
         val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
         val config = ReaderConfig.of(services.storage.settings.settings.first())
-        val (id, result) = withContext(Dispatchers.IO) { openBook(services, copyDir) }
+        var produced: BookResult? = null
+        val (id, result) = try {
+            withContext(Dispatchers.IO) { openBook(services, copyDir).also { produced = it.second } }
+        } catch (e: CancellationException) {
+            (produced as? BookResult.Opened)?.book?.let { services.appScope.launch { it.close() } }
+            throw e
+        }
         val book = when (result) {
             is BookResult.Failed -> {
                 phase = ReaderPhase.Failed(result.reason)

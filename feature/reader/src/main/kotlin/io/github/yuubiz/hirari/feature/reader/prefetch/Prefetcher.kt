@@ -122,7 +122,7 @@ class Prefetcher<T>(
             }
         }
         for ((key, start) in wanted) {
-            if (key !in running) running[key] = start()
+            if (running[key]?.isActive != true) running[key] = start()
         }
         if (dropped.isNotEmpty()) listener.onChanged()
     }

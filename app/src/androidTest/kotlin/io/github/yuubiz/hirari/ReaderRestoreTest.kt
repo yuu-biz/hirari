@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari
 
 import android.content.Intent
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -16,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.time.Instant
@@ -29,6 +31,13 @@ class ReaderRestoreTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val app = context.applicationContext as HirariApp
+
+    /** The system's first-time notice about hidden system bars would take the keys meant for the reader. */
+    @Before
+    fun skipFullScreenNotice() {
+        val output = instrumentation.uiAutomation.executeShellCommand("settings put secure immersive_mode_confirmations confirmed")
+        ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
+    }
 
     private fun press(code: Int) {
         instrumentation.sendKeyDownUpSync(code)
