@@ -19,11 +19,7 @@ sealed interface PreparedImage {
  * What every decode in the process shares: the memory budget of docs/spec.md section 5.3 and the decode
  * dispatcher of section 8.3. Make one per process.
  */
-class ImageDecoding(
-    val budgetBytes: Long,
-    parallelism: Int,
-    val timeoutMillis: Long = DECODE_TIMEOUT_MILLIS,
-) {
+class ImageDecoding(val budgetBytes: Long, parallelism: Int) {
     val dispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(parallelism)
 
     companion object {

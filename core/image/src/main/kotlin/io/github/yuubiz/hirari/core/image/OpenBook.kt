@@ -22,8 +22,9 @@ internal interface PageBytes : Closeable {
 }
 
 /**
- * A book open for reading (docs/spec.md sections 2.4 and 3.7). Every call returns a [PageResult] and throws
- * nothing but [CancellationException]. Calls may overlap; an archive serializes its reads in its session.
+ * A book open for reading (docs/spec.md sections 2.4 and 3.7). Every call returns a [PageResult]. Only
+ * [CancellationException] and virtual machine errors other than [OutOfMemoryError] get through. Calls may
+ * overlap; an archive serializes its reads in its session.
  *
  * @property pages the page list in natural order, fixed while the book is open (section 3.5).
  * @property indexError why listing the archive stopped early, or null when it reached the end.
@@ -75,7 +76,7 @@ class OpenBook internal constructor(
         val caller = currentCoroutineContext()
         val work = scope.async(decoding.dispatcher) { decode { isActive && caller.isActive } }
         return try {
-            withTimeoutOrNull(decoding.timeoutMillis) { work.await() } ?: timedOut
+            withTimeoutOrNull(ImageDecoding.DECODE_TIMEOUT_MILLIS) { work.await() } ?: timedOut
         } catch (_: CancellationException) {
             work.cancel()
             caller.ensureActive()
