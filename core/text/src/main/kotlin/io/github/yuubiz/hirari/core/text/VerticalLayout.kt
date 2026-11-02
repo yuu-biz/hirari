@@ -446,11 +446,21 @@ class VerticalLayout(
         return Piece(atoms, ruby, length, excess - lead - tail, lead, tail)
     }
 
-    /** The atoms of a paragraph, made as they are asked for. One step may make several, such as the words of a run. */
+    /**
+     * The atoms of a paragraph, made as they are asked for. One step makes one atom, or the few atoms of a character
+     * with its joiners; a Latin run is walked a word at a time and a word too long for a column a character at a time, so
+     * a long run costs only as far as the lines reach.
+     */
     private inner class AtomCursor(private val styles: ParagraphStyles) {
         private val text = styles.paragraph.text
         private val queue = ArrayDeque<Atom>()
         private var i = 0
+
+        /** Whether the sideways run being walked goes on at [i]. A run's treatment was chosen at its start. */
+        private var inRun = false
+
+        /** The characters before this index are atoms of a word that is too long for a column, made one at a time. */
+        private var splitEnd = 0
 
         fun peek(): Atom? {
             while (queue.isEmpty() && i < text.length) step()
@@ -459,15 +469,22 @@ class VerticalLayout(
 
         fun take(): Atom? = peek()?.also { queue.removeFirst() }
 
+        private fun add(content: GlyphContent, from: Int, to: Int, extent: Float) {
+            val size = styles.scale[from] * fontSize
+            queue.addLast(
+                Atom(
+                    content, from, to, styles.paragraph.sourceStart(from), styles.paragraph.sourceStart(to), size, styles.bold[from], extent,
+                    params.letterGap * size, text[from], text[to - 1],
+                ),
+            )
+        }
+
         private fun step() {
-            val add = { content: GlyphContent, from: Int, to: Int, extent: Float ->
-                val size = styles.scale[from] * fontSize
-                queue.addLast(
-                    Atom(
-                        content, from, to, styles.paragraph.sourceStart(from), styles.paragraph.sourceStart(to), size, styles.bold[from], extent,
-                        params.letterGap * size, text[from], text[to - 1],
-                    ),
-                )
+            if (i < splitEnd) {
+                val c = text[i].toString()
+                add(GlyphContent.Chars(c, Orientation.Sideways), i, i + 1, metrics.width(c, styles.scale[i] * fontSize, styles.bold[i]))
+                i++
+                return
             }
             val size = styles.scale[i] * fontSize
             val groupEnd = styles.groupEnd[i]
@@ -491,12 +508,7 @@ class VerticalLayout(
                     add(GlyphContent.Leader(2), i, i + 2, 2 * size)
                     i += 2
                 }
-                isLatin(c) -> {
-                    var end = i + 1
-                    while (end < text.length && isLatin(text[end]) && !styles.boundary[end]) end++
-                    latinRun(text, i, end, size, styles.bold[i], add)
-                    i = end
-                }
+                isLatin(c) -> latinStep(size)
                 else -> {
                     var end = i + Character.charCount(text.codePointAt(i))
                     while (end < text.length && isJoiner(text.codePointAt(end))) end += Character.charCount(text.codePointAt(end))
@@ -505,35 +517,18 @@ class VerticalLayout(
                 }
             }
         }
-    }
 
-    private fun latinRun(text: String, from: Int, to: Int, size: Float, bold: Boolean, add: (GlyphContent, Int, Int, Float) -> Unit) {
-        val sideways = { s: Int, e: Int ->
-            val word = text.substring(s, e)
-            val width = metrics.width(word, size, bold)
-            if (width <= params.height || e - s == 1) {
-                add(GlyphContent.Chars(word, Orientation.Sideways), s, e, width)
-            } else {
-                for (i in s until e) {
-                    val c = text[i].toString()
-                    add(GlyphContent.Chars(c, Orientation.Sideways), i, i + 1, metrics.width(c, size, bold))
-                }
-            }
-        }
-        when (params.latinMode) {
-            LatinMode.ShortTateChuYoko ->
-                if (to - from <= 2 && (from until to).none { text[it] == ' ' }) {
-                    add(GlyphContent.Chars(text.substring(from, to), Orientation.TateChuYoko), from, to, size)
-                } else {
-                    words(text, from, to, sideways)
-                }
-            LatinMode.Sideways -> words(text, from, to, sideways)
-            LatinMode.Upright -> {
-                var i = from
-                while (i < to) {
-                    val pair = if (i + 1 < to) text.substring(i, i + 2) else ""
+        /** Whether a Latin run reaches index [j]. A run is Latin characters that no span edge cuts between. */
+        private fun runReaches(j: Int): Boolean = j < text.length && isLatin(text[j]) && !styles.boundary[j]
+
+        /** One atom of the Latin run that holds [i]. */
+        private fun latinStep(size: Float) {
+            when (params.latinMode) {
+                LatinMode.Upright -> {
+                    val pair = if (runReaches(i + 1)) text.substring(i, i + 2) else ""
+                    val runStart = i == 0 || !isLatin(text[i - 1]) || styles.boundary[i]
                     val twoDigits = pair.length == 2 && pair.all(Char::isDigit) &&
-                        (i == from || !text[i - 1].isDigit()) && (i + 2 == to || !text[i + 2].isDigit())
+                        (runStart || !text[i - 1].isDigit()) && (!runReaches(i + 2) || !text[i + 2].isDigit())
                     if (twoDigits || pair in UPRIGHT_PAIRS) {
                         add(GlyphContent.Chars(pair, Orientation.TateChuYoko), i, i + 2, size)
                         i += 2
@@ -542,19 +537,34 @@ class VerticalLayout(
                         i++
                     }
                 }
+                LatinMode.ShortTateChuYoko, LatinMode.Sideways -> {
+                    if (params.latinMode == LatinMode.ShortTateChuYoko && !inRun) {
+                        var end = i + 1
+                        while (end < i + 3 && runReaches(end)) end++
+                        if (end - i <= 2 && !runReaches(end) && (i until end).none { text[it] == ' ' }) {
+                            add(GlyphContent.Chars(text.substring(i, end), Orientation.TateChuYoko), i, end, size)
+                            i = end
+                            return
+                        }
+                    }
+                    word(size)
+                }
             }
         }
-    }
 
-    /** Splits a sideways run into words that keep their trailing spaces, so a line may break between words. */
-    private fun words(text: String, from: Int, to: Int, emit: (Int, Int) -> Unit) {
-        var s = from
-        while (s < to) {
-            var e = s
-            while (e < to && text[e] != ' ') e++
-            while (e < to && text[e] == ' ') e++
-            emit(s, e)
-            s = e
+        /** A word with the spaces after it, so a line may break between words. */
+        private fun word(size: Float) {
+            var end = i
+            while (end < text.length && (end == i || runReaches(end)) && text[end] != ' ') end++
+            while (end < text.length && (end == i || runReaches(end)) && text[end] == ' ') end++
+            val width = metrics.width(text.substring(i, end), size, styles.bold[i])
+            inRun = runReaches(end)
+            if (width <= params.height || end - i == 1) {
+                add(GlyphContent.Chars(text.substring(i, end), Orientation.Sideways), i, end, width)
+                i = end
+            } else {
+                splitEnd = end
+            }
         }
     }
 }

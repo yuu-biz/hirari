@@ -135,6 +135,52 @@ class VerticalLayoutTest {
     }
 
     @Test
+    fun `a long paragraph of only sideways words is measured only as far as the first page needs`() {
+        fun measuredForFirstPage(repeats: Int, mode: LatinMode): Int {
+            var calls = 0
+            val counting = GlyphMetrics { text, size, bold -> calls++; FixedGlyphMetrics.width(text, size, bold) }
+            val doc = parseAozora("題\n" + "Hello world ".repeat(repeats))
+            VerticalLayout(doc, params(20f).copy(latinMode = mode), counting).pages().first()
+            return calls
+        }
+        for (mode in listOf(LatinMode.ShortTateChuYoko, LatinMode.Sideways)) {
+            val short = measuredForFirstPage(1_000, mode)
+            val long = measuredForFirstPage(100_000, mode)
+            assertEquals(short, long, "$mode: first page measured $short for 1k words and $long for 100k")
+        }
+    }
+
+    @Test
+    fun `a single word longer than a column splits one character at a time as the lines ask`() {
+        fun measuredForFirstPage(length: Int): Int {
+            var calls = 0
+            val counting = GlyphMetrics { text, size, bold -> calls++; FixedGlyphMetrics.width(text, size, bold) }
+            val doc = parseAozora("題\n" + "a".repeat(length))
+            val pages = VerticalLayout(doc, params(20f).copy(latinMode = LatinMode.Sideways), counting).pages()
+            val first = pages.first()
+            assertEquals(0, first.start)
+            return calls
+        }
+        assertEquals(measuredForFirstPage(10_000), measuredForFirstPage(200_000))
+    }
+
+    @Test
+    fun `each Latin mode sets numbers, pairs and words as the spec says`() {
+        val text = "題\nあ12い345う!!x??え89 abc\n"
+        fun shown(mode: LatinMode): String {
+            val params = LayoutParams(width = 200f, height = 400f, fontSize = 10f, latinMode = mode)
+            val pages = VerticalLayout(parseAozora(text), params, FixedGlyphMetrics).pages().toList()
+            return pages.flatMap { lines(it) }.flatMap { it.glyphs }.drop(1).joinToString("|") { glyph ->
+                val chars = glyph.content as GlyphContent.Chars
+                "${chars.text}:${chars.orientation.name.first()}"
+            }
+        }
+        assertEquals("あ:U|12:T|い:U|345:S|う:U|!!x??:S|え:U|89 :S|abc:S", shown(LatinMode.ShortTateChuYoko))
+        assertEquals("あ:U|12:S|い:U|345:S|う:U|!!x??:S|え:U|89 :S|abc:S", shown(LatinMode.Sideways))
+        assertEquals("あ:U|12:T|い:U|3:U|4:U|5:U|う:U|!!:T|x:U|??:T|え:U|89:T| :U|a:U|b:U|c:U", shown(LatinMode.Upright))
+    }
+
+    @Test
     fun `an empty book has one empty page`() {
         assertEquals(listOf(TextPage(PageContent.Lines(emptyList()), 0, 0)), VerticalLayout(parseAozora(""), params(20f), FixedGlyphMetrics).pages().toList())
     }
