@@ -38,7 +38,8 @@ class Pagination private constructor(
                 val learned = shapes.toMutableList().also { it[event.page] = event.shape }
                 layout(learned, settings, orientation, anchor, keep = current, fallback = edge, fallbackFromEnd = beforeAnchor)
             }
-        is PaginationEvent.SettingsChanged -> relayoutFromCurrent(event.settings, orientation)
+        is PaginationEvent.SettingsChanged ->
+            if (event.settings == settings) this else relayoutFromCurrent(event.settings, orientation)
         is PaginationEvent.OrientationChanged ->
             if (event.orientation == orientation) this else relayoutFromCurrent(settings, event.orientation)
     }

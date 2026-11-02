@@ -141,6 +141,14 @@ class PaginationTest {
     }
 
     @Test
+    fun unchangedSettingsKeepTheAnchor() {
+        val state = book("TTTT").reduce(GoTo(3)).after(Prev)
+        assertEquals(listOf(One(0), Two(1, 2), One(3)), state.views)
+        assertSame(state, state.reduce(SettingsChanged(state.settings)))
+        assertSame(state, state.reduce(OrientationChanged(state.orientation)))
+    }
+
+    @Test
     fun rotatingTheScreenResolvesAuto() {
         val auto = LayoutSettings(LayoutMode.Auto, RightToLeft, coverAlone = false)
         val landscape = book("TTWT", auto)
