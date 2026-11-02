@@ -1555,6 +1555,8 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 - **PDF**。壊れたもの、パスワード付き、ページの大きさが混在するもの。手書きの最小の PDF で作る。パスワード付きのものは、標準のセキュリティハンドラのリビジョン 2（40 ビットの RC4）で、ページに内容を持たない。PDF は書庫ではないので、`expected.tsv` には入れず、`pages.tsv` にだけ書く
 - **テキスト**。CP932、UTF-8（BOM の有無）、UTF-16、EUC-JP、不正なバイトを含むもの、10 MB のもの
 
+テキストのコーパスは `./gradlew :tools:corpus:generateTextCorpus` で `tools/corpus/build/text-corpus` に作る。目録 `text.tsv` に、各ファイルの文字コードと、読み戻すべき文字列の長さと SHA-256 を書く。10 MB のファイルを含むので端末の試験のコーパスには入れず、`:core:text` の JVM の試験が全ファイルを判定し、読み、組む。UTF-16 は BOM 付きの LE と BE を入れる（3.2 節）。不正なバイトは、CP932 で割り当てのない先頭バイト 0x85 を LF の直前に置き、1 個の U+FFFD に読めることを期待する。
+
 ### 6.3 StrictMode
 
 - デバッグビルドで有効にする。

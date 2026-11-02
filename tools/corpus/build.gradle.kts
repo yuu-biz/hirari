@@ -27,6 +27,16 @@ tasks.register<JavaExec>("generateStandardCorpus") {
     argumentProviders += CommandLineArgumentProvider { listOf(outputDir.get().asFile.absolutePath) }
 }
 
+// The text corpus of docs/spec.md section 6.2 holds a 10 MB file, so it stays out of the corpus the archive device
+// tests carry. :core:text reads it in its JVM tests.
+tasks.register<JavaExec>("generateTextCorpus") {
+    val outputDir = layout.buildDirectory.dir("text-corpus")
+    outputs.dir(outputDir)
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "io.github.yuubiz.hirari.tools.corpus.TextCorpus"
+    argumentProviders += CommandLineArgumentProvider { listOf(outputDir.get().asFile.absolutePath) }
+}
+
 tasks.withType<Test>().configureEach {
     systemProperty("java.awt.headless", "true")
 }
