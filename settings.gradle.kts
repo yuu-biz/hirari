@@ -30,4 +30,5 @@ include(
     ":feature:reader",
     ":feature:text",
     ":feature:settings",
+    ":tools:corpus",
 )

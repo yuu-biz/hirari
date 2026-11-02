@@ -439,7 +439,7 @@ libarchive は順に読む形の API を持つ。任意のエントリを開く�
 
 判定は書庫単位で行い、エントリごとに変えない。判定の順は次のとおり。
 
-1. ZIP で UTF-8 フラグが立っているエントリは UTF-8 として読む (要検証。libarchive がフラグを取り出せるか確かめる)。
+1. ZIP で UTF-8 フラグが立っているエントリは UTF-8 として読む。libarchive 3.8.11 は、このフラグを公開の API で返さない。フラグの立った名前と、Info-ZIP の Unicode Path 拡張フィールド（0x7075）の名前は、UTF-8 として NFC に正規化してから返し、正しい UTF-8 でなければ名前を返さない。フラグのない名前はバイト列のまま返す（ソースと、ホスト向けのビルドで確かめた）。これを踏まえた判定の手順と `rawName` の扱いは M1 で決める (要検証)。
 2. すべての名前が正しい UTF-8 で、非 ASCII の文字を含むなら UTF-8 にする。
 3. すべての名前が正しい CP932 なら CP932 にする。
 4. それ以外は、名前をつないだバイト列を `android.icu.text.CharsetDetector` にかけ、日本語を優先する候補から最も確からしいものを選ぶ。
@@ -1526,7 +1526,7 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 | targetSdk | 最新の安定版。M0 の時点の値に決める |
 | 言語 | Kotlin 2 系。ネイティブは C と C++17 |
 | UI | Jetpack Compose と Material 3。リーダーの描画面は Q1 |
-| NDK | 16 KB のページサイズに合わせてネイティブライブラリを整列する版を使う |
+| NDK | 28.2.13676358（r28c）。AGP 9.4.1 の既定の版で、r28 から 64 ビットの ABI のネイティブライブラリを 16 KB のページサイズに合わせて整列する。`llvm-readelf -l` で、`arm64-v8a` と `x86_64` の `.so` の LOAD セグメントの整列が 0x4000 であることを確かめた。`armeabi-v7a` は 0x1000 のまま |
 | ABI | `arm64-v8a`、`armeabi-v7a`、`x86_64`（エミュレータ用）。`armeabi-v7a` を残すかは APK の大きさで決める (要検証) |
 | 配布の単位 | Android App Bundle。ABI ごとに分割する |
 
@@ -1587,7 +1587,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 
 | 依存 | 用途 | ライセンス | 組み込み方 |
 |---|---|---|---|
-| libarchive | ZIP、RAR、7z、tar の読み込み | BSD-2-Clause（一部のファイルは別の寛容なライセンス (要検証)） | ソースから NDK でビルドし、JNI で呼ぶ。書き込み機能は外す |
+| libarchive | ZIP、RAR、7z、tar の読み込み | BSD-2-Clause、BSD-3-Clause、ISC。ファイルごとの内訳は表の下 | ソースから NDK でビルドし、JNI で呼ぶ。書き込み機能は外す。`third_party/libarchive` には、ビルドするファイルと `COPYING` だけを置く |
 | zlib | Deflate | Zlib | NDK に含まれる版を使う |
 | liblzma（XZ Utils） | LZMA、LZMA2、xz | 0BSD (要検証。版による) | ソースからビルド |
 | bzip2 | BZip2 | bzip2-1.0.6 | ソースからビルド |
@@ -1604,6 +1604,18 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Licensee（Gradle プラグイン） | ライセンスの検査 | Apache-2.0 | ビルド時だけ |
 | tomlj | `third_party/manifest.toml` の読み込み | Apache-2.0。antlr4-runtime（BSD-3-Clause）、checker-qual（MIT）を伴う | ビルド時だけ。`build-logic` の中で使う |
 | Kotest、Jazzer、libFuzzer | 試験 | Apache-2.0（libFuzzer は Apache-2.0 WITH LLVM-exception） | 試験時だけ。配布物に入らない |
+| JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit と AndroidX Test（runner、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
+
+libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 20 個の `.c` と 22 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
+
+- ビルドするファイルは、次の項目に挙げる部分を除いて BSD-2-Clause である。目録の SPDX 識別子は `BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0` とする。
+- `archive_entry.c` のファイルフラグの部分は、カリフォルニア大学の BSD-3-Clause である。
+- `archive_random.c` の arc4random の部分は ISC である。bionic の `arc4random_buf` を使うので、この部分はコンパイルされない。
+- `archive_ppmd_private.h` と `archive_ppmd8_private.h` は public domain（Igor Pavlov）。ZIP の読み込みのソースが、PPMd の型の宣言のために取り込む。
+- `archive_string_composition.h` は Unicode 文字データベース 6.0.0 の `UnicodeData.txt` から生成した表で、表示は BSD-2-Clause である。元のデータのライセンスの表示も載せるため、目録に Unicode-3.0 を加える。Unicode, Inc. は現在、データファイルをこのライセンスで配っている。6.0.0 の当時の条項は同じ趣旨の「Data Files and Software」の許諾である。
+- `COPYING` は著作権者の欄がひな形のままで、各ファイルの著作権者が載っていない。そのためライセンス画面では、ネイティブの依存について 3 つを並べる。`license_file` の全文、ソースから抜き出した著作権の行（ビルド時に生成する）、目録の SPDX 識別子ごとの正規の全文である。
+- PPMd の実装の `archive_ppmd8.c` も public domain で、許可リストにないので組み込まない（Q19）。代わりに自前の `core/archive/src/main/cpp/libarchive/ppmd8_unsupported.c` を置く。PPMd で圧縮された ZIP のエントリは、一覧には出るが、データを読むと失敗する。
+- M3 で加えるファイルのうち、`archive_ppmd7.c`（7z と RAR の PPMd）は public domain、`archive_blake2*`（RAR 5）は CC0-1.0、OpenSSL、Apache-2.0 から選べる三重ライセンス、`archive_read_support_filter_compress.c` は BSD-3-Clause である（`COPYING` による）。
 
 方針は次のとおり。
 
@@ -1723,3 +1735,4 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Q16 | 読書位置としおりを自動バックアップに含めるか | 含める、含めない、設定で選ぶ | 含める。機種変更で読書の記録が消えるのは困る。SMB の資格情報は常に含めない |
 | Q17 | SMB の共有の一覧を取るか | 共有名を入力させる、SRVSVC で一覧を取る | v1 は入力させる。一覧の取得に別の依存が要るなら、そのライセンスを確かめてから決める (要検証) |
 | Q18 | solid 書庫のサムネイルをどのページから作るか | 自然順で先頭のページ、格納順で先頭の画像 | 格納順で先頭の画像を使い、本を一度開いたら自然順で先頭のページに作り直す。solid 書庫で自然順の先頭を探すと、全体の展開が要ることがある |
+| Q19 | public domain のソース（libarchive の PPMd）を組み込むか | 組み込まない（ZIP と 7z の PPMd は `Unsupported(Compression)`）、許可リストに public domain を加える | M0 は組み込まない。7z の PPMd（3.3 節）には `archive_ppmd7.c` が要るので、M3 の前に決める |

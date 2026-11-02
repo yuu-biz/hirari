@@ -9,3 +9,12 @@
 # sha256 = "SHA-256 of that archive, lowercase hex"
 # spdx = "SPDX identifiers joined by ' AND ' (for a dual license, the chosen side only)"
 # license_file = "license text, relative to the directory"
+
+[[library]]
+name = "libarchive"
+version = "3.8.11"
+directory = "libarchive"
+url = "https://github.com/libarchive/libarchive/releases/download/v3.8.11/libarchive-3.8.11.tar.gz"
+sha256 = "900fe9fc7237c2b04f090f3c3648de8fe597525771f5035016537ce2d667d12b"
+spdx = "BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0"
+license_file = "COPYING"

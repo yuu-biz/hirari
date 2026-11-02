@@ -12,7 +12,7 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 
 - JDK 21。`JAVA_HOME` で指します。
 - Android SDK。`ANDROID_HOME` か、Git に入れない `local.properties` の `sdk.dir` で指します。
-- SDK のパッケージは `platforms;android-37.0`、`build-tools;36.0.0`、`platform-tools` です。足りないパッケージはビルド中に取得せず、エラーで止まります（`android.builder.sdkDownload=false`）。
+- SDK のパッケージは `platforms;android-37.0`、`build-tools;36.0.0`、`platform-tools`、`ndk;28.2.13676358`、`cmake;4.1.2` です。足りないパッケージはビルド中に取得せず、エラーで止まります（`android.builder.sdkDownload=false`）。`check` にも NDK が要ります。
 
 コマンドはリポジトリの最上位で実行します。Windows では `./gradlew` を `.\gradlew.bat` に読み替えます。
 
@@ -20,6 +20,8 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 |---|---|
 | ビルド、単体試験、lint のすべて（CI と同じ） | `./gradlew check` |
 | デバッグ版の APK | `./gradlew :app:assembleDebug` |
+| 書庫の端末上の試験（接続した端末かエミュレータで動く） | `./gradlew :core:archive:connectedDebugAndroidTest` |
+| コーパスの生成（`tools/corpus/build/corpus` に出る） | `./gradlew :tools:corpus:generateCorpus` |
 
 - モジュールどうしの依存は `docs/spec.md` の 8.2 節の表に従います。表にない依存を足すと、`build-logic` の検査で設定の段階で失敗します。
 - `check` はライセンスも検査します。Maven の依存は Licensee が、`build-logic` の許可リスト（`Licenses.kt`）と照らします。`third_party/` の下のディレクトリは、`verifyThirdParty` が `third_party/manifest.toml` と照らします。

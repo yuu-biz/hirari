@@ -12,6 +12,9 @@ internal object Sdk {
     const val COMPILE = 37
     const val TARGET = 37
     const val MIN = 28
+
+    /** docs/spec.md section 8.1. */
+    val ABIS = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 }
 
 internal val JAVA_TARGET = JavaVersion.VERSION_17
@@ -25,6 +28,7 @@ internal fun Project.namespaceFor(): String =
 internal fun ApplicationExtension.configureCommon() {
     compileSdk = Sdk.COMPILE
     defaultConfig.minSdk = Sdk.MIN
+    defaultConfig.ndk.abiFilters += Sdk.ABIS
     compileOptions {
         sourceCompatibility = JAVA_TARGET
         targetCompatibility = JAVA_TARGET
@@ -38,6 +42,7 @@ internal fun ApplicationExtension.configureCommon() {
 internal fun LibraryExtension.configureCommon() {
     compileSdk = Sdk.COMPILE
     defaultConfig.minSdk = Sdk.MIN
+    defaultConfig.ndk.abiFilters += Sdk.ABIS
     compileOptions {
         sourceCompatibility = JAVA_TARGET
         targetCompatibility = JAVA_TARGET
