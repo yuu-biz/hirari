@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -51,36 +52,38 @@ class OpenBook internal constructor(
     }
 
     /** [decode] gets the bytes and whether the result is still wanted. */
-    private suspend fun <T> withBytes(index: Int, decode: (ByteArray, () -> Boolean) -> PageResult<T>): PageResult<T> {
-        val read = try {
-            bytes.read(pages[index])
-        } catch (_: CancellationException) {
-            currentCoroutineContext().ensureActive()
-            readError
-        } catch (_: Exception) {
-            readError
+    private suspend fun <T> withBytes(index: Int, decode: (ByteArray, () -> Boolean) -> PageResult<T>): PageResult<T> = try {
+        when (val read = bytes.read(pages[index])) {
+            is PageResult.Ready -> decodeWithTimeout(scope, decoding.dispatcher) { isActive -> decode(read.image, isActive) }
+            is PageResult.Failed -> read
+            is PageResult.Unsupported -> read
         }
-        val data = when (read) {
-            is PageResult.Ready -> read.image
-            is PageResult.Failed -> return read
-            is PageResult.Unsupported -> return read
-        }
-        return withTimeout { isActive -> decode(data, isActive) }
+    } catch (_: CancellationException) {
+        currentCoroutineContext().ensureActive()
+        readError
+    } catch (_: Exception) {
+        readError
+    } catch (_: OutOfMemoryError) {
+        readError
     }
+}
 
-    /**
-     * Runs [decode] on the decode dispatcher and gives up waiting after the timeout of section 3.7. The decode
-     * itself cannot be stopped, so it keeps its thread until it ends, and its result is dropped.
-     */
-    private suspend fun <T> withTimeout(decode: (() -> Boolean) -> PageResult<T>): PageResult<T> {
-        val caller = currentCoroutineContext()
-        val work = scope.async(decoding.dispatcher) { decode { isActive && caller.isActive } }
-        return try {
-            withTimeoutOrNull(ImageDecoding.DECODE_TIMEOUT_MILLIS) { work.await() } ?: timedOut
-        } catch (_: CancellationException) {
-            work.cancel()
-            caller.ensureActive()
-            readError
-        }
+/**
+ * Runs [decode] in [scope] on [dispatcher] and gives up waiting after the timeout of docs/spec.md section 3.7.
+ * A decode still queued by then never starts. One already running is told through its `isActive` that its
+ * result is not wanted. Inside `ImageDecoder` it cannot stop, so it keeps its thread until it ends, and its
+ * result is dropped.
+ */
+internal suspend fun <T> decodeWithTimeout(
+    scope: CoroutineScope,
+    dispatcher: CoroutineDispatcher,
+    decode: (() -> Boolean) -> PageResult<T>,
+): PageResult<T> {
+    val caller = currentCoroutineContext()
+    val work = scope.async(dispatcher) { decode { isActive && caller.isActive } }
+    return try {
+        withTimeoutOrNull(ImageDecoding.DECODE_TIMEOUT_MILLIS) { work.await() } ?: timedOut
+    } finally {
+        work.cancel()
     }
 }

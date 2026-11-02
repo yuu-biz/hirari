@@ -95,16 +95,21 @@ private fun decodeOnce(
             }
         }
     }
-    val from = PixelSize(decoded.width, decoded.height)
-    val output = shrinkToFit(planned!!.output, from)
     var bitmap = decoded
-    val steps = downscaleSteps(from, output).ifEmpty { if (decoded.config == Bitmap.Config.ARGB_8888) emptyList() else listOf(from) }
-    for (step in steps) {
-        val next = scaled(bitmap, step)
+    try {
+        val from = PixelSize(decoded.width, decoded.height)
+        val output = shrinkToFit(planned!!.output, from)
+        val steps = downscaleSteps(from, output).ifEmpty { if (decoded.config == Bitmap.Config.ARGB_8888) emptyList() else listOf(from) }
+        for (step in steps) {
+            val next = scaled(bitmap, step)
+            bitmap.recycle()
+            bitmap = next
+        }
+        bitmap.prepareToDraw()
+    } catch (e: Throwable) {
         bitmap.recycle()
-        bitmap = next
+        throw e
     }
-    bitmap.prepareToDraw()
     return PageResult.Ready(PreparedImage.Whole(bitmap, shape!!))
 }
 
@@ -113,7 +118,12 @@ private fun source(bytes: ByteArray): ImageDecoder.Source = ImageDecoder.createS
 /** [bitmap] scaled to [size] with a bilinear filter, in ARGB_8888. */
 private fun scaled(bitmap: Bitmap, size: PixelSize): Bitmap {
     val out = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
-    Canvas(out).drawBitmap(bitmap, null, Rect(0, 0, size.width, size.height), Paint(Paint.FILTER_BITMAP_FLAG))
+    try {
+        Canvas(out).drawBitmap(bitmap, null, Rect(0, 0, size.width, size.height), Paint(Paint.FILTER_BITMAP_FLAG))
+    } catch (e: Throwable) {
+        out.recycle()
+        throw e
+    }
     return out
 }
 

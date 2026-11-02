@@ -16,6 +16,7 @@ dependencies {
     implementation(project(":core:archive"))
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.junit)
 }
