@@ -140,7 +140,7 @@ private fun declaredPng(width: Int, height: Int): ByteArray {
 /** One image entry of the image corpus with what the book opener must return for it. */
 internal class ImageCase(val name: String, val bytes: ByteArray, val page: ExpectedPage)
 
-/** The image cases of docs/spec.md section 6.2 that M1 covers, plus the formats M1 recognizes but does not decode. */
+/** The image cases of docs/spec.md section 6.2, in one archive. HEIF and AVIF have no encoder here (see [heifCases]). */
 internal fun imageCases(): List<ImageCase> {
     val progressive = jpeg(rgbHalftone(600, 900), progressive = true)
     val pngBytes = png(rgbHalftone(400, 600))
@@ -169,7 +169,43 @@ internal fun imageCases(): List<ImageCase> {
             declaredPng(65535, 65535),
             ExpectedPage.TooLarge(65535, 65535, 65535L * 65535 * 4),
         ),
-        ImageCase("animation-later.gif", encode(indexed(200, 300), "gif"), ExpectedPage.ImageFeature("GIF")),
-        ImageCase("bitmap-later.bmp", encode(bgr(200, 300), "bmp"), ExpectedPage.ImageFeature("BMP")),
-    )
+        ImageCase("still.gif", encode(indexed(200, 300), "gif"), ExpectedPage.Ready(200, 300)),
+        ImageCase("animated.gif", animatedGif(listOf(indexed(200, 300), indexed(300, 200).let(::rotated))), ExpectedPage.Ready(200, 300)),
+        ImageCase("imageio.bmp", encode(bgr(200, 300), "bmp"), ExpectedPage.Ready(200, 300)),
+        ImageCase("cmyk.jpg", cmykJpeg(400, 600), ExpectedPage.Ready(400, 600)),
+        ImageCase("flat-baseline.jpg", flatJpeg(64, 96, JpegProcess.Baseline), ExpectedPage.Ready(64, 96)),
+        ImageCase("flat-12-bit.jpg", flatJpeg(64, 96, JpegProcess.Extended12Bit), ExpectedPage.ImageFeature("12-bit JPEG")),
+        ImageCase("flat-lossless.jpg", flatJpeg(64, 96, JpegProcess.Lossless), ExpectedPage.ImageFeature("lossless JPEG")),
+        ImageCase("lossless.webp", losslessWebp(120, 180, 0x3366cc), ExpectedPage.Ready(120, 180)),
+        ImageCase("animated.webp", animatedWebp(120, 180, listOf(0xcc3333, 0x3333cc)), ExpectedPage.Ready(120, 180)),
+        ImageCase("codestream.jxl", byteArrayOf(0xff.toByte(), 0x0a) + ByteArray(64), ExpectedPage.ImageFeature("JPEG XL")),
+        ImageCase("tall.png", tallPng(800, 50_000), ExpectedPage.Ready(800, 50_000)),
+    ) + listOf(1, 4, 8, 16, 24, 32).map { bits ->
+        ImageCase("bmp-%02d-bit.bmp".format(bits), bmp(203, 301, bits), ExpectedPage.Ready(203, 301))
+    } + heifCases()
+}
+
+/**
+ * Files that are HEIF and AVIF by their `ftyp` brands and hold nothing else. The JDK has no encoder for either,
+ * so these check only that a decoder error on them reads as a missing decoder (docs/spec.md section 3.6).
+ */
+private fun heifCases() = listOf(
+    ImageCase("ftyp-only.heic", ftypOnly("heic", "mif1", "heic"), ExpectedPage.ImageFeature("HEIF")),
+    ImageCase("ftyp-only.avif", ftypOnly("avif", "mif1", "avif"), ExpectedPage.ImageFeature("AVIF")),
+)
+
+private fun rotated(image: BufferedImage): BufferedImage {
+    val out = BufferedImage(image.height, image.width, image.type, image.colorModel as IndexColorModel)
+    for (y in 0 until image.height) for (x in 0 until image.width) out.raster.setSample(y, x, 0, image.raster.getSample(x, y, 0))
+    return out
+}
+
+/** A grayscale halftone [width] x [height], taller than 1:3, which the reader shows as tiles (section 3.7). */
+private fun tallPng(width: Int, height: Int): ByteArray {
+    val image = BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY)
+    val raster = image.raster
+    for (y in 0 until height) for (x in 0 until width) {
+        raster.setSample(x, y, 0, gray(halftoneLevel(x, y % 2000, width, 2000)))
+    }
+    return png(image)
 }

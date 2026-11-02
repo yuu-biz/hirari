@@ -62,6 +62,13 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
             val shape = describe(book.shape(page.index))
             if (shape != actual) problems += "${page.name}: shape gave $shape"
         }
+        when (val raw = book.raw(page.index)) {
+            is PageResult.Ready -> {
+                val fromRaw = describe(book.page(page.index, target, raw.image))
+                if (fromRaw != actual) problems += "${page.name}: from its raw bytes gave $fromRaw"
+            }
+            else -> if (describe(raw) != actual) problems += "${page.name}: raw gave ${describe(raw)}"
+        }
     }
     return problems
 }

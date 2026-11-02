@@ -6,6 +6,7 @@ import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.graphics.Paint
 import android.graphics.Rect
+import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
@@ -23,10 +24,13 @@ internal fun decodePage(
     budgetBytes: Long,
     isActive: () -> Boolean,
 ): PageResult<PreparedImage> {
-    val type = sniffImage(bytes) ?: return notAnImage
-    val averagingLimit = AVERAGING_SAMPLE_LIMIT[type] ?: return unsupportedType(type)
+    val (type, codec) = when (val found = platformCodec(bytes)) {
+        is Found.Decodable -> found
+        is Found.Undecodable -> return found.result
+    }
+    val averagingLimit = codec.averagingLimit
     val bytesPerPixel = if (isSixteenBitPng(bytes)) 8 else 4
-    return decoding {
+    return decoding(type, codec, bytes) {
         try {
             decodeOnce(bytes, target, averagingLimit, bytesPerPixel, budgetBytes, isActive, extraSample = 1)
         } catch (_: OutOfMemoryError) {
@@ -41,9 +45,11 @@ internal fun decodePage(
 
 /** The size of the image in [bytes] from its header alone. */
 internal fun decodeShape(bytes: ByteArray): PageResult<PageShape.Known> {
-    val type = sniffImage(bytes) ?: return notAnImage
-    if (type !in AVERAGING_SAMPLE_LIMIT) return unsupportedType(type)
-    return decoding {
+    val (type, codec) = when (val found = platformCodec(bytes)) {
+        is Found.Decodable -> found
+        is Found.Undecodable -> return found.result
+    }
+    return decoding(type, codec, bytes) {
         try {
             ImageDecoder.decodeBitmap(source(bytes)) { _, info, _ -> throw HeaderRead(info.size.width, info.size.height) }
             corrupt
@@ -54,19 +60,47 @@ internal fun decodeShape(bytes: ByteArray): PageResult<PageShape.Known> {
     }
 }
 
-/** Runs [block] and turns whatever the decoder throws into a page result (docs/spec.md section 2.4). */
-private inline fun <T> decoding(block: () -> PageResult<T>): PageResult<T> = try {
-    block()
-} catch (e: CancellationException) {
-    throw e
-} catch (refused: Refused) {
-    PageResult.Unsupported(refused.kind)
-} catch (e: ImageDecoder.DecodeException) {
-    decodeFailure(e.error)
-} catch (_: IOException) {
-    corrupt
-} catch (_: RuntimeException) {
-    corrupt
+private sealed interface Found {
+    data class Decodable(val type: ImageType, val codec: Codec.Platform) : Found
+
+    data class Undecodable(val result: PageResult.Unsupported) : Found
+}
+
+/** The type of [bytes] and the platform decoder for it, or why there is none. */
+private fun platformCodec(bytes: ByteArray): Found {
+    val type = sniffImage(bytes) ?: return Found.Undecodable(notAnImage)
+    return when (val codec = codecFor(type)) {
+        is Codec.Platform -> Found.Decodable(type, codec)
+        is Codec.Missing -> Found.Undecodable(PageResult.Unsupported(UnsupportedKind.ImageFeature(codec.feature)))
+    }
+}
+
+/**
+ * Runs [block] and turns whatever the decoder throws into a page result (docs/spec.md section 2.4). Data the
+ * decoder calls malformed is an unsupported feature when the device may lack the decoder for [type], or when
+ * the JPEG frame header names a coding process 8-bit decoders lack (section 3.6).
+ */
+private inline fun <T> decoding(type: ImageType, codec: Codec.Platform, bytes: ByteArray, block: () -> PageResult<T>): PageResult<T> {
+    val result = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (refused: Refused) {
+        PageResult.Unsupported(refused.kind)
+    } catch (e: ImageDecoder.DecodeException) {
+        decodeFailure(e.error)
+    } catch (_: IOException) {
+        corrupt
+    } catch (_: RuntimeException) {
+        corrupt
+    }
+    if (result != corrupt) return result
+    val feature = when {
+        codec.needsDeviceDecoder -> type.displayName
+        type == ImageType.Jpeg -> jpegFeature(bytes)
+        else -> null
+    }
+    return feature?.let { PageResult.Unsupported(UnsupportedKind.ImageFeature(it)) } ?: result
 }
 
 private fun decodeOnce(

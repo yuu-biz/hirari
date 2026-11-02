@@ -1,6 +1,5 @@
 package io.github.yuubiz.hirari.core.image
 
-import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -10,31 +9,6 @@ data class PixelSize(val width: Int, val height: Int) {
         require(width > 0 && height > 0) { "empty size ${width}x$height" }
     }
 }
-
-/**
- * The image types M1 decodes, each with the largest sample size at which its decoder still averages pixels
- * rather than picking them (docs/spec.md section 5.3). JPEG scales in the DCT down to 1/8. libwebp's scaler
- * averages at any ratio. PNG sampling picks rows and columns, so PNG decodes whole and is halved afterwards.
- */
-internal val AVERAGING_SAMPLE_LIMIT: Map<ImageType, Int> = mapOf(
-    ImageType.Jpeg to 8,
-    ImageType.WebP to Int.MAX_VALUE,
-    ImageType.Png to 1,
-)
-
-/** What the error card shows for a type M1 does not decode yet. */
-internal val ImageType.displayName: String
-    get() = when (this) {
-        ImageType.Jpeg -> "JPEG"
-        ImageType.Png -> "PNG"
-        ImageType.WebP -> "WebP"
-        ImageType.Gif -> "GIF"
-        ImageType.Bmp -> "BMP"
-        ImageType.Heif -> "HEIF"
-        ImageType.Avif -> "AVIF"
-        ImageType.JpegXl -> "JPEG XL"
-        ImageType.PdfPage -> "PDF"
-    }
 
 /** The rules of docs/spec.md section 3.7 that do not depend on the device. */
 object DecodeLimits {

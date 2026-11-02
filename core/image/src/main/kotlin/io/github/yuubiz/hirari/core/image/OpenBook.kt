@@ -38,12 +38,25 @@ class OpenBook internal constructor(
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob())
 
-    /** The page at [index] scaled to fit [target], in pixels. */
-    suspend fun page(index: Int, target: PixelSize): PageResult<PreparedImage> =
-        withBytes(index) { data, isActive -> decodePage(data, target, decoding.budgetBytes, isActive) }
+    /**
+     * The encoded bytes of the page at [index], for the raw-data prefetch layer to hold (docs/spec.md section
+     * 5.3). [page] and [shape] decode from them without reading the book again.
+     */
+    suspend fun raw(index: Int): RawResult = guarded {
+        when (val read = bytes.read(pages[index])) {
+            is PageResult.Ready -> PageResult.Ready(RawPage.Encoded(read.image))
+            is PageResult.Failed -> read
+            is PageResult.Unsupported -> read
+        }
+    }
+
+    /** The page at [index] scaled to fit [target], in pixels, decoded from [raw] when it is given. */
+    suspend fun page(index: Int, target: PixelSize, raw: RawPage? = null): PageResult<PreparedImage> =
+        withBytes(index, raw) { data, isActive -> decodePage(data, target, decoding.budgetBytes, isActive) }
 
     /** The size of the page at [index], from the image header alone (docs/spec.md sections 2.5 and 5.3). */
-    suspend fun shape(index: Int): PageResult<PageShape.Known> = withBytes(index) { data, _ -> decodeShape(data) }
+    suspend fun shape(index: Int, raw: RawPage? = null): PageResult<PageShape.Known> =
+        withBytes(index, raw) { data, _ -> decodeShape(data) }
 
     /** Stops the decodes in progress at their next check. A decode past its header finishes and is dropped. */
     override fun close() {
@@ -52,12 +65,24 @@ class OpenBook internal constructor(
     }
 
     /** [decode] gets the bytes and whether the result is still wanted. */
-    private suspend fun <T> withBytes(index: Int, decode: (ByteArray, () -> Boolean) -> PageResult<T>): PageResult<T> = try {
-        when (val read = bytes.read(pages[index])) {
-            is PageResult.Ready -> decodeWithTimeout(scope, decoding.dispatcher) { isActive -> decode(read.image, isActive) }
-            is PageResult.Failed -> read
-            is PageResult.Unsupported -> read
+    private suspend fun <T> withBytes(
+        index: Int,
+        raw: RawPage?,
+        decode: (ByteArray, () -> Boolean) -> PageResult<T>,
+    ): PageResult<T> = guarded {
+        val data = when (raw) {
+            is RawPage.Encoded -> raw.bytes
+            null -> when (val read = bytes.read(pages[index])) {
+                is PageResult.Ready -> read.image
+                is PageResult.Failed -> return@guarded read
+                is PageResult.Unsupported -> return@guarded read
+            }
         }
+        decodeWithTimeout(scope, decoding.dispatcher) { isActive -> decode(data, isActive) }
+    }
+
+    private suspend inline fun <T> guarded(block: () -> PageResult<T>): PageResult<T> = try {
+        block()
     } catch (_: CancellationException) {
         currentCoroutineContext().ensureActive()
         readError
@@ -67,6 +92,19 @@ class OpenBook internal constructor(
         readError
     }
 }
+
+/** The encoded data of a page as the raw-data prefetch layer holds it (docs/spec.md section 5.3). */
+sealed interface RawPage {
+    /** What holding it takes from the memory budget. */
+    val byteCount: Long
+
+    /** The bytes of an image entry or file. */
+    class Encoded internal constructor(internal val bytes: ByteArray) : RawPage {
+        override val byteCount: Long get() = bytes.size.toLong()
+    }
+}
+
+typealias RawResult = PageResult<RawPage>
 
 /**
  * Runs [decode] in [scope] on [dispatcher] and gives up waiting after the timeout of docs/spec.md section 3.7.

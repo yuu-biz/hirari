@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
 import io.github.yuubiz.hirari.core.model.PageResult
+import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -8,14 +9,18 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
+import java.io.IOException
+import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class OpenBookTest {
     private val decoding = ImageDecoding(budgetBytes = 64L shl 20, parallelism = 1)
@@ -74,4 +79,45 @@ class OpenBookTest {
         callerGoesOn.complete()
         assertEquals(timedOut, result.await())
     }
+
+    @Test
+    fun aPageDecodesFromItsRawBytesWithoutReadingTheBookAgain() = runBlocking {
+        val opens = AtomicInteger()
+        val data = "not an image".toByteArray()
+        val files = listOf(
+            FolderFile("001.jpg", size = data.size.toLong()) {
+                opens.incrementAndGet()
+                MemorySource(data)
+            },
+        )
+        val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
+        val raw = (book.raw(0) as PageResult.Ready).image
+        assertEquals(data.size.toLong(), raw.byteCount)
+        assertEquals(1, opens.get())
+        assertEquals(notAnImage, book.page(0, PixelSize(1080, 1920), raw))
+        assertEquals(notAnImage, book.shape(0, raw))
+        assertEquals(1, opens.get())
+        book.close()
+    }
+
+    @Test
+    fun aFileThatFailsToReadGivesNoRawBytes() = runTest {
+        val files = listOf(FolderFile("001.jpg", size = null) { throw IOException("gone") })
+        val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
+        assertEquals(readError, book.raw(0))
+        book.close()
+    }
+}
+
+private class MemorySource(private val data: ByteArray) : ByteSource {
+    override val size: Long = data.size.toLong()
+
+    override fun read(offset: Long, dst: ByteBuffer): Int {
+        if (offset >= size) return -1
+        val count = minOf(dst.remaining(), (size - offset).toInt())
+        dst.put(data, offset.toInt(), count)
+        return count
+    }
+
+    override fun close() = Unit
 }

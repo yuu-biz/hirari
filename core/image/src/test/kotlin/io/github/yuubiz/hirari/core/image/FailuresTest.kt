@@ -4,7 +4,6 @@ import android.graphics.ImageDecoder
 import io.github.yuubiz.hirari.core.archive.ArchiveFailure
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.model.FailureReason
-import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
 import org.junit.Assert.assertEquals
@@ -32,11 +31,5 @@ class FailuresTest {
         assertEquals(PageResult.Failed(FailureReason.Corrupt, false), decodeFailure(ImageDecoder.DecodeException.SOURCE_MALFORMED_DATA))
         assertEquals(PageResult.Failed(FailureReason.ReadError, true), decodeFailure(ImageDecoder.DecodeException.SOURCE_EXCEPTION))
         assertEquals(PageResult.Failed(FailureReason.Corrupt, false), decodeFailure(-1))
-    }
-
-    @Test
-    fun aTypeM1DoesNotDecodeIsAnUnsupportedFeatureNamedForTheCard() {
-        assertEquals(PageResult.Unsupported(UnsupportedKind.ImageFeature("JPEG XL")), unsupportedType(ImageType.JpegXl))
-        assertEquals(setOf(ImageType.Jpeg, ImageType.Png, ImageType.WebP), AVERAGING_SAMPLE_LIMIT.keys)
     }
 }

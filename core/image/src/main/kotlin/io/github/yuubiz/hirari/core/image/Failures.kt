@@ -4,7 +4,6 @@ import android.graphics.ImageDecoder
 import io.github.yuubiz.hirari.core.archive.ArchiveFailure
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.model.FailureReason
-import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
 
@@ -32,10 +31,6 @@ internal fun decodeFailure(error: Int): PageResult.Failed = when (error) {
     ImageDecoder.DecodeException.SOURCE_EXCEPTION -> readError
     else -> corrupt
 }
-
-/** The type was sniffed, but M1 does not decode it. */
-internal fun unsupportedType(type: ImageType) =
-    PageResult.Unsupported(UnsupportedKind.ImageFeature(type.displayName))
 
 internal val notAnImage = PageResult.Unsupported(UnsupportedKind.NotAnImage)
 internal val corrupt = PageResult.Failed(FailureReason.Corrupt, retryable = false)
