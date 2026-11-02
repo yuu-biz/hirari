@@ -26,8 +26,11 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.io.IOException
 import java.time.Instant
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -44,7 +47,9 @@ class SettingsTransferTest {
     private val server = SmbServer(displayName = "NAS", host = "nas.local", port = 1445, share = "books", basePath = "manga", domain = domain, user = user)
 
     /** A fresh install: its own database, credential database and settings file. */
-    private suspend fun <T> withStorage(block: suspend (Storage) -> T): T {
+    private suspend fun <T> withStorage(block: suspend (Storage) -> T): T = withDatabase { storage, _ -> block(storage) }
+
+    private suspend fun <T> withDatabase(block: suspend (Storage, HirariDatabase) -> T): T {
         val job = Job()
         val database = inMemoryDatabase()
         val credentials = inMemoryCredentialDatabase()
@@ -53,7 +58,7 @@ class SettingsTransferTest {
         try {
             val settings = openSettings(CoroutineScope(Dispatchers.IO + job)) { file }
             val thumbnails = DiskThumbnailCache(folder.newFolder(), thumbs.thumbs())
-            return block(Storage(database, credentials, softwareCipher(), settings, thumbnails))
+            return block(Storage(database, credentials, softwareCipher(), settings, thumbnails), database)
         } finally {
             job.cancelAndJoin()
             database.close()
@@ -207,6 +212,67 @@ class SettingsTransferTest {
             for (text in listOf("hello", "[1]", """{"settings": {}}""", """{"format": "one"}""")) {
                 assertEquals(ImportPreparation.NotASettingsFile, storage.transfer.prepare(text), text)
             }
+        }
+    }
+
+    private data class Stored(
+        val settings: GlobalSettings,
+        val overrides: List<BookOverridesRow>,
+        val servers: List<LocationRow>,
+        val progress: List<BookProgressRow>,
+        val bookmarks: List<BookmarkRow>,
+        val history: List<HistoryRow>,
+    )
+
+    private suspend fun Storage.stored(database: HirariDatabase) = Stored(
+        settings.settings.first(),
+        database.bookOverrides().all(),
+        database.locations().all(),
+        database.bookProgress().all(),
+        database.bookmarks().all(),
+        database.history().all(),
+    )
+
+    /** An install that already holds data a file would replace, and a file that would change every part of it. */
+    private suspend fun Storage.holdingOtherData(exported: String): ImportPlan {
+        settings.update { GlobalSettings(tapBandPercent = 40) }
+        val book = BookId("kept")
+        books.setOverrides(book, BookOverrides(direction = ReadingDirection.RightToLeft))
+        progress.save(listOf(BookProgress(book, ReadState.Reading, ReadingPosition.Image(2, 9), at(-5))))
+        bookmarks.add(book, ReadingPosition.Image(1, 9), "kept", at(-4))
+        history.record(book, at(-3), limit = 100)
+        return assertIs<ImportPreparation.Ready>(transfer.prepare(exported)).plan
+    }
+
+    @Test
+    fun `a settings write that fails changes nothing`() = runBlocking {
+        val (_, exported) = withStorage { storage -> storage.fill() to storage.transfer.export(includeReading = true) }
+        withDatabase { storage, database ->
+            val plan = storage.holdingOtherData(exported)
+            val before = storage.stored(database)
+            val broken = object : SettingsRepository {
+                override val settings = storage.settings.settings
+
+                override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = throw IOException("disk full")
+            }
+            assertFailsWith<IOException> { SettingsTransfer(broken, database).apply(plan) }
+            assertEquals(before, storage.stored(database))
+        }
+    }
+
+    @Test
+    fun `a database write that fails halfway changes nothing`() = runBlocking {
+        val (_, exported) = withStorage { storage -> storage.fill() to storage.transfer.export(includeReading = true) }
+        withDatabase { storage, database ->
+            val plan = storage.holdingOtherData(exported)
+            val clash = plan.bookmarks.single().copy(id = 7)
+            val torn = ImportPlan(plan.settings, plan.bookOverrides, plan.servers, plan.progress, listOf(clash, clash.copy(label = "other")), plan.history)
+            val before = storage.stored(database)
+            assertFails { storage.transfer.apply(torn) }
+            assertEquals(before, storage.stored(database))
+            storage.transfer.apply(plan)
+            assertEquals(everything, storage.settings.settings.first())
+            assertEquals(1, database.locations().all().size)
         }
     }
 

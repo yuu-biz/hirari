@@ -89,7 +89,6 @@ sealed interface ImportPreparation {
 class SettingsTransfer internal constructor(
     private val settings: SettingsRepository,
     private val database: HirariDatabase,
-    private val locations: LocationRepository,
 ) {
     /** [includeReading] adds positions, read states, bookmarks and history. */
     suspend fun export(includeReading: Boolean): String {
@@ -132,9 +131,11 @@ class SettingsTransfer internal constructor(
         return ImportPreparation.Ready(plan, changes(plan))
     }
 
+    /**
+     * Applies [plan] all or nothing. The database rows, the added servers and the settings go in one transaction
+     * and the settings file is written last, so an error before it leaves everything as it was.
+     */
     suspend fun apply(plan: ImportPlan) {
-        settings.update { plan.settings }
-        val newServers = newServers(plan)
         database.withWriteTransaction {
             database.bookOverrides().upsert(
                 plan.bookOverrides.map { (book, overrides) -> BookOverridesRow(book.value, overrides.toJson().toString()) },
@@ -143,8 +144,9 @@ class SettingsTransfer internal constructor(
             database.bookmarks().insert(newBookmarks(plan))
             database.history().upsert(newerHistory(plan))
             database.history().keepNewest(plan.settings.historyLimit)
+            newServers(plan).forEach { database.locations().insert(it.toRow(id = 0, credential = null)) }
+            settings.update { plan.settings }
         }
-        newServers.forEach { locations.addSmbShare(it, password = null) }
     }
 
     private suspend fun changes(plan: ImportPlan): ImportChanges {
