@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.image.thumbnail
 
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
@@ -52,6 +53,12 @@ internal sealed interface Made {
 internal fun BookFailure.made(): Made = when (this) {
     BookFailure.Encrypted, BookFailure.Corrupt, BookFailure.Truncated -> Made.Unreadable
     BookFailure.NotFound, BookFailure.NoPermission, BookFailure.NoRoomForCopy, BookFailure.ReadError -> Made.Unavailable
+}
+
+/** Why listing an archive stopped before it found a page: a read that failed may pass, a broken archive does not. */
+internal fun FailureReason.made(): Made = when (this) {
+    FailureReason.Corrupt, FailureReason.Truncated -> Made.Unreadable
+    FailureReason.ReadError, FailureReason.ConnectionLost, FailureReason.Timeout -> Made.Unavailable
 }
 
 /** A page that did not give an image. A failure that [PageResult.Failed.retryable] allows again is not final. */
