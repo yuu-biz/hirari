@@ -45,11 +45,15 @@ private class FakeLoader(
     val cancelled = mutableListOf<Int>()
     var gate: CompletableDeferred<Unit>? = null
 
+    /** Pages that wait here besides [gate]. */
+    val pageGates = mutableMapOf<Int, CompletableDeferred<Unit>>()
+
     override suspend fun shape(page: Int): PageResult<PageShape.Known> = shapes[page] ?: PageResult.Ready(TALL)
 
     override suspend fun prepare(page: Int, size: PixelSize, crop: Side?): PageResult<String> {
         try {
             gate?.await()
+            pageGates[page]?.await()
             delay(1)
         } catch (e: CancellationException) {
             cancelled += page
@@ -178,5 +182,39 @@ class PrefetcherTest {
         advanceUntilIdle()
         assertIs<PreparedPage.Image<String>>(reader.prefetcher[PageView.One(0)]!!.pages.single())
         assertTrue(reader.prefetcher.failedPages.isEmpty())
+    }
+
+    @Test
+    fun aPairCancelledHalfwayReleasesThePageItHadReady() = runTest {
+        val loader = FakeLoader().apply { pageGates[1] = CompletableDeferred() }
+        val reader = reader(pages = 8, config = spreadConfig(), viewport = LANDSCAPE, loader = loader)
+        advanceUntilIdle()
+        assertNull(reader.prefetcher[PageView.Two(0, 1)])
+        reader.apply(ReaderEvent.GoTo(7))
+        advanceUntilIdle()
+        assertTrue(1 in loader.cancelled)
+        assertTrue(reader.released.any { it.startsWith("0@") }, "released ${reader.released}")
+    }
+
+    @Test
+    fun trimmingCancelsTheViewsBeingPreparedOffScreen() = runTest {
+        val loader = FakeLoader().apply { gate = CompletableDeferred() }
+        val reader = reader(pages = 8, start = 3, loader = loader)
+        runCurrent()
+        reader.prefetcher.trim()
+        reader.apply(ReaderEvent.Tick(0))
+        loader.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(setOf(3), reader.preparedPages())
+    }
+
+    @Test
+    fun prefetchComesBackOnceTheReaderMovesAfterATrim() = runTest {
+        val reader = reader(pages = 8, start = 3)
+        advanceUntilIdle()
+        reader.prefetcher.trim()
+        reader.turn(Turn.Forward)
+        advanceUntilIdle()
+        assertEquals(setOf(3, 4, 5, 6), reader.preparedPages())
     }
 }

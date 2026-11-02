@@ -8,10 +8,9 @@ import io.github.yuubiz.hirari.core.model.Side
 import io.github.yuubiz.hirari.feature.reader.Turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * The shape a page whose header could not be read takes in the layout: a portrait page, so it pairs like one and
@@ -83,6 +82,9 @@ class Prefetcher<T>(
     private val failedShapes = HashSet<Int>()
     private var last: PrefetchInput? = null
 
+    /** The view on screen when memory ran low. Prefetch stays paused until the reader leaves it. */
+    private var trimmedOn: PageView? = null
+
     val failedPages: Map<Int, PageResult<Nothing>> get() = failures
 
     /** The prepared [view], even when it is stale, so a view keeps drawing until its replacement is ready. */
@@ -90,6 +92,7 @@ class Prefetcher<T>(
 
     fun update(input: PrefetchInput) {
         last = input
+        if (trimmedOn != input.views[input.current]) trimmedOn = null
         val resident = Resident(views = cache.filter { (view, prepared) -> prepared.target == input.targets(view) }.keys)
         val plan = planPrefetch(
             PrefetchRequest(
@@ -102,7 +105,7 @@ class Prefetcher<T>(
                 rawBytes = { 0L },
                 resident = resident,
                 depths = depths,
-                paused = input.paused,
+                paused = input.paused || trimmedOn != null,
             ),
         )
         val dropped = cache.keys.filter { it !in plan.keep.views && it !in input.shown }
@@ -127,12 +130,17 @@ class Prefetcher<T>(
         if (dropped.isNotEmpty()) listener.onChanged()
     }
 
-    /** `TRIM_MEMORY_RUNNING_LOW` and above: everything but the views on screen goes. */
+    /**
+     * `TRIM_MEMORY_RUNNING_LOW` and above: everything but the views on screen goes, and so do the jobs that would
+     * bring it back, until the reader moves to another view.
+     */
     fun trim() {
-        val shown = last?.shown.orEmpty()
-        val dropped = cache.keys.filter { it !in shown }
+        val input = last ?: return
+        trimmedOn = input.views[input.current]
+        val dropped = cache.keys.filter { it !in input.shown }
         dropped.forEach(::evict)
         if (dropped.isNotEmpty()) listener.onChanged()
+        update(input)
     }
 
     /** Reads [page] again: its shape if that failed, then the views that hold it. */
@@ -171,11 +179,17 @@ class Prefetcher<T>(
     }
 
     private fun launchPrepare(target: ViewTarget): Job = scope.launch {
-        val pages = coroutineScope {
-            target.view.pages.mapIndexed { i, page -> async { preparePage(page, target.sizes[i], target.crop) } }.awaitAll()
+        val pages = arrayOfNulls<PreparedPage<T>>(target.view.pages.size)
+        try {
+            coroutineScope {
+                target.view.pages.forEachIndexed { i, page -> launch { pages[i] = preparePage(page, target.sizes[i], target.crop) } }
+            }
+        } catch (e: CancellationException) {
+            pages.forEach { if (it is PreparedPage.Image) release(it.image) }
+            throw e
         }
         running.remove(target)
-        cache.put(target.view, PreparedView(target, pages))?.let { old ->
+        cache.put(target.view, PreparedView(target, pages.map { it!! }))?.let { old ->
             old.pages.forEach { if (it is PreparedPage.Image) release(it.image) }
         }
         listener.onChanged()

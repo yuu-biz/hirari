@@ -11,7 +11,6 @@ import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.Side
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageLoader
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.withContext
 
 /**
  * Pages of [book] as HARDWARE bitmaps (Q2 in docs/spec.md section 10). The upload to the GPU happens here, on
@@ -23,7 +22,12 @@ class BookPageLoader(private val book: OpenBook, private val dispatcher: Corouti
     override suspend fun prepare(page: Int, size: PixelSize, crop: Side?): PageResult<Bitmap> {
         val whole = if (crop == null) size else PixelSize(size.width * 2, size.height)
         return when (val result = book.page(page, whole)) {
-            is PageResult.Ready -> withContext(dispatcher) { toHardware(result.image, crop) }
+            is PageResult.Ready -> handOff(
+                dispatcher,
+                result.image,
+                releaseInput = { (it as PreparedImage.Whole).bitmap.recycle() },
+                releaseOutput = { (it as? PageResult.Ready)?.image?.recycle() },
+            ) { toHardware(it, crop) }
             is PageResult.Failed -> result
             is PageResult.Unsupported -> result
         }
