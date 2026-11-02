@@ -12,6 +12,7 @@ import androidx.room3.Room
 import androidx.room3.RoomDatabase
 import androidx.room3.Upsert
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -39,10 +40,12 @@ data class ThumbKey(
     val coverEntry: Int?,
     /** The long side in pixels. */
     val sizePx: Int,
+    /** The binding direction picks the half of a cover scanned as a spread, so another direction is another thumbnail. */
+    val direction: ReadingDirection,
 ) {
     /** The SHA-1 of the fields, each written out and ended by a NUL byte. */
     val digest: String by lazy {
-        val text = listOf(book.value, modified.toEpochMilli(), byteSize, coverEntry ?: -1, sizePx).joinToString("") { "$it\u0000" }
+        val text = listOf(book.value, modified.toEpochMilli(), byteSize, coverEntry ?: -1, sizePx, direction.name).joinToString("") { "$it\u0000" }
         MessageDigest.getInstance("SHA-1").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
 }

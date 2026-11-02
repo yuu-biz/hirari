@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.core.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -38,7 +39,7 @@ class ThumbnailCacheTest {
     @After
     fun close() = index.close()
 
-    private fun key(name: String) = ThumbKey(BookId(name), Instant.ofEpochMilli(1000), byteSize = 5000, coverEntry = null, sizePx = 300)
+    private fun key(name: String) = ThumbKey(BookId(name), Instant.ofEpochMilli(1000), byteSize = 5000, coverEntry = null, sizePx = 300, direction = ReadingDirection.RightToLeft)
 
     private fun bytes(size: Int) = ByteArray(size) { it.toByte() }
 
@@ -55,6 +56,7 @@ class ThumbnailCacheTest {
             base.copy(byteSize = 5001),
             base.copy(coverEntry = 0),
             base.copy(sizePx = 301),
+            base.copy(direction = ReadingDirection.LeftToRight),
         )
         assertEquals(others.size + 1, (others + base).map { it.digest }.toSet().size)
     }
