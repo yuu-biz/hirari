@@ -24,7 +24,7 @@ class CorpusTest {
     @Test
     fun `two runs write the same files byte for byte`() {
         val first = contents(generate())
-        assertEquals(corpusCases().keys + MANIFEST, first.keys)
+        assertEquals(corpusCases().keys + MANIFEST + PAGES_MANIFEST, first.keys)
         assertEquals(first, contents(generate()))
     }
 

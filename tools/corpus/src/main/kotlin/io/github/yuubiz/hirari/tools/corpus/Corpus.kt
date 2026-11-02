@@ -3,7 +3,7 @@ package io.github.yuubiz.hirari.tools.corpus
 import java.io.File
 import java.nio.charset.Charset
 
-/** A corpus file and what the archive layer must report for it. */
+/** A corpus file and what the archive layer and the book opener must report for it. */
 class CorpusCase(val bytes: ByteArray, val expected: Expected)
 
 private val CP932: Charset = Charset.forName("windows-31j")
@@ -121,8 +121,22 @@ private fun declaredHugeZip(): CorpusCase {
     val normal = file("002.jpg", 3000, 2)
     return CorpusCase(
         writeZip(listOf(huge, normal)).bytes,
-        Expected.Opens(listOf(unsupported(huge, "too-large"), readable(normal))),
+        Expected.Opens(
+            listOf(
+                ExpectedEntry("001.jpg", ExpectedRead.Unsupported("too-large"), ExpectedPage.TooLarge(0, 0, huge.declaredSize)),
+                readable(normal),
+            ),
+        ),
     )
+}
+
+/** The images of [imageCases] in one archive, stored as is, with a text file that is not a page. */
+private fun imagesZip(): CorpusCase {
+    val images = imageCases()
+    val notes = file("notes.txt", 200, 1)
+    val entries = images.map { ZipEntry(ascii(it.name), it.bytes, Method.Stored) } + notes
+    val expected = images.map { ExpectedEntry(it.name, ExpectedRead.Data(it.bytes), it.page) } + readable(notes)
+    return CorpusCase(writeZip(entries).bytes, Expected.Opens(expected))
 }
 
 private fun nameCases(): Map<String, CorpusCase> {
@@ -202,14 +216,18 @@ fun corpusCases(): Map<String, CorpusCase> = buildMap {
     put("zip/not-a-zip.zip", CorpusCase(ascii("This is not a ZIP archive.\n"), Expected.OpenFails(Failure.Corrupt)))
     putAll(nameCases())
     putAll(truncatedCases())
+    put("zip/images.zip", imagesZip())
 }
 
 const val MANIFEST = "expected.tsv"
+const val PAGES_MANIFEST = "pages.tsv"
 
-/** Every corpus file by its path, with the expectations of all cases in [MANIFEST]. */
+/** Every corpus file by its path, with the archive expectations in [MANIFEST] and the page ones in [PAGES_MANIFEST]. */
 fun corpus(): Map<String, ByteArray> {
     val cases = corpusCases()
-    return cases.mapValues { it.value.bytes } + (MANIFEST to manifest(cases).toByteArray(Charsets.UTF_8))
+    return cases.mapValues { it.value.bytes } +
+        (MANIFEST to manifest(cases).toByteArray(Charsets.UTF_8)) +
+        (PAGES_MANIFEST to pagesManifest(cases).toByteArray(Charsets.UTF_8))
 }
 
 /** Writes the corpus into the directory given as the only argument. */
