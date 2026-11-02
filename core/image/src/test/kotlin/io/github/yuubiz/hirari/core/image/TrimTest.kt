@@ -194,7 +194,7 @@ class TrimTest {
     }
 
     @Test
-    fun aPairIsCheckedAgainAfterItsHeightsAreAligned() {
+    fun theVetoesOfAPageInAPairApplyToItsAlignedCut() {
         val narrow = scanMargins(portrait(PixelRect(72, 100, 290, 412)).luma(), PixelSize(362, 512)).trim(TrimStrength.Strongest)
         assertEquals(Insets(72, 100, 72, 100), narrow.cut)
         val tall = scanMargins(portrait(PixelRect(30, 0, 334, 512)).luma(), PixelSize(362, 512)).trim(TrimStrength.Strongest)
