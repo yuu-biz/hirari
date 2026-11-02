@@ -24,6 +24,7 @@ class StartUpTest {
 
     private fun given(reopen: ReopenLastBook, lastFolder: LastFolder? = folder, unfinished: Int = 0, historyLimit: Int = 100) {
         fixture.locations.rows.value = listOf(place)
+        fixture.grants.held += place.treeUri
         fixture.books.put(last)
         fixture.history.entries.value = listOf(HistoryEntry(last.id, T0))
         fixture.settings.value.value = fixture.settings.value.value.copy(reopenLastBook = reopen, libraryView = LibraryView.List, historyLimit = historyLimit)
@@ -72,7 +73,7 @@ class StartUpTest {
     @Test
     fun `a place that is gone or lost its grant leaves its folder and book out`() = runTest {
         given(ReopenLastBook.Immediately)
-        fixture.locations.rows.value = listOf(place.copy(permissionHeld = false))
+        fixture.grants.held.clear()
         assertEquals(StartPlan(), fixture.services.planStart())
 
         fixture.locations.rows.value = emptyList()

@@ -10,7 +10,6 @@ import android.util.Log
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.ImageDecoding
-import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.feature.library.LibraryServices
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
@@ -67,15 +66,11 @@ class HirariApp : Application() {
         runCatching { Class.forName(name, false, classLoader).classLoader === classLoader }.getOrDefault(false)
 
     /**
-     * Start-up reconciliation of the stored state with the system's (docs/spec.md sections 5.4 and 7): the SAF
-     * places against the persisted grants, and the thumbnail index against the files. Runs on [appScope], off the
-     * main thread, and a failure leaves the stale state until the next start.
+     * Start-up reconciliation of the thumbnail index against the files (docs/spec.md section 5.4). Runs on
+     * [appScope], off the main thread, and a failure leaves the stale state until the next start. The SAF grants
+     * are synced by the start's plan, which needs them first.
      */
     private suspend fun reconcile(storage: Storage) {
-        attempt("syncing the SAF grants") {
-            val granted = contentResolver.persistedUriPermissions.filter { it.isReadPermission }.mapTo(HashSet()) { UriString(it.uri.toString()) }
-            storage.locations.syncGrants(granted)
-        }
         attempt("reconciling the thumbnail cache") { storage.thumbnails.reconcile() }
     }
 

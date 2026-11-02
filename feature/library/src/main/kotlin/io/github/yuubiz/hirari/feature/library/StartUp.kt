@@ -36,9 +36,11 @@ const val FAILED_STARTS = 3
 
 /**
  * Counts this start and plans it. After [FAILED_STARTS] unfinished starts in a row, it forgets the last folder,
- * puts the view back to its default, and starts at home without the last book.
+ * puts the view back to its default, and starts at home without the last book. The places first take the grants
+ * the system holds now, so a place that lost its grant is not opened (docs/spec.md section 7).
  */
 suspend fun LibraryServices.planStart(): StartPlan {
+    locations.syncGrants(grants.held())
     val record = launch.beginStart()
     if (record.unfinishedStarts >= FAILED_STARTS) {
         launch.setLastFolder(null)
