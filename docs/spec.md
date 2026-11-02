@@ -1601,6 +1601,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | kotlinx.coroutines、kotlinx.serialization | 並行処理、設定の JSON | Apache-2.0 | Maven |
 | ImageDecoder、BitmapRegionDecoder、PdfRenderer、ICU の CharsetDetector | 画像、PDF、文字コードの判定 | プラットフォームに内蔵 | 同梱しない |
 | Licensee（Gradle プラグイン） | ライセンスの検査 | Apache-2.0 | ビルド時だけ |
+| tomlj | `third_party/manifest.toml` の読み込み | Apache-2.0。antlr4-runtime（BSD-3-Clause）、checker-qual（MIT）を伴う | ビルド時だけ。`build-logic` の中で使う |
 | Kotest、Jazzer、libFuzzer | 試験 | Apache-2.0（libFuzzer は Apache-2.0 WITH LLVM-exception） | 試験時だけ。配布物に入らない |
 
 方針は次のとおり。

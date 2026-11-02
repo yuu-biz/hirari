@@ -7,11 +7,13 @@ coreKtx = "1.19.1"
 lifecycle = "2.11.0"
 navigation = "2.10.2"
 licensee = "1.14.1"
+tomlj = "1.1.1"
 
 [libraries]
 android-gradle-plugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
 kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
 licensee-gradle-plugin = { group = "app.cash.licensee", name = "licensee-gradle-plugin", version.ref = "licensee" }
+tomlj = { group = "org.tomlj", name = "tomlj", version.ref = "tomlj" }
 compose-compiler-gradle-plugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
 
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

@@ -1,0 +1,11 @@
+# Native dependencies whose sources live under third_party/ (docs/spec.md section 8.5).
+# Every directory here needs one [[library]] entry; `./gradlew check` verifies this.
+#
+# [[library]]
+# name = "Display name"
+# version = "1.2.3"
+# directory = "directory under third_party/"
+# url = "where the source archive was downloaded from"
+# sha256 = "SHA-256 of that archive, lowercase hex"
+# spdx = "SPDX identifiers joined by ' AND ' (for a dual license, the chosen side only)"
+# license_file = "license text, relative to the directory"

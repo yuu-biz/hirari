@@ -7,6 +7,8 @@ dependencies {
     compileOnly(libs.kotlin.gradle.plugin)
     compileOnly(libs.compose.compiler.gradle.plugin)
     compileOnly(libs.licensee.gradle.plugin)
+    implementation(libs.tomlj)
+    testImplementation(kotlin("test-junit"))
 }
 
 gradlePlugin {
@@ -26,6 +28,10 @@ gradlePlugin {
         register("androidFeature") {
             id = "hirari.android.feature"
             implementationClass = "hirari.AndroidFeaturePlugin"
+        }
+        register("root") {
+            id = "hirari.root"
+            implementationClass = "hirari.RootPlugin"
         }
         register("jvmLibrary") {
             id = "hirari.jvm.library"

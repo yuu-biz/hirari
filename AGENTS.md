@@ -22,6 +22,8 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 | デバッグ版の APK | `./gradlew :app:assembleDebug` |
 
 - モジュールどうしの依存は `docs/spec.md` の 8.2 節の表に従います。表にない依存を足すと、`build-logic` の検査で設定の段階で失敗します。
+- `check` はライセンスも検査します。Maven の依存は Licensee が、`build-logic` の許可リスト（`Licenses.kt`）と照らします。`third_party/` の下のディレクトリは、`verifyThirdParty` が `third_party/manifest.toml` と照らします。
+- ライセンスの検査が効くことを CI で確かめるときは、捨てブランチで許可外の依存（例えば LGPL の `org.mariadb.jdbc:mariadb-java-client`）を `:app` に足し、そのブランチで CI を手動実行して失敗を見ます。確かめたらブランチを消します。
 - CI（`.github/workflows/ci.yml`）は、`v` で始まるタグの push と手動実行のときだけ動きます。
 
 ## 要求は仕様書が決める

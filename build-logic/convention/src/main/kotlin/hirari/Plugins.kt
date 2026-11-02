@@ -11,7 +11,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 
 class AndroidApplicationPlugin : Plugin<Project> {
-    override fun apply(target: Project) = with(target) {
+    override fun apply(target: Project): Unit = with(target) {
         pluginManager.apply("com.android.application")
         extensions.configure<ApplicationExtension> {
             configureCommon()
@@ -24,7 +24,7 @@ class AndroidApplicationPlugin : Plugin<Project> {
 }
 
 class AndroidLibraryPlugin : Plugin<Project> {
-    override fun apply(target: Project) = with(target) {
+    override fun apply(target: Project): Unit = with(target) {
         pluginManager.apply("com.android.library")
         extensions.configure<LibraryExtension> {
             configureCommon()
@@ -35,7 +35,7 @@ class AndroidLibraryPlugin : Plugin<Project> {
 }
 
 class AndroidComposePlugin : Plugin<Project> {
-    override fun apply(target: Project) = with(target) {
+    override fun apply(target: Project): Unit = with(target) {
         pluginManager.apply("org.jetbrains.kotlin.plugin.compose")
         pluginManager.withPlugin("com.android.application") {
             extensions.configure<ApplicationExtension> { buildFeatures.compose = true }
@@ -55,7 +55,7 @@ class AndroidComposePlugin : Plugin<Project> {
 }
 
 class AndroidFeaturePlugin : Plugin<Project> {
-    override fun apply(target: Project) = with(target) {
+    override fun apply(target: Project): Unit = with(target) {
         pluginManager.apply("hirari.android.library")
         pluginManager.apply("hirari.android.compose")
         dependencies {
@@ -66,7 +66,7 @@ class AndroidFeaturePlugin : Plugin<Project> {
 }
 
 class JvmLibraryPlugin : Plugin<Project> {
-    override fun apply(target: Project) = with(target) {
+    override fun apply(target: Project): Unit = with(target) {
         pluginManager.apply("org.jetbrains.kotlin.jvm")
         extensions.configure<JavaPluginExtension> {
             sourceCompatibility = JAVA_TARGET
