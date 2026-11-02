@@ -19,7 +19,7 @@ import kotlin.test.assertEquals
 
 class ZoomTest {
     private val shapes = mapOf(0 to PageShape.Known(700, 1000), 1 to PageShape.Known(600, 800), 2 to PageShape.Known(1400, 1000))
-    private val fitHalf = ZoomLimits(mode = 0.5f, fit = 0.5f, capAtOriginal = false)
+    private val fitHalf = ZoomLimits(mode = Scale(0.5f, 0.5f), fit = 0.5f, capAtOriginal = false)
 
     private fun ZoomState.after(limits: ZoomLimits, vararg events: ZoomEvent) = events.fold(this) { state, event -> state.reduce(event, limits) }
 
@@ -100,22 +100,30 @@ class ZoomTest {
 
     @Test
     fun theLimitsCountFromTheFitScaleNotTheMode() {
-        val fitWidth = ZoomLimits(mode = 1f, fit = 0.5f, capAtOriginal = false)
+        val fitWidth = ZoomLimits(mode = Scale(1f, 1f), fit = 0.5f, capAtOriginal = false)
         assertEquals(0.25f, fitWidth.minFactor)
         assertEquals(4f, fitWidth.maxFactor)
     }
 
     @Test
     fun capAtOriginalAlsoCapsThePinch() {
-        assertEquals(2f, ZoomLimits(mode = 0.5f, fit = 0.5f, capAtOriginal = true).maxFactor)
-        assertEquals(1f, ZoomLimits(mode = 1f, fit = 1f, capAtOriginal = true).maxFactor)
+        assertEquals(2f, ZoomLimits(mode = Scale(0.5f, 0.5f), fit = 0.5f, capAtOriginal = true).maxFactor)
+        assertEquals(1f, ZoomLimits(mode = Scale(1f, 1f), fit = 1f, capAtOriginal = true).maxFactor)
+    }
+
+    @Test
+    fun capAtOriginalHoldsTheLargerAxisOfAStretch() {
+        val stretch = modeScale(ScaleMode.Stretch, Size(1000f, 2000f), Size(1000f, 1000f), capAtOriginal = true)
+        val fit = modeScale(ScaleMode.FitScreen, Size(1000f, 2000f), Size(1000f, 1000f), capAtOriginal = true).smaller
+        assertEquals(1f, ZoomLimits(stretch, fit, capAtOriginal = true).maxFactor)
+        assertEquals(8f, ZoomLimits(stretch, fit, capAtOriginal = false).maxFactor)
     }
 
     @Test
     fun releasingBelowTheFitGoesBackToTheMode() {
         val below = ZoomState().after(fitHalf, FingersDown(100f), SpanChanged(120f), SpanChanged(100f), FingersUp)
         assertEquals(1f, below.factor)
-        val fitWidth = ZoomLimits(mode = 1f, fit = 0.5f, capAtOriginal = false)
+        val fitWidth = ZoomLimits(mode = Scale(1f, 1f), fit = 0.5f, capAtOriginal = false)
         val above = ZoomState().after(fitWidth, FingersDown(100f), SpanChanged(80f), SpanChanged(64f), FingersUp)
         assertEquals(0.8f.pow(1.5f), above.factor, 1e-4f)
     }

@@ -9,6 +9,7 @@ import io.github.yuubiz.hirari.core.model.Side
 import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.leadingSide
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -49,6 +50,7 @@ private fun single(width: Float, height: Float) = ViewContent(Size(width, height
 /** Screen pixels per image pixel on each axis. Only [ScaleMode.Stretch] makes them differ. */
 data class Scale(val x: Float, val y: Float) {
     val smaller: Float get() = min(x, y)
+    val larger: Float get() = max(x, y)
 
     operator fun times(factor: Float) = Scale(x * factor, y * factor)
 }
@@ -80,13 +82,14 @@ const val RESET_TAPS_WINDOW_MS = 1_000L
 
 /**
  * The range of the zoom factor over [mode], the scale of the scale mode, given [fit], the scale
- * of [ScaleMode.FitScreen]. Both are [Scale.smaller] of their scales.
+ * of [ScaleMode.FitScreen].
  */
-data class ZoomLimits(val mode: Float, val fit: Float, val capAtOriginal: Boolean) {
-    val minFactor: Float get() = PINCH_MIN_OF_FIT * fit / mode
+data class ZoomLimits(val mode: Scale, val fit: Float, val capAtOriginal: Boolean) {
+    val minFactor: Float get() = PINCH_MIN_OF_FIT * fit / mode.smaller
     val maxFactor: Float get() {
-        val top = if (capAtOriginal) min(PINCH_MAX_OF_FIT * fit, 1f) else PINCH_MAX_OF_FIT * fit
-        return maxOf(top / mode, minFactor)
+        val byFit = PINCH_MAX_OF_FIT * fit / mode.smaller
+        val top = if (capAtOriginal) min(byFit, 1f / mode.larger) else byFit
+        return maxOf(top, minFactor)
     }
 }
 
@@ -119,7 +122,7 @@ data class ZoomState(val factor: Float = 1f, val pinch: Pinch? = null, val lastR
                 copy(lastResetTapMs = event.timeMs)
             }
         ZoomEvent.FingersUp -> {
-            val belowFit = factor * limits.mode < limits.fit
+            val belowFit = factor * limits.mode.smaller < limits.fit
             ZoomState(factor = if (belowFit) 1f else factor)
         }
         ZoomEvent.ModeChanged -> ZoomState()
