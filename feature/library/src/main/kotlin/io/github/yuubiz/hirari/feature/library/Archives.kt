@@ -18,7 +18,7 @@ import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.entryBookId
 import io.github.yuubiz.hirari.core.source.ByteSource
-import io.github.yuubiz.hirari.core.source.findDocumentId
+import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
@@ -126,7 +126,7 @@ class DeviceArchives(private val resolver: ContentResolver, private val cacheDir
                 is LibraryLocation.SafTree -> {
                     if (!place.permissionHeld) return ArchiveOpenResult.Failed(ArchiveFailure.NoPermission)
                     val tree = Uri.parse(place.treeUri.value)
-                    val id = documentId ?: withContext(Dispatchers.IO) { resolver.findDocumentId(tree, path) } ?: throw FileNotFoundException()
+                    val id = documentId ?: withContext(Dispatchers.IO) { resolver.locateDocument(tree, path) } ?: throw FileNotFoundException()
                     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
                     openOwned(Dispatchers.IO) { resolver.openByteSource(uri, File(cacheDir, "copy")) } to UriString(uri.toString())
                 }

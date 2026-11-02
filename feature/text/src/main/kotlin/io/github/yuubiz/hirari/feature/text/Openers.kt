@@ -27,7 +27,7 @@ import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
-import io.github.yuubiz.hirari.core.source.findDocumentId
+import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.text.GlyphMetrics
 import io.github.yuubiz.hirari.core.text.PaintGlyphMetrics
@@ -76,7 +76,7 @@ private suspend fun openInLocation(resolver: ContentResolver, locations: Locatio
     val place = locations.get(ref.location) as? LibraryLocation.SafTree ?: return TextOpenResult.Failed(TextFailure.NotFound)
     if (!place.permissionHeld) return TextOpenResult.Failed(TextFailure.NoPermission)
     val tree = Uri.parse(place.treeUri.value)
-    val documentId = ref.documentId ?: resolver.findDocumentId(tree, path) ?: return TextOpenResult.Failed(TextFailure.NotFound)
+    val documentId = ref.documentId ?: resolver.locateDocument(tree, path) ?: return TextOpenResult.Failed(TextFailure.NotFound)
     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
     return openDocument(resolver, uri, locationBookId(place, path), BookSource.InLocation(ref.location, path))
 }

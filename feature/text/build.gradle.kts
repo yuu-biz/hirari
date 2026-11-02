@@ -6,6 +6,11 @@ android {
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        // Robolectric reads FileDescriptor internals through jdk.internal.access.
+        unitTests.all { it.jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
+    }
 }
 
 dependencies {
@@ -18,7 +23,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.core)
+    testImplementation(libs.junit)
     testImplementation(kotlin("test-junit"))
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.runner)

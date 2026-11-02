@@ -133,6 +133,18 @@ suspend fun ContentResolver.listFolder(treeUri: Uri, path: String, documentId: S
     ListedFolder(id, listChildren(treeUri, id, signal))
 }
 
+/**
+ * The document id of [path] in the tree [treeUri], as [findDocumentId] finds it. Cancelling the caller tells the
+ * provider to stop the query in flight, so a provider that never answers does not hold the caller. Blocks on Binder,
+ * so never call it on the main thread.
+ *
+ * @throws SecurityException when the permission to the tree is gone.
+ * @throws IOException when the provider gives no result.
+ */
+suspend fun ContentResolver.locateDocument(treeUri: Uri, path: String): String? = withCancellationSignal { signal ->
+    findDocumentId(treeUri, path, signal)
+}
+
 /** What a provider reports about one document; a field is null when it does not report it. */
 class DocumentInfo(val name: String?, val size: Long?, val lastModifiedMs: Long?)
 
