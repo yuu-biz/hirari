@@ -129,6 +129,7 @@ data class Book(
 
 - `BookId` は場所の ID と、場所からの相対パスを正規化した文字列から作る。サーバーのパスワードを変えても既読情報は変わらない。
 - 外部から渡された本の `BookId` は 10 章の Q10 で決める。
+- `:core:model` は Android に依存しないので、`Uri` を文字列の値クラス `UriString` で持つ。`CredentialRef` は Keystore の別名を包む値クラスである。
 
 ### 2.3 ページ
 
@@ -184,6 +185,7 @@ sealed interface PreparedImage {
 
 - 例外、デコーダのエラー、書庫のエラーはすべて読み込み層の境界で `PageResult` に変換する。リーダーは `PageResult` だけを見る。
 - `retryable` は、通信切断や一時的な読み込み失敗のときに真になる。リーダーはそのとき再試行の操作を出す。
+- `PreparedImage` は `Bitmap` を持つので `:core:image` に置く。`:core:model` の `PageResult` は画像の型を引数に取る `PageResult<T>` とし、`Ready<T>` が画像を持つ。
 
 ### 2.5 綴じ方向とビュー
 
@@ -352,6 +354,7 @@ data class BookOverrides(
 ```
 
 - `null` は全体の設定に従うことを表す。
+- `ScaleMode`、`TrimStrength`、`ImageAdjust` の値は 4.10 節の `scaleMode`、`trimStrength`、`adjust*` の範囲と同じである。`Rotation` は 0、90、180、270 度の 4 値の列挙とする。
 - リーダー内で変えた表示設定は、その本の上書きとして保存する。リーダーのメニューにある **既定にする** で、上書きを全体の設定に移す。
 - この仕組みで、リーダー内の一時的な切り替えと、初期値として保存する操作を 1 つにまとめる。
 
@@ -460,10 +463,10 @@ libarchive は順に読む形の API を持つ。任意のエントリを開く�
 並び順は既定で自然順にする。自然順の比較規則は次のとおり。
 
 1. 名前を Unicode NFKC で正規化し、大文字と小文字を区別しない。全角の数字は半角の数字として扱う。
-2. パスをフォルダの区切りで分け、フォルダから順に比べる。
-3. 各部分を数字の並びとそれ以外に分ける。数字の並びは数値として比べ、等しければ桁の少ない方を先にする（`1` は `01` より先）。
-4. 漢数字の並び（〇、一〜九、十、百、千を組み合わせたもの）は数値として比べる。「第十二巻」は「第三巻」より後になる。
-5. 巻の区分を表す 1 文字は、同じ前置部分を持つ名前どうしで「上、前、中、後、下、短、外」の順に並べる。「短」は短編集、「外」は外伝を表し、本編の後に置く。
+2. パスをフォルダの区切り（`/` と `\`）で分け、フォルダから順に比べる。
+3. 各部分を数字の並びとそれ以外に分ける。数字の並びは数値として比べ、等しければ桁の少ない方を先にする（`1` は `01` より先）。数字の並びは、ほかの文字との比較では `0` の位置に並ぶ。
+4. 漢数字の並び（〇、一〜九、十、百、千を組み合わせたもの）は数値として比べる。「第十二巻」は「第三巻」より後になる。十、百、千を含まない並びは位取りで読む（「二〇二四」は 2024）。
+5. 巻の区分を表す 1 文字は、同じ前置部分を持つ名前どうしで「上、前、中、後、下、短、外」の順に並べる。「短」は短編集、「外」は外伝を表し、本編の後に置く。これらの文字は、ほかの文字との比較ではまとめて「上」の位置に並ぶ。文字ごとの符号位置で比べると、区分の順と矛盾して並べ替えの順序が定まらないためである。
 6. 以上で決まらなければ、変換前のバイト列で比べる。
 
 **例**。`1.jpg`、`2.jpg`、`10.jpg` はこの順に並ぶ。`作品 上.zip`、`作品 中.zip`、`作品 下.zip`、`作品 外伝.zip` もこの順に並ぶ。
@@ -1611,6 +1614,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Licensee（Gradle プラグイン） | ライセンスの検査 | Apache-2.0 | ビルド時だけ |
 | tomlj | `third_party/manifest.toml` の読み込み | Apache-2.0。antlr4-runtime（BSD-3-Clause）、checker-qual（MIT）を伴う | ビルド時だけ。`build-logic` の中で使う |
 | Kotest、Jazzer、libFuzzer | 試験 | Apache-2.0（libFuzzer は Apache-2.0 WITH LLVM-exception） | 試験時だけ。配布物に入らない |
+| kotest-property 6.2.6 | `:core:model` のプロパティテスト | Apache-2.0。kotest の各モジュールと kotlinx-coroutines（core、test、debug、jdk8）、kotlinx-serialization-core、xmlutil、java-diff-utils、opentest4j、byte-buddy、kotlin-reflect、JetBrains の annotations、rgxgen（Apache-2.0）、kotlin-rgxgen、classgraph（MIT）、JNA（LGPL-2.1-or-later と Apache-2.0 の二重ライセンスのうち Apache-2.0 を選ぶ）を伴う。6.2.6 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit と AndroidX Test（runner、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
 
 libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 20 個の `.c` と 22 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
