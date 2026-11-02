@@ -109,8 +109,8 @@ class TapZonesTest {
             Arb.element(SideBand, TopBand),
             Arb.int(1..9),
             Arb.boolean(),
-            Arb.float(0f, 399.9f),
-            Arb.float(0f, 799.9f),
+            Arb.float(0f..399.9f, includeNaNs = false),
+            Arb.float(0f..799.9f, includeNaNs = false),
         ) { layout, tenths, mirrored, x, y ->
             assertNotNull(TapZones(layout, tenths * 10, mirrored).at(x, y), "$layout at $x, $y")
         }
