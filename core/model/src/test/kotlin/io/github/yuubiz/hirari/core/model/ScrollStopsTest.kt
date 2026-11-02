@@ -82,8 +82,13 @@ class ScrollStopsTest {
             val maxStep = percent * 0.05f
             val ys = stops(1000f, height, maxStep, ColumnsFirst).map { it.y }
             val overflow = height - 1000f
+            if (ys.size == 1) {
+                assertTrue(overflow <= 1000f * maxStep * 1e-3f, "overflow $overflow got a single stop")
+                assertEquals(overflow / 2, ys.single(), 0.01f)
+                return@checkAll
+            }
             assertEquals(0f, ys.first(), 0.01f)
-            assertEquals(if (ys.size == 1) 0f else overflow, ys.last(), overflow * 1e-5f + 0.01f)
+            assertEquals(overflow, ys.last(), overflow * 1e-5f + 0.01f)
             val moves = ys.zipWithNext { a, b -> b - a }
             for (move in moves) {
                 assertTrue(move <= 1000f * maxStep * 1.001f, "move $move exceeds ${1000f * maxStep}")
