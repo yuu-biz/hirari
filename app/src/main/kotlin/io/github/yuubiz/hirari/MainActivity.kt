@@ -163,7 +163,7 @@ class MainActivity : ComponentActivity() {
                         SmbServerScreen(form, onClose = { nav.popBackStack() })
                     }
                     composable<ArchiveRoute> { entry ->
-                        Kept(app) {
+                        Kept(app, entry) {
                             val key = entry.toRoute<ArchiveRoute>().toKey()
                             val archive = viewModel { ArchiveViewModel(app.library, key) }
                             ReportSettled(nav, entry, app) { archive.state.first { it.content !is ArchiveUi.Loading } }
@@ -195,7 +195,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     composable<TextRoute> { entry ->
-                        Kept(app) {
+                        Kept(app, entry) {
                             val ref = entry.toRoute<TextRoute>().toRef()
                             val reader = viewModel(key = ref.toString()) { TextReaderViewModel(application, app.text, ref) }
                             ReportSettled(nav, entry, app) { reader.state.first { it !is TextReaderUiState.Opening } }
