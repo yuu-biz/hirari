@@ -48,7 +48,9 @@ class BookOverridesStore(private val books: BookRepository, private val scope: C
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    // The database refused; the reader keeps showing the change for this session.
+                    // The database refused. The value stays pending, so a reader opened again in this process
+                    // still starts from it, and the next change writes it again.
+                    return@withLock
                 }
                 synchronized(pending) { if (pending[id] == latest) pending.remove(id) }
             }

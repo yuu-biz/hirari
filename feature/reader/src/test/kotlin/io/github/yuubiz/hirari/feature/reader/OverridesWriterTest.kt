@@ -26,11 +26,13 @@ private val ID = BookId("book")
 private class SlowBooks : BookRepository {
     val stored = HashMap<BookId, BookOverrides>()
     var gate: CompletableDeferred<Unit>? = null
+    var refuse = false
 
     override fun overrides(id: BookId): Flow<BookOverrides> = flow { emit(stored[id] ?: BookOverrides()) }
 
     override suspend fun setOverrides(id: BookId, overrides: BookOverrides) {
         gate?.await()
+        if (refuse) throw java.io.IOException("disk full")
         stored[id] = overrides
     }
 
@@ -68,5 +70,19 @@ class OverridesWriterTest {
         advanceUntilIdle()
         books.stored[ID] = BookOverrides()
         assertEquals(BookOverrides(), store.open(ID).current)
+    }
+
+    @Test
+    fun aChangeTheDatabaseRefusedIsStillWhereAReopenedReaderStarts() = runTest {
+        val books = SlowBooks().apply { refuse = true }
+        val store = BookOverridesStore(books, CoroutineScope(StandardTestDispatcher(testScheduler)))
+        store.open(ID).update { it.copy(rotation = Rotation.Quarter) }
+        advanceUntilIdle()
+        val reopened = store.open(ID)
+        assertEquals(Rotation.Quarter, reopened.current.rotation)
+        books.refuse = false
+        reopened.update { it.copy(adjust = ImageAdjust(sharpen = true)) }
+        advanceUntilIdle()
+        assertEquals(BookOverrides(rotation = Rotation.Quarter, adjust = ImageAdjust(sharpen = true)), books.stored[ID])
     }
 }
