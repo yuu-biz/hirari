@@ -1633,7 +1633,8 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | dav1d | libavif の AV1 デコード | BSD-2-Clause | 同上 |
 | smbj | SMB 2 と SMB 3 | Apache-2.0 | Maven。bcprov（MIT 系の Bouncy Castle License）、mbassador（MIT）、asn-one（Apache-2.0）、slf4j-api（MIT）を伴う (要検証。版ごとの推移的依存) |
 | Jetpack（Compose、Navigation、Lifecycle、Activity、Core） | UI と画面の基盤 | Apache-2.0 | Maven |
-| Room | DB | Apache-2.0 | Maven |
+| Room 3.0.3（`androidx.room3`） | DB | Apache-2.0。androidx.sqlite（sqlite、sqlite-async、sqlite-framework）2.7.1、androidx.annotation、androidx.collection、kotlinx-coroutines（core、android）、JetBrains の annotations、jspecify を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。SQLite は同梱せず、端末の `android.database.sqlite` を `AndroidSQLiteDriver` で使う |
+| KSP 2.3.13、room3-compiler、room3 の Gradle プラグイン | Room のコード生成とスキーマの書き出し | Apache-2.0。room3-compiler は room3-external-antlr（BSD-3-Clause）、checker-qual（MIT）、guava、auto-common、auto-value-annotations、javapoet、kotlinpoet、kotlin-metadata-jvm、kotlin-reflect、kotlinx-serialization、jsr305、sqlite-jdbc（Apache-2.0）を伴う。3.0.3 の推移的依存の POM で確かめた | ビルド時だけ。配布物に入らない |
 | DataStore | 設定の保存 | Apache-2.0 | Maven |
 | kotlinx.coroutines、kotlinx.serialization | 並行処理、設定の JSON | Apache-2.0 | Maven |
 | ImageDecoder、BitmapRegionDecoder、PdfRenderer、ICU の CharsetDetector | 画像、PDF、文字コードの判定 | プラットフォームに内蔵 | 同梱しない |
@@ -1641,8 +1642,9 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | tomlj | `third_party/manifest.toml` の読み込み | Apache-2.0。antlr4-runtime（BSD-3-Clause）、checker-qual（MIT）を伴う | ビルド時だけ。`build-logic` の中で使う |
 | Kotest、Jazzer、libFuzzer | 試験 | Apache-2.0（libFuzzer は Apache-2.0 WITH LLVM-exception） | 試験時だけ。配布物に入らない |
 | kotest-property 6.2.6 | `:core:model` のプロパティテスト | Apache-2.0。kotest の各モジュールと kotlinx-coroutines（core、test、debug、jdk8）、kotlinx-serialization-core、xmlutil、java-diff-utils、opentest4j、byte-buddy、kotlin-reflect、JetBrains の annotations、rgxgen（Apache-2.0）、kotlin-rgxgen、classgraph（MIT）、JNA（LGPL-2.1-or-later と Apache-2.0 の二重ライセンスのうち Apache-2.0 を選ぶ）を伴う。6.2.6 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
-| JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit と AndroidX Test（runner、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
+| JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit、kotlinx-coroutines-test、AndroidX Test（runner、core、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
 | Macrobenchmark（benchmark-macro-junit4、benchmark-traceprocessor）、UiAutomator | `:benchmark` の計測。benchmark-traceprocessor は、トレースを SQL で読む独自の計測（`TurnMetric`）のために直接使う | Apache-2.0。benchmark-traceprocessor は Wire の実行時ライブラリと Okio（どちらも Apache-2.0）を伴う | 計測時だけ。`:benchmark` の APK に入り、アプリの配布物に入らない |
+| Robolectric 4.17 | `:core:data` の DB の JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 
 libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 19 個の `.c` と 22 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
 
