@@ -1,0 +1,157 @@
+package io.github.yuubiz.hirari.feature.reader
+
+import io.github.yuubiz.hirari.core.model.Point
+import io.github.yuubiz.hirari.core.model.Rect
+import io.github.yuubiz.hirari.core.model.ScreenOrientation
+import kotlin.math.hypot
+
+/** The commands the command bar can hold (docs/spec.md section 4.8, コマンドバー). */
+enum class ReaderCommand {
+    Layout,
+    ShiftPairing,
+    ScaleMode,
+    Trim,
+    Direction,
+    Rotate,
+    Orientation,
+    AddBookmark,
+    Bookmarks,
+    AutoPlay,
+    ReverseOrder,
+    ImageAdjust,
+    MirrorControls,
+    StopOrder,
+    Gutter,
+    EditCommandBar,
+    Breath,
+    BookSettings,
+    SetCover,
+    SharePage,
+    Settings,
+    ;
+
+    companion object {
+        /** The default `commandBarItems`. */
+        val Defaults = listOf(Orientation, Trim, Layout, ScaleMode)
+        const val MAX_ITEMS = 8
+    }
+}
+
+sealed interface PanelItem {
+    /** Closes the reader. */
+    data object Close : PanelItem
+    data object Menu : PanelItem
+    data class Command(val command: ReaderCommand) : PanelItem
+}
+
+/**
+ * The command panel below the command bar. The top row holds [PanelItem.Close] on the left end and
+ * [PanelItem.Menu] on the right end. Below it the commands fill a grid of 4 columns by 2 rows in
+ * portrait and 8 by 1 in landscape, row by row from the left. [bounds] is in screen dp.
+ */
+data class CommandPanel(val commands: List<ReaderCommand>, val orientation: ScreenOrientation, val bounds: Rect) {
+    init {
+        require(commands.size <= ReaderCommand.MAX_ITEMS) { "${commands.size} commands do not fit the panel" }
+    }
+
+    val columns: Int get() = if (orientation == ScreenOrientation.Portrait) 4 else 8
+    val rows: Int get() = 1 + ReaderCommand.MAX_ITEMS / columns
+
+    fun contains(point: Point): Boolean =
+        point.x >= bounds.left && point.x < bounds.right && point.y >= bounds.top && point.y < bounds.bottom
+
+    /** The item under [point], or `null` outside the panel and on empty cells. */
+    fun itemAt(point: Point): PanelItem? {
+        if (!contains(point)) return null
+        val column = ((point.x - bounds.left) / bounds.width * columns).toInt()
+        val row = ((point.y - bounds.top) / bounds.height * rows).toInt()
+        return when {
+            row == 0 && column == 0 -> PanelItem.Close
+            row == 0 && column == columns - 1 -> PanelItem.Menu
+            row == 0 -> null
+            else -> commands.getOrNull((row - 1) * columns + column)?.let { PanelItem.Command(it) }
+        }
+    }
+
+    /**
+     * Press, slide, and release on the command bar. [Down] events come only from the bar while the
+     * panel is closed, and from anywhere while it is open.
+     */
+    fun reduce(state: CommandBarState, event: CommandBarEvent, touchSlop: Float): CommandBarStep = when (event) {
+        is CommandBarEvent.Down -> when (state) {
+            CommandBarState.Open ->
+                if (contains(event.point)) slide(event.point) else CommandBarStep(CommandBarState.Closed)
+            else ->
+                if (event.systemBarsHidden) CommandBarStep(CommandBarState.Holding(event.point, event.timeMs)) else slide(event.point)
+        }
+        is CommandBarEvent.Hold ->
+            if (state is CommandBarState.Holding && event.timeMs - state.downAtMs >= LONG_PRESS_MS) {
+                slide(state.origin)
+            } else {
+                CommandBarStep(state)
+            }
+        is CommandBarEvent.Move -> when (state) {
+            is CommandBarState.Holding ->
+                CommandBarStep(if (beyond(state.origin, event.point, touchSlop)) CommandBarState.Closed else state)
+            is CommandBarState.Sliding -> {
+                val item = itemAt(event.point)
+                val next = state.copy(highlight = item, moved = state.moved || beyond(state.origin, event.point, touchSlop))
+                CommandBarStep(next, if (item != null && item != state.highlight) CommandBarEffect.Haptic else null)
+            }
+            CommandBarState.Closed, CommandBarState.Open -> CommandBarStep(state)
+        }
+        is CommandBarEvent.Up -> when (state) {
+            is CommandBarState.Sliding -> {
+                val item = itemAt(event.point)
+                val moved = state.moved || beyond(state.origin, event.point, touchSlop)
+                when {
+                    item != null -> CommandBarStep(CommandBarState.Closed, CommandBarEffect.Execute(item))
+                    moved -> CommandBarStep(CommandBarState.Closed)
+                    else -> CommandBarStep(CommandBarState.Open)
+                }
+            }
+            is CommandBarState.Holding -> CommandBarStep(CommandBarState.Closed)
+            CommandBarState.Closed, CommandBarState.Open -> CommandBarStep(state)
+        }
+        CommandBarEvent.Cancel -> CommandBarStep(CommandBarState.Closed)
+    }
+
+    private fun slide(origin: Point): CommandBarStep {
+        val item = itemAt(origin)
+        return CommandBarStep(CommandBarState.Sliding(origin, item, moved = false), if (item != null) CommandBarEffect.Haptic else null)
+    }
+
+    private fun beyond(origin: Point, point: Point, touchSlop: Float) = hypot(point.x - origin.x, point.y - origin.y) > touchSlop
+}
+
+sealed interface CommandBarState {
+    val panelVisible: Boolean get() = this is Sliding || this is Open
+
+    data object Closed : CommandBarState
+
+    /** The system bars are hidden, so the panel waits for a [LONG_PRESS_MS] press before it opens. */
+    data class Holding(val origin: Point, val downAtMs: Long) : CommandBarState
+
+    /** The panel is open under a finger, with [highlight] under it. */
+    data class Sliding(val origin: Point, val highlight: PanelItem?, val moved: Boolean) : CommandBarState
+
+    /** A tap left the panel open. */
+    data object Open : CommandBarState
+}
+
+sealed interface CommandBarEvent {
+    data class Down(val point: Point, val timeMs: Long, val systemBarsHidden: Boolean) : CommandBarEvent
+    data class Move(val point: Point) : CommandBarEvent
+    data class Up(val point: Point) : CommandBarEvent
+
+    /** Sent [LONG_PRESS_MS] after the press. */
+    data class Hold(val timeMs: Long) : CommandBarEvent
+    data object Cancel : CommandBarEvent
+}
+
+sealed interface CommandBarEffect {
+    data object Haptic : CommandBarEffect
+    data class Execute(val item: PanelItem) : CommandBarEffect
+}
+
+data class CommandBarStep(val state: CommandBarState, val effect: CommandBarEffect? = null)
