@@ -131,7 +131,13 @@ class ArchiveSession private constructor(
          * with itself, or right away when opening fails.
          */
         suspend fun open(source: ByteSource): OpenResult {
-            val archive = NativeArchive(source)
+            val archive = try {
+                NativeArchive(source)
+            } catch (e: Throwable) {
+                source.close()
+                if (e is OutOfMemoryError) return OpenResult.Failed(ArchiveFailure.ReadError)
+                throw e
+            }
             val executor = Executors.newSingleThreadExecutor { Thread(it, "archive-session").apply { isDaemon = true } }
             val dispatcher = executor.asCoroutineDispatcher()
             var result: OpenResult? = null
