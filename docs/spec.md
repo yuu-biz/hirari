@@ -99,7 +99,7 @@ sealed interface LibraryLocation {
 		val share: String,
 		val basePath: String,
 		val domain: String?,
-		val user: String?, // null は匿名接続
+		val user: String?, // null はゲストとして接続する（4.5 節）
 		val credential: CredentialRef?, // Keystore で暗号化した秘密への参照
 	) : LibraryLocation
 }
@@ -399,6 +399,8 @@ interface ByteSource : Closeable {
 ```
 
 - `read` は中断関数（`suspend`）にしない。libarchive が JNI のコールバックの中から、書庫のセッションのスレッドで呼ぶためである。取り消しはセッションの取り消しフラグで伝える（8.3 節）。SMB の同時に読む数の上限は、SMB の実装の中で守る。
+- SMB の `ByteSource` は、サーバーと共有ごとに 1 本の接続を一覧や他の本と共有する。読み込みは 128 KB に揃えたブロックで取り、最後のブロックを持っておいて、libarchive の 4 KB と 64 KB の読み込みをそこから返す。ブロックの大きさは基準 NAS で見直す (要検証)。
+- SMB の読み込みは、接続が切れたとき、応答がないとき、再接続している間は `ConnectionLostException` を投げる。読み込み層はこれを `Failed(ConnectionLost, retryable = true)` にする（6.5 節）。ファイルがなくなったときは `FileNotFoundException`、サーバーが拒んだそれ以外の要求は `SmbRequestException` を投げ、接続は切れたとみなさない。
 - SAF の文書は `ContentResolver.openFileDescriptor` で開く。`ParcelFileDescriptor.getStatSize` が負（パイプかソケット）ならシークできないとみなし、`cacheDir/copy/` に複製する。複製は開いた直後にファイル名を消すので、`ByteSource` を閉じると消える。複製で空き容量が 64 MB を切るときは、そこで止めて開かない (要検証。残す量)。
 - フォルダの一覧は、`DocumentsContract.buildChildDocumentsUriUsingTree` への 1 回のクエリで、文書 ID、表示名、MIME タイプ、大きさを得る。ファイルごとの Binder 呼び出しはしない。
 
@@ -699,10 +701,12 @@ SMB サーバーの入力項目は次のとおり。
 | 共有名 | v1 では入力が必要。共有の一覧取得は Q17 |
 | フォルダ | 共有の中の起点。空なら共有の最上位 |
 | ドメイン | 任意 |
-| ユーザー名とパスワード | 両方空なら匿名で接続する |
+| ユーザー名とパスワード | 両方空ならゲストとして接続する |
 
-- **接続を試す** で接続と認証を確かめ、結果を「接続できました」か、失敗の理由（名前解決、到達不能、認証、共有がない）で出す。
+- **接続を試す** で接続と認証を確かめ、結果を「接続できました」か、失敗の理由（名前解決、到達不能、認証、共有がない、応答の異常）で出す。接続を拒まれたときと、接続のタイムアウト（6.5 節）は到達不能とする。共有への接続を `STATUS_ACCESS_DENIED` で拒まれたときは認証とする。対応する方言で話せないなど、それ以外の失敗は応答の異常とする。
 - 対応する方言は SMB 2.0.2 から 3.1.1 までとする。署名と暗号化はサーバーとの交渉に従う。
+- 暗号化は、共有が求めるときだけ行う。まず暗号化せずに接続し、パスワードで接続した共有が暗号化しない接続を `STATUS_ACCESS_DENIED` で拒んだときだけ、SMB 3 の暗号化を使って接続し直す。smbj は暗号化を求めないと、暗号化が必須の共有に接続できない。一方で、すべての接続を暗号化すると、暗号化が要らない共有でも読み込みのたびに暗号処理の費用がかかる。Samba の `smb encrypt = required` の共有で確かめた。
+- ユーザー名とパスワードが空のときは、匿名ではなくゲストのアカウントでログオンする。smbj 0.15.0 の匿名ログオンは、SMB 3.1.1 の Samba 4.19 に対して鍵の導出で失敗する。ゲストのログオンは同じ環境で `guest ok` の共有を読める。どちらも `tools/smb-fixture` の Samba で確かめた。
 - パスワードの扱いは 7 章に従う。編集画面にはパスワードを表示せず、変更するときだけ入力させる。
 - 本棚では、サーバーを表示名と `smb://ユーザー名@ホスト/共有名/` の形で出す。パスワードは出さない。
 - サーバーの中はローカルと同じファイル一覧で見る。一覧の取得に 300 ms 以上かかったら進行表示と取り消しを出す。
@@ -1526,17 +1530,23 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 ### 6.5 SMB の接続が切れたときの回復
 
 1. 読み込みで通信の例外が出たら、その接続を「切断」とする。読み込み中だったページは `Failed(ConnectionLost, retryable = true)` にする。
-2. 0.5 s、1 s、2 s、4 s の間隔で最大 4 回、再接続する。
-3. 4 回とも失敗したら、ネットワークの変化（`ConnectivityManager` のコールバック）か、ユーザーの再試行を待つ。
+2. 0.5 s、1 s、2 s、4 s の間隔で最大 4 回、再接続する。その間の読み込み、一覧、ファイルを開く要求は、待たずに `ConnectionLost` で失敗する。同じ接続で複数の要求が失敗しても、再接続は 1 つの系列だけ行う。
+3. 4 回とも失敗したら、ネットワークの変化（`ConnectivityManager` のコールバック）か、ユーザーの再試行を待つ。どちらかが来たら、1 回目から同じ間隔でやり直す。
 4. 再接続したら、開いていたファイルを開き直し、現在の位置から先読みをやり直す。先読みの範囲にある `ConnectionLost` のページは 1 回だけ自動で再試行する。
 
 - 切断中も、準備済みのビューと元データのあるページは読める。
 - 再試行の回数には上限があり、再帰で再試行しない。
-- 接続のタイムアウトは 5 s、読み込みのタイムアウトは 15 s とする (要検証)。
+- 接続のタイムアウトは 5 s とし、名前解決から共有への接続までを含める。要求のタイムアウトは 15 s とし、読み込みや一覧の 1 つの要求ごとに数える。smbj のソケットの読み込みのタイムアウトは使わず、要求のタイムアウトだけで止まった接続を見つける。
+- 切れた接続は、サーバーの応答を待たずに閉じる。止まったサーバーにログオフを送ると、閉じるだけでまたタイムアウトを待つためである。
+- タイムアウトの値は、Docker の Samba（`tools/smb-fixture`）とその前に置いた TCP の中継で確かめた。中継が開いた接続の通信をすべて捨てると（ソケットは開いたまま）、読み込みは 15,016 ms で失敗し、その 516 ms 後に新しい接続で読めた。コンテナを一時停止すると、読み込みは 15,008 ms で失敗し、停止中の 1 回目の再接続は 5,531 ms（0.5 s の待ちと 5 s のタイムアウト）で失敗し、再開から 932 ms で接続した。すべての応答が 3 s 遅れる中継では、128 KB のブロックの読み込みが 9,042 ms かかったが成功し、接続は保たれた。20 s 使わなかった接続の次の読み込みは 3 ms だった。応答が遅いだけのサーバーは切らず、止まったサーバーは 15 s で見限るので、この値とする。
+- 使っていない間に応答しなくなった接続は、次の要求が 15 s 待ってから見つかる。その間のページは `ConnectionLost` になり、再接続の後に 1 回だけ自動で再試行される（4.）。
 
 ### 6.6 ログ
 
 - パスワード、ユーザー名、資格情報を含む URI をログに出さない。リリースビルドではファイル名とパスもログに出さない。
+- smbj は SLF4J でログを出し、DEBUG ではユーザー名を含む。アプリは SLF4J の出力先（provider）を同梱しないので、smbj のログはどこにも出ない。`:core:source` の試験で、依存が provider を持ち込まないことを確かめる。
+- `:core:source` の SMB の例外のメッセージには、ホスト、パス、ユーザー名を入れない。smbj のメッセージはユーザー名を含むことがあるので、smbj の例外は原因として残さず、状態の名前かクラス名だけを残す。`SmbLogin.Password` は文字列にするとユーザー名もパスワードも出さず、サーバーを閉じるとパスワードの複製を消す。
+- 試験用のパスワードで、接続、一覧、読み込みと、認証、共有がない、ファイルがない、接続が止まるの各失敗を Samba に対して行い、smbj がすべての段階で出すログと例外にパスワードが現れないことを JVM の試験（`SmbLogHygieneTest`）で確かめる。
 - CI に、試験中の logcat から試験用のパスワードを探す検査を置く。
 
 ### 6.7 アクセシビリティ
@@ -1574,9 +1584,11 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 | `INTERNET` | ユーザーが登録した SMB サーバーへの接続だけ | インストール時 |
 | `ACCESS_NETWORK_STATE` | SMB の再接続の契機を知る | インストール時 |
 | `RECORD_AUDIO` | 息での操作（M6） | 機能をオンにするとき |
-| ローカルネットワークへのアクセスの権限 | 新しい targetSdk で LAN 内の SMB に接続するのに必要になる可能性がある (要検証) | Q14 |
+| `ACCESS_LOCAL_NETWORK` | LAN 内の SMB サーバーへの接続。targetSdk 37 から必要 | 最初のサーバー登録のとき（実行時の権限。Q14） |
 
 - ストレージの権限は要求しない。ファイルは SAF だけで読む。
+- `INTERNET`、`ACCESS_NETWORK_STATE`、`ACCESS_LOCAL_NETWORK` は `:core:source` のマニフェストで宣言し、アプリのマニフェストに合わさる。
+- targetSdk 37 では、ローカルネットワークへの TCP の接続は `ACCESS_LOCAL_NETWORK` がないと遮られ、多くはタイムアウトになる（[Local network permission](https://developer.android.com/privacy-and-security/local-network-permission)）。この権限は `NEARBY_DEVICES` の権限グループに属し、同じグループの権限を許可済みなら確認なしで許可される。遮られた接続は「接続を試す」で到達不能に見えるので、権限がないときはそのことを理由として出す。
 - 利用状況の収集、クラッシュの送信、広告、更新の確認、書体のダウンロードなど、SMB 以外の通信をしない。
 - 依存の審査で、通信を行う依存が smbj だけであることを確かめる。
 
@@ -1622,11 +1634,12 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 |---|---|---|
 | メイン | `Dispatchers.Main` | UI だけ |
 | 入出力 | `Dispatchers.IO` | SAF、Room、DataStore |
-| SMB | サーバーごとに `Dispatchers.IO.limitedParallelism(4)` | SMB の読み込み |
+| SMB | サーバーごとに同時 4 件までの要求（公平なセマフォ） | SMB の読み込み、一覧、ファイルを開く要求 |
 | デコード | `Dispatchers.Default.limitedParallelism(n)` | デコード、縮小、トリミング |
 | 書庫のセッション | セッションごとに 1 本のスレッドに閉じ込める | libarchive の呼び出し |
 | PDF のセッション | 文書ごとに 1 本のスレッドに閉じ込める | `PdfRenderer` の呼び出し |
 
+- SMB の `ByteSource.read` は書庫のセッションのスレッドで呼ばれ、そのスレッドを止める（3.1 節）。そのため SMB の上限はディスパッチャではなく、サーバーごとの公平なセマフォで守る。一覧などの中断関数は `Dispatchers.IO` で要求を出し、同じセマフォを使う。順番を要求のタイムアウト（15 s）待っても回ってこない要求は `ConnectionLost` で失敗する。再接続はサーバーごとのコルーチンで行う。
 - デコードの並列数 n は `clamp(availableProcessors − 2, 1, 4)` とする。メモリ予算が 128 MB 未満なら 1 にする。1 回のデコードが数十 MB を使うことがあるので、並列数でメモリの最大使用量を抑える。
 - 先読みの計画は、開いている本ごとに 1 つのコルーチンで行う。ビューの変化を受け取って仕事の一覧を作り直し、要らなくなった仕事は構造化された並行性で取り消す。
 - 取り消しはネイティブ側にも伝える。libarchive の読み込みコールバックと、libjxl と libavif のデコードのループは、セッションごとの取り消しフラグを確かめる。`ImageDecoder` はデコードの途中で止められないので、ヘッダの段階で取り消しを確かめ、それ以降は終わるのを待って結果を捨てる。
@@ -1660,7 +1673,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | libjxl | JPEG XL | BSD-3-Clause | ソースからビルド。highway（Apache-2.0）、brotli（MIT）を伴う |
 | libavif | API 28〜30 の AVIF | BSD-2-Clause | Q6 で同梱を決めたときだけ |
 | dav1d | libavif の AV1 デコード | BSD-2-Clause | 同上 |
-| smbj | SMB 2 と SMB 3 | Apache-2.0 | Maven。bcprov（MIT 系の Bouncy Castle License）、mbassador（MIT）、asn-one（Apache-2.0）、slf4j-api（MIT）を伴う (要検証。版ごとの推移的依存) |
+| smbj 0.15.0 | SMB 2 と SMB 3 | Apache-2.0。実行時に slf4j-api 2.0.18（MIT）、bcprov-jdk18on 1.85.2（Bouncy Castle License）、mbassador 1.3.2（MIT）、asn-one 0.6.0（Apache-2.0）を伴う。mbassador の juel は任意の依存で、持ち込まれない。0.15.0 の POM と Gradle のモジュールのメタデータ、各依存の POM で確かめ、`:app` の Licensee で確かめた。Bouncy Castle License の条項は MIT と同じ文面なので MIT として扱う。bcprov と slf4j-api の POM にあるライセンスの URL は Licensee が SPDX 識別子に直せないので、`build-logic` の `licenseUrlIds` で MIT に対応付ける | Maven。通信を行う唯一の依存。SLF4J の provider は同梱しない（6.6 節） |
 | Jetpack（Compose、Navigation、Lifecycle、Activity、Core） | UI と画面の基盤 | Apache-2.0 | Maven。リーダーは Lifecycle の lifecycle-viewmodel-compose 2.11.0 を直接使う。navigation-compose がすでに推移的に持ち込んでいたもので、新しい推移的依存はない |
 | Room 3.0.3（`androidx.room3`） | DB | Apache-2.0。androidx.sqlite（sqlite、sqlite-async、sqlite-framework）2.7.1、androidx.annotation、androidx.collection、kotlinx-coroutines（core、android）、JetBrains の annotations、jspecify を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。SQLite は同梱せず、端末の `android.database.sqlite` を `AndroidSQLiteDriver` で使う |
 | KSP 2.3.13、room3-compiler、room3 の Gradle プラグイン | Room のコード生成とスキーマの書き出し | Apache-2.0。room3-compiler は room3-external-antlr（BSD-3-Clause）、checker-qual（MIT）、guava、auto-common、auto-value-annotations、javapoet、kotlinpoet、kotlin-metadata-jvm、kotlin-reflect、kotlinx-serialization、jsr305、sqlite-jdbc（Apache-2.0）を伴う。3.0.3 の推移的依存の POM で確かめた | ビルド時だけ。配布物に入らない |
@@ -1799,10 +1812,10 @@ libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`C
 | Q11 | テキストの横書きを用意するか | 縦書きだけ、横書きも用意 | v1 は縦書きだけ。組版エンジンは書字方向を引数に持つ形にしておく |
 | Q12 | 明朝体の書体を同梱するか | 同梱しない、OFL-1.1 の明朝体を同梱、初回にユーザーが取り込む | Android 9 以降の端末に明朝体のシステムフォントがあるかを確かめる (要検証)。ない端末が多ければ、OFL-1.1 の書体を同梱する。APK の大きさの増分も測る |
 | Q13 | 外字の変換表の出所をどうするか | JIS X 0213 の公開されている対応表、自前で作る | ライセンスを確かめてから選ぶ (要検証)。許諾が不明な表は使わない |
-| Q14 | LAN 内の SMB への接続に新しい権限が要るか | 要らない、targetSdk によって要る | 最新の targetSdk の動作を M4 の前に確かめる (要検証)。要るなら、最初のサーバー登録のときに求める |
+| Q14 | LAN 内の SMB への接続に新しい権限が要るか | 要らない、targetSdk によって要る | 決定。要る。targetSdk 37 では、ローカルネットワークへの接続に実行時の権限 `ACCESS_LOCAL_NETWORK`（`NEARBY_DEVICES` グループ）が要り、ないと TCP の接続が遮られる。targetSdk 36 以下では `INTERNET` で暗黙に許される。根拠は [Local network permission](https://developer.android.com/privacy-and-security/local-network-permission)。最初のサーバー登録のときに求める（7 章） |
 | Q15 | 縦長の連続スクロール（ウェブトゥーン向け）を入れるか | 入れない、ページの組み方に「縦に連続」を加える | M6 で加える。ページを縦に隙間なく並べ、停止点の代わりに連続スクロールにする。先読みは同じ層を使う |
 | Q16 | 読書位置としおりを自動バックアップに含めるか | 含める、含めない、設定で選ぶ | 含める。機種変更で読書の記録が消えるのは困る。SMB の資格情報は常に含めない |
-| Q17 | SMB の共有の一覧を取るか | 共有名を入力させる、SRVSVC で一覧を取る | v1 は入力させる。一覧の取得に別の依存が要るなら、そのライセンスを確かめてから決める (要検証) |
+| Q17 | SMB の共有の一覧を取るか | 共有名を入力させる、SRVSVC で一覧を取る | v1 は入力させる。smbj は SRVSVC を持たず、一覧には DCE/RPC の別の依存が要る。候補の com.rapid7.client:dcerpc 0.12.13 は POM で BSD-3-Clause であり、guava、commons-io、commons-lang3 を伴う。それらのライセンスは、採用するときに確かめる |
 | Q18 | solid 書庫のサムネイルをどのページから作るか | 自然順で先頭のページ、格納順で先頭の画像 | 格納順で先頭の画像を使い、本を一度開いたら自然順で先頭のページに作り直す。solid 書庫で自然順の先頭を探すと、全体の展開が要ることがある |
 | Q19 | public domain のソース（libarchive の PPMd）を組み込むか | 組み込まない（ZIP と 7z の PPMd は `Unsupported(Compression)`）、許可リストに public domain を加える | M0 は組み込まない。7z の PPMd（3.3 節）には `archive_ppmd7.c` が要るので、M3 の前に決める |
 | Q20 | デコーダが返した、途中で切れた画像をどう出すか | そのまま出す、出したうえで切れていることを重ねて知らせる、`Failed(Truncated)` にする | M1 はデコーダの結果に従う（API 28 では失敗、API 37 では表示になる）。自前で判定して端末によらず揃えるには、JPEG の EOI を探すなど形式ごとの処理が要り、誤判定すると読めるページを隠す。実データで切れた画像がどれだけあるかを見て、M6 で決める |

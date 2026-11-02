@@ -1,0 +1,7 @@
+# Samba for the SMB tests of :core:source. Start it with tools/smb-fixture/fixture.sh up.
+name: hirari-smb-fixture
+services:
+  samba:
+    build: .
+    container_name: hirari-smb
+    ports: ["127.0.0.1:14455:445"]
