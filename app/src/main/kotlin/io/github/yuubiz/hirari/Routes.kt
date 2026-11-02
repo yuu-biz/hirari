@@ -19,6 +19,9 @@ internal data object HomeRoute
 @Serializable
 internal data object LicensesRoute
 
+@Serializable
+internal data object SettingsRoute
+
 /**
  * A folder of a SAF place (docs/spec.md section 4.3). Without [documentId] the list looks the path up. [reveal] is
  * the path of a row the list scrolls to when it first shows.

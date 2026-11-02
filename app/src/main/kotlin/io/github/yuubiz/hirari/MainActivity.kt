@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari
 
+import io.github.yuubiz.hirari.core.data.Storage
+import androidx.compose.runtime.produceState
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -44,6 +46,7 @@ import io.github.yuubiz.hirari.feature.reader.ReaderPhase
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.LicenseScreen
+import io.github.yuubiz.hirari.feature.settings.SettingsScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -89,7 +92,7 @@ class MainActivity : ComponentActivity() {
                                     HomeMenu(
                                         onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
                                         onOpenFolder = { pickFolder.launch(null) },
-                                        onLicenses = { nav.navigate(LicensesRoute) },
+                                        onSettings = { nav.navigate(SettingsRoute) },
                                         onOpen = { nav.navigate(it) },
                                     )
                                 },
@@ -113,6 +116,10 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable<LicensesRoute> { LicenseScreen(onBack = { nav.popBackStack() }) }
+                    composable<SettingsRoute> {
+                        val storage by produceState<Storage?>(null) { value = app.services.await().storage }
+                        storage?.let { SettingsScreen(it, onBack = { nav.popBackStack() }, onOpenLicenses = { nav.navigate(LicensesRoute) }) }
+                    }
                     composable<ReaderRoute> { entry ->
                         val request = entry.toRoute<ReaderRoute>().toRequest()
                         val reader = viewModel { ReaderViewModel(app, app.services, request) }
@@ -152,12 +159,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * A book opens without registering a place from here (docs/spec.md section 4.2). Until the settings screen
- * exists, the license screen is opened from here too (M0).
- */
+/** A book opens without registering a place from here (docs/spec.md section 4.2). */
 @Composable
-private fun HomeMenu(onOpenFile: () -> Unit, onOpenFolder: () -> Unit, onLicenses: () -> Unit, onOpen: (Any) -> Unit) {
+private fun HomeMenu(onOpenFile: () -> Unit, onOpenFolder: () -> Unit, onSettings: () -> Unit, onOpen: (Any) -> Unit) {
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }) { Text(stringResource(R.string.menu)) }
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -176,10 +180,10 @@ private fun HomeMenu(onOpenFile: () -> Unit, onOpenFolder: () -> Unit, onLicense
             },
         )
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.menu_licenses)) },
+            text = { Text(stringResource(R.string.menu_settings)) },
             onClick = {
                 open = false
-                onLicenses()
+                onSettings()
             },
         )
         PrototypeMenuItem {

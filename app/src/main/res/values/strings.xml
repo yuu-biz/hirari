@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Hirari</string>
     <string name="menu">メニュー</string>
-    <string name="menu_licenses">ライセンス</string>
+    <string name="menu_settings">設定</string>
     <string name="menu_open_file">ファイルを開く</string>
     <string name="menu_open_folder">フォルダを開く</string>
     <string name="reopen_title">前回の本を開きますか</string>
