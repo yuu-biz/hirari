@@ -49,8 +49,8 @@ sealed interface TextBookRef {
 
 /** The opener of [ref]. Every step blocks on Binder or the disk, so all of it runs on `Dispatchers.IO` (section 6.4). */
 internal fun opener(ref: TextBookRef, resolver: ContentResolver, copyDir: File): TextOpener = when (ref) {
-    is TextBookRef.Document -> TextOpener { withContext(Dispatchers.IO) { openDocument(resolver, ref.uri) } }
-    is TextBookRef.ArchiveEntry -> TextOpener { withContext(Dispatchers.IO) { openEntry(resolver, ref, copyDir) } }
+    is TextBookRef.Document -> TextOpener { openOn(Dispatchers.IO) { openDocument(resolver, ref.uri) } }
+    is TextBookRef.ArchiveEntry -> TextOpener { openOn(Dispatchers.IO) { openEntry(resolver, ref, copyDir) } }
 }
 
 /** The document's bytes, its id as a single document (docs/spec.md section 2.2), and its entry for the index. */

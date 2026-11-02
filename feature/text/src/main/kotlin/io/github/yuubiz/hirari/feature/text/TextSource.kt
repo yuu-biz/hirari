@@ -4,6 +4,10 @@ import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.text.GlyphMetrics
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Why a text did not open. */
 enum class TextFailure {
@@ -50,9 +54,26 @@ sealed interface TextOpenResult {
     data class Failed(val reason: TextFailure) : TextOpenResult
 }
 
-/** Opens one text. It does its own I/O off the main thread and throws nothing but cancellation. */
+/**
+ * Opens one text. It does its own I/O off the main thread and throws nothing but cancellation; a cancelled open
+ * leaves nothing open.
+ */
 fun interface TextOpener {
     suspend fun open(): TextOpenResult
+}
+
+/**
+ * [open] on [context]. When the caller is cancelled after [open] made its text, `withContext` drops the text; it is
+ * closed here before the cancellation goes on, so the source is released either way.
+ */
+internal suspend fun openOn(context: CoroutineContext, open: suspend () -> TextOpenResult): TextOpenResult {
+    val made = AtomicReference<TextOpenResult.Opened?>()
+    try {
+        return withContext(context) { open().also { if (it is TextOpenResult.Opened) made.set(it) } }
+    } catch (e: CancellationException) {
+        made.get()?.text?.close?.invoke()
+        throw e
+    }
 }
 
 /** The typefaces the reader lays out and draws with. */
