@@ -103,7 +103,13 @@ object Books {
      * 1024 bytes (docs/spec.md section 3.2), and otherwise an archive.
      */
     suspend fun openBook(source: ByteSource, decoding: ImageDecoding): BookResult {
-        val prefix = when (val read = safely { readPrefix(source, PDF_SNIFF_BYTES) }) {
+        val read = try {
+            safely { readPrefix(source, PDF_SNIFF_BYTES) }
+        } catch (e: CancellationException) {
+            source.close()
+            throw e
+        }
+        val prefix = when (read) {
             is Safely.Done -> read.value
             is Safely.Failed -> {
                 source.close()

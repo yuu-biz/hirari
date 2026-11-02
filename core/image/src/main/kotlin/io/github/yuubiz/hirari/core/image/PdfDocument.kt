@@ -81,6 +81,8 @@ internal class PdfDocument private constructor(
             val executor = Executors.newSingleThreadExecutor { Thread(it, "pdf") }
             val dispatcher: ExecutorCoroutineDispatcher = executor.asCoroutineDispatcher()
             var renderer: PdfRenderer? = null
+            // Until the proxy descriptor exists, closing the source is up to this function, then to the descriptor.
+            var proxied = false
             try {
                 return withContext(dispatcher) {
                     val descriptor = try {
@@ -89,6 +91,7 @@ internal class PdfDocument private constructor(
                         source.close()
                         throw e
                     }
+                    proxied = true
                     renderer = try {
                         PdfRenderer(descriptor)
                     } catch (e: Throwable) {
@@ -100,6 +103,7 @@ internal class PdfDocument private constructor(
                     Opened.Document(PdfDocument(opened, executor, shapes))
                 }
             } catch (e: CancellationException) {
+                if (!proxied) source.close()
                 renderer?.let { executor.execute { it.close() } }
                 executor.shutdown()
                 throw e
