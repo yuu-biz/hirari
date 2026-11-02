@@ -4,9 +4,11 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ArchiveFailure
+import io.github.yuubiz.hirari.core.archive.ArchiveFormat
 import io.github.yuubiz.hirari.core.archive.ArchiveSession
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.archive.OpenResult
+import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageEntry
@@ -71,7 +73,7 @@ object Books {
                         ?.let { page.copy(sniffed = it) }
                 }
             }
-            BookResult.Opened(OpenBook(BookContent.Images(ArchivePages(session)), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
+            BookResult.Opened(OpenBook(BookContent.Images(ArchivePages(session)), session.format.container(), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
         } catch (_: OutOfMemoryError) {
             session.close()
             BookResult.Failed(BookFailure.ReadError)
@@ -93,7 +95,7 @@ object Books {
                 }
             }
         }
-        return BookResult.Opened(OpenBook(BookContent.Images(FolderPages(files)), sortedPages(pages), indexError = null, decoding))
+        return BookResult.Opened(OpenBook(BookContent.Images(FolderPages(files)), Container.Folder, sortedPages(pages), indexError = null, decoding))
     }
 
     /**
@@ -125,7 +127,7 @@ object Books {
             val name = "${i + 1}"
             PageEntry(i, i, name.toByteArray(Charsets.US_ASCII), name, declaredSize = null, sniffed = ImageType.PdfPage)
         }
-        return BookResult.Opened(OpenBook(BookContent.Pdf(document), pages, indexError = null, decoding))
+        return BookResult.Opened(OpenBook(BookContent.Pdf(document), Container.Pdf, pages, indexError = null, decoding))
     }
 
     /** Opens the ZIP or PDF document at [uri]. A provider that cannot seek gets the document copied into [copyDir]. */
@@ -210,6 +212,14 @@ internal fun Exception.bookFailure(): BookFailure = when (this) {
     is SecurityException -> BookFailure.NoPermission
     is NoRoomForCopyException -> BookFailure.NoRoomForCopy
     else -> BookFailure.ReadError
+}
+
+/** An archive with no entries has no format to tell, and counts as a ZIP. */
+private fun ArchiveFormat?.container(): Container = when (this) {
+    null, ArchiveFormat.Zip -> Container.Zip
+    ArchiveFormat.Rar, ArchiveFormat.Rar5 -> Container.Rar
+    ArchiveFormat.SevenZip -> Container.SevenZip
+    ArchiveFormat.Tar -> Container.Tar
 }
 
 private fun ArchiveFailure.bookFailure(): BookFailure = when (this) {

@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +32,13 @@ class OpenBookTest {
         val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
         assertEquals(readError, book.page(0, PixelSize(1080, 1920)))
         assertEquals(readError, book.shape(0))
+        book.close()
+    }
+
+    @Test
+    fun aFolderBookIsOpenedFromAFolder() = runTest {
+        val book = (Books.openFolder(emptyList(), decoding) as BookResult.Opened).book
+        assertEquals(Container.Folder, book.container)
         book.close()
     }
 

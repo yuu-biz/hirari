@@ -7,6 +7,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,7 +24,10 @@ import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
+import io.github.yuubiz.hirari.core.model.Book
+import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
@@ -34,6 +38,7 @@ import io.github.yuubiz.hirari.core.model.documentBookId
 import io.github.yuubiz.hirari.core.model.folderBookId
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
+import io.github.yuubiz.hirari.core.source.documentInfo
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.feature.reader.prefetch.Prefetcher
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchDepths
@@ -132,6 +137,7 @@ class ReaderViewModel(
         val prefetcher: Prefetcher<Bitmap>,
         val services: ReaderServices,
         val progress: ProgressLog,
+        val session: ReadingSession,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -232,6 +238,7 @@ class ReaderViewModel(
         thumbnails.clear()
         val book = opened ?: return
         book.prefetcher.close()
+        book.session.close()
         book.services.progress.flush()
         book.services.appScope.launch { book.book.close() }
     }
@@ -239,7 +246,8 @@ class ReaderViewModel(
     private suspend fun open() {
         val services = services.await()
         val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
-        val config = ReaderConfig.of(services.storage.settings.settings.first())
+        val settings = services.storage.settings.settings.first()
+        val config = ReaderConfig.of(settings)
         var produced: BookResult? = null
         val (id, result) = try {
             withContext(Dispatchers.IO) { openBook(services, copyDir).also { produced = it.second } }
@@ -260,9 +268,10 @@ class ReaderViewModel(
             return
         }
         // A reader closed moments ago may still hold this book's latest position in the writer's window.
-        val saved = try {
+        val openedAt = Instant.now()
+        val (saved, indexed) = try {
             services.progress.flush().join()
-            services.storage.progress.get(id)
+            services.storage.progress.get(id) to withContext(Dispatchers.IO) { describe(id, book) }
         } catch (e: CancellationException) {
             services.appScope.launch { book.close() }
             throw e
@@ -278,9 +287,39 @@ class ReaderViewModel(
         }
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved))
+        val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), session)
         phase = ReaderPhase.Reading
         start()
+    }
+
+    /**
+     * The index entry of the opened [book] (docs/spec.md section 2.2). What the provider does not report stays
+     * unknown: no name falls back to the path, no size to 0, and no modification time to the epoch.
+     */
+    private fun describe(id: BookId, book: OpenBook): Book {
+        val documentUri = when (ref) {
+            is BookRef.Document -> ref.uri
+            is BookRef.Folder -> DocumentsContract.buildDocumentUriUsingTree(ref.uri, DocumentsContract.getTreeDocumentId(ref.uri))
+        }
+        val info = try {
+            application.contentResolver.documentInfo(documentUri)
+        } catch (_: Exception) {
+            null
+        }
+        val size = when (ref) {
+            is BookRef.Document -> info?.size ?: 0L
+            is BookRef.Folder -> book.pages.sumOf { it.declaredSize ?: 0L }
+        }
+        return Book(
+            id = id,
+            source = BookSource.External(UriString(ref.uri.toString())),
+            format = BookFormat.Images(book.container),
+            title = info?.name ?: ref.path,
+            byteSize = size,
+            modified = info?.lastModifiedMs?.let(Instant::ofEpochMilli) ?: Instant.EPOCH,
+            pageCount = book.pages.size,
+        )
     }
 
     /** Lays out the book once both the book and the screen size are known. */

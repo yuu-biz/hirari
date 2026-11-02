@@ -105,6 +105,28 @@ fun ContentResolver.listChildren(
     }
 }
 
+/** What a provider reports about one document; a field is null when it does not report it. */
+class DocumentInfo(val name: String?, val size: Long?, val lastModifiedMs: Long?)
+
+/**
+ * The name, size and modification time of the document at [uri], from one query. A provider that is no document
+ * provider may lack the modification time. Blocks on Binder, so never call it on the main thread.
+ *
+ * @throws SecurityException when the permission to read it is gone.
+ */
+fun ContentResolver.documentInfo(uri: Uri): DocumentInfo? {
+    val cursor = query(uri, null, null, null, null) ?: return null
+    return cursor.use {
+        if (!it.moveToFirst()) return null
+        fun column(name: String) = it.getColumnIndex(name).takeIf { index -> index >= 0 && !it.isNull(index) }
+        DocumentInfo(
+            name = column(Document.COLUMN_DISPLAY_NAME)?.let(it::getString),
+            size = column(Document.COLUMN_SIZE)?.let(it::getLong),
+            lastModifiedMs = column(Document.COLUMN_LAST_MODIFIED)?.let(it::getLong)?.takeIf { ms -> ms > 0 },
+        )
+    }
+}
+
 private val CHILD_COLUMNS = arrayOf(
     Document.COLUMN_DOCUMENT_ID,
     Document.COLUMN_DISPLAY_NAME,

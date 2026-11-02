@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -42,9 +43,11 @@ internal sealed interface BookContent : Closeable {
  *
  * @property pages the page list in natural order, fixed while the book is open (section 3.5).
  * @property indexError why listing the archive stopped early, or null when it reached the end.
+ * @property container what the book was opened from, for the index of opened books (section 2.2).
  */
 class OpenBook internal constructor(
     private val content: BookContent,
+    val container: Container,
     val pages: List<PageEntry>,
     val indexError: FailureReason?,
     private val decoding: ImageDecoding,
