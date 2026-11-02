@@ -135,7 +135,7 @@ data class Book(
 - 場所を通さずに 1 つの文書として選んだ本と、外部から渡された本の `BookId` は、文書の先頭 64 KB と大きさの SHA-256 にする（Q10）。URI はアプリや許可をまたぐと変わるが、同じファイルなら先頭と大きさは変わらない。64 KB より短い文書は全体を使う。
 - 場所を通さずに選んだ画像フォルダの `BookId` は、ツリーの URI の SHA-256 にする。永続許可を取ったツリーの URI はこのアプリの中では変わらない。M2 で場所に登録したフォルダの本は、場所の中の本の規則で作る。
 - 文書、フォルダ、場所の中の本のハッシュには、それぞれ別の前置きの文字列を付け、ID が重ならないようにする。
-- `:core:model` は Android に依存しないので、`Uri` を文字列の値クラス `UriString` で持つ。`CredentialRef` は Keystore の別名を包む値クラスである。
+- `:core:model` は Android に依存しないので、`Uri` を文字列の値クラス `UriString` で持つ。`CredentialRef` は、暗号化したパスワードの行の別名（7 章）を包む値クラスである。
 
 ### 2.3 ページ
 
@@ -1692,7 +1692,7 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 | `:core:archive` | libarchive と JNI、`ArchiveSession`、エントリの索引、展開キャッシュ、名前の文字コード | `:core:model`、`:core:source` |
 | `:core:image` | 形式の判定、デコードの計画、各デコーダの接続、縮小、トリミング、タイル、PDF | `:core:model`、`:core:source`、`:core:archive` |
 | `:core:text` | 本文の文字コード、青空文庫記法の解析、縦書きの組版、ページ分割 | `:core:model` |
-| `:core:data` | Room、DataStore、資格情報の保存、設定の保存形式（`GlobalSettings`）、設定の書き出しと読み込み | `:core:model` |
+| `:core:data` | Room、DataStore、資格情報の保存、設定の保存形式（`GlobalSettings`）、設定の書き出しと読み込み、サムネイルのディスクキャッシュ、自動バックアップの規則 | `:core:model` |
 | `:core:ui` | テーマ、共通の Compose 部品 | `:core:model` |
 | `:feature:library` | ホーム、ファイル一覧、場所、履歴、しおり、書庫内一覧 | `:core:*` |
 | `:feature:reader` | リーダー画面、操作の判定、先読みの計画、重ねる表示 | `:core:*` |
