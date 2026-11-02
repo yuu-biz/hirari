@@ -204,12 +204,16 @@ private fun TrimStrength.level(): TrimLevel? = when (this) {
 internal class EdgeLines(private val span: Int, private val differing: IntArray, private val toned: BooleanArray) {
     /**
      * The pixels of a side of [side] pixels to cut at [level], rounded down, or null when the edge is not cut:
-     * when two toned lines in a row come before the content, a faint picture runs to the edge.
+     * when two toned lines in a row come before the content, a faint picture runs to the edge. A copy shrunk from
+     * the side mixes the content into up to two of its lines before where it reads the content to start, so it
+     * stops two lines short and does not count those lines as toned.
      */
     fun cut(level: TrimLevel, side: Int): Int? {
         val start = contentStart(level)
-        if ((0 until start - 1).any { toned[it] && toned[it + 1] }) return null
-        val found = min(start, differing.size * level.rangePercent / 100)
+        val blurred = if (side > differing.size) SHRINK_BLUR_LINES else 0
+        val unmixed = (start - blurred).coerceAtLeast(0)
+        if ((0 until unmixed - 1).any { toned[it] && toned[it + 1] }) return null
+        val found = min(unmixed, differing.size * level.rangePercent / 100)
         val inPage = found.toLong() * side / differing.size
         return (inPage * level.cutPercent / 100).toInt()
     }
@@ -310,3 +314,6 @@ private const val DIFFERENT = 32
 private const val TONE = 8
 
 private const val BAND_PARTS = 8
+
+/** Lines of a shrunk copy by which averaging can move a boundary inward (docs/spec.md section 4.8, step 5). */
+private const val SHRINK_BLUR_LINES = 2

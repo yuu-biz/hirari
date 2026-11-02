@@ -22,7 +22,7 @@ class TrimCostTest {
             return sum
         }
         val expected = once()
-        assertEquals(0 + 72 + 96 + 108 + 120, expected)
+        assertEquals(0 + 67 + 89 + 100 + 112, expected)
         val scans = timed(expected) { once() }
         val passes = timed(floor()) { floor() }
         println("trim scan of ${page.width}x${page.height}, all strengths: $scans; one pass over the pixels: $passes")

@@ -9,15 +9,15 @@ class TrimTest {
     private fun trimmed(page: TestPage, strength: TrimStrength, size: PixelSize = PORTRAIT_PAGE): PageTrim =
         scanMargins(page.luma(), size).trim(strength)
 
-    /** At 4 page pixels a line, the weak strength cuts 60% of 120, 160, 112 and 176 pixels, rounded down. */
-    private val ordinaryWeak = PixelRect(72, 96, 1448 - 67, 2048 - 105)
+    /** At 4 page pixels a line, the weak strength cuts 60% of the margins less two lines: 112, 152, 104 and 168 pixels. */
+    private val ordinaryWeak = PixelRect(67, 91, 1448 - 62, 2048 - 100)
 
     @Test
     fun anOrdinaryPageCutsItsShareOfEveryMarginInPagePixels() {
         val trim = trimmed(portrait(ORDINARY), TrimStrength.Weak)
         assertEquals(ordinaryWeak, trim.content)
         assertEquals(emptyList<TrimRule>(), trim.fired)
-        assertEquals(PixelRect(120, 160, 1448 - 112, 2048 - 176), trimmed(portrait(ORDINARY), TrimStrength.Strongest).content)
+        assertEquals(PixelRect(112, 152, 1448 - 104, 2048 - 168), trimmed(portrait(ORDINARY), TrimStrength.Strongest).content)
     }
 
     @Test
@@ -67,14 +67,14 @@ class TrimTest {
     @Test
     fun twoContentLinesInARowStartTheContent() {
         val twoLines = portrait(ORDINARY) { fill(PixelRect(100, 20, 200, 22), INK) }
-        assertEquals(48, trimmed(twoLines, TrimStrength.Weak).cut.top)
+        assertEquals(43, trimmed(twoLines, TrimStrength.Weak).cut.top)
     }
 
     @Test
     fun theThresholdOfEachStrengthDecidesWhetherASpeckIsContent() {
         val speck = portrait(ORDINARY) { fill(PixelRect(150, 20, 152, 22), INK) }
-        assertEquals(48, trimmed(speck, TrimStrength.Weak).cut.top)
-        assertEquals(128, trimmed(speck, TrimStrength.Medium).cut.top)
+        assertEquals(43, trimmed(speck, TrimStrength.Weak).cut.top)
+        assertEquals(121, trimmed(speck, TrimStrength.Medium).cut.top)
     }
 
     @Test
@@ -84,7 +84,7 @@ class TrimTest {
             for (digit in 0 until 3) fill(PixelRect(170 + digit * 8, 490, 176 + digit * 8, 498), INK)
         }
         val trim = trimmed(page, TrimStrength.Weak)
-        assertEquals(PixelRect(28, 96, 1448 - 67, 2048 - 33), trim.content)
+        assertEquals(PixelRect(24, 91, 1448 - 62, 2048 - 28), trim.content)
     }
 
     @Test
@@ -191,7 +191,7 @@ class TrimTest {
     fun aWidePageCutsLeftAndRightByTheSmaller() {
         val spread = TestPage(512, 362).apply { frame(PixelRect(40, 30, 432, 332)) }
         val trim = scanMargins(spread.luma(), PixelSize(2048, 1448)).trim(TrimStrength.Weak)
-        assertEquals(Insets(96, 72, 96, 72), trim.cut)
+        assertEquals(Insets(91, 67, 91, 67), trim.cut)
         assertEquals(listOf(TrimRule.WideSymmetric), trim.fired)
     }
 
@@ -209,8 +209,8 @@ class TrimTest {
         val first = scanMargins(portrait(PixelRect(30, 20, 334, 482)).luma(), PORTRAIT_PAGE).trim(TrimStrength.Weak)
         val second = scanMargins(portrait(PixelRect(30, 40, 334, 502)).luma(), PixelSize(724, 1024)).trim(TrimStrength.Weak)
         val (a, b) = trimPair(first, second)
-        assertEquals(Insets(72, 48, 67, 24), a.cut)
-        assertEquals(Insets(36, 24, 33, 12), b.cut)
+        assertEquals(Insets(67, 43, 62, 18), a.cut)
+        assertEquals(Insets(33, 21, 31, 9), b.cut)
         assertEquals(listOf(TrimRule.PairHeight), a.fired)
         assertEquals(listOf(TrimRule.PairHeight), b.fired)
     }
@@ -220,7 +220,7 @@ class TrimTest {
         val first = scanMargins(portrait(ORDINARY).luma(), PORTRAIT_PAGE).trim(TrimStrength.Strongest)
         val second = scanMargins(portrait(PixelRect(101, 143, 261, 369)).luma(), PixelSize(362, 512)).trim(TrimStrength.Strongest)
         val (a, b) = trimPair(first, second)
-        assertEquals(Insets(120, 0, 112, 0), a.cut)
+        assertEquals(Insets(112, 0, 104, 0), a.cut)
         assertEquals(listOf(TrimRule.PairHeight), a.fired)
         assertEquals(Insets.None, b.cut)
         assertTrue(b.fired.toString(), TrimRule.UnderHalf in b.fired)
@@ -235,6 +235,40 @@ class TrimTest {
         assertEquals(Insets.None, a.cut)
         assertEquals(listOf(TrimRule.PairHeight, TrimRule.AspectChanged), a.fired)
         assertEquals(tall.cut, b.cut)
+    }
+
+    @Test
+    fun aBoundaryTheCopyAveragesIntoTheMarginIsNotCut() {
+        val page = PixelSize(4096, 4096)
+        val trim = scanMargins(averagedCopy(page, PixelRect(103, 103, 3993, 3993), contrast = 220), page).trim(TrimStrength.Strongest)
+        assertEquals(PixelRect(88, 88, 4008, 4008), trim.content)
+    }
+
+    @Test
+    fun noBoundaryOffTheGridOfTheCopyIsCutAtAnyContrast() {
+        val sidesAndWorstStarts = listOf(4096 to 97, 2048 to 101, 1031 to 293, 2163 to 445, 4198 to 281)
+        for ((side, worst) in sidesAndWorstStarts) {
+            val page = PixelSize(side, side)
+            val scale = (side + 511) / 512
+            for (start in worst - scale..worst + scale) for (contrast in listOf(33, 40, 100, 220)) {
+                val content = PixelRect(start, start + 3, side - side / 20 - start % 7, side - side / 19 - start % 5)
+                val scan = scanMargins(averagedCopy(page, content, contrast), page)
+                for (strength in TrimStrength.entries) {
+                    val kept = scan.trim(strength).content
+                    assertTrue(
+                        "$side, start $start, contrast $contrast, $strength: $kept",
+                        kept.left <= content.left && kept.top <= content.top && kept.right >= content.right && kept.bottom >= content.bottom,
+                    )
+                }
+                val strongest = scan.trim(TrimStrength.Strongest).content
+                val slack = 3 * scale
+                assertTrue(
+                    "$side, start $start, contrast $contrast, at most three lines of the copy left: $strongest",
+                    strongest.left >= content.left - slack && strongest.top >= content.top - slack &&
+                        strongest.right <= content.right + slack && strongest.bottom <= content.bottom + slack,
+                )
+            }
+        }
     }
 
     @Test

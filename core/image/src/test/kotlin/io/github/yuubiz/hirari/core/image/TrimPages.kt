@@ -1,5 +1,8 @@
 package io.github.yuubiz.hirari.core.image
 
+import kotlin.math.floor
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 internal const val PAPER = 240
@@ -76,3 +79,37 @@ internal val PORTRAIT_PAGE = PixelSize(1448, 2048)
 
 /** Content with margins of 30, 40, 28 and 44 lines at the analysis size. */
 internal val ORDINARY = PixelRect(30, 40, 334, 468)
+
+/**
+ * The analysis copy of a page of [page] pixels of [paper] with a solid block of [content], [contrast] levels darker,
+ * as the steps of [downscaleSteps] average it: each step a bilinear filter that samples at pixel centres, which is
+ * a 2 x 2 box where it halves an even side.
+ */
+internal fun averagedCopy(page: PixelSize, content: PixelRect, contrast: Int, paper: Int = PAPER): LumaImage {
+    val size = trimAnalysisSize(page)
+    val steps = downscaleSteps(page, size)
+    val across = coverage(page.width, steps.map { it.width }, content.left, content.right)
+    val down = coverage(page.height, steps.map { it.height }, content.top, content.bottom)
+    val pixels = ByteArray(size.width * size.height) { i ->
+        (paper - contrast * across[i % size.width] * down[i / size.width]).roundToInt().toByte()
+    }
+    return LumaImage(size.width, size.height, pixels)
+}
+
+/** For each pixel of a side of [side] pixels taken through [steps], the share of its value from pixels [from] until [until]. */
+private fun coverage(side: Int, steps: List<Int>, from: Int, until: Int): DoubleArray {
+    var shares = DoubleArray(side) { if (it in from until until) 1.0 else 0.0 }
+    var length = side
+    for (next in steps) {
+        val source = shares
+        val last = length - 1
+        shares = DoubleArray(next) { j ->
+            val x = ((j + 0.5) * length / next - 0.5).coerceIn(0.0, last.toDouble())
+            val i = floor(x).toInt()
+            val f = x - i
+            source[i] * (1 - f) + source[min(i + 1, last)] * f
+        }
+        length = next
+    }
+    return shares
+}
