@@ -86,26 +86,35 @@ fun detectCharset(bytes: ByteArray, fallback: Charset): DetectedCharset {
 fun decodeText(bytes: ByteArray, charset: Charset): String {
     val bom = bomOf(bytes)?.takeIf { it.charset == charset }
     val start = bom?.bytes?.size ?: 0
-    val decoded = charset.newDecoder()
+    val decoder = charset.newDecoder()
         .onMalformedInput(CodingErrorAction.REPLACE)
         .onUnmappableCharacter(CodingErrorAction.REPLACE)
         .replaceWith("�")
-        .decode(ByteBuffer.wrap(bytes, start, bytes.size - start))
-    return normalizeLineBreaks(decoded)
+    val input = ByteBuffer.wrap(bytes, start, bytes.size - start)
+    // Sized for the most the decoder can make, so the chars are never copied to grow; see TextFootprint.
+    var out = CharBuffer.allocate((input.remaining() * decoder.maxCharsPerByte()).toInt() + 1)
+    fun grow() {
+        val full = out
+        full.flip()
+        out = CharBuffer.allocate(full.capacity() * 2).put(full)
+    }
+    while (decoder.decode(input, out, true).isOverflow) grow()
+    while (decoder.flush(out).isOverflow) grow()
+    return withLineFeeds(out.array(), out.position())
 }
 
-private fun normalizeLineBreaks(text: CharSequence): String {
-    val out = StringBuilder(text.length)
-    var i = 0
-    while (i < text.length) {
-        val c = text[i]
+/** The first [length] chars of [chars] with every CRLF and CR as LF, unified in place. */
+private fun withLineFeeds(chars: CharArray, length: Int): String {
+    var read = 0
+    var write = 0
+    while (read < length) {
+        val c = chars[read++]
         if (c == '\r') {
-            out.append('\n')
-            if (i + 1 < text.length && text[i + 1] == '\n') i++
+            chars[write++] = '\n'
+            if (read < length && chars[read] == '\n') read++
         } else {
-            out.append(c)
+            chars[write++] = c
         }
-        i++
     }
-    return out.toString()
+    return String(chars, 0, write)
 }

@@ -59,10 +59,10 @@ class TextOnDeviceTest {
         val opened = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0)
         val entry = (opened as TextOpenResult.Opened).text
         try {
-            assertArrayEquals(text, entry.bytes)
+            assertArrayEquals(text, opened.bytes)
             assertEquals("dir/本文.txt", entry.path)
             assertEquals(entryBookId(archiveId, "dir/本文.txt".toByteArray(Charsets.UTF_8)), entry.id)
-            val figure = parseAozora(decodeText(entry.bytes, Charsets.UTF_8)).blocks.filterIsInstance<Figure>().single()
+            val figure = parseAozora(decodeText(opened.bytes, Charsets.UTF_8)).blocks.filterIsInstance<Figure>().single()
             val path = resolvePicturePath(entry.path, figure.path)!!
             assertArrayEquals(png, entry.pictures!!.read(path))
         } finally {

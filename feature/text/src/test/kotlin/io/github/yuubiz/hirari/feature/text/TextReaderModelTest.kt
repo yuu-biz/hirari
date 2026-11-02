@@ -30,12 +30,17 @@ class TextReaderModelTest {
     private val screen = Viewport(width = 400, height = 600, density = 1f)
     private var closed = 0
 
-    private fun TestScope.model(text: String = source, fonts: TextFonts = FakeFonts()): TextReaderModel {
-        val opened = OpenedText(id, text.toByteArray(Charsets.UTF_8), "file.txt", "dir/file.txt", book = null, pictures = null) { closed++ }
+    private fun TestScope.model(
+        text: String = source,
+        fonts: TextFonts = FakeFonts(),
+        bytes: ByteArray = text.toByteArray(Charsets.UTF_8),
+        heapBudget: Long = textHeapBudget(),
+    ): TextReaderModel {
+        val opened = OpenedText(id, "file.txt", "dir/file.txt", book = null, pictures = null) { closed++ }
         return TextReaderModel(
             scope = backgroundScope,
             work = StandardTestDispatcher(testScheduler),
-            opener = { TextOpenResult.Opened(opened) },
+            opener = { TextOpenResult.Opened(opened, bytes) },
             settings = settings,
             progress = progress,
             writer = ProgressWriter(progress, backgroundScope),
@@ -43,6 +48,7 @@ class TextReaderModelTest {
             fonts = fonts,
             history = history,
             clock = { Instant.ofEpochSecond(testScheduler.currentTime) },
+            heapBudget = heapBudget,
         ).also {
             it.start()
             it.onViewport(screen)
@@ -221,5 +227,38 @@ class TextReaderModelTest {
         settle()
         model.close()
         assertEquals(1, closed)
+    }
+
+    @Test
+    fun `a 60 MiB text on one line fails as too large instead of running out of memory`() = runTest {
+        val model = model(bytes = ByteArray(60 shl 20) { 'a'.code.toByte() })
+        settle()
+        assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), model.state.value)
+        model.close()
+        assertEquals(1, closed)
+    }
+
+    @Test
+    fun `a text whose lines take more memory than texts may have fails as too large, where a longer one opens`() = runTest {
+        val budget = 16L shl 20
+        val long = sampleText(sentencesPerChapter = 1000)
+        val opens = model(long, heapBudget = budget)
+        settle()
+        assertIs<TextReaderUiState.Reading>(opens.state.value)
+        val blank = "\n".repeat(70_000)
+        assertTrue(blank.length < long.length)
+        val fails = model(blank, heapBudget = budget)
+        settle()
+        assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), fails.state.value)
+    }
+
+    @Test
+    fun `running out of memory while laying out fails as too large, and a new size does not bring the text back`() = runTest {
+        val model = model(fonts = FakeFonts(metrics = { _, _, _ -> throw OutOfMemoryError() }))
+        settle()
+        assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), model.state.value)
+        settings.value = settings.value.copy(textSizeSp = 30)
+        settle()
+        assertEquals(TextReaderUiState.Failed(TextFailure.TooLarge), model.state.value)
     }
 }

@@ -72,5 +72,15 @@ class TextCharsetTest {
     @Test
     fun `every line break becomes LF`() {
         assertEquals("a\nb\nc\n\nd", decodeText("a\r\nb\rc\n\r\nd".toByteArray(), Charsets.UTF_8))
+        assertEquals("\n", decodeText("\r".toByteArray(), Charsets.UTF_8))
+    }
+
+    @Test
+    fun `an empty text, and one of characters outside the BMP, decode whole`() {
+        assertEquals("", decodeText(ByteArray(0), Charsets.UTF_8))
+        val wide = "𠮷野家\r\n𩸽".repeat(1000)
+        for (charset in listOf(Charsets.UTF_8, Charsets.UTF_16LE, Charsets.UTF_16BE)) {
+            assertEquals(wide.replace("\r\n", "\n"), decodeText(wide.toByteArray(charset), charset), charset.name())
+        }
     }
 }

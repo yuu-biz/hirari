@@ -73,12 +73,12 @@ class FakeHistory : TextHistory {
     }
 }
 
-/** Every typeface measures with the fixed metrics; [gone] names imported fonts that are not there. */
-class FakeFonts(private val gone: Set<String> = emptySet()) : TextFonts {
+/** Every typeface measures with [metrics]; [gone] names imported fonts that are not there. */
+class FakeFonts(private val gone: Set<String> = emptySet(), private val metrics: GlyphMetrics = FixedGlyphMetrics) : TextFonts {
     override suspend fun available(typeface: TextTypeface): TextTypeface =
         if (typeface is TextTypeface.Imported && typeface.fileName in gone) TextTypeface.Mincho else typeface
 
-    override suspend fun metrics(typeface: TextTypeface): GlyphMetrics = FixedGlyphMetrics
+    override suspend fun metrics(typeface: TextTypeface): GlyphMetrics = metrics
 }
 
 /** A text of [chapters] chapters with headings, each with one paragraph long enough to span several pages. */

@@ -24,3 +24,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.junit)
 }
+
+// The model tests open texts sized against the heap (docs/spec.md section 3.11), so the heap is pinned.
+tasks.withType<Test>().configureEach {
+    maxHeapSize = "512m"
+}

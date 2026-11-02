@@ -137,7 +137,7 @@ private class OpenRange(val style: Style, var start: Int)
 
 private class LineBuilder(val start: Int) {
     val text = StringBuilder()
-    val offsets = ArrayList<Int>()
+    private var offsets = IntArray(16)
     val spans = ArrayList<Span>()
     var indent: Int? = null
     var bottom: BottomAlign? = null
@@ -145,10 +145,15 @@ private class LineBuilder(val start: Int) {
 
     fun append(s: String, sourceStart: Int) {
         for (c in s) {
-            offsets.add(if (offsets.isEmpty()) start else sourceStart)
+            if (text.length == offsets.size) offsets = offsets.copyOf(offsets.size * 2)
+            offsets[text.length] = if (text.isEmpty()) start else sourceStart
             text.append(c)
         }
     }
+
+    fun offset(index: Int): Int = offsets[index]
+
+    fun offsets(): IntArray = offsets.copyOf(text.length)
 }
 
 /** docs/spec.md section 4.9: a ruled block of notation help in lines 2 to 500, rule lines included. */
@@ -161,6 +166,17 @@ private fun helpBlock(lines: List<IntRange>, source: String): IntRange? {
     val first = window.firstOrNull(::isRule) ?: return null
     val second = (first + 1 until window.last + 1).firstOrNull(::isRule) ?: return null
     return first..second
+}
+
+/** The lines of [source] without their line breaks, as ranges of it, one at a time. */
+internal fun sourceLines(source: String): Sequence<IntRange> = sequence {
+    var lineStart = 0
+    while (lineStart <= source.length) {
+        val newline = source.indexOf('\n', lineStart)
+        val end = if (newline < 0) source.length else newline
+        if (newline >= 0 || end > lineStart) yield(lineStart until end)
+        lineStart = end + 1
+    }
 }
 
 /** Parses [source], the output of [decodeText], by the notation subset of docs/spec.md section 4.9. */
@@ -177,16 +193,8 @@ private class AozoraParser(private val source: String, private val gaiji: JisX02
     private var isFirstLine = true
 
     fun parse(): TextDocument {
-        val lines = ArrayList<IntRange>()
-        var lineStart = 0
-        while (lineStart <= source.length) {
-            val newline = source.indexOf('\n', lineStart)
-            val end = if (newline < 0) source.length else newline
-            if (newline >= 0 || end > lineStart) lines += lineStart until end
-            lineStart = end + 1
-        }
-        val hidden = helpBlock(lines, source)
-        for ((i, line) in lines.withIndex()) {
+        val hidden = helpBlock(sourceLines(source).take(500).toList(), source)
+        for ((i, line) in sourceLines(source).withIndex()) {
             if (hidden != null && i in hidden) continue
             val first = blocks.size
             parseLine(line.first, line.last + 1)
@@ -343,7 +351,7 @@ private class AozoraParser(private val source: String, private val gaiji: JisX02
             Style.Bold -> Span.Bold(start, end)
             Style.TateChuYoko -> Span.TateChuYoko(start, end)
             is Style.Heading -> {
-                headings += Heading(style.level, line.text.substring(start, end), line.offsets[start])
+                headings += Heading(style.level, line.text.substring(start, end), line.offset(start))
                 Span.HeadingText(start, end, style.level)
             }
         }
@@ -359,7 +367,7 @@ private class AozoraParser(private val source: String, private val gaiji: JisX02
         val wrap = line.indent ?: block?.wrap ?: 0
         val bottom = line.bottom ?: bottomBlock?.let { BottomAlign(0, it) }
         blocks += Paragraph(
-            line.text.toString(), line.offsets.toIntArray(), line.start, end, line.spans.toList(), indent, wrap, bottom, isFirstLine,
+            line.text.toString(), line.offsets(), line.start, end, line.spans.toList(), indent, wrap, bottom, isFirstLine,
         )
     }
 }

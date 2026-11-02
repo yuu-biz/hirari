@@ -13,6 +13,7 @@ import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.text.Heading
 import io.github.yuubiz.hirari.core.text.LayoutParams
 import io.github.yuubiz.hirari.core.text.TextDocument
+import io.github.yuubiz.hirari.core.text.TextFootprint
 import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.text.VerticalLayout
 import io.github.yuubiz.hirari.core.text.decodeText
@@ -90,6 +91,7 @@ internal class TextReaderModel(
     private val fonts: TextFonts,
     private val history: TextHistory,
     private val clock: () -> Instant = Instant::now,
+    private val heapBudget: Long = textHeapBudget(),
 ) {
     private val _state = MutableStateFlow<TextReaderUiState>(TextReaderUiState.Opening)
     val state: StateFlow<TextReaderUiState> = _state.asStateFlow()
@@ -125,21 +127,16 @@ internal class TextReaderModel(
     }
 
     private suspend fun open() {
-        val text = when (val result = opener.open()) {
-            is TextOpenResult.Failed -> {
-                _state.value = TextReaderUiState.Failed(result.reason)
-                return
-            }
-            is TextOpenResult.Opened -> result.text
+        val result = when (val opened = opener.open()) {
+            is TextOpenResult.Failed -> return fail(opened.reason)
+            is TextOpenResult.Opened -> opened
         }
+        val text = result.text
         if (closed) return text.close()
         opened = text
         val first = settings.first()
         val fallback = Charset.forName(first.fallbackCharset.charsetName)
-        val parsed = withContext(work) {
-            val decoded = decodeText(text.bytes, detectCharset(text.bytes, fallback).charset)
-            parseAozora(decoded).let { it to tableOfContents(it) }
-        }
+        val parsed = read(result.bytes, fallback) ?: return
         document = parsed.first
         contents = parsed.second
         title = parsed.first.title ?: text.title
@@ -155,6 +152,47 @@ internal class TextReaderModel(
         if (stopped) history.stop()
         scope.launch { bookmarks.inBook(text.id).collect { marks = it; render() } }
         scope.launch { settings.collect { apply(it) } }
+    }
+
+    /**
+     * The document of [bytes] and its contents, or null when they do not fit [heapBudget] (docs/spec.md section
+     * 3.11). The bytes go once decoded: each step is its own call, so nothing holds them while the text parses.
+     */
+    private suspend fun read(bytes: ByteArray, fallback: Charset): Pair<TextDocument, List<Heading>>? {
+        if (TextFootprint.decoding(bytes.size) > heapBudget) {
+            fail(TextFailure.TooLarge)
+            return null
+        }
+        val source = working { decodeText(bytes, detectCharset(bytes, fallback).charset) } ?: return null
+        return parse(source)
+    }
+
+    private suspend fun parse(source: String): Pair<TextDocument, List<Heading>>? {
+        val fits = working { TextFootprint.reading(source) <= heapBudget } ?: return null
+        if (!fits) {
+            fail(TextFailure.TooLarge)
+            return null
+        }
+        return working { parseAozora(source).let { it to tableOfContents(it) } }
+    }
+
+    /**
+     * [block] on [work]. Running out of memory there ends the reading as too large and drops what it holds, so the
+     * failure stays on screen and the memory comes back (docs/spec.md section 6.1).
+     */
+    private suspend fun <T> working(block: () -> T): T? = try {
+        withContext(work) { block() }
+    } catch (_: OutOfMemoryError) {
+        fail(TextFailure.TooLarge)
+        null
+    }
+
+    private fun fail(reason: TextFailure) {
+        layoutJob?.cancel()
+        searchJob?.cancel()
+        document = null
+        run = null
+        _state.value = TextReaderUiState.Failed(reason)
     }
 
     fun onViewport(next: Viewport) {
@@ -221,7 +259,7 @@ internal class TextReaderModel(
         search = SearchState.Searching(query)
         render()
         searchJob = scope.launch {
-            val result = withContext(work) { searchText(document, query) }
+            val result = working { searchText(document, query) } ?: return@launch
             search = SearchState.Done(result)
             render()
         }
@@ -317,11 +355,11 @@ internal class TextReaderModel(
         val typeface = typeface
         layoutJob = scope.launch {
             val metrics = fonts.metrics(typeface)
-            val setter = withContext(work) { Typesetter(VerticalLayout(document, frame.params, metrics), document.sourceLength, anchor) }
+            val setter = working { Typesetter(VerticalLayout(document, frame.params, metrics), document.sourceLength, anchor) } ?: return@launch
             while (true) {
                 val reading = anchor
-                val snapshot = withContext(work) { if (setter.step(reading)) setter.snapshot() else null } ?: break
-                publish(snapshot)
+                val step = working { if (setter.step(reading)) setter.snapshot() else null } ?: break
+                publish(step)
             }
         }
     }
@@ -369,3 +407,6 @@ internal class TextReaderModel(
         )
     }
 }
+
+/** The Java heap a text may take as it opens: half of it, which leaves the rest of the app its room. */
+internal fun textHeapBudget(): Long = Runtime.getRuntime().maxMemory() / 2

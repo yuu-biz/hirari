@@ -75,7 +75,7 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri): TextOpenR
         modified = info?.lastModifiedMs?.let(Instant::ofEpochMilli) ?: Instant.EPOCH,
         pageCount = null,
     )
-    TextOpenResult.Opened(OpenedText(id, bytes, title, path = "", book, pictures = null) {})
+    TextOpenResult.Opened(OpenedText(id, title, path = "", book, pictures = null) {}, bytes)
 }
 
 private suspend fun openEntry(resolver: ContentResolver, ref: TextBookRef.ArchiveEntry, copyDir: File): TextOpenResult = guarded {
@@ -118,7 +118,7 @@ internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex
             (session.read(picture.entryIndex) as? EntryResult.Data)?.bytes
         }
         val id: BookId = entryBookId(archiveId, entry.rawName)
-        TextOpenResult.Opened(OpenedText(id, bytes, name.substringAfterLast('/'), normalizePath(name), book = null, pictures, session::close))
+        TextOpenResult.Opened(OpenedText(id, name.substringAfterLast('/'), normalizePath(name), book = null, pictures, session::close), bytes)
     } catch (e: Throwable) {
         session.close()
         throw e

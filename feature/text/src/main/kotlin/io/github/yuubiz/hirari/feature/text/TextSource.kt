@@ -16,7 +16,7 @@ enum class TextFailure {
     /** The archive, or the entry, is encrypted (section 3.8). */
     Encrypted,
 
-    /** Longer than [MAX_TEXT_BYTES] (section 3.11). */
+    /** Longer than [MAX_TEXT_BYTES], or more than the memory for texts holds (section 3.11). */
     TooLarge,
     ReadError,
 }
@@ -30,13 +30,12 @@ fun interface PictureReader {
 }
 
 /**
- * A text read off its source. [path] is where the text sits in its archive, for the 挿絵, and [pictures] reads
+ * A text opened on its source. [path] is where the text sits in its archive, for the 挿絵, and [pictures] reads
  * them; a single document has no reachable neighbors, so it has none. [book] is the entry for the library index,
  * or null when the source has no form there. [close] releases the source.
  */
 class OpenedText(
     val id: BookId,
-    val bytes: ByteArray,
     val title: String,
     val path: String,
     val book: Book?,
@@ -45,7 +44,8 @@ class OpenedText(
 )
 
 sealed interface TextOpenResult {
-    class Opened(val text: OpenedText) : TextOpenResult
+    /** [bytes] is the whole text, which the reader drops once it is decoded; [text] stays open with the reader. */
+    class Opened(val text: OpenedText, val bytes: ByteArray) : TextOpenResult
 
     data class Failed(val reason: TextFailure) : TextOpenResult
 }
