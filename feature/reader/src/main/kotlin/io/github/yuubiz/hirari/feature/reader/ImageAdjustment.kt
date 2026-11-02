@@ -71,35 +71,47 @@ private fun colours(offset: Float = 0f, gain: (row: Int, column: Int) -> Float):
 const val SHARPEN_AMOUNT = 0.2f
 
 /**
- * シャープ on ARGB [pixels] of [width] × [height]: a 3×3 Laplacian of [SHARPEN_AMOUNT], reading past an edge as
- * the edge pixel. Alpha is kept.
+ * シャープ on an ARGB image of [width] × [height], one row at a time: a 3×3 Laplacian of [SHARPEN_AMOUNT], reading
+ * past an edge as the edge pixel. Alpha is kept. [read] fills a row of the source and [write] takes a finished one.
+ * Only four rows are held, and row y is written after row y + 1 is read, so [write] may replace the source in place.
  */
-fun sharpened(pixels: IntArray, width: Int, height: Int): IntArray {
-    require(pixels.size == width * height) { "${pixels.size} pixels for $width × $height" }
-    val out = IntArray(pixels.size)
-    val center = 1f + 4f * SHARPEN_AMOUNT
+fun sharpenRows(width: Int, height: Int, read: (y: Int, into: IntArray) -> Unit, write: (y: Int, row: IntArray) -> Unit) {
+    var up = IntArray(width)
+    var middle = IntArray(width)
+    var down = IntArray(width)
+    val out = IntArray(width)
+    read(0, middle)
+    middle.copyInto(up)
     for (y in 0 until height) {
-        val row = y * width
-        val up = (y - 1).coerceAtLeast(0) * width
-        val down = (y + 1).coerceAtMost(height - 1) * width
-        for (x in 0 until width) {
-            val p = pixels[row + x]
-            val a = pixels[up + x]
-            val b = pixels[down + x]
-            val c = pixels[row + (x - 1).coerceAtLeast(0)]
-            val d = pixels[row + (x + 1).coerceAtMost(width - 1)]
-            var argb = p and ALPHA
-            var shift = 16
-            while (shift >= 0) {
-                val around = (a shr shift and 0xFF) + (b shr shift and 0xFF) + (c shr shift and 0xFF) + (d shr shift and 0xFF)
-                val value = (center * (p shr shift and 0xFF) - SHARPEN_AMOUNT * around).roundToInt().coerceIn(0, 255)
-                argb = argb or (value shl shift)
-                shift -= 8
-            }
-            out[row + x] = argb
-        }
+        if (y + 1 < height) read(y + 1, down) else middle.copyInto(down)
+        sharpenRow(up, middle, down, out)
+        write(y, out)
+        val spare = up
+        up = middle
+        middle = down
+        down = spare
     }
-    return out
+}
+
+private fun sharpenRow(up: IntArray, middle: IntArray, down: IntArray, out: IntArray) {
+    val center = 1f + 4f * SHARPEN_AMOUNT
+    val last = middle.size - 1
+    for (x in middle.indices) {
+        val p = middle[x]
+        val a = up[x]
+        val b = down[x]
+        val c = middle[(x - 1).coerceAtLeast(0)]
+        val d = middle[(x + 1).coerceAtMost(last)]
+        var argb = p and ALPHA
+        var shift = 16
+        while (shift >= 0) {
+            val around = (a shr shift and 0xFF) + (b shr shift and 0xFF) + (c shr shift and 0xFF) + (d shr shift and 0xFF)
+            val value = (center * (p shr shift and 0xFF) - SHARPEN_AMOUNT * around).roundToInt().coerceIn(0, 255)
+            argb = argb or (value shl shift)
+            shift -= 8
+        }
+        out[x] = argb
+    }
 }
 
 private const val ALPHA = 0xFF000000.toInt()

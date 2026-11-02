@@ -22,7 +22,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 class BookPageLoader(private val book: OpenBook, private val dispatcher: CoroutineDispatcher) : PageLoader<Bitmap> {
     override suspend fun shape(page: Int): PageResult<PageShape.Known> = book.shape(page)
 
-    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps): PageResult<Bitmap> {
+    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps): PageResult<Bitmap> =
+        smallerOnOutOfMemory(size) { prepareAt(page, it, steps) }
+
+    /** Throws [OutOfMemoryError] when the steps after scaling run out of memory, with every bitmap released. */
+    private suspend fun prepareAt(page: Int, size: PixelSize, steps: PageSteps): PageResult<Bitmap> {
         val shown = if (steps.crop == null) size else PixelSize(size.width * 2, size.height)
         val decoded = if (steps.rotation.swapsSides) PixelSize(shown.height, shown.width) else shown
         return when (val result = book.page(page, decoded)) {
@@ -50,10 +54,24 @@ class BookPageLoader(private val book: OpenBook, private val dispatcher: Corouti
                 bitmap.recycle()
                 PageResult.Ready(hardware)
             }
-        } catch (_: OutOfMemoryError) {
+        } catch (e: OutOfMemoryError) {
             bitmap.recycle()
-            PageResult.Failed(FailureReason.ReadError, retryable = true)
+            throw e
         }
+    }
+}
+
+/**
+ * [attempt] at [size], and once more at half of each side when it runs out of memory, as the decoder does for
+ * its own step (docs/spec.md section 6.1).
+ */
+internal suspend fun <T> smallerOnOutOfMemory(size: PixelSize, attempt: suspend (PixelSize) -> PageResult<T>): PageResult<T> = try {
+    attempt(size)
+} catch (_: OutOfMemoryError) {
+    try {
+        attempt(PixelSize((size.width / 2).coerceAtLeast(1), (size.height / 2).coerceAtLeast(1)))
+    } catch (_: OutOfMemoryError) {
+        PageResult.Failed(FailureReason.ReadError, retryable = true)
     }
 }
 
@@ -76,14 +94,21 @@ private fun cropped(bitmap: Bitmap, crop: Side?): Bitmap {
     return Bitmap.createBitmap(bitmap, if (crop == Side.Left) 0 else bitmap.width - width, 0, width, bitmap.height)
 }
 
-/** A bitmap already on the GPU has no pixels to read here, so it stays as it is. */
+/**
+ * シャープ a row at a time, into this bitmap when it is mutable, so the work beside the bitmaps is four rows. A
+ * bitmap already on the GPU has no pixels to read here, so it stays as it is.
+ */
 private fun sharpenedBitmap(bitmap: Bitmap): Bitmap {
     if (bitmap.config == Bitmap.Config.HARDWARE) return bitmap
     val width = bitmap.width
-    val height = bitmap.height
-    val pixels = IntArray(width * height)
-    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-    return Bitmap.createBitmap(sharpened(pixels, width, height), width, height, Bitmap.Config.ARGB_8888)
+    val out = if (bitmap.isMutable) bitmap else Bitmap.createBitmap(width, bitmap.height, Bitmap.Config.ARGB_8888)
+    sharpenRows(
+        width,
+        bitmap.height,
+        read = { y, row -> bitmap.getPixels(row, 0, width, 0, y, width, 1) },
+        write = { y, row -> out.setPixels(row, 0, width, 0, y, width, 1) },
+    )
+    return out
 }
 
 /**

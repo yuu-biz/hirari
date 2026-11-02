@@ -88,6 +88,9 @@ class Prefetcher<T>(
     private val running = HashMap<Any, Job>()
     private val failures = HashMap<Int, PageResult<Nothing>>()
     private val failedShapes = HashSet<Int>()
+
+    /** The steps, with no crop, a page failed to prepare with. A page made with other steps is read again. */
+    private val failedSteps = HashMap<Int, PageSteps>()
     private var last: PrefetchInput? = null
 
     /** The view on screen when memory ran low. Prefetch stays paused until the reader leaves it. */
@@ -154,6 +157,7 @@ class Prefetcher<T>(
     /** Reads [page] again: its shape if that failed, then the views that hold it. */
     fun retry(page: Int) {
         failures.remove(page) ?: return
+        failedSteps.remove(page)
         cache.keys.filter { page in it.pages }.forEach(::evict)
         if (failedShapes.remove(page)) running[PrefetchJob.ReadShape(page)] = launchShape(page)
         listener.onChanged()
@@ -204,11 +208,21 @@ class Prefetcher<T>(
     }
 
     private suspend fun preparePage(page: Int, size: PixelSize, steps: PageSteps): PreparedPage<T> {
-        failures[page]?.let { return PreparedPage.Error(it) }
+        val made = steps.copy(crop = null)
+        failures[page]?.let { if (page in failedShapes || failedSteps[page] == made) return PreparedPage.Error(it) }
         return when (val result = loader.prepare(page, size, steps)) {
-            is PageResult.Ready -> PreparedPage.Image(result.image)
-            is PageResult.Failed -> PreparedPage.Error(result).also { failures[page] = result }
-            is PageResult.Unsupported -> PreparedPage.Error(result).also { failures[page] = result }
+            is PageResult.Ready -> PreparedPage.Image(result.image).also {
+                failures.remove(page)
+                failedSteps.remove(page)
+            }
+            is PageResult.Failed -> failed(page, made, result)
+            is PageResult.Unsupported -> failed(page, made, result)
         }
+    }
+
+    private fun failed(page: Int, steps: PageSteps, result: PageResult<Nothing>): PreparedPage<Nothing> {
+        failures[page] = result
+        failedSteps[page] = steps
+        return PreparedPage.Error(result)
     }
 }

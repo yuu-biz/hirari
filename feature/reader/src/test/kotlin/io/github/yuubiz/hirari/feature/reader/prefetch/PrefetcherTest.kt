@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader.prefetch
 
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.FailureReason
+import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -178,6 +179,23 @@ class PrefetcherTest {
         assertIs<PreparedPage.Error>(reader.prefetcher[PageView.One(0)]!!.pages.single())
         loader.failing.clear()
         reader.prefetcher.retry(0)
+        advanceUntilIdle()
+        assertIs<PreparedPage.Image<String>>(reader.prefetcher[PageView.One(0)]!!.pages.single())
+        assertTrue(reader.prefetcher.failedPages.isEmpty())
+    }
+
+    @Test
+    fun aPageThatFailedWithSharpenIsReadAgainOnceSharpenIsOff() = runTest {
+        val loader = FakeLoader(failing = mutableMapOf(0 to PageResult.Failed(FailureReason.ReadError, retryable = true)))
+        val reader = reader(pages = 3, config = SINGLE.copy(adjust = ImageAdjust(sharpen = true)), loader = loader)
+        advanceUntilIdle()
+        assertIs<PreparedPage.Error>(reader.prefetcher[PageView.One(0)]!!.pages.single())
+        loader.failing.clear()
+        reader.turn(Turn.Forward)
+        reader.turn(Turn.Back)
+        advanceUntilIdle()
+        assertIs<PreparedPage.Error>(reader.prefetcher[PageView.One(0)]!!.pages.single())
+        reader.apply(ReaderEvent.ConfigChanged(reader.state.config.copy(adjust = ImageAdjust())))
         advanceUntilIdle()
         assertIs<PreparedPage.Image<String>>(reader.prefetcher[PageView.One(0)]!!.pages.single())
         assertTrue(reader.prefetcher.failedPages.isEmpty())
