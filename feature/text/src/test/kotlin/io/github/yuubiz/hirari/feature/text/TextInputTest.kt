@@ -42,6 +42,17 @@ class TextInputTest {
     }
 
     @Test
+    fun `in the continuous layout a tap turns by its band and a drag only scrolls`() {
+        fun release(tap: Boolean, continuous: Boolean, x: Float = 10f, dx: Float = 0f) =
+            turnAreaTurn(tap, continuous, x, 300f, dx, 0f, 1000f, 600f, 8f, defaults)
+        assertEquals(1, release(tap = true, continuous = true))
+        assertEquals(-1, release(tap = true, continuous = true, x = 950f))
+        assertEquals(null, release(tap = false, continuous = true, dx = 80f))
+        assertEquals(1, release(tap = false, continuous = false, dx = 80f))
+        assertEquals(1, release(tap = true, continuous = false))
+    }
+
+    @Test
     fun `keys turn as in a right-bound book and the volume keys follow their setting`() {
         assertEquals(KeyOutcome.Act(TextAction.Turn(1)), onKey(KeyCodes.DPAD_LEFT, true, false, defaults))
         assertEquals(KeyOutcome.Act(TextAction.Turn(-1)), onKey(KeyCodes.DPAD_RIGHT, true, false, defaults))

@@ -78,6 +78,28 @@ fun swipeTurn(dx: Float, dy: Float, touchSlop: Float, settings: GlobalSettings):
     return if ((dx > 0) != settings.mirrorControls) 1 else -1
 }
 
+/**
+ * The turn for a finger let go on the turn area [width] by [height], which pressed at ([x], [y]) and moved [dx] by
+ * [dy]. A [tap] turns by the tap bands and a drag swipes, except in the [continuous] layout, where the row of pages
+ * scrolls under a drag instead.
+ */
+fun turnAreaTurn(
+    tap: Boolean,
+    continuous: Boolean,
+    x: Float,
+    y: Float,
+    dx: Float,
+    dy: Float,
+    width: Float,
+    height: Float,
+    touchSlop: Float,
+    settings: GlobalSettings,
+): Int? = when {
+    tap -> tapTurn(x, y, width, height, settings)
+    continuous -> null
+    else -> swipeTurn(dx, dy, touchSlop, settings)
+}
+
 /** The `android.view.KeyEvent` codes the reader handles, as numbers so the mapping stays off the framework. */
 object KeyCodes {
     const val BACK = 4

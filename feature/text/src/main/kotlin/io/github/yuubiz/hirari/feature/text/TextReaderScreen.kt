@@ -202,13 +202,15 @@ private fun Reading(
                     val region = regionAt(down.position.y / density.density, heightDp, settings) ?: return@awaitEachGesture
                     onRegionTouch()
                     if (region == TextRegion.CommandBar) onPanel(TextPanel.Commands)
-                    if (current.frame?.continuous == true && region == TextRegion.TurnArea) return@awaitEachGesture
                     if (region == TextRegion.PageBar) barDrag = PageBarDrag(down.position.x / density.density, down.position.y / density.density)
                     var last = down
+                    // The 連続 row sees each change first and consumes the ones it scrolls by.
+                    var scrolled = false
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         last = change
+                        scrolled = scrolled || change.isConsumed
                         if (region == TextRegion.PageBar) {
                             val at = change.position / density.density
                             barDrag = barDrag?.moveTo(at.x, at.y, heightDp - settings.barHeightDp, settings.barHeightDp.toFloat(), slop / density.density)
@@ -217,7 +219,7 @@ private fun Reading(
                     }
                     val dx = last.position.x - down.position.x
                     val dy = last.position.y - down.position.y
-                    val tap = abs(dx) <= slop && abs(dy) <= slop && last.uptimeMillis - down.uptimeMillis < longPress
+                    val tap = !scrolled && abs(dx) <= slop && abs(dy) <= slop && last.uptimeMillis - down.uptimeMillis < longPress
                     when (region) {
                         TextRegion.PageBar -> {
                             val release = barDrag?.release()
@@ -230,12 +232,10 @@ private fun Reading(
                         }
                         TextRegion.TurnArea -> {
                             val barHeight = settings.barHeightDp * density.density
-                            val turn = if (tap) {
-                                tapTurn(down.position.x, down.position.y - barHeight, size.width.toFloat(), size.height - 2 * barHeight, settings)
-                            } else {
-                                swipeTurn(dx, dy, slop, settings)
-                            }
-                            turn?.let { act(TextAction.Turn(it)) }
+                            turnAreaTurn(
+                                tap, current.frame?.continuous == true, down.position.x, down.position.y - barHeight, dx, dy,
+                                size.width.toFloat(), size.height - 2 * barHeight, slop, settings,
+                            )?.let { act(TextAction.Turn(it)) }
                         }
                         TextRegion.CommandBar -> if (!tap) {
                             onPanel(null)
