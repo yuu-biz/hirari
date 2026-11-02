@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,7 +49,7 @@ internal fun ConfirmImportDialog(changes: ImportChanges, onConfirm: () -> Unit, 
         onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.import_title)) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (changes.total == 0) {
                     Text(stringResource(R.string.import_nothing))
                 } else {
