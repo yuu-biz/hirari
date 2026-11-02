@@ -1769,13 +1769,17 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 
 | 依存 | 用途 | ライセンス | 組み込み方 |
 |---|---|---|---|
-| libarchive | ZIP、RAR、7z、tar の読み込み | BSD-2-Clause、BSD-3-Clause、ISC。ファイルごとの内訳は表の下 | ソースから NDK でビルドし、JNI で呼ぶ。書き込み機能は外す。`third_party/libarchive` には、ビルドするファイルと `COPYING` だけを置く |
+| libarchive | ZIP、RAR、7z、tar の読み込み | BSD-2-Clause、BSD-3-Clause、ISC、Apache-2.0、0BSD。ファイルごとの内訳は表の下 | ソースから NDK でビルドし、JNI で呼ぶ。書き込み機能は外す。`third_party/libarchive` には、ビルドするファイルと `COPYING` だけを置く |
 | zlib | Deflate | Zlib | NDK に含まれる版を使う |
 | liblzma（XZ Utils） | LZMA、LZMA2、xz | 0BSD (要検証。版による) | ソースからビルド |
 | bzip2 | BZip2 | bzip2-1.0.6 | ソースからビルド |
 | zstd | zstd | BSD-3-Clause（GPL-2.0 との二重ライセンスのうち BSD を選ぶ） | ソースからビルド |
 | libjxl 0.12.0 | JPEG XL | BSD-3-Clause。Apache-2.0 と MIT の部分を含む。内訳は表の下 | ソースから NDK でビルドし、JNI で呼ぶ。デコーダだけをビルドする。brotli は箱の展開と JPEG の復元にだけ要るので、その 2 つを外して組み込まない |
 | Highway 1.2.0 | libjxl の SIMD | Apache-2.0（一部のファイルは BSD-3-Clause との二重ライセンスで、Apache-2.0 を選ぶ） | ソースからビルド。libjxl 0.12.0 が指す版。各 ABI の基準の SIMD 対象だけをコンパイルする（Q7） |
+| liblzma（XZ Utils 5.8.4） | LZMA、LZMA2、xz、7z の BCJ などの分岐フィルタ | 0BSD。XZ Utils は 5.6.0 から liblzma を 0BSD にした。5.8.4 の `COPYING` と、置いたすべての `.c` と `.h` の SPDX 表示で確かめた。コマンドラインの道具（getopt に LGPL を含む）とスクリプト（GPL）は置かない | ソースからビルド。展開器だけを組み、圧縮器とスレッドは組まない。`third_party/xz` には、ビルドするファイルと `COPYING.0BSD` だけを置く |
+| bzip2 1.0.8 | BZip2 | bzip2-1.0.6（SPDX の識別子。1.0.8 の `LICENSE` も同じ条項） | ソースからビルド。`bzlib.c` が圧縮器の入口も持つので圧縮器のファイルもコンパイルし、リンク時に使わない部分を捨てる。`BZ_NO_STDIO` で組み、内部エラーの処理は何もせずに戻る自前の関数にする |
+| zstd 1.5.7 | zstd | BSD-3-Clause（GPL-2.0 との二重ライセンスのうち BSD を選ぶ） | ソースからビルド。`lib/common` と `lib/decompress` だけを置き、アセンブリ、旧形式、スレッドは組まない |
+| libjxl | JPEG XL | BSD-3-Clause | ソースからビルド。highway（Apache-2.0）、brotli（MIT）を伴う |
 | libavif | API 28〜30 の AVIF | BSD-2-Clause | Q6 で同梱を決めたときだけ |
 | dav1d | libavif の AV1 デコード | BSD-2-Clause | 同上 |
 | smbj 0.15.0 | SMB 2 と SMB 3 | Apache-2.0。実行時に slf4j-api 2.0.18（MIT）、bcprov-jdk18on 1.85.2（Bouncy Castle License）、mbassador 1.3.2（MIT）、asn-one 0.6.0（Apache-2.0）を伴う。mbassador の juel は任意の依存で、持ち込まれない。0.15.0 の POM と Gradle のモジュールのメタデータ、各依存の POM で確かめ、`:app` の Licensee で確かめた。Bouncy Castle License の条項は MIT と同じ文面なので MIT として扱う。bcprov と slf4j-api の POM にあるライセンスの URL は Licensee が SPDX 識別子に直せないので、`build-logic` の `licenseUrlIds` で MIT に対応付ける | Maven。通信を行う唯一の依存。SLF4J の provider は同梱しない（6.6 節） |
@@ -1794,16 +1798,30 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Macrobenchmark（benchmark-macro-junit4、benchmark-traceprocessor）、UiAutomator | `:benchmark` の計測。benchmark-traceprocessor は、トレースを SQL で読む独自の計測（`TurnMetric`）のために直接使う | Apache-2.0。benchmark-traceprocessor は Wire の実行時ライブラリと Okio（どちらも Apache-2.0）を伴う | 計測時だけ。`:benchmark` の APK に入り、アプリの配布物に入らない |
 | Robolectric 4.17 | `:core:data` の DB の JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 
-libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 19 個の `.c` と 22 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
+libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 29 個の `.c` と 25 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
 
-- ビルドするファイルは、次の項目に挙げる部分を除いて BSD-2-Clause である。目録の SPDX 識別子は `BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0` とする。
+- ビルドするファイルは、次の項目に挙げる部分を除いて BSD-2-Clause である。目録の SPDX 識別子は `BSD-2-Clause AND BSD-3-Clause AND ISC AND Unicode-3.0 AND Apache-2.0 AND 0BSD` とする。
+- `archive_blake2s_ref.c`、`archive_blake2sp_ref.c`、`archive_blake2.h`、`archive_blake2_impl.h`（RAR 5 の検査値）は CC0-1.0、OpenSSL、Apache-2.0 から選べる三重ライセンスで、Apache-2.0 を選ぶ。
+- `archive_read_support_format_7zip.c` の分岐フィルタのうち、SPARC、PowerPC、RISC-V の変換は 0BSD である。
+- 同じ `archive_read_support_format_7zip.c` の x86（BCJ）、BCJ2、ARM、ARM64 の変換の関数は、LZMA SDK と XZ Embedded から移した public domain のコードである。ファイルの一部なので外せず、そのまま組み込んでいる。Q19 の方針との関係は Q19 に書く。
+- `archive_ppmd7_private.h` は public domain（Igor Pavlov）。RAR と 7z の読み込みのソースが、PPMd の型の宣言のために取り込む。
 - `archive_entry.c` のファイルフラグの部分は、カリフォルニア大学の BSD-3-Clause である。
 - `archive_random.c` の arc4random の部分は ISC である。bionic の `arc4random_buf` を使うので、この部分はコンパイルされない。
 - `archive_ppmd_private.h` と `archive_ppmd8_private.h` は public domain（Igor Pavlov）。ZIP の読み込みのソースが、PPMd の型の宣言のために取り込む。
 - `archive_string_composition.h` は Unicode 文字データベース 6.0.0 の `UnicodeData.txt` から生成した表で、表示は BSD-2-Clause である。元のデータのライセンスの表示も載せるため、目録に Unicode-3.0 を加える。Unicode, Inc. は現在、データファイルをこのライセンスで配っている。6.0.0 の当時の条項は同じ趣旨の「Data Files and Software」の許諾である。
 - `COPYING` は著作権者の欄がひな形のままで、各ファイルの著作権者が載っていない。そのためライセンス画面では、ネイティブの依存について 3 つを並べる。`license_file` の全文、ソースから抜き出した著作権の行（ビルド時に生成する）、目録の SPDX 識別子ごとの正規の全文である。
-- PPMd の実装の `archive_ppmd8.c` も public domain で、許可リストにないので組み込まない（Q19）。代わりに自前の `core/archive/src/main/cpp/libarchive/ppmd8_unsupported.c` を置く。PPMd で圧縮された ZIP のエントリは、一覧には出るが、データを読むと失敗する。
-- M3 で加えるファイルのうち、`archive_ppmd7.c`（7z と RAR の PPMd）は public domain、`archive_blake2*`（RAR 5）は CC0-1.0、OpenSSL、Apache-2.0 から選べる三重ライセンス、`archive_read_support_filter_compress.c` は BSD-3-Clause である（`COPYING` による）。
+- PPMd の実装の `archive_ppmd8.c` と `archive_ppmd7.c` も public domain で、許可リストにないので組み込まない（Q19）。代わりに自前の `core/archive/src/main/cpp/libarchive/ppmd8_unsupported.c` と `ppmd7_unsupported.c` を置く。PPMd で圧縮されたエントリは、一覧には出るが、データを読むと `Unsupported(Compression("ppmd"))` になる（3.3 節）。
+- `archive_read_support_filter_compress.c`（BSD-3-Clause、`.Z`）は、3.3 節の表にない形式なので組み込まない。
+
+libarchive に加えて組み込むネイティブのライブラリは、`.so` の大きさを次のように増やす。libarchive の RAR、RAR 5、7z、tar の読み込みと gzip、xz、zstd、bzip2 のフィルタ、liblzma、bzip2、zstd を足す前と後の、リリースビルドで記号を除いた `libhirari_archive.so` の大きさである。静的ライブラリの記号は `--exclude-libs,ALL` で外に出さず、使わない関数をリンク時に捨てる。
+
+| ABI | 前 | 後 |
+|---|---|---|
+| `arm64-v8a` | 100,008 バイト | 406,472 バイト |
+| `armeabi-v7a` | 79,868 バイト | 309,924 バイト |
+| `x86_64` | 106,840 バイト | 491,552 バイト |
+
+足した後も、`arm64-v8a` と `x86_64` の LOAD セグメントの整列は 0x4000 のままである（`llvm-readelf -l` で確かめた）。
 
 libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルドする libjxl の 75 個の `.cc` と 129 個の `.h`、Highway の 5 個の `.cc` と 19 個の `.h` に含まれる表示を読んで確かめた。ヘッダは、ビルドで読んだものを ninja の依存の記録から抜き出した。
 
@@ -1933,5 +1951,5 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 | Q16 | 読書位置としおりを自動バックアップに含めるか | 含める、含めない、設定で選ぶ | 含める。機種変更で読書の記録が消えるのは困る。SMB の資格情報は常に含めない |
 | Q17 | SMB の共有の一覧を取るか | 共有名を入力させる、SRVSVC で一覧を取る | v1 は入力させる。smbj は SRVSVC を持たず、一覧には DCE/RPC の別の依存が要る。候補の com.rapid7.client:dcerpc 0.12.13 は POM で BSD-3-Clause であり、guava、commons-io、commons-lang3 を伴う。それらのライセンスは、採用するときに確かめる |
 | Q18 | solid 書庫のサムネイルをどのページから作るか | 自然順で先頭のページ、格納順で先頭の画像 | 格納順で先頭の画像を使い、本を一度開いたら自然順で先頭のページに作り直す。solid 書庫で自然順の先頭を探すと、全体の展開が要ることがある |
-| Q19 | public domain のソース（libarchive の PPMd）を組み込むか | 組み込まない（ZIP と 7z の PPMd は `Unsupported(Compression)`）、許可リストに public domain を加える | M0 は組み込まない。7z の PPMd（3.3 節）には `archive_ppmd7.c` が要るので、M3 の前に決める |
+| Q19 | public domain のソース（libarchive の PPMd）を組み込むか | 組み込まない（ZIP と 7z の PPMd は `Unsupported(Compression)`）、許可リストに public domain を加える | 決定。public domain のソースファイル（`archive_ppmd7.c`、`archive_ppmd8.c`）は組み込まない。ZIP、7z、RAR の PPMd は `Unsupported(Compression("ppmd"))` になる。ただし `archive_read_support_format_7zip.c` は、x86（BCJ）、BCJ2、ARM、ARM64 の変換の関数に public domain のコードを含み（8.5 節）、ファイルを組み込むと一緒に入る。M3 ではそのまま組み込んだ。これらを外すには libarchive のソースに手を入れる必要があり、外すと 7z の BCJ 系のフィルタが読めなくなる。どちらにするかは利用者が決める (要検証) |
 | Q20 | デコーダが返した、途中で切れた画像をどう出すか | そのまま出す、出したうえで切れていることを重ねて知らせる、`Failed(Truncated)` にする | M1 はデコーダの結果に従う（API 28 では失敗、API 37 では表示になる）。自前で判定して端末によらず揃えるには、JPEG の EOI を探すなど形式ごとの処理が要り、誤判定すると読めるページを隠す。実データで切れた画像がどれだけあるかを見て、M6 で決める |

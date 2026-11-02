@@ -6,12 +6,14 @@
 
 #include "archive_platform.h"
 #include "archive_ppmd8_private.h"
+#include "ppmd_unsupported.h"
 
 static void construct(CPpmd8 *p) { (void)p; }
 
 static Bool alloc(CPpmd8 *p, UInt32 size) {
 	(void)p;
 	(void)size;
+	hirari_ppmd_requested();
 	return False;
 }
 

@@ -9,6 +9,8 @@ internal object Status {
     const val OK = 0
     const val EOF = 1
     const val STOPPED = 2
+    const val ENCRYPTED_HEADERS = 3
+    const val PPMD = 4
     const val WARN = -20
     const val FAILED = -25
 
@@ -22,6 +24,10 @@ internal class Header(
     val isDirectory: Boolean,
     val encrypted: Boolean,
     val formatName: String,
+    /** libarchive's `archive_format` code without the variant bits. */
+    val format: Int,
+    /** libarchive's code of the outermost filter, such as gzip around a tar. */
+    val filter: Int,
 )
 
 /** Takes the data of one entry, block by block. Returns false to stop reading. */
@@ -119,8 +125,16 @@ internal class NativeArchive(private val source: ByteSource) : AutoCloseable {
     }
 
     @Suppress("unused")
-    private fun header(name: ByteArray?, size: Long, isDirectory: Boolean, encrypted: Boolean, formatName: String) {
-        header = Header(name, size.takeIf { it >= 0 }, isDirectory, encrypted, formatName)
+    private fun header(
+        name: ByteArray?,
+        size: Long,
+        isDirectory: Boolean,
+        encrypted: Boolean,
+        formatName: String,
+        format: Int,
+        filter: Int,
+    ) {
+        header = Header(name, size.takeIf { it >= 0 }, isDirectory, encrypted, formatName, format, filter)
     }
 
     @Suppress("unused")

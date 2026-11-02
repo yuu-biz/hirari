@@ -18,8 +18,12 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#include "ppmd_unsupported.h"
+
 /* Status codes shared with NativeArchive.kt. The negative ones are libarchive's. */
 #define STATUS_STOPPED 2
+#define STATUS_ENCRYPTED_HEADERS 3
+#define STATUS_PPMD 4
 
 /*
  * A read right after a seek or a skip is usually for one local header, so it
@@ -111,7 +115,7 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeCreate(
 	if (s == NULL) return 0;
 	jclass cls = (*env)->GetObjectClass(env, self);
 	s->read = (*env)->GetMethodID(env, cls, "read", "(JI)I");
-	if (s->read != NULL) s->header = (*env)->GetMethodID(env, cls, "header", "([BJZZLjava/lang/String;)V");
+	if (s->read != NULL) s->header = (*env)->GetMethodID(env, cls, "header", "([BJZZLjava/lang/String;II)V");
 	if (s->header != NULL) s->data = (*env)->GetMethodID(env, cls, "data", "(Ljava/nio/ByteBuffer;J)Z");
 	(*env)->DeleteLocalRef(env, cls);
 	if (s->data != NULL) s->buffer = (*env)->GetDirectBufferAddress(env, buffer);
@@ -138,6 +142,14 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeOpen(JNIEnv *env, 
 	if (a == NULL) return ARCHIVE_FATAL;
 	s->archive = a;
 	int r = archive_read_support_format_zip(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_format_rar(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_format_rar5(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_format_7zip(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_format_tar(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_filter_gzip(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_filter_xz(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_filter_zstd(a);
+	if (r == ARCHIVE_OK) r = archive_read_support_filter_bzip2(a);
 	if (r == ARCHIVE_OK) r = archive_read_set_read_callback(a, read_callback);
 	if (r == ARCHIVE_OK) r = archive_read_set_seek_callback(a, seek_callback);
 	if (r == ARCHIVE_OK) r = archive_read_set_skip_callback(a, skip_callback);
@@ -148,16 +160,23 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeOpen(JNIEnv *env, 
 
 /*
  * Reads the next header and passes it to the bridge's header method. The name
- * is null when libarchive could not give one.
+ * is null when libarchive could not give one. Returns STATUS_ENCRYPTED_HEADERS
+ * when the header could not be read because it is encrypted: libarchive marks
+ * the entry it was filling, which it hands back even when the read fails.
  */
 JNIEXPORT jint JNICALL
 Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeNextHeader(JNIEnv *env, jobject self, jlong handle) {
 	(void)self;
 	session *s = from_handle(handle);
 	s->env = env;
-	struct archive_entry *entry;
+	struct archive_entry *entry = NULL;
 	int r = archive_read_next_header(s->archive, &entry);
-	if (r != ARCHIVE_OK && r != ARCHIVE_WARN) return r;
+	if (r != ARCHIVE_OK && r != ARCHIVE_WARN) {
+		if (r != ARCHIVE_EOF && entry != NULL && archive_entry_is_metadata_encrypted(entry)) {
+			return STATUS_ENCRYPTED_HEADERS;
+		}
+		return r;
+	}
 
 	jbyteArray name = NULL;
 	const char *pathname = archive_entry_pathname(entry);
@@ -177,7 +196,9 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeNextHeader(JNIEnv 
 		archive_entry_size_is_set(entry) ? (jlong)archive_entry_size(entry) : (jlong)-1,
 		(jboolean)(archive_entry_filetype(entry) == AE_IFDIR),
 		(jboolean)(archive_entry_is_data_encrypted(entry) != 0),
-		format);
+		format,
+		(jint)(archive_format(s->archive) & ARCHIVE_FORMAT_BASE_MASK),
+		(jint)archive_filter_code(s->archive, 0));
 	(*env)->DeleteLocalRef(env, name);
 	(*env)->DeleteLocalRef(env, format);
 	if ((*env)->ExceptionCheck(env)) return ARCHIVE_FATAL;
@@ -188,20 +209,22 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeNextHeader(JNIEnv 
  * Passes the data of the current entry to the bridge's data method one block
  * at a time. The ByteBuffer views libarchive's block, which stays valid only
  * until the next archive_read_data_block call. Returns STATUS_STOPPED when the
- * bridge declines a block.
+ * bridge declines a block, and STATUS_PPMD when the entry needs the PPMd
+ * decoder, which is not built.
  */
 JNIEXPORT jint JNICALL
 Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeReadData(JNIEnv *env, jobject self, jlong handle) {
 	(void)self;
 	session *s = from_handle(handle);
 	s->env = env;
+	hirari_take_ppmd_request();
 	for (;;) {
 		const void *block;
 		size_t size;
 		la_int64_t offset;
 		int r = archive_read_data_block(s->archive, &block, &size, &offset);
 		if (r == ARCHIVE_EOF) return ARCHIVE_OK;
-		if (r != ARCHIVE_OK && r != ARCHIVE_WARN) return r;
+		if (r != ARCHIVE_OK && r != ARCHIVE_WARN) return hirari_take_ppmd_request() ? STATUS_PPMD : r;
 		if (size == 0) continue;
 		jobject view = (*env)->NewDirectByteBuffer(env, (void *)block, (jlong)size);
 		if (view == NULL) return ARCHIVE_FATAL;
