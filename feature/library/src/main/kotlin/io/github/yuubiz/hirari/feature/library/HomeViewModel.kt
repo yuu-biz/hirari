@@ -7,6 +7,7 @@ import io.github.yuubiz.hirari.core.data.HistoryItem
 import io.github.yuubiz.hirari.core.data.LibraryBook
 import io.github.yuubiz.hirari.core.data.PinnedFolder
 import io.github.yuubiz.hirari.core.model.Book
+import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.BookmarkSort
@@ -57,6 +58,13 @@ data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 
 /** A one-time message for a snackbar. */
 enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, SmbBookNotReady, ShortcutMissing, ShortcutUnsupported, IncomingUnreadable }
+
+/** What a tap on a book of the home screen opens: the image reader, or the text reader for a text. */
+sealed interface HomeTarget {
+    data class Book(val request: OpenBookRequest) : HomeTarget
+
+    data class Text(val address: TextAddress) : HomeTarget
+}
 
 data class HomeUi(
     val shelf: Loadable<Shelf> = Loadable.Loading,
@@ -148,17 +156,26 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
     fun deleteBookmark(id: Long) = write { bookmarks.delete(listOf(id)) }
 
     /**
-     * What opening [book] at [start] asks of the reader, or `null` with a notice when it cannot open: the index
-     * lost it, or its place is gone or lost its grant (docs/spec.md section 7).
+     * What opening [book] at [start] asks of a reader, or `null` with a notice when it cannot open: the index lost
+     * it, or its place is gone or lost its grant (docs/spec.md section 7). A text opens in the text reader at its
+     * stored position.
      */
-    fun request(book: Book?, start: StartAt = StartAt.Saved): OpenBookRequest? {
+    fun request(book: Book?, start: StartAt = StartAt.Saved): HomeTarget? {
         if (book == null) return null.also { notice.value = Notice.BookMissing }
         val source = book.source
         if (source is BookSource.InLocation && !usable(source.location)) return null.also { notice.value = Notice.PlaceUnavailable }
-        return OpenBookRequest(book.address(), start)
+        if (book.format is BookFormat.Text) {
+            return HomeTarget.Text(
+                when (source) {
+                    is BookSource.InLocation -> TextAddress.InLocation(source.location, source.path)
+                    is BookSource.External -> TextAddress.Document(source.uri)
+                },
+            )
+        }
+        return HomeTarget.Book(OpenBookRequest(book.address(), start))
     }
 
-    fun request(group: BookmarkGroup, position: ReadingPosition): OpenBookRequest? = when (position) {
+    fun request(group: BookmarkGroup, position: ReadingPosition): HomeTarget? = when (position) {
         is ReadingPosition.Image -> request(group.info, StartAt.Page(position.viewStart))
         is ReadingPosition.Text -> null.also { notice.value = Notice.TextNotReady }
     }

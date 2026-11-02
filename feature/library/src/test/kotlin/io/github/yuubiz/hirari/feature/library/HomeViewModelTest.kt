@@ -1,6 +1,8 @@
 package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.BookFormat
+import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.HistoryEntry
 import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -83,7 +85,19 @@ class HomeViewModelTest {
         val home = viewModel()
         watch(home.state)
 
-        assertEquals(OpenBookRequest(BookAddress.InLocation(place.id, "作品/1巻.zip", folder = false)), home.request(shelved))
+        assertEquals(HomeTarget.Book(OpenBookRequest(BookAddress.InLocation(place.id, "作品/1巻.zip", folder = false))), home.request(shelved))
         assertEquals(FolderKey(place.id, "作品"), home.folderOf(shelved))
+    }
+
+    @Test
+    fun `a text from the history or the shelf opens in the text reader`() = runTest {
+        val inPlace = book(place.id, "作品/後書き.txt").copy(format = BookFormat.Text(charset = null))
+        val handed = inPlace.copy(source = BookSource.External(UriString("content://mail/後書き.txt")))
+        fixture.locations.rows.value = listOf(place)
+        val home = viewModel()
+        watch(home.state)
+
+        assertEquals(HomeTarget.Text(TextAddress.InLocation(place.id, "作品/後書き.txt")), home.request(inPlace))
+        assertEquals(HomeTarget.Text(TextAddress.Document(UriString("content://mail/後書き.txt"))), home.request(handed))
     }
 }

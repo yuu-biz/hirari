@@ -51,7 +51,7 @@ internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
             item(key = "continue") {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(shelf.continueReading, key = { it.book.book.id.value }) { item ->
-                        ContinueCard(item) { home.request(item.book.book)?.let(actions.openBook) }
+                        ContinueCard(item) { home.request(item.book.book)?.let(actions::open) }
                     }
                 }
             }

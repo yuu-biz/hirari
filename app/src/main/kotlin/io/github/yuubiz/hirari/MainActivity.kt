@@ -120,6 +120,7 @@ class MainActivity : ComponentActivity() {
                             home,
                             HomeActions(
                                 openBook = { nav.navigate(it.toReaderRoute()) },
+                                openText = { nav.navigate(it.toRoute()) },
                                 openFolder = { nav.navigate(it.toRoute()) },
                                 editServer = { nav.navigate(SmbServerRoute(it?.value)) },
                                 menu = {

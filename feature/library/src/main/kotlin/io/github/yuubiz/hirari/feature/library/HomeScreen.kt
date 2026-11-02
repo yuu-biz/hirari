@@ -37,14 +37,20 @@ enum class HomeTab(@StringRes val label: Int) {
     Bookmarks(R.string.home_tab_bookmarks),
 }
 
-/** What the home screen asks of the app: the reader, a file list, the SMB form, and the top bar's menu. */
+/** What the home screen asks of the app: the readers, a file list, the SMB form, and the top bar's menu. */
 class HomeActions(
     val openBook: (OpenBookRequest) -> Unit,
+    val openText: (TextAddress) -> Unit,
     val openFolder: (FolderKey) -> Unit,
     /** The SMB form for a new server, or for the server [LocationId] names. */
     val editServer: (LocationId?) -> Unit,
     val menu: @Composable () -> Unit,
 )
+
+fun HomeActions.open(target: HomeTarget) = when (target) {
+    is HomeTarget.Book -> openBook(target.request)
+    is HomeTarget.Text -> openText(target.address)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

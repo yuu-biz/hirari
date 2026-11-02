@@ -74,7 +74,7 @@ private fun BookmarkRow(group: BookmarkGroup, mark: Bookmark, home: HomeViewMode
         ListItem(
             headlineContent = { Text(mark.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             modifier = Modifier.combinedClickable(
-                onClick = { home.request(group, mark.position)?.let(actions.openBook) },
+                onClick = { home.request(group, mark.position)?.let(actions::open) },
                 onLongClick = { menu = true },
             ),
         )

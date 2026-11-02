@@ -88,7 +88,7 @@ private fun HistoryRow(item: HistoryItem, home: HomeViewModel, actions: HomeActi
                     Text(listOfNotNull(item.location?.displayName, percent).joinToString(" · "))
                 },
                 modifier = Modifier.combinedClickable(
-                    onClick = { home.request(item.book)?.let(actions.openBook) },
+                    onClick = { home.request(item.book)?.let(actions::open) },
                     onLongClick = { menu = true },
                 ),
             )
