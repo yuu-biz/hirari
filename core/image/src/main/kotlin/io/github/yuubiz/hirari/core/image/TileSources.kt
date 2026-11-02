@@ -85,12 +85,16 @@ internal class RegionTiles private constructor(
     private val decoder: BitmapRegionDecoder,
     private val orientation: Orientation,
     private val stored: PixelSize,
+    private val averagingLimit: Int,
     decoding: ImageDecoding,
 ) : CachedTiles(orientation.shown(stored), decoding) {
+    private val budgetBytes = decoding.budgetBytes
+
     override fun decodeTile(rect: PixelRect, sample: Int): Bitmap? {
         val source = orientation.toStored(rect, stored)
+        val read = planTileRead(PixelSize(source.width, source.height), sample, averagingLimit, budgetBytes)
         val options = BitmapFactory.Options().apply {
-            inSampleSize = sample
+            inSampleSize = read.decodeSample
             inPreferredConfig = Bitmap.Config.ARGB_8888
             inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
         }
@@ -98,19 +102,23 @@ internal class RegionTiles private constructor(
             if (decoder.isRecycled) return null
             decoder.decodeRegion(Rect(source.left, source.top, source.right, source.bottom), options)
         } ?: return null
-        val matrix = orientation.matrix() ?: return region
+        val scaled = scaledInSteps(region, null, shrinkToFit(read.output, PixelSize(region.width, region.height)), recycleSource = true)
+        val matrix = orientation.matrix() ?: return scaled
         return try {
-            Bitmap.createBitmap(region, 0, 0, region.width, region.height, matrix, true)
+            Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, matrix, true)
         } finally {
-            region.recycle()
+            scaled.recycle()
         }
     }
 
     override fun release() = synchronized(decoder) { decoder.recycle() }
 
     companion object {
-        /** The region decoder over [bytes], or null when the platform cannot read regions of them. */
-        fun open(bytes: ByteArray, decoding: ImageDecoding): RegionTiles? {
+        /**
+         * The region decoder over [bytes], or null when the platform cannot read regions of them.
+         * [averagingLimit] is the largest sample size at which it averages pixels (docs/spec.md section 5.3).
+         */
+        fun open(bytes: ByteArray, averagingLimit: Int, decoding: ImageDecoding): RegionTiles? {
             val decoder = try {
                 if (Build.VERSION.SDK_INT >= 31) {
                     BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
@@ -126,7 +134,7 @@ internal class RegionTiles private constructor(
             } catch (_: Exception) {
                 Orientation.Normal
             }
-            return RegionTiles(decoder, orientation, PixelSize(decoder.width, decoder.height), decoding)
+            return RegionTiles(decoder, orientation, PixelSize(decoder.width, decoder.height), averagingLimit, decoding)
         }
     }
 }
@@ -143,15 +151,10 @@ internal class SlicedTiles(private val whole: Bitmap, size: PixelSize, decoding:
         val top = (rect.top * down).toInt().coerceIn(0, whole.height - 1)
         val right = (rect.right * across).toInt().coerceIn(left + 1, whole.width)
         val bottom = (rect.bottom * down).toInt().coerceIn(top + 1, whole.height)
-        val width = ((rect.width + sample - 1) / sample).coerceAtLeast(1)
-        val height = ((rect.height + sample - 1) / sample).coerceAtLeast(1)
-        val matrix = Matrix().apply { setScale(width / (right - left).toFloat(), height / (bottom - top).toFloat()) }
+        val output = PixelSize(sampled(rect.width, sample), sampled(rect.height, sample))
         return synchronized(whole) {
             if (whole.isRecycled) return null
-            val tile = Bitmap.createBitmap(whole, left, top, right - left, bottom - top, matrix, true)
-            // createBitmap hands back the source itself for the whole of an immutable bitmap at scale 1, and
-            // closing this source recycles the source.
-            if (tile === whole) whole.copy(Bitmap.Config.ARGB_8888, false) else tile
+            scaledInSteps(whole, Rect(left, top, right, bottom), output, recycleSource = false)
         }
     }
 

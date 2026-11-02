@@ -111,4 +111,38 @@ class TilesTest {
         assertEquals(18, tileLimit(288L shl 20))
         assertEquals(1, tileLimit(1L shl 20))
     }
+
+    private val roomy = 512L shl 20
+    private val full = PixelSize(1024 * 8, 1024 * 8)
+
+    @Test
+    fun aTileOfAFormatThatPicksIsReadWholeAndAveragedAfterwards() {
+        assertEquals(TileRead(1, PixelSize(1024, 1024)), planTileRead(full, 8, averagingLimit = 1, budgetBytes = roomy))
+        assertEquals(TileRead(1, PixelSize(1024, 1024)), planTileRead(PixelSize(2048, 2048), 2, averagingLimit = 1, budgetBytes = roomy))
+    }
+
+    @Test
+    fun aTileIsReadAtTheSampleWhereTheDecoderStillAverages() {
+        assertEquals(8, planTileRead(full, 16, averagingLimit = 8, budgetBytes = roomy).decodeSample)
+        assertEquals(4, planTileRead(full, 4, averagingLimit = 8, budgetBytes = roomy).decodeSample)
+        assertEquals(16, planTileRead(PixelSize(1024 * 16, 1024 * 16), 16, averagingLimit = Int.MAX_VALUE, budgetBytes = roomy).decodeSample)
+    }
+
+    @Test
+    fun aTileTooBigForTheBudgetIsReadAtTheSmallestSampleThatFitsHalfOfIt() {
+        val read = planTileRead(full, 8, averagingLimit = 1, budgetBytes = 96L shl 20)
+        assertEquals(4, read.decodeSample)
+        assertEquals(PixelSize(1024, 1024), read.output)
+    }
+
+    @Test
+    fun anEdgeTileRoundsItsOutputUpAsTheDecodersDo() {
+        assertEquals(PixelSize(125, 42), planTileRead(PixelSize(1000, 333), 8, averagingLimit = 1, budgetBytes = roomy).output)
+        assertEquals(PixelSize(1, 1), planTileRead(PixelSize(3, 2), 8, averagingLimit = 1, budgetBytes = roomy).output)
+    }
+
+    @Test
+    fun aTileAtSampleOneIsReadAsItIs() {
+        assertEquals(TileRead(1, PixelSize(1024, 700)), planTileRead(PixelSize(1024, 700), 1, averagingLimit = 1, budgetBytes = roomy))
+    }
 }

@@ -78,7 +78,7 @@ private fun tiled(
     isActive: () -> Boolean,
 ): PageResult<PreparedImage> {
     if (codec.regions) {
-        RegionTiles.open(bytes, decoding)?.let { return PageResult.Ready(PreparedImage.Tiled(it, PageShape.Known(it.size.width, it.size.height))) }
+        RegionTiles.open(bytes, codec.averagingLimit, decoding)?.let { return PageResult.Ready(PreparedImage.Tiled(it, PageShape.Known(it.size.width, it.size.height))) }
     }
     val full = PixelSize(shape.width, shape.height)
     return when (
@@ -176,31 +176,45 @@ private fun decodeOnce(
             }
         }
     }
-    var bitmap = decoded
-    try {
-        val from = PixelSize(decoded.width, decoded.height)
-        val output = shrinkToFit(planned!!.output, from)
-        val steps = downscaleSteps(from, output).ifEmpty { if (decoded.config == Bitmap.Config.ARGB_8888) emptyList() else listOf(from) }
-        for (step in steps) {
-            val next = scaled(bitmap, step)
-            bitmap.recycle()
-            bitmap = next
-        }
-        bitmap.prepareToDraw()
-    } catch (e: Throwable) {
-        bitmap.recycle()
-        throw e
-    }
+    val from = PixelSize(decoded.width, decoded.height)
+    val bitmap = scaledInSteps(decoded, null, shrinkToFit(planned!!.output, from), recycleSource = true)
+    bitmap.prepareToDraw()
     return PageResult.Ready(PreparedImage.Whole(bitmap, shape!!))
 }
 
 private fun source(bytes: ByteArray): ImageDecoder.Source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
 
-/** [bitmap] scaled to [size] with a bilinear filter, in ARGB_8888. */
-private fun scaled(bitmap: Bitmap, size: PixelSize): Bitmap {
+/**
+ * [source], or its [part], scaled to [to] in ARGB_8888 by the steps of [downscaleSteps] (docs/spec.md section
+ * 5.3). Intermediate bitmaps are recycled; [source] is recycled only with [recycleSource]. The result is
+ * [source] itself when [part] is null, it is already [to] and ARGB_8888.
+ */
+internal fun scaledInSteps(source: Bitmap, part: Rect?, to: PixelSize, recycleSource: Boolean): Bitmap {
+    val from = part?.let { PixelSize(it.width(), it.height()) } ?: PixelSize(source.width, source.height)
+    val steps = downscaleSteps(from, to).ifEmpty {
+        if (part == null && source.config == Bitmap.Config.ARGB_8888) return source else listOf(to)
+    }
+    var current = source
+    var currentPart = part
+    try {
+        for (step in steps) {
+            val next = scaled(current, currentPart, step)
+            if (current !== source || recycleSource) current.recycle()
+            current = next
+            currentPart = null
+        }
+    } catch (e: Throwable) {
+        if (current !== source || recycleSource) current.recycle()
+        throw e
+    }
+    return current
+}
+
+/** [part] of [bitmap], or all of it, scaled to [size] with a bilinear filter, in ARGB_8888. */
+private fun scaled(bitmap: Bitmap, part: Rect?, size: PixelSize): Bitmap {
     val out = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
     try {
-        Canvas(out).drawBitmap(bitmap, null, Rect(0, 0, size.width, size.height), Paint(Paint.FILTER_BITMAP_FLAG))
+        Canvas(out).drawBitmap(bitmap, part, Rect(0, 0, size.width, size.height), Paint(Paint.FILTER_BITMAP_FLAG))
     } catch (e: Throwable) {
         out.recycle()
         throw e

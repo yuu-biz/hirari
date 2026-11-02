@@ -62,6 +62,26 @@ fun planDecode(
 }
 
 /**
+ * How to read one tile of a [region] of the stored image at 1/[sample] of its size: decode at [decodeSample],
+ * then scale to [output] by 2 x 2 averages (docs/spec.md section 3.7).
+ */
+internal data class TileRead(val decodeSample: Int, val output: PixelSize)
+
+/**
+ * The read of a tile whose [region] the decoder gives at the sample size, for a decoder that averages up to
+ * [averagingLimit] (section 5.3). It decodes at the largest sample size the decoder averages, and the rest is
+ * averaged afterwards, as for a whole image. When the decoded region would take more than half of [budgetBytes],
+ * the sample size grows until it fits, even past what averages (section 3.7).
+ */
+internal fun planTileRead(region: PixelSize, sample: Int, averagingLimit: Int, budgetBytes: Long): TileRead {
+    var decodeSample = min(sample, highestPowerOfTwoAtMost(averagingLimit))
+    while (sampled(region.width, decodeSample).toLong() * sampled(region.height, decodeSample) * 4 > budgetBytes / 2 && decodeSample < sample) {
+        decodeSample *= 2
+    }
+    return TileRead(decodeSample, PixelSize(sampled(region.width, sample), sampled(region.height, sample)))
+}
+
+/**
  * What libjxl may allocate through its memory manager (docs/spec.md section 3.6). The output takes up to half of
  * [budgetBytes]; libjxl gets the other half less 1/16 of the budget, because its own containers and `new` bypass
  * the manager and the limit cannot count them.
