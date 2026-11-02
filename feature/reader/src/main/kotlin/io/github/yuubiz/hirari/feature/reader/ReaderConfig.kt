@@ -15,6 +15,7 @@ import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.StopOrder
 import io.github.yuubiz.hirari.core.model.TurnEffect
 import io.github.yuubiz.hirari.core.model.VolumeKeys
+import kotlin.math.roundToLong
 
 /**
  * What the reader reads from the settings: the global settings of docs/spec.md section 4.10 under the book's
@@ -39,6 +40,8 @@ data class ReaderConfig(
     val rotation: Rotation = Rotation.None,
     val orientation: ReaderOrientation = ReaderOrientation.System,
     val adjust: ImageAdjust = ImageAdjust(),
+    /** `autoPlaySeconds`: how long 自動再生 rests between steps. */
+    val autoPlayMs: Long = 1500,
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -66,6 +69,7 @@ data class ReaderConfig(
             rotation = overrides.rotation ?: Rotation.None,
             orientation = settings.readerOrientation,
             adjust = overrides.adjust ?: settings.adjust,
+            autoPlayMs = (settings.autoPlaySeconds * 1000).roundToLong(),
         )
     }
 }

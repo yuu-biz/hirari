@@ -253,6 +253,7 @@ internal fun MenuSheet(viewModel: ReaderViewModel, state: ReaderState, onCloseMe
                 onCloseReader()
                 return
             }
+            MenuItem.AutoPlay -> viewModel.command(ReaderCommand.AutoPlay, android.os.SystemClock.uptimeMillis())
             MenuItem.Orientation -> viewModel.command(ReaderCommand.Orientation, android.os.SystemClock.uptimeMillis())
             MenuItem.MirrorControls -> viewModel.command(ReaderCommand.MirrorControls, android.os.SystemClock.uptimeMillis())
             else -> return

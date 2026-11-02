@@ -73,6 +73,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
 
     DisposableEffect(keys, viewModel) {
         keys.handler = handler@{ event ->
+            if (viewModel.state?.autoPlay != null) {
+                viewModel.dispatch(ReaderEvent.AutoPlayStopped)
+                return@handler true
+            }
             val pressed = event.action == KeyEvent.ACTION_DOWN
             val config = viewModel.state?.config ?: ReaderConfig()
             when (val result = config.keys.onKey(event.keyCode, pressed, event.isShiftPressed, ui.sheet)) {
@@ -103,6 +107,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
             is ReaderPhase.Failed -> BookError(stringResource(phase.reason.message), onClose)
             ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), onClose)
             ReaderPhase.Reading -> viewModel.state?.let { state ->
+                AutoPlayClock(viewModel, state.autoPlay)
                 ReaderSurface(viewModel, state, ui, onClose)
                 when (val sheet = ui.sheet) {
                     is ReaderSheet.Pages -> PagePanelSheet(viewModel, state, sheet, onClose = { ui.sheet = null })
@@ -199,6 +204,22 @@ private fun BookError(text: String, onBack: () -> Unit) {
     ) {
         Text(text, color = Color.White, style = MaterialTheme.typography.titleMedium)
         Button(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.reader_back)) }
+    }
+}
+
+/** Sends 自動再生 its steps when they are due, and keeps the screen on while it plays. */
+@Composable
+private fun AutoPlayClock(viewModel: ReaderViewModel, autoPlay: AutoPlay?) {
+    val view = LocalView.current
+    val playing = autoPlay != null
+    DisposableEffect(view, playing) {
+        view.keepScreenOn = playing
+        onDispose { view.keepScreenOn = false }
+    }
+    LaunchedEffect(autoPlay) {
+        val due = autoPlay?.dueAtMs ?: return@LaunchedEffect
+        delay((due - SystemClock.uptimeMillis()).coerceAtLeast(0))
+        viewModel.dispatch(ReaderEvent.AutoPlayDue(SystemClock.uptimeMillis()))
     }
 }
 

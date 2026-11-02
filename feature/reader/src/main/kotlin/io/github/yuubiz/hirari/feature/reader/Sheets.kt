@@ -60,7 +60,7 @@ enum class MenuItem(val group: MenuGroup, val available: Boolean) {
     SetCoverFromRange(MenuGroup.Book, false),
     SharePage(MenuGroup.Book, false),
     RestoreAndClose(MenuGroup.Book, true),
-    AutoPlay(MenuGroup.Reading, false),
+    AutoPlay(MenuGroup.Reading, true),
     Breath(MenuGroup.Reading, false),
     Orientation(MenuGroup.Reading, true),
     MirrorControls(MenuGroup.Reading, true),

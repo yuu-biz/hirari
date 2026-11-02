@@ -240,6 +240,7 @@ class ReaderViewModel(
         when (val effect = current.config.effectOf(command)) {
             is CommandEffect.Configure -> dispatch(ReaderEvent.ConfigChanged(effect.config))
             CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
+            CommandEffect.StartAutoPlay -> dispatch(ReaderEvent.AutoPlayStarted(nowMs))
             is CommandEffect.Show, CommandEffect.NotYet -> return effect
         }
         return null
@@ -250,6 +251,7 @@ class ReaderViewModel(
 
     /** The reader left the screen. The process may end before [onCleared], so the history is written now. */
     fun onStop() {
+        dispatch(ReaderEvent.AutoPlayStopped)
         stops.stop()
     }
 

@@ -38,6 +38,11 @@ internal class ReaderInput(
             val point = down.position.dp(density)
             val regions = ReaderRegions(Size(size.width / density, size.height / density), current.config.barHeightDp, systemBarsHidden = true)
             val slop = viewConfiguration.touchSlop / density
+            if (current.autoPlay != null) {
+                viewModel.dispatch(ReaderEvent.AutoPlayStopped)
+                swallow(down)
+                return@awaitEachGesture
+            }
             if (ui.commandBar != CommandBarState.Closed) {
                 commandBar(down, current, slop)
                 return@awaitEachGesture
@@ -49,6 +54,15 @@ internal class ReaderInput(
                 null -> Unit
             }
         }
+    }
+
+    /** A touch that only stopped 自動再生: every finger of it is taken until the last one is up. */
+    private suspend fun AwaitPointerEventScope.swallow(down: PointerInputChange) {
+        down.consume()
+        do {
+            val event = awaitPointerEvent()
+            event.changes.forEach { it.consume() }
+        } while (event.changes.any { it.pressed })
     }
 
     private suspend fun AwaitPointerEventScope.commandBar(down: PointerInputChange, current: ReaderState, slop: Float) {

@@ -53,6 +53,8 @@ data class ReaderState(
     val pull: Pull? = null,
     /** The last two turns between views, for the prefetch direction. */
     val recentTurns: List<Turn> = emptyList(),
+    /** 自動再生, while it plays. */
+    val autoPlay: AutoPlay? = null,
 ) {
     val current: PageView get() = pagination.current
     /**
@@ -99,8 +101,8 @@ data class ReaderState(
         pagination.views.getOrNull(pagination.currentIndex + if (turn == Turn.Forward) 1 else -1)
 
     fun reduce(event: ReaderEvent): ReaderState = when (event) {
-        is ReaderEvent.Act -> settled().act(event.action, event.nowMs)
-        is ReaderEvent.GoTo -> settled().moved(PaginationEvent.GoTo(event.page))
+        is ReaderEvent.Act -> byHand().act(event.action, event.nowMs)
+        is ReaderEvent.GoTo -> byHand().moved(PaginationEvent.GoTo(event.page))
         is ReaderEvent.ShapeLearned -> relaid(pagination.reduce(PaginationEvent.ShapeLearned(event.page, event.shape.rotated(config.rotation))))
         is ReaderEvent.ViewportChanged ->
             if (event.viewport == viewport) {
@@ -121,16 +123,34 @@ data class ReaderState(
             transition = transition?.takeUnless { it.animation.isDoneAt(event.nowMs) },
             stopTravel = stopTravel?.takeUnless { it.move.motion.isDoneAt(event.nowMs) },
         )
-        is ReaderEvent.Pan -> settled().panned(event.dx, event.dy)
-        is ReaderEvent.Pulling -> settled().copy(pull = Pull(event.turn, neighbor(event.turn), event.pulledDp))
+        is ReaderEvent.Pan -> byHand().panned(event.dx, event.dy)
+        is ReaderEvent.Pulling -> byHand().copy(pull = Pull(event.turn, neighbor(event.turn), event.pulledDp))
         is ReaderEvent.PullEnded -> released(event.commit, event.nowMs)
-        is ReaderEvent.Zoom -> settled().zoomed(event.event, event.focus)
+        is ReaderEvent.Zoom -> byHand().zoomed(event.event, event.focus)
+        is ReaderEvent.AutoPlayStarted -> copy(autoPlay = AutoPlay(event.nowMs + config.autoPlayMs))
+        ReaderEvent.AutoPlayStopped -> copy(autoPlay = null)
+        is ReaderEvent.AutoPlayDue -> autoPlayed(event.nowMs)
     }
 
     /** The state with every running animation at its end, as the next input finds it. */
     private fun settled(): ReaderState {
         val travel = stopTravel ?: return copy(transition = null, pull = null)
         return copy(transition = null, pull = null, stopTravel = null, place = Place.AtStop(travel.index))
+    }
+
+    /** A move of the reader's own ends 自動再生 (docs/spec.md section 4.8). */
+    private fun byHand(): ReaderState = settled().copy(autoPlay = null)
+
+    /**
+     * The next step of 自動再生 once it is due: the next stop, or the next view past the last one. At the end of the
+     * book it stops there, whatever 本の端での動作 says.
+     */
+    private fun autoPlayed(nowMs: Long): ReaderState {
+        val playing = autoPlay ?: return this
+        if (nowMs < playing.dueAtMs) return this
+        val from = settled()
+        val next = from.stepped(Turn.Forward, nowMs)
+        return if (next === from) from.copy(autoPlay = null) else next.copy(autoPlay = AutoPlay(nowMs + config.autoPlayMs))
     }
 
     private fun act(action: ReaderAction, nowMs: Long): ReaderState = when (action) {
@@ -280,4 +300,16 @@ sealed interface ReaderEvent {
 
     /** [focus] is the point between the fingers, in screen pixels. */
     data class Zoom(val event: ZoomEvent, val focus: Point? = null) : ReaderEvent
+
+    /** 自動再生 starts; its first step comes one interval later. */
+    data class AutoPlayStarted(val nowMs: Long) : ReaderEvent
+
+    /** A touch, a key, or leaving the screen ends 自動再生. */
+    data object AutoPlayStopped : ReaderEvent
+
+    /** The clock of 自動再生 at [nowMs]. A step that is not due yet changes nothing. */
+    data class AutoPlayDue(val nowMs: Long) : ReaderEvent
 }
+
+/** 自動再生 playing, with its next step at [dueAtMs]. */
+data class AutoPlay(val dueAtMs: Long)
