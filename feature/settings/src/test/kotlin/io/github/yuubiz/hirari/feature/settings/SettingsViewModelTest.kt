@@ -146,6 +146,19 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `every failed save is counted, even while an earlier failure is still on screen`() = runTest {
+        val vm = viewModel(this)
+        assertEquals(0, vm.state.value.saveFailures)
+        settings.failure = IOException("full")
+        vm.change { it.copy(coverAlone = false) }
+        vm.change { it.copy(coverAlone = true) }
+        assertEquals(2, vm.state.value.saveFailures)
+        settings.failure = null
+        vm.change { it.copy(coverAlone = false) }
+        assertEquals(2, vm.state.value.saveFailures)
+    }
+
+    @Test
     fun `export writes the file text to the chosen document and says whether reading was included`() = runTest {
         val vm = viewModel(this)
         vm.export(uri, includeReading = true)

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -91,7 +92,8 @@ sealed interface ActionState {
     data class Done(val result: ActionResult) : ActionState
 }
 
-data class SettingsUiState(val load: SettingsLoad, val action: ActionState)
+/** [saveFailures] counts the changes that could not be written, so a control can go back to the stored value. */
+data class SettingsUiState(val load: SettingsLoad, val action: ActionState, val saveFailures: Int = 0)
 
 /**
  * Holds the state of the settings screen. All file and database work runs on [io]; the settings repository is safe
@@ -110,7 +112,9 @@ class SettingsViewModel(
         .map<GlobalSettings, SettingsLoad> { SettingsLoad.Ready(it) }
         .catch { if (it is IOException) emit(SettingsLoad.Failed) else throw it }
 
-    val state: StateFlow<SettingsUiState> = combine(load, action, ::SettingsUiState)
+    private val saveFailures = MutableStateFlow(0)
+
+    val state: StateFlow<SettingsUiState> = combine(load, action, saveFailures, ::SettingsUiState)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SettingsUiState(SettingsLoad.Loading, ActionState.Idle))
 
     /** Writes the settings [transform] makes from the stored ones; the repository moves numbers to allowed values. */
@@ -119,6 +123,7 @@ class SettingsViewModel(
             try {
                 services.settings.update(transform)
             } catch (e: IOException) {
+                saveFailures.update { it + 1 }
                 action.compareAndSet(ActionState.Idle, ActionState.Done(ActionResult.Failed(Problem.CannotSave)))
             }
         }

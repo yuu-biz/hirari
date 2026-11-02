@@ -45,12 +45,21 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rgb
 
-/** Draws the row of [setting]. Rows that need a choice open their dialog through [onOpen]; the others edit in place. */
+/**
+ * Draws the row of [setting]. Rows that need a choice open their dialog through [onOpen]; the others edit in place.
+ * [saveFailures] counts the saves that failed, so a slider can go back to the value that is stored.
+ */
 @Composable
-internal fun SettingRow(setting: Setting, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit, onOpen: (String) -> Unit) {
+internal fun SettingRow(
+    setting: Setting,
+    settings: GlobalSettings,
+    saveFailures: Int,
+    onChange: ((GlobalSettings) -> GlobalSettings) -> Unit,
+    onOpen: (String) -> Unit,
+) {
     when (setting) {
         is ToggleSetting -> ToggleRow(setting, settings, onChange)
-        is SliderSetting<*> -> SliderRow(setting, settings, onChange)
+        is SliderSetting<*> -> SliderRow(setting, settings, saveFailures, onChange)
         is ChoiceSetting<*> -> ChoiceRow(setting, settings, onOpen)
         is ColorSetting<*> -> ColorRow(setting, settings, onOpen)
         is OrderedSetSetting -> CommandsRow(setting, settings, onOpen)
@@ -100,12 +109,12 @@ private fun SummaryRow(setting: Setting, summary: String, onOpen: (String) -> Un
 }
 
 @Composable
-private fun <T> SliderRow(setting: SliderSetting<T>, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit) {
+private fun <T> SliderRow(setting: SliderSetting<T>, settings: GlobalSettings, saveFailures: Int, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit) {
     val values = setting.values(settings)
     val current = setting.read(settings)
     val stored = values.indexOf(current).coerceAtLeast(0)
-    var dragged by remember(stored, values.size) { mutableStateOf<Float?>(null) }
-    val shown = sliderIndex(dragged ?: stored.toFloat(), values.size)
+    val draft = remember(stored, values.size, saveFailures) { SliderDraft(values.size) }
+    val shown = draft.shown(stored)
     val text = setting.format(values[shown])
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -115,9 +124,9 @@ private fun <T> SliderRow(setting: SliderSetting<T>, settings: GlobalSettings, o
         setting.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         Slider(
             value = shown.toFloat(),
-            onValueChange = { dragged = it },
+            onValueChange = draft::drag,
             onValueChangeFinished = {
-                val target = values[sliderIndex(dragged ?: stored.toFloat(), values.size)]
+                val target = values[draft.release(stored)]
                 if (target != current) onChange { setting.write(it, target) }
             },
             valueRange = 0f..values.lastIndex.toFloat().coerceAtLeast(1f),

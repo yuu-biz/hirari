@@ -87,7 +87,7 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                     for ((group, rows) in groups) {
                         item(key = "group-${group.name}") { GroupHeader(group.title) }
                         items(rows, key = { it.key }) { setting ->
-                            SettingRow(setting, settings, viewModel::change) { openedSetting = it }
+                            SettingRow(setting, settings, ui.saveFailures, viewModel::change) { openedSetting = it }
                         }
                     }
                     item(key = "group-data") { GroupHeader(stringResource(R.string.settings_group_data)) }
