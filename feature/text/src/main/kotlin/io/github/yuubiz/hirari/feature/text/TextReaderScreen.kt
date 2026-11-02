@@ -158,14 +158,18 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
                     ReaderOrientation.Landscape -> ReaderOrientation.System
                 }
             }
-            Reading(
-                s, viewModel,
-                onRegionTouch = { touched++ },
-                onPanel = { panel = it },
-                onCommandAt = { point -> bounds.entries.firstOrNull { point in it.value }?.key?.let(run) ?: Unit },
-                act = ::act,
-            )
-            TextPanels(panel, s, viewModel, bounds, onPanel = { panel = it }, onClose = back, onCommand = run)
+            // The command bounds are in root coordinates and the touches in the reader's; the reader fills the root,
+            // edge to edge, so the two agree.
+            Box(Modifier.fillMaxSize()) {
+                Reading(
+                    s, viewModel,
+                    onRegionTouch = { touched++ },
+                    onPanel = { panel = it },
+                    onCommandAt = { point -> bounds.entries.firstOrNull { point in it.value }?.key?.let(run) ?: Unit },
+                    act = ::act,
+                )
+                TextPanels(panel, s, viewModel, bounds, onPanel = { panel = it }, onClose = back, onCommand = run)
+            }
         }
     }
 }
