@@ -2,6 +2,6 @@
 -keep class io.github.yuubiz.hirari.core.archive.NativeArchive {
     native <methods>;
     int read(long, int);
-    void header(byte[], long, boolean, boolean, java.lang.String);
+    void header(byte[], long, boolean, boolean, java.lang.String, int, int);
     boolean data(java.nio.ByteBuffer, long);
 }
