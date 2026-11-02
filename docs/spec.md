@@ -527,8 +527,8 @@ libarchive は順に読む形の API を持つ。任意のエントリを開く�
 
 - 形式ごとのデコーダは、判定した形式から引く表で決める。表の各行は、`ImageDecoder` で読むか、この端末とアプリには読む手段がないか（`Unsupported(ImageFeature(形式名))`）を持つ。`ImageDecoder` の行は、デコーダの縮小が面積平均になる縮小率の上限（5.3 節）、`BitmapRegionDecoder` で読めるか（3.7 節）、デコーダのエラーを端末にデコーダがないものとみなすか、を持つ。
 - HEIF と AVIF のデコーダのエラーは、端末にデコーダがないものとみなし、`Unsupported(ImageFeature("HEIF"))` か `Unsupported(ImageFeature("AVIF"))` にする。壊れたファイルも同じ表示になるが、端末によって読めない形式を「壊れている」と出すよりよい。
-- 12 ビット JPEG とロスレス JPEG は、プラットフォームが読めなければ `Unsupported(ImageFeature("12-bit JPEG"))` か `Unsupported(ImageFeature("lossless JPEG"))` にする。デコーダが壊れたデータとして失敗し、フレームヘッダ（SOFn）の精度が 8 ビットでないか、SOF がロスレスの印（`C3`、`C7`、`CB`、`CF`）のときに、この結果にする。API 37 のエミュレータの `ImageDecoder` は、コーパスの 12 ビット JPEG（SOF1）とロスレス JPEG（SOF3）をどちらも読めなかった。どちらも手書きの最小のファイルで、同じ書き方の 8 ビットのベースライン JPEG は読めた。
-- 4 成分の JPEG（Adobe のマーカーなし。CMYK として読まれる）は、API 37 のエミュレータで読めた。YCCK と、Adobe の反転の有無で色が正しくなるかは、実データで確かめる (要検証)。
+- 12 ビット JPEG とロスレス JPEG は、プラットフォームが読めなければ `Unsupported(ImageFeature("12-bit JPEG"))` か `Unsupported(ImageFeature("lossless JPEG"))` にする。デコーダが壊れたデータとして失敗し、フレームヘッダ（SOFn）の精度が 8 ビットでないか、SOF がロスレスの印（`C3`、`C7`、`CB`、`CF`）のときに、この結果にする。API 28 と API 37 のエミュレータの `ImageDecoder` は、コーパスの 12 ビット JPEG（SOF1）とロスレス JPEG（SOF3）をどちらも読めなかった。どちらも手書きの最小のファイルで、同じ書き方の 8 ビットのベースライン JPEG は読めた。
+- 4 成分の JPEG（Adobe のマーカーなし。CMYK として読まれる）は、API 28 と API 37 のエミュレータで読めた。YCCK と、Adobe の反転の有無で色が正しくなるかは、実データで確かめる (要検証)。
 - GIF とアニメーション WebP は、`ImageDecoder.decodeBitmap` が返す先頭のフレームを使う。
 - アルファを持つ画像は、リーダーの背景色の上に合成する。
 - 色は sRGB に変換して表示する。
@@ -577,7 +577,7 @@ libarchive は順に読む形の API を持つ。任意のエントリを開く�
 
 - `android.graphics.pdf.PdfRenderer` で描く。
 - 本を開くときに先頭 1024 バイトを読み、`%PDF-` があれば PDF として開き、なければ書庫として開く（3.2 節）。
-- `PdfRenderer` はシーク可能な `ParcelFileDescriptor` を必要とする。入力元は `ByteSource` で記述子を見せないので、SAF でも SMB でも `StorageManager.openProxyFileDescriptor` で `ByteSource` を包んで渡す。代理の記述子の読み込みは、PDF のセッションとは別の 1 本のスレッドで受ける。セッションのスレッドで受けると、`PdfRenderer` の読み込みが自分を待って止まる。SAF の記述子をそのまま渡す方が速いかは測っていない (要検証。先読みの量と速度)。
+- `PdfRenderer` はシーク可能な `ParcelFileDescriptor` を必要とする。入力元は `ByteSource` で記述子を見せないので、SAF でも SMB でも `StorageManager.openProxyFileDescriptor` で `ByteSource` を包んで渡す。代理の記述子の読み込みは、PDF のセッションとは別の 1 本のスレッドで受ける。セッションのスレッドで受けると、`PdfRenderer` の読み込みが自分を待って止まる。この経路は API 28 と API 37 のエミュレータでコーパスの PDF を開けた。SAF の記述子をそのまま渡す方が速いかは測っていない (要検証。先読みの量と速度)。
 - `PdfRenderer` の生成が `SecurityException` を投げたら暗号化（3.8 節）、`IOException` を投げたら壊れた本とする。
 - ページの大きさは描かずに得られるので、開いた時点で全ページの形が分かる。形はポイント単位の幅と高さで持つ。ページの名前は 1 から始まる番号である。
 - 各ページは表示サイズに合わせて白い背景に描く。画像と違い、表示サイズより小さいページは拡大して描く。1 枚が予算の半分を超えるときは、収まるまで小さく描く。拡大中は変換行列を使い、見えている範囲だけをタイルに描く。拡大中のタイルは、リーダーのタイルの描画とともに入れる。
@@ -1812,7 +1812,7 @@ libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`C
 |---|---|---|---|
 | Q1 | リーダーの描画面を何で作るか | Compose の `Canvas`、独自の `View`、`SurfaceView` と専用スレッド | 暫定で Compose の `Canvas`（8.4 節の案 A）。エミュレータでは、案 A が案 B より明らかに悪くはなく、差は実行ごとの差の中にあった。実機で計り直して確定する (要検証)。計測と数値は [q1-render-surface.md](q1-render-surface.md) |
 | Q2 | 準備済みのビューをどの画素形式で持つか | `ARGB_8888`、`HARDWARE`、`RGB_565` | `HARDWARE` を第一候補とする。Q1 の試作のエミュレータでの計測では、`ARGB_8888` はめくりのフレームの RenderThread の時間を延ばし、`prepareToDraw` を足しても差は残った（[q1-render-surface.md](q1-render-surface.md)）。大きさは実機で確かめる (要検証)。トリミングの解析はソフトウェアの縮小複製で行う。`RGB_565` はグラデーションに縞が出るので使わない |
-| Q3 | アニメーション WebP と GIF を動かすか | 先頭のフレームだけ、リーダーで動かす、ページ上の操作で再生する | 決定。v1 は先頭のフレームだけ。自炊の本では静止画が主で、動かすと先読みとメモリの計画が複雑になる。`ImageDecoder.decodeBitmap` はアニメーションの先頭のフレームを返す（コーパスの GIF とアニメーション WebP で、API 37 のエミュレータで確かめた） |
+| Q3 | アニメーション WebP と GIF を動かすか | 先頭のフレームだけ、リーダーで動かす、ページ上の操作で再生する | 決定。v1 は先頭のフレームだけ。自炊の本では静止画が主で、動かすと先読みとメモリの計画が複雑になる。`ImageDecoder.decodeBitmap` はアニメーションの先頭のフレームを返す（コーパスの GIF とアニメーション WebP で、API 28 と API 37 のエミュレータで確かめた） |
 | Q4 | 暗号化された ZIP と PDF にパスワード入力を出すか | 非対応のまま、ZIP だけ対応、ZIP と PDF の両方 | libarchive の暗号化 ZIP の読み込みには暗号ライブラリの同梱が要る (要検証)。v1 は非対応とし、要望を見て M6 以降に ZIP から対応する。PDF は、API 35 以上の `PdfRenderer(ParcelFileDescriptor, LoadParams)` でパスワードを渡すと開けた（API 37 のエミュレータで、コーパスのユーザーパスワード付きの PDF で確かめた）。パスワードを渡さなければ `SecurityException` になる。v1 はパスワードを尋ねず、M6 以降に ZIP と合わせて決める。API 34 以下では渡す手段がない |
 | Q5 | 書庫の展開と画像のデコードを別プロセスに分けるか | 同じプロセス、同梱のネイティブライブラリだけ分離、プラットフォームのデコーダと `PdfRenderer` も含めて分離 | M3 までは同じプロセスで fuzz とコーパスを回す。fuzz でネイティブの落ち方が見つかった系統から、`isolatedProcess` のサービスに移す。画像の受け渡しは `HardwareBuffer` か共有メモリで行い、P1 への影響を測る |
 | Q6 | API 28〜30 で AVIF をどう扱うか | 同梱しない（非対応と表示）、libavif と dav1d を同梱 | 同梱した場合の APK の増分を測ってから決める。増分が ABI あたり 2 MB 以下なら同梱する (要検証)。M3 の画像の単位では同梱せず、増分もまだ測っていない。API 28〜30 の AVIF は、デコーダの表の行で `Unsupported(ImageFeature("AVIF"))` にしている |
