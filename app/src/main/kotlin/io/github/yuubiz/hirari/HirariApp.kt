@@ -3,6 +3,8 @@ package io.github.yuubiz.hirari
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.StrictMode
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
@@ -31,6 +33,9 @@ class HirariApp : Application() {
         }
     }
 
+    private fun isAppClass(name: String): Boolean =
+        runCatching { Class.forName(name, false, classLoader).classLoader === classLoader }.getOrDefault(false)
+
     /** docs/spec.md section 6.3. */
     private fun enableStrictMode() {
         StrictMode.setThreadPolicy(
@@ -39,7 +44,11 @@ class HirariApp : Application() {
                 .detectDiskWrites()
                 .detectNetwork()
                 .penaltyLog()
-                .penaltyDeath()
+                .penaltyListener(Runnable::run) { violation ->
+                    if (blame(violation.stackTrace.asList(), ::isAppClass) == IoCulprit.App) {
+                        Handler(Looper.getMainLooper()).post { throw IllegalStateException("main-thread I/O", violation) }
+                    }
+                }
                 .build(),
         )
         StrictMode.setVmPolicy(
