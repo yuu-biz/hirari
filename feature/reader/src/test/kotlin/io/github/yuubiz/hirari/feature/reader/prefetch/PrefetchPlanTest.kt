@@ -24,6 +24,7 @@ import io.kotest.property.arbitrary.enum
 import io.kotest.property.arbitrary.int
 import io.kotest.property.arbitrary.list
 import io.kotest.property.arbitrary.long
+import io.kotest.property.arbitrary.map
 import io.kotest.property.checkAll
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -170,6 +171,15 @@ class PrefetchPlanTest {
     }
 
     @Test
+    fun pausingKeepsWhatIsLoadedEvenOutsideTheRangeAndTheBudget() {
+        val resident = Resident(views = setOf(One(50), One(99)), rawPages = setOf(0, 99))
+        fun plan(paused: Boolean) =
+            planPrefetch(request(single(100), current = 50, budget = 10, viewBytes = 10, rawBytes = 10, resident = resident, paused = paused))
+        assertEquals(Resident(views = setOf(One(99)), rawPages = setOf(0, 99)), plan(paused = false).evictions(resident))
+        assertEquals(Resident(), plan(paused = true).evictions(resident))
+    }
+
+    @Test
     fun bothHalvesOfAWidePageArePrepared() {
         val views = listOf(Half(0, HalfPart.First), Half(0, HalfPart.Second), One(1), One(2))
         val plan = planPrefetch(request(views, current = 0, shapes = listOf(wide, tall, tall)))
@@ -254,7 +264,7 @@ class PrefetchPlanTest {
 
     @Test
     fun whatThePlanKeepsFitsTheBudget() = runBlocking<Unit> {
-        checkAll(scenarios) { scenario ->
+        checkAll(scenarios.map { it.copy(paused = false) }) { scenario ->
             val shown = scenario.views[scenario.current]
             val keep = scenario.plan().keep
             val shownBytes = if (shown.pages.all { scenario.shapes[it] is PageShape.Known }) scenario.viewBytes(shown) else 0L
@@ -262,6 +272,13 @@ class PrefetchPlanTest {
             val others = (keep.views - shown).sumOf { scenario.viewBytes(it) } + raw
             assertTrue(others <= maxOf(0L, scenario.budget - shownBytes), "$others over ${scenario.budget} with $shownBytes shown")
             assertTrue(raw <= scenario.budget / 2, "raw $raw over half of ${scenario.budget}")
+        }
+    }
+
+    @Test
+    fun aPausedPlanEvictsNothing() = runBlocking<Unit> {
+        checkAll(scenarios.map { it.copy(paused = true) }) { scenario ->
+            assertEquals(Resident(), scenario.plan().evictions(scenario.resident))
         }
     }
 

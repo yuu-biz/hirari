@@ -32,6 +32,8 @@ sealed interface PrefetchJob {
 
 /** What memory holds: prepared views and the raw bytes of pages. */
 data class Resident(val views: Set<PageView> = emptySet(), val rawPages: Set<Int> = emptySet()) {
+    operator fun plus(other: Resident) = Resident(views + other.views, rawPages + other.rawPages)
+
     operator fun minus(other: Resident) = Resident(views - other.views, rawPages - other.rawPages)
 }
 
@@ -49,7 +51,7 @@ class PrefetchRequest(
     val rawBytes: (Int) -> Long,
     val resident: Resident,
     val depths: PrefetchDepths = PrefetchDepths(),
-    /** While the settings screen or the thumbnail strip is up, only the current view loads. */
+    /** While the settings screen or the thumbnail strip is up, only the current view loads and nothing resident goes. */
     val paused: Boolean = false,
 ) {
     init {
@@ -182,7 +184,8 @@ private class Candidates(private val request: PrefetchRequest) {
             val wanted = admitted && (index < focus || !request.paused) && !request.resident.holds(candidate.job)
             if (wanted) jobs += candidate.job
         }
-        return PrefetchPlan(jobs, Resident(keptViews, keptRaw))
+        val keep = Resident(keptViews, keptRaw)
+        return PrefetchPlan(jobs, if (request.paused) keep + request.resident else keep)
     }
 }
 
