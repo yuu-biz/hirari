@@ -124,6 +124,9 @@ class Prefetcher<R, T>(
     private val failedRaws = HashSet<Int>()
     private val raws = HashMap<Int, R>()
 
+    /** What the data of each page took once read. It still counts after the data is dropped, so a page that does not fit is not read again. */
+    private val rawSizes = HashMap<Int, Long>()
+
     /** The steps, with the whole page as the part, a page failed to prepare with. Other steps read it again. */
     private val failedSteps = HashMap<Int, PageSteps>()
     private var last: PrefetchInput? = null
@@ -155,7 +158,7 @@ class Prefetcher<R, T>(
                 travel = input.travel,
                 budgetBytes = budgetBytes,
                 viewBytes = { input.targets(it)?.bytes ?: 0L },
-                rawBytes = { page -> raws[page]?.let(loader::bytesOf) ?: loader.rawEstimate(page) },
+                rawBytes = { page -> rawSizes[page] ?: loader.rawEstimate(page) },
                 resident = resident.copy(rawPages = raws.keys.toSet()),
                 depths = depths,
                 paused = input.paused || trimmedOn != null,
@@ -245,7 +248,13 @@ class Prefetcher<R, T>(
         val result = loader.raw(page)
         running.remove(PrefetchJob.ReadRaw(page))
         when (result) {
-            is PageResult.Ready -> result.image.also { raws[page] = it }
+            is PageResult.Ready -> result.image.also { raw ->
+                val counted = rawSizes[page] ?: loader.rawEstimate(page)
+                val size = loader.bytesOf(raw)
+                raws[page] = raw
+                rawSizes[page] = size
+                if (size > counted) last?.let(::update)
+            }
             is PageResult.Failed, is PageResult.Unsupported -> {
                 @Suppress("UNCHECKED_CAST")
                 failures[page] = result as PageResult<Nothing>

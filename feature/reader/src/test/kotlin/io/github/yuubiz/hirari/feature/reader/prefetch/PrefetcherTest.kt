@@ -30,6 +30,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -48,6 +49,8 @@ private class FakeLoader(
     val failing: MutableMap<Int, PageResult<Nothing>> = mutableMapOf(),
     val rawFailing: MutableMap<Int, PageResult<Nothing>> = mutableMapOf(),
     val rawBytes: Long = 1000,
+    /** What a page's data turns out to take once read; a provider that reports no size makes it differ. */
+    val readRawBytes: Long = rawBytes,
 ) : PageLoader<String, String> {
     val cancelled = mutableListOf<Int>()
     var gate: CompletableDeferred<Unit>? = null
@@ -55,6 +58,9 @@ private class FakeLoader(
     /** Pages that wait here besides [gate]. */
     val pageGates = mutableMapOf<Int, CompletableDeferred<Unit>>()
     var rawGate: CompletableDeferred<Unit>? = null
+
+    /** How long each raw read takes, so a test can stop a run of reads at a moment. */
+    var rawDelay = 0L
     val rawReads = mutableListOf<Int>()
 
     /** The raw data each prepared page was given, `null` for one read from the book. */
@@ -63,10 +69,11 @@ private class FakeLoader(
     override suspend fun raw(page: Int): PageResult<String> {
         rawReads += page
         rawGate?.await()
+        delay(rawDelay)
         return rawFailing[page] ?: PageResult.Ready("raw$page")
     }
 
-    override fun bytesOf(raw: String): Long = rawBytes
+    override fun bytesOf(raw: String): Long = readRawBytes
 
     override fun rawEstimate(page: Int): Long = rawBytes
 
@@ -308,6 +315,15 @@ class PrefetcherTest {
         advanceUntilIdle()
         assertEquals(10, reader.rawPages().size, "held ${reader.rawPages()}")
         assertTrue(reader.rawPages().containsAll(listOf(19, 20, 21, 22)), "held ${reader.rawPages()}")
+    }
+
+    @Test
+    fun rawDataLargerThanItsEstimateIsDroppedFarthestFirstAndNotReadAgain() = runTest {
+        val loader = FakeLoader(rawBytes = 1000, readRawBytes = 3000).apply { rawDelay = 1 }
+        val reader = reader(pages = 60, viewport = Viewport(10f, 15f, 1f), start = 20, loader = loader, budgetBytes = 20_000)
+        advanceTimeBy(10_000)
+        assertEquals(setOf(19, 20, 21), reader.rawPages())
+        assertEquals(1, loader.rawReads.count { it == 22 }, "reads ${loader.rawReads}")
     }
 
     @Test
