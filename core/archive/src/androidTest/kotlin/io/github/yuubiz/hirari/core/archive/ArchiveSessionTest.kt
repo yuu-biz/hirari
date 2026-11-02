@@ -38,10 +38,10 @@ class ArchiveSessionTest {
     private fun fileSource(file: File): ByteSource =
         ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).asByteSource()
 
-    private suspend fun open(source: ByteSource): ArchiveSession =
-        when (val result = ArchiveSession.open(source)) {
+    private suspend fun open(source: ByteSource, extractDir: File? = null): ArchiveSession =
+        when (val result = ArchiveSession.open(source, extractDir)) {
             is OpenResult.Opened -> result.session
-            is OpenResult.Failed -> throw AssertionError("open failed: ${result.reason}")
+            else -> throw AssertionError("open failed: $result")
         }
 
     private fun crc(bytes: ByteArray): String = "%08x".format(CRC32().apply { update(bytes) }.value)
@@ -73,13 +73,21 @@ class ArchiveSessionTest {
         is EntryResult.TooLarge -> listOf("unsupported", "too-large")
     }
 
-    /** Opens [expected] and reads every entry forward, then backward, and lists each way it differs. */
-    private suspend fun mismatches(expected: ExpectedArchive): List<String> {
-        val result = ArchiveSession.open(fileSource(cacheFile(expected.path.substringAfterLast('/'), asset(expected.path))))
+    private fun extractDir(name: String): File =
+        File(instrumentation.targetContext.cacheDir, "extract/$name").apply { deleteRecursively() }
+
+    /**
+     * Opens [expected] and reads every entry forward, then backward, and lists each way it differs. With
+     * [extractDir], a solid archive goes through the extraction cache.
+     */
+    private suspend fun mismatches(expected: ExpectedArchive, extractDir: File? = null): List<String> {
+        val source = fileSource(cacheFile(expected.path.substringAfterLast('/'), asset(expected.path)))
+        val result = ArchiveSession.open(source, extractDir)
         val problems = ArrayList<String>()
         val session = when (result) {
-            is OpenResult.Failed -> {
-                val actual = listOf("fails", result.reason.name.lowercase())
+            is OpenResult.Failed, OpenResult.Encrypted -> {
+                val reason = if (result is OpenResult.Failed) result.reason.name else "Encrypted"
+                val actual = listOf("fails", reason.lowercase())
                 if (actual != expected.open) problems += "open: expected ${expected.open}, got $actual"
                 return problems
             }
@@ -88,8 +96,8 @@ class ArchiveSessionTest {
         session.use {
             val open = listOf("opens", session.indexError?.name?.lowercase() ?: "-")
             if (open != expected.open) problems += "open: expected ${expected.open}, got $open"
-            val charset = EntryNames.charsetOf(session.entries.map { it.rawName })
-            val names = session.entries.map { EntryNames.decode(it.rawName, charset) }
+            val charset = session.nameCharset()
+            val names = session.entries.map { session.name(it, charset) }
             val expectedNames = expected.entries.map { it[0] }
             if (names != expectedNames) problems += "names: expected $expectedNames, got $names"
             val forward = session.entries.map { describe(session.read(it.entryIndex), it) }
@@ -105,13 +113,52 @@ class ArchiveSessionTest {
     private fun bigZip(): Pair<File, List<ByteArray>> = cacheFile("big.zip", bigZip.first) to bigZip.second
 
     @Test
-    fun everyCorpusZipOpensAndReadsAsTheManifestExpects() = runBlocking {
+    fun everyCorpusArchiveOpensAndReadsAsTheManifestExpects() = runBlocking {
         val archives = manifest()
-        assertTrue(archives.size >= 20)
+        assertTrue(archives.map { it.path.substringBefore('/') }.toSet().containsAll(listOf("zip", "rar4", "rar5", "7z", "tar")))
         val problems = archives.flatMap { archive ->
             withTimeout(10_000) { mismatches(archive) }.map { "${archive.path}: $it" }
         }
         if (problems.isNotEmpty()) fail(problems.joinToString("\n"))
+    }
+
+    @Test
+    fun everyCorpusArchiveReadsTheSameThroughTheExtractionCache() = runBlocking {
+        val problems = manifest().flatMap { archive ->
+            withTimeout(10_000) { mismatches(archive, extractDir(archive.path.replace('/', '-'))) }.map { "${archive.path}: $it" }
+        }
+        if (problems.isNotEmpty()) fail(problems.joinToString("\n"))
+    }
+
+    @Test
+    fun solidArchivesAreSolidAndExtractIntoTheirDirectory() = runBlocking {
+        val solid = listOf("7z/lzma2-solid.7z", "7z/copy.7z", "rar5/solid.rar", "tar/compressed.tgz", "tar/compressed.tzst")
+        val notSolid = listOf("zip/deflate.zip", "rar5/stored.rar", "rar4/stored.rar", "tar/plain.tar")
+        for (path in solid + notSolid) {
+            val dir = extractDir("solid-test")
+            open(fileSource(cacheFile("solid-test", asset(path))), dir).use { session ->
+                assertEquals(path, path in solid, session.solid)
+                val last = session.entries.last()
+                assertTrue(path, session.read(last.entryIndex) is EntryResult.Data)
+                assertEquals(path, path in solid, File(dir, last.entryIndex.toString()).isFile)
+            }
+        }
+    }
+
+    @Test
+    fun aSecondSessionReadsTheFilesTheFirstExtracted() = runBlocking {
+        val dir = extractDir("reuse")
+        val path = "7z/lzma2-solid.7z"
+        val first = open(fileSource(cacheFile("reuse.7z", asset(path))), dir).use { session ->
+            session.entries.map { (session.read(it.entryIndex) as EntryResult.Data).bytes }
+        }
+        val source = WatchedSource(fileSource(cacheFile("reuse.7z", asset(path))))
+        open(source, dir).use { session ->
+            val readAtOpen = source.bytesRead.get()
+            val second = session.entries.map { (session.read(it.entryIndex) as EntryResult.Data).bytes }
+            assertEquals(first.map { it.toList() }, second.map { it.toList() })
+            assertEquals("bytes read from the archive after opening", readAtOpen, source.bytesRead.get())
+        }
     }
 
     /** [delegate] with a count of the bytes read, and a gate that can hold reads until it opens. */

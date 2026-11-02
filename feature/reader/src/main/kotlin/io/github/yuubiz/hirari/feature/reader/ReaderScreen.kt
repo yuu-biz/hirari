@@ -156,6 +156,7 @@ private val BookFailure.message: Int
         BookFailure.Encrypted -> R.string.reader_failed_encrypted
         BookFailure.Corrupt -> R.string.reader_failed_corrupt
         BookFailure.Truncated -> R.string.reader_failed_truncated
+        BookFailure.Encrypted -> R.string.reader_failed_encrypted
         BookFailure.ReadError -> R.string.reader_failed_read
     }
 

@@ -7,7 +7,8 @@ package io.github.yuubiz.hirari.core.archive
  * @property rawName the name before decoding. Empty when libarchive gives no name, which happens for a name with
  *   the ZIP UTF-8 flag that is not UTF-8.
  * @property declaredSize the size the archive declares, or null when it declares none. Only for the size limit.
- * @property compression libarchive's name of the method, such as `deflation`, or null when it gives none.
+ * @property compression libarchive's name of the ZIP method, such as `deflation`, or null when it gives none. The
+ *   other formats name no method before the data is read.
  */
 class ArchiveEntry(
     val entryIndex: Int,
@@ -25,6 +26,9 @@ sealed interface OpenResult {
     class Opened(val session: ArchiveSession) : OpenResult
 
     data class Failed(val reason: ArchiveFailure) : OpenResult
+
+    /** The headers are encrypted, so not even the names can be read (docs/spec.md section 3.8). */
+    data object Encrypted : OpenResult
 }
 
 /** The outcome of reading one entry. The loading layer maps it to `PageResult` (docs/spec.md section 2.4). */

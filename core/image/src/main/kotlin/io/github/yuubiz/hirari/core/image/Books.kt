@@ -5,7 +5,6 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ArchiveFailure
 import io.github.yuubiz.hirari.core.archive.ArchiveSession
-import io.github.yuubiz.hirari.core.archive.EntryNames
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.archive.OpenResult
 import io.github.yuubiz.hirari.core.model.FailureReason
@@ -44,6 +43,9 @@ enum class BookFailure {
     Encrypted,
     Corrupt,
     Truncated,
+
+    /** The archive's headers are encrypted (docs/spec.md section 3.8). */
+    Encrypted,
     ReadError,
 }
 
@@ -56,12 +58,13 @@ object Books {
     suspend fun openArchive(source: ByteSource, decoding: ImageDecoding): BookResult {
         val session = when (val opened = ArchiveSession.open(source)) {
             is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
+            OpenResult.Encrypted -> return BookResult.Failed(BookFailure.Encrypted)
             is OpenResult.Opened -> opened.session
         }
         return try {
-            val charset = EntryNames.charsetOf(session.entries.map { it.rawName })
+            val charset = session.nameCharset()
             val pages = session.entries.mapNotNull { entry ->
-                val name = EntryNames.decode(entry.rawName, charset)
+                val name = session.name(entry, charset)
                 val page = PageEntry(-1, entry.entryIndex, entry.rawName, name, entry.declaredSize, sniffed = null)
                 when (pageCandidate(name, entry.isDirectory)) {
                     PageCandidate.Image -> page
