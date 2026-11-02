@@ -47,6 +47,7 @@ import io.github.yuubiz.hirari.feature.reader.prefetch.shownViews
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,6 +117,10 @@ class ReaderViewModel(
         private set
 
     private var opened: Opened? = null
+
+    /** Holds the book from the moment it opens, so leaving the screen closes it whatever the open was waiting on. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val bookOwner = Ownership<OpenBook> { book -> services.getCompleted().appScope.launch { book.close() } }
     private var viewport: Viewport? = null
 
     /** While the page panel's thumbnail strip is up, prefetch loads only the current view (docs/spec.md section 5.3). */
@@ -236,11 +241,12 @@ class ReaderViewModel(
     override fun onCleared() {
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
-        val book = opened ?: return
-        book.prefetcher.close()
-        book.session.close()
-        book.services.progress.flush()
-        book.services.appScope.launch { book.book.close() }
+        opened?.let {
+            it.prefetcher.close()
+            it.session.close()
+            it.services.progress.flush()
+        }
+        bookOwner.release()
     }
 
     private suspend fun open() {
@@ -248,12 +254,8 @@ class ReaderViewModel(
         val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
         val settings = services.storage.settings.settings.first()
         val config = ReaderConfig.of(settings)
-        var produced: BookResult? = null
-        val (id, result) = try {
-            withContext(Dispatchers.IO) { openBook(services, copyDir).also { produced = it.second } }
-        } catch (e: CancellationException) {
-            (produced as? BookResult.Opened)?.book?.let { services.appScope.launch { it.close() } }
-            throw e
+        val (id, result) = withContext(Dispatchers.IO) {
+            openBook(services, copyDir).also { (_, result) -> (result as? BookResult.Opened)?.let { bookOwner.take(it.book) } }
         }
         val book = when (result) {
             is BookResult.Failed -> {
@@ -263,19 +265,15 @@ class ReaderViewModel(
             is BookResult.Opened -> result.book
         }
         if (book.pages.isEmpty()) {
-            services.appScope.launch { book.close() }
+            bookOwner.release()
             phase = ReaderPhase.NoPages
             return
         }
         // A reader closed moments ago may still hold this book's latest position in the writer's window.
         val openedAt = Instant.now()
-        val (saved, indexed) = try {
-            services.progress.flush().join()
-            services.storage.progress.get(id) to withContext(Dispatchers.IO) { describe(id, book) }
-        } catch (e: CancellationException) {
-            services.appScope.launch { book.close() }
-            throw e
-        }
+        services.progress.flush().join()
+        val saved = services.storage.progress.get(id)
+        val indexed = withContext(Dispatchers.IO) { describe(id, book) }
         val start = (saved?.position as? ReadingPosition.Image)?.viewStart?.coerceIn(book.pages.indices) ?: 0
         val lowRam = application.getSystemService(ActivityManager::class.java).isLowRamDevice
         val listener = object : Prefetcher.Listener {
@@ -297,13 +295,15 @@ class ReaderViewModel(
      * The index entry of the opened [book] (docs/spec.md section 2.2). What the provider does not report stays
      * unknown: no name falls back to the path, no size to 0, and no modification time to the epoch.
      */
-    private fun describe(id: BookId, book: OpenBook): Book {
+    private suspend fun describe(id: BookId, book: OpenBook): Book {
         val documentUri = when (ref) {
             is BookRef.Document -> ref.uri
             is BookRef.Folder -> DocumentsContract.buildDocumentUriUsingTree(ref.uri, DocumentsContract.getTreeDocumentId(ref.uri))
         }
         val info = try {
             application.contentResolver.documentInfo(documentUri)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             null
         }

@@ -2,12 +2,16 @@ package io.github.yuubiz.hirari.core.source
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /** Copying a non-seekable document would leave less than [reserveBytes] free (docs/spec.md section 3.1). */
 class NoRoomForCopyException(val reserveBytes: Long) : IOException("not enough free space to copy the document")
@@ -110,20 +114,32 @@ class DocumentInfo(val name: String?, val size: Long?, val lastModifiedMs: Long?
 
 /**
  * The name, size and modification time of the document at [uri], from one query. A provider that is no document
- * provider may lack the modification time. Blocks on Binder, so never call it on the main thread.
+ * provider may lack the modification time. Blocks on Binder, so never call it on the main thread. Cancelling
+ * the caller tells the provider to stop the query, so a provider that never answers does not hold the caller.
  *
  * @throws SecurityException when the permission to read it is gone.
  */
-fun ContentResolver.documentInfo(uri: Uri): DocumentInfo? {
-    val cursor = query(uri, null, null, null, null) ?: return null
-    return cursor.use {
-        if (!it.moveToFirst()) return null
+suspend fun ContentResolver.documentInfo(uri: Uri): DocumentInfo? = withCancellationSignal { signal ->
+    val cursor = query(uri, null, null, null, null, signal) ?: return@withCancellationSignal null
+    cursor.use {
+        if (!it.moveToFirst()) return@withCancellationSignal null
         fun column(name: String) = it.getColumnIndex(name).takeIf { index -> index >= 0 && !it.isNull(index) }
         DocumentInfo(
             name = column(Document.COLUMN_DISPLAY_NAME)?.let(it::getString),
             size = column(Document.COLUMN_SIZE)?.let(it::getLong),
             lastModifiedMs = column(Document.COLUMN_LAST_MODIFIED)?.let(it::getLong)?.takeIf { ms -> ms > 0 },
         )
+    }
+}
+
+/** Runs the blocking [block] on this thread, and cancels its [CancellationSignal] when the caller is cancelled. */
+private suspend fun <T> withCancellationSignal(block: (CancellationSignal) -> T): T = suspendCancellableCoroutine { continuation ->
+    val signal = CancellationSignal()
+    continuation.invokeOnCancellation { signal.cancel() }
+    try {
+        continuation.resume(block(signal))
+    } catch (e: Throwable) {
+        continuation.resumeWithException(e)
     }
 }
 
