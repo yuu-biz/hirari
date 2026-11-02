@@ -412,7 +412,7 @@ class ReaderViewModel(
             bytes.close()
             return failed(e)
         }
-        return Located(bookId, source, uri, folder = false, Books.openBook(bytes, services.decoding))
+        return Located(bookId, source, uri, folder = false, Books.openBook(bytes, services.decoding, File(application.cacheDir, "extract/${bookId.value}")))
     }
 
     private fun prefixOf(source: ByteSource): ByteArray {

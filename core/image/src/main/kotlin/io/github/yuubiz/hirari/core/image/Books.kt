@@ -53,9 +53,12 @@ class FolderFile(val name: String, val size: Long?, val open: () -> ByteSource)
 
 /** Opens books for the reader. Every function returns a [BookResult] and throws nothing but cancellation. */
 object Books {
-    /** Opens the ZIP in [source], which the book owns from here on. */
-    suspend fun openArchive(source: ByteSource, decoding: ImageDecoding): BookResult {
-        val session = when (val opened = ArchiveSession.open(source)) {
+    /**
+     * Opens the archive in [source], which the book owns from here on. A solid archive is extracted into
+     * [extractDir], the book's directory under `cacheDir/extract/` (docs/spec.md section 3.3), when it is given.
+     */
+    suspend fun openArchive(source: ByteSource, decoding: ImageDecoding, extractDir: File? = null): BookResult {
+        val session = when (val opened = ArchiveSession.open(source, extractDir)) {
             is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
             OpenResult.Encrypted -> return BookResult.Failed(BookFailure.Encrypted)
             is OpenResult.Opened -> opened.session
@@ -100,9 +103,9 @@ object Books {
 
     /**
      * Opens the book in [source], which the book owns from here on: a PDF when `%PDF-` starts within its first
-     * 1024 bytes (docs/spec.md section 3.2), and otherwise an archive.
+     * 1024 bytes (docs/spec.md section 3.2), and otherwise an archive, extracted into [extractDir] when solid.
      */
-    suspend fun openBook(source: ByteSource, decoding: ImageDecoding): BookResult {
+    suspend fun openBook(source: ByteSource, decoding: ImageDecoding, extractDir: File? = null): BookResult {
         val read = try {
             safely { readPrefix(source, PDF_SNIFF_BYTES) }
         } catch (e: CancellationException) {
@@ -116,7 +119,7 @@ object Books {
                 return BookResult.Failed(read.reason)
             }
         }
-        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding)
+        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding, extractDir)
     }
 
     /** Opens the PDF in [source], which the book owns from here on (docs/spec.md section 3.9). */
@@ -136,13 +139,22 @@ object Books {
         return BookResult.Opened(OpenBook(BookContent.Pdf(document), Container.Pdf, pages, indexError = null, decoding))
     }
 
-    /** Opens the ZIP or PDF document at [uri]. A provider that cannot seek gets the document copied into [copyDir]. */
-    suspend fun openDocument(resolver: ContentResolver, uri: Uri, copyDir: File, decoding: ImageDecoding): BookResult {
+    /**
+     * Opens the archive or PDF document at [uri]. A provider that cannot seek gets the document copied into
+     * [copyDir]. A solid archive is extracted into [extractDir] when it is given.
+     */
+    suspend fun openDocument(
+        resolver: ContentResolver,
+        uri: Uri,
+        copyDir: File,
+        decoding: ImageDecoding,
+        extractDir: File? = null,
+    ): BookResult {
         val source = when (val opened = safely(release = ByteSource::close) { resolver.openByteSource(uri, copyDir) }) {
             is Safely.Done -> opened.value
             is Safely.Failed -> return BookResult.Failed(opened.reason)
         }
-        return openBook(source, decoding)
+        return openBook(source, decoding, extractDir)
     }
 
     /**
