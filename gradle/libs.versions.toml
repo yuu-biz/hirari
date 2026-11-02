@@ -26,7 +26,6 @@ smbj = "0.15.0"
 slf4j = "2.0.18"
 xz = "1.12"
 commonsCompress = "1.28.0"
-icu4j = "79.1"
 
 [libraries]
 android-gradle-plugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
@@ -59,7 +58,6 @@ smbj = { group = "com.hierynomus", name = "smbj", version.ref = "smbj" }
 slf4j-api = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
 xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
-icu4j = { group = "com.ibm.icu", name = "icu4j", version.ref = "icu4j" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }

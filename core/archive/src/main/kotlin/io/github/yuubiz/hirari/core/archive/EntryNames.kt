@@ -18,29 +18,14 @@ object EntryNames {
     /** The charsets a reader can choose for a book by hand, in the order the menu lists them. */
     val choices: List<Charset> = listOf(Charsets.UTF_8, CP932, EUC_JP, GB18030, BIG5)
 
-    /** One guess of a charset detector: the charset's name as the detector gives it, and a confidence of 0 to 100. */
-    class Guess(val name: String, val confidence: Int)
-
-    /** Guesses the charset of a run of bytes, likeliest first, as ICU's `CharsetDetector` does. */
-    fun interface Detector {
-        fun guess(bytes: ByteArray): List<Guess>
-    }
-
-    /**
-     * The detector the app has: none. `android.icu` leaves `CharsetDetector` out of the public API, and ICU4J
-     * would add its whole library to the APK, so step 3 of docs/spec.md section 3.4 waits for that decision.
-     */
-    val platformDetector: Detector = Detector { emptyList() }
-
     /**
      * The one charset for all of [rawNames]: UTF-8 when every name is valid UTF-8, else CP932 when every name is
-     * valid CP932, else the likeliest of [detector]'s guesses that decodes every name, with Japanese preferred,
-     * else [undetermined], the setting `fallbackCharset`. [slashMayBeBackslash] is for RAR 4 names
-     * ([restoreBackslashes]).
+     * valid CP932, else the candidate that decodes every name with the best [CommonCharacters.score], with
+     * Japanese preferred, else [undetermined], the setting `fallbackCharset`. [slashMayBeBackslash] is for RAR 4
+     * names ([restoreBackslashes]).
      */
     fun charsetOf(
         rawNames: Collection<ByteArray>,
-        detector: Detector = platformDetector,
         undetermined: Charset = CP932,
         slashMayBeBackslash: Boolean = false,
     ): Charset {
@@ -48,7 +33,7 @@ object EntryNames {
         return when {
             valid(Charsets.UTF_8) -> Charsets.UTF_8
             valid(CP932) -> CP932
-            else -> detected(rawNames, detector, ::valid) ?: undetermined
+            else -> detected(rawNames, slashMayBeBackslash, ::valid) ?: undetermined
         }
     }
 
@@ -62,14 +47,13 @@ object EntryNames {
             .toString()
     }
 
-    private fun detected(rawNames: Collection<ByteArray>, detector: Detector, valid: (Charset) -> Boolean): Charset? {
-        val joined = rawNames.fold(ByteArray(0)) { all, name -> all + name + '\n'.code.toByte() }
-        val candidates = detector.guess(joined).mapNotNull { guess ->
-            DETECTABLE[guess.name.uppercase()]?.takeIf(valid)?.let { it to guess.confidence }
+    private fun detected(rawNames: Collection<ByteArray>, slashMayBeBackslash: Boolean, valid: (Charset) -> Boolean): Charset? {
+        val scores = CommonCharacters.candidates.filter(valid).map { charset ->
+            charset to CommonCharacters.score(charset, rawNames.map { decode(it, charset, slashMayBeBackslash) })
         }
-        val best = candidates.maxByOrNull { it.second } ?: return null
+        val best = scores.maxByOrNull { it.second } ?: return null
         if (best.second < MIN_CONFIDENCE) return null
-        val japanese = candidates.firstOrNull { it.first in JAPANESE && it.second >= best.second - JAPANESE_MARGIN }
+        val japanese = scores.filter { it.first in JAPANESE && it.second >= best.second - JAPANESE_MARGIN }.maxByOrNull { it.second }
         return (japanese ?: best).first
     }
 
@@ -112,19 +96,11 @@ object EntryNames {
         BIG5 to { b -> b in 0x81..0xfe },
     )
 
-    /** ICU's names for the charsets docs/spec.md section 3.4 detects. ICU reports CP932 as Shift_JIS. */
-    private val DETECTABLE: Map<String, Charset> = mapOf(
-        "SHIFT_JIS" to CP932,
-        "EUC-JP" to EUC_JP,
-        "GB18030" to GB18030,
-        "BIG5" to BIG5,
-    )
-
     private val JAPANESE = setOf(CP932, EUC_JP)
 
-    /** Below this confidence a guess counts as none (docs/spec.md section 3.4). */
+    /** Below this score a candidate counts as none (docs/spec.md section 3.4). */
     private const val MIN_CONFIDENCE = 10
 
-    /** A Japanese guess wins over a likelier one that is at most this much likelier. */
+    /** A Japanese candidate wins over a better scoring one that scores at most this much more. */
     private const val JAPANESE_MARGIN = 10
 }

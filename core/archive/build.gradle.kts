@@ -23,7 +23,6 @@ dependencies {
     api(project(":core:source"))
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
-    testImplementation(libs.icu4j)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.junit)
 }

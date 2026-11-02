@@ -1,6 +1,5 @@
 package io.github.yuubiz.hirari.core.archive
 
-import com.ibm.icu.text.CharsetDetector
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.nio.charset.Charset
@@ -8,14 +7,9 @@ import java.nio.charset.Charset
 class EntryNamesTest {
     private val cp932 = EntryNames.CP932
 
-    // ICU4J has the same detector as android.icu, which the JVM does not have.
-    private val icu = EntryNames.Detector { bytes ->
-        CharsetDetector().setText(bytes).detectAll().map { EntryNames.Guess(it.name, it.confidence) }
-    }
-
     private fun names(vararg names: String, charset: Charset = Charsets.UTF_8) = names.map { it.toByteArray(charset) }
 
-    private fun charsetOf(raw: List<ByteArray>, undetermined: Charset = cp932) = EntryNames.charsetOf(raw, icu, undetermined)
+    private fun charsetOf(raw: List<ByteArray>, undetermined: Charset = cp932) = EntryNames.charsetOf(raw, undetermined)
 
     @Test
     fun `names that are all UTF-8 decode as UTF-8`() {
@@ -64,22 +58,39 @@ class EntryNamesTest {
     }
 
     @Test
-    fun `a guess that does not decode every name is not taken`() {
-        val raw = names("第一巻/表紙.jpg", charset = EntryNames.EUC_JP) + listOf(byteArrayOf(0xff.toByte(), 0xff.toByte()))
-        val sure = EntryNames.Detector { listOf(EntryNames.Guess("EUC-JP", 100)) }
+    fun `Big5 names that are not CP932 are detected as Big5`() {
+        val raw = names("第一卷/第一話 開始的早晨.jpg", "第一卷/第二話 離別的夜晚.jpg", "第一卷/封面.jpg", charset = EntryNames.BIG5)
 
-        assertEquals(Charsets.US_ASCII, EntryNames.charsetOf(raw, sure, Charsets.US_ASCII))
+        assertEquals(EntryNames.BIG5, charsetOf(raw))
     }
 
     @Test
-    fun `a Japanese guess wins over a slightly likelier Chinese one`() {
-        // 一 in EUC-JP and a character in GB18030, but in CP932 a lead byte before a dot.
-        val raw = listOf(byteArrayOf(0xb0.toByte(), 0xec.toByte(), 0x2e))
-        val close = EntryNames.Detector { listOf(EntryNames.Guess("GB18030", 60), EntryNames.Guess("EUC-JP", 52)) }
-        val far = EntryNames.Detector { listOf(EntryNames.Guess("GB18030", 60), EntryNames.Guess("EUC-JP", 40)) }
+    fun `EUC-JP names mixing kanji-only names with kana are detected as EUC-JP`() {
+        val raw = names("表紙.jpg", "目次.jpg", "第一話 はじまり/001.jpg", "第二話 ソラの国/001.jpg", charset = EntryNames.EUC_JP)
 
-        assertEquals(EntryNames.EUC_JP, EntryNames.charsetOf(raw, close, Charsets.US_ASCII))
-        assertEquals(EntryNames.GB18030, EntryNames.charsetOf(raw, far, Charsets.US_ASCII))
+        assertEquals(EntryNames.EUC_JP, charsetOf(raw))
+    }
+
+    @Test
+    fun `a short name that reads as common kanji and as common hanzi goes to Japanese`() {
+        // 一 in EUC-JP and a level 1 hanzi in GB18030, but in CP932 a lead byte before a dot.
+        val raw = listOf(byteArrayOf(0xb0.toByte(), 0xec.toByte(), 0x2e))
+
+        assertEquals(EntryNames.EUC_JP, charsetOf(raw, undetermined = Charsets.US_ASCII))
+    }
+
+    @Test
+    fun `names no candidate decodes go to the undetermined charset`() {
+        val raw = names("第一巻/表紙.jpg", charset = EntryNames.EUC_JP) + listOf(byteArrayOf(0xff.toByte(), 0xff.toByte()))
+
+        assertEquals(Charsets.US_ASCII, charsetOf(raw, undetermined = Charsets.US_ASCII))
+    }
+
+    @Test
+    fun `names that decode only into rare characters go to the undetermined charset`() {
+        val raw = names("𠀀𠀁.jpg", charset = EntryNames.GB18030)
+
+        assertEquals(Charsets.US_ASCII, charsetOf(raw, undetermined = Charsets.US_ASCII))
     }
 
     @Test
@@ -93,7 +104,7 @@ class EntryNamesTest {
         val written = "第1話\\表紙.jpg".toByteArray(cp932)
         val listed = written.map { if (it == '\\'.code.toByte()) '/'.code.toByte() else it }.toByteArray()
 
-        val charset = EntryNames.charsetOf(listOf(listed), icu, slashMayBeBackslash = true)
+        val charset = EntryNames.charsetOf(listOf(listed), slashMayBeBackslash = true)
 
         assertEquals(cp932, charset)
         assertEquals("第1話/表紙.jpg", EntryNames.decode(listed, charset, slashMayBeBackslash = true))

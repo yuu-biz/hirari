@@ -504,11 +504,18 @@ libarchive は順に読む形の API を持つ。任意のエントリを開く�
 
 1. すべての名前が正しい UTF-8 なら UTF-8 にする。UTF-8 フラグの立った名前は libarchive が UTF-8 にして返すので、ここに入る。ASCII だけの名前もここに入る。CP932 の実装には 0x5C を円記号にするものがあり、ASCII を CP932 で読むと同じ文字になるとは限らないためである。
 2. すべての名前が正しい CP932 なら CP932 にする。
-3. それ以外は、名前を改行でつないだバイト列を文字コードの判定器にかける。候補は CP932（ICU の名前は Shift_JIS）、EUC-JP、GB18030、Big5 だけで、すべての名前を正しく変換できる候補だけを残す。最も確からしい候補を選ぶが、日本語の候補（CP932、EUC-JP）の確からしさが最も確からしい候補から 10 以内なら、日本語の候補を選ぶ。
-4. 確からしさが 10 未満のとき（ICU の確からしさは 0〜100）と、候補が残らないときは、設定「判定できないときの文字コード」に従う。10 という値は実データで見直す (要検証)。
+3. それ以外は、候補の CP932、EUC-JP、GB18030、Big5 のうち、すべての名前を正しく変換できるものだけを残し、それぞれで変換した名前の確からしさ（0〜100）を求める。最も確からしい候補を選ぶが、日本語の候補（CP932、EUC-JP）の確からしさが最も確からしい候補から 10 以内なら、日本語の候補を選ぶ。
+4. 確からしさが 10 未満のときと、候補が残らないときは、設定「判定できないときの文字コード」に従う。10 という値は実データで見直す (要検証)。
 
-- 判定器は ICU の `CharsetDetector` を想定する。`android.icu` は `CharsetDetector` を公開の API に含めない（API 37 の `android.jar` で確かめた）。ICU4J（Unicode-3.0）を同梱すれば使えるが、ライブラリ全体が APK に入り、縮小（R8）を掛けていない今の構成では約 13 MB 増える。同梱するか、候補の文字コードに絞った判定器を自前で書くかは利用者が決める (要検証)。それまでは 3 を飛ばして 4 に進む。判定の規則は JVM の試験で ICU4J を判定器にして確かめた（EUC-JP の名前と GB18030 の名前を当てる）。
-- 2 の判定より前に置くので、CP932 としても正しいバイト列になる EUC-JP の名前は CP932 になる。EUC-JP のバイトはすべて 0xA1 以上で、CP932 の 1 バイトの半角カナか 2 バイトの文字として読めることが多い。手動の選び直しで直す。
+- 確からしさは、変換した名前の ASCII 以外の文字のうち、その文字コードの名前でよく使う文字の割合（百分率）である（`CommonCharacters`）。よく使う文字は、文字コードが符号化する規格の表の区画から次のように決める。
+  - CP932 と EUC-JP（JIS X 0208）: 1〜5 区（記号、英数字、ひらがな、カタカナ）、16〜47 区（第 1 水準漢字）、半角カタカナ。
+  - GB18030（GB 2312）: 1〜3 区（記号、全角英数字）、16〜55 区（第 1 級漢字）。GB 2312 の 4 区と 5 区はかなで、中国語の名前には出ないので含めない。
+  - Big5: 0xA140〜0xA3BF の記号と、0xA440〜0xC67E の常用字。
+- 表は、区画の符号をその文字コードの変換器（Java の `Charset`）で文字にして作る。ほかのアプリの表や辞書は使わない。
+- ある文字コードのバイト列を別の文字コードで読むと、文字の多くがその文字コードのよく使う文字から外れる。EUC-JP と GB 2312 はかなの区が同じ位置にあるので、かなを日本語の候補にだけ数えることで、かなを含む日本語の名前と中国語の名前を分ける。かなを含まず、第 1 水準漢字としても第 1 級漢字としても読める短い名前は、どちらも 100 になり、日本語を選ぶ。手動の選び直しで直す。
+- JVM の試験の名前での値は次のとおり。EUC-JP の 3 つの名前は EUC-JP が 100、Big5 が 82、GB18030 が 67。GB18030（簡体字）の 3 つの名前は GB18030 が 100、EUC-JP が 77、Big5 が 70。Big5（繁体字）の 3 つの名前は Big5 が 100、GB18030 が 37 で、EUC-JP では変換できない。
+- ICU の `CharsetDetector` は使わない。`android.icu` は `CharsetDetector` を公開の API に含めず（API 37 の `android.jar` で確かめた）、ICU4J（Unicode-3.0）を同梱するとライブラリ全体が APK に入り、縮小（R8）を掛けていない今の構成では約 13 MB 増えるためである。利用者が同梱しないと決めた。
+- 2 の判定より前に置くので、CP932 としても正しいバイト列になる EUC-JP と Big5 の名前は CP932 になる。EUC-JP のバイトはすべて 0xA1 以上で、CP932 の 1 バイトの半角カナか 2 バイトの文字として読めることが多い。Big5 の常用字の先行バイト（0xA4〜0xC6）も CP932 の半角カナである。手動の選び直しで直す。
 - UTF-8 フラグの立った名前とフラグのない CP932 の名前が混ざった書庫は、1 にも 2 にも当たらず、フラグの立った名前が化ける。libarchive はフラグを公開の API で返さず、名前を変換してから返すので、名前とフラグを得るには中央ディレクトリを自前で読む必要がある。v1 では読まず、この制限を受け入れる。手動で UTF-8 を選ぶと、フラグの立った名前は正しく、フラグのない CP932 の名前は化ける。
 
 - 書庫内一覧とリーダーのメニューから、本ごとに文字コードを手動で選び直せる。選べるのは UTF-8、CP932、EUC-JP、GB18030、Big5 である（`EntryNames.choices`）。選んだ文字コードは `BookOverrides.nameCharset` に保存し、`ArchiveSession.nameCharset(override)` が判定の代わりにそれを返す。選び直すと `rawName` から名前を作り直し、並べ直す。読書位置は `entryIndex` を介して新しい番号に置き直す（2.7 節）。
@@ -1892,7 +1899,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | KSP 2.3.13、room3-compiler、room3 の Gradle プラグイン | Room のコード生成とスキーマの書き出し | Apache-2.0。room3-compiler は room3-external-antlr（BSD-3-Clause）、checker-qual（MIT）、guava、auto-common、auto-value-annotations、javapoet、kotlinpoet、kotlin-metadata-jvm、kotlin-reflect、kotlinx-serialization、jsr305、sqlite-jdbc（Apache-2.0）を伴う。3.0.3 の推移的依存の POM で確かめた | ビルド時だけ。配布物に入らない |
 | DataStore 1.3.0 | 設定の保存 | Apache-2.0。datastore-core、datastore-core-okio、okio 3.17.0、androidx.tracing を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。protobuf は使わない（7 章） |
 | kotlinx.coroutines、kotlinx.serialization | 並行処理、設定の JSON | Apache-2.0 | Maven |
-| ImageDecoder、BitmapRegionDecoder、PdfRenderer、ICU の CharsetDetector | 画像、PDF、文字コードの判定 | プラットフォームに内蔵 | 同梱しない |
+| ImageDecoder、BitmapRegionDecoder、PdfRenderer | 画像、PDF | プラットフォームに内蔵 | 同梱しない |
 | Licensee（Gradle プラグイン） | ライセンスの検査 | Apache-2.0 | ビルド時だけ |
 | tomlj | `third_party/manifest.toml` の読み込み | Apache-2.0。antlr4-runtime（BSD-3-Clause）、checker-qual（MIT）を伴う | ビルド時だけ。`build-logic` の中で使う |
 | Kotest、Jazzer、libFuzzer | 試験 | Apache-2.0（libFuzzer は Apache-2.0 WITH LLVM-exception） | 試験時だけ。配布物に入らない |
@@ -1901,7 +1908,6 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Compose の ui-test-junit4（BOM 2026.09.00 で 1.12.1）、espresso-core 3.7.0 | `:app` の端末上の UI 試験。espresso-core は、ui-test が持ち込む 3.5.0 が API 37 で動かないので直接上げる | Apache-2.0。ui-test、espresso-core と espresso-idling-resource、AndroidX Test の ext-junit と services の storage、javawriter、jsr305、javax.inject、listenablefuture（Apache-2.0）、hamcrest-library と hamcrest-integration 1.3（BSD-3-Clause。親 POM の New BSD License）を伴う。推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | Macrobenchmark（benchmark-macro-junit4、benchmark-traceprocessor）、UiAutomator | `:benchmark` の計測。benchmark-traceprocessor は、トレースを SQL で読む独自の計測（`TurnMetric`）のために直接使う | Apache-2.0。benchmark-traceprocessor は Wire の実行時ライブラリと Okio（どちらも Apache-2.0）を伴う | 計測時だけ。`:benchmark` の APK に入り、アプリの配布物に入らない |
 | Robolectric 4.17 | `:core:data` の DB の JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
-| ICU4J 79.1（`com.ibm.icu:icu4j`） | `:core:archive` の JVM の試験で、名前の文字コードの判定器にする（3.4 節） | Unicode-3.0。推移的な依存はない（79.1 の POM で確かめた） | 試験時だけ。配布物に入らない |
 | XZ for Java 1.12（`org.tukaani:xz`） | `tools/corpus` で 7z と tar のコーパスを LZMA、LZMA2、x86 の分岐フィルタ、xz で圧縮する | 0BSD。推移的な依存はない（1.12 の POM で確かめた） | コーパスの生成時だけ。配布物に入らない |
 | Apache Commons Compress 1.28.0 | `tools/corpus` で BZip2 に圧縮する。JVM の試験で、コーパスの 7z と tar を独立に読んで確かめる | Apache-2.0。commons-codec、commons-io、commons-lang3（どれも Apache-2.0）を伴う。zstd-jni、brotli の dec、XZ for Java、asm は任意の依存で、XZ for Java だけを上の行のとおり直接使う（1.28.0 の POM で確かめた） | コーパスの生成時と試験時だけ。配布物に入らない |
 

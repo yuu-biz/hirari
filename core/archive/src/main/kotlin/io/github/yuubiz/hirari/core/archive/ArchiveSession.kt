@@ -61,8 +61,7 @@ class ArchiveSession private constructor(
     fun nameCharset(
         override: Charset? = null,
         undetermined: Charset = EntryNames.CP932,
-        detector: EntryNames.Detector = EntryNames.platformDetector,
-    ): Charset = override ?: EntryNames.charsetOf(entries.map { it.rawName }, detector, undetermined, slashMayBeBackslash)
+    ): Charset = override ?: EntryNames.charsetOf(entries.map { it.rawName }, undetermined, slashMayBeBackslash)
 
     /** The name of [entry] in [charset]. Choosing another charset decodes the same [ArchiveEntry.rawName] again. */
     fun name(entry: ArchiveEntry, charset: Charset): String = EntryNames.decode(entry.rawName, charset, slashMayBeBackslash)
