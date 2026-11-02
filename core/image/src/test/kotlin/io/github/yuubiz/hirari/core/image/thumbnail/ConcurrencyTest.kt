@@ -26,7 +26,7 @@ class ConcurrencyTest {
             val result = CompletableDeferred<Int>()
             launch {
                 result.complete(
-                    flights.join("a", ThumbPriority.Visible) {
+                    flights.join("a", Urgency(ThumbPriority.Visible)) {
                         runs++
                         release.await()
                         7
@@ -53,8 +53,8 @@ class ConcurrencyTest {
                 cancelled = true
             }
         }
-        val first = launch { flights.join("a", ThumbPriority.Visible, work) }
-        val second = launch { flights.join("a", ThumbPriority.Visible, work) }
+        val first = launch { flights.join("a", Urgency(ThumbPriority.Visible), work) }
+        val second = launch { flights.join("a", Urgency(ThumbPriority.Visible), work) }
         runCurrent()
         first.cancel()
         runCurrent()
@@ -69,7 +69,7 @@ class ConcurrencyTest {
         val flights = Flights<String, Int>(workScope())
         var runs = 0
         val first = launch {
-            flights.join("a", ThumbPriority.Visible) {
+            flights.join("a", Urgency(ThumbPriority.Visible)) {
                 runs++
                 awaitCancellation()
             }
@@ -80,7 +80,7 @@ class ConcurrencyTest {
         val second = CompletableDeferred<Int>()
         launch {
             second.complete(
-                flights.join("a", ThumbPriority.Visible) {
+                flights.join("a", Urgency(ThumbPriority.Visible)) {
                     runs++
                     5
                 },
@@ -149,10 +149,13 @@ class ConcurrencyTest {
     }
 
     @Test
-    fun urgencyOnlyRises() {
-        val urgency = Urgency(ThumbPriority.Nearby)
-        urgency.raise(ThumbPriority.Visible)
-        urgency.raise(ThumbPriority.Nearby)
-        assertEquals(ThumbPriority.Visible.ordinal, urgency.rank)
+    fun anUrgencyRisesWithTheOnesItFollowsAndNeverFalls() {
+        val flight = Urgency.following(Urgency(ThumbPriority.Nearby))
+        val lent = Urgency.following(flight)
+        assertEquals(ThumbPriority.Nearby.ordinal, lent.rank)
+        flight.follow(Urgency(ThumbPriority.Visible))
+        assertEquals(ThumbPriority.Visible.ordinal, lent.rank)
+        flight.follow(Urgency(ThumbPriority.Nearby))
+        assertEquals(ThumbPriority.Visible.ordinal, lent.rank)
     }
 }

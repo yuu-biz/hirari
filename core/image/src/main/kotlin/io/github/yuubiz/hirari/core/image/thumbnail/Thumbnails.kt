@@ -93,7 +93,7 @@ class Thumbnails internal constructor(
     /** A store or a folder listing that throws is the thumbnail being unavailable for now, not a crash of the list. */
     private suspend fun resolve(request: ThumbRequest, mode: Mode): ThumbResult? = try {
         when (val subject = request.subject) {
-            is ThumbSubject.Book -> book(subject, request, mode)
+            is ThumbSubject.Book -> book(subject, request, mode, Urgency(request.priority))
             is ThumbSubject.Folder -> folder(subject, request, mode)
         }
     } catch (e: CancellationException) {
@@ -105,7 +105,7 @@ class Thumbnails internal constructor(
     private fun keyOf(book: ThumbSubject.Book, request: ThumbRequest) =
         ThumbnailKey(book.id, book.modified, book.byteSize, book.coverEntry, request.sizePx, request.direction)
 
-    private suspend fun book(book: ThumbSubject.Book, request: ThumbRequest, mode: Mode): ThumbResult? {
+    private suspend fun book(book: ThumbSubject.Book, request: ThumbRequest, mode: Mode, urgency: Urgency): ThumbResult? {
         val key = keyOf(book, request)
         if (mode == Mode.Remake) {
             store.remove(key)
@@ -114,7 +114,7 @@ class Thumbnails internal constructor(
         stored(key)?.let { return it }
         if (mode == Mode.CacheOnly) return null
         if (backingOff(key)) return ThumbResult.Unavailable
-        return flights.join(key, request.priority) { urgency -> make(book, key, urgency) }
+        return flights.join(key, urgency) { make(book, key, it) }
     }
 
     private suspend fun stored(key: ThumbnailKey): ThumbResult? = when (val found = store.get(key)) {
@@ -164,8 +164,8 @@ class Thumbnails internal constructor(
         unavailableUntil[key] = now() + UNAVAILABLE_BACKOFF_MILLIS
     }
 
-    /** What a search for the cover of a folder has seen so far. */
-    private class Search {
+    /** A search for the cover of a folder, and what it has seen so far. Its books are made with the [urgency] of the folder. */
+    private class Search(val request: ThumbRequest, val mode: Mode, val urgency: Urgency) {
         var found: ThumbResult.Ready? = null
         var missed = false
         var unavailable = false
@@ -179,20 +179,20 @@ class Thumbnails internal constructor(
     private suspend fun folder(folder: ThumbSubject.Folder, request: ThumbRequest, mode: Mode): ThumbResult? {
         val key = ThumbnailKey(folder.id, folder.modified, byteSize = 0, FOLDER_COVER, request.sizePx, request.direction)
         if (mode == Mode.Remake) store.remove(key) else if (store.get(key) == StoredThumb.Failed) return ThumbResult.Failed
-        if (mode == Mode.CacheOnly) return withContext(io) { search(folder, request, mode, key) }
-        return flights.join(key, request.priority) { checkNotNull(search(folder, request, mode, key)) }
+        val urgency = Urgency(request.priority)
+        if (mode == Mode.CacheOnly) return withContext(io) { search(folder, key, Search(request, mode, urgency)) }
+        return flights.join(key, urgency) { checkNotNull(search(folder, key, Search(request, mode, it))) }
     }
 
     /**
      * Visits the chosen image and then the items in natural order, sub-folders in place, until one gives a
      * thumbnail. A folder none of them gives one for is recorded as failed when every attempt was final.
      */
-    private suspend fun search(folder: ThumbSubject.Folder, request: ThumbRequest, mode: Mode, key: ThumbnailKey): ThumbResult? {
-        val search = Search()
-        folder.chosen?.let { visit(it, request, mode, search) }
+    private suspend fun search(folder: ThumbSubject.Folder, key: ThumbnailKey, search: Search): ThumbResult? {
+        folder.chosen?.let { visit(it, search) }
         if (!search.done) {
             val entries = listing(search, FolderEntry.Directory(folder.id.value, folder.children))
-            if (entries != null) walk(entries, depth = 0, request, mode, search)
+            if (entries != null) walk(entries, depth = 0, search)
         }
         search.found?.let { return it }
         if (search.missed) return null
@@ -201,12 +201,12 @@ class Thumbnails internal constructor(
         return ThumbResult.Failed
     }
 
-    private suspend fun walk(entries: List<FolderEntry>, depth: Int, request: ThumbRequest, mode: Mode, search: Search) {
+    private suspend fun walk(entries: List<FolderEntry>, depth: Int, search: Search) {
         for (entry in entries.sortedWith(compareBy(NaturalOrder) { it.name })) {
             when (entry) {
-                is FolderEntry.Item -> visit(entry.book, request, mode, search)
+                is FolderEntry.Item -> visit(entry.book, search)
                 is FolderEntry.Directory -> if (depth < MAX_SEARCH_DEPTH) {
-                    listing(search, entry)?.let { walk(it, depth + 1, request, mode, search) }
+                    listing(search, entry)?.let { walk(it, depth + 1, search) }
                 } else {
                     search.exhausted = true
                 }
@@ -215,13 +215,13 @@ class Thumbnails internal constructor(
         }
     }
 
-    private suspend fun visit(book: ThumbSubject.Book, request: ThumbRequest, mode: Mode, search: Search) {
+    private suspend fun visit(book: ThumbSubject.Book, search: Search) {
         if (search.books == MAX_SEARCH_BOOKS) {
             search.exhausted = true
             return
         }
         search.books++
-        when (val result = book(book, request, mode)) {
+        when (val result = book(book, search.request, search.mode, search.urgency)) {
             null -> search.missed = true
             is ThumbResult.Ready -> search.found = result
             ThumbResult.Failed -> Unit

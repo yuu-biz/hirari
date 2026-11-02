@@ -107,7 +107,7 @@ class ThumbnailsTest {
         priority: ThumbPriority = ThumbPriority.Visible,
     ) = ThumbRequest(subject, sizePx, direction, priority)
 
-    private fun item(name: String, id: String = name) = FolderEntry.Item(name, book(id))
+    private fun item(name: String, id: String = name, lane: ThumbLane = ThumbLane.Local) = FolderEntry.Item(name, book(id, lane))
 
     private fun folder(
         vararg entries: FolderEntry,
@@ -364,6 +364,28 @@ class ThumbnailsTest {
         release.complete(Unit)
         runCurrent()
         assertEquals(listOf("busy", "second", "first"), maker.ids)
+    }
+
+    @Test
+    fun aNearbyFolderThatBecomesVisibleMovesUpTheBookItWaitsFor() = runTest {
+        val thumbnails = thumbnails()
+        val release = CompletableDeferred<Unit>()
+        maker.script = { book ->
+            if (book.id.value == "busy") release.await()
+            Made.Webp(byteArrayOf(1))
+        }
+        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        runCurrent()
+        launch { thumbnails.thumbnail(request(book("other", lane = ThumbLane.Smb), priority = ThumbPriority.Nearby)) }
+        runCurrent()
+        val subject = folder(item("child", lane = ThumbLane.Smb))
+        launch { thumbnails.thumbnail(request(subject, priority = ThumbPriority.Nearby)) }
+        runCurrent()
+        launch { thumbnails.thumbnail(request(subject, priority = ThumbPriority.Visible)) }
+        runCurrent()
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("busy", "child", "other"), maker.ids)
     }
 
     @Test

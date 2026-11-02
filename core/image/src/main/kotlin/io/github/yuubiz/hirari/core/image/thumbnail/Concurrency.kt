@@ -6,16 +6,27 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.suspendCancellableCoroutine
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CopyOnWriteArrayList
 
-/** The best priority any request that waits for a flight has. It only rises. */
-internal class Urgency(initial: ThumbPriority) {
-    private val best = AtomicInteger(initial.ordinal)
+/**
+ * How soon a piece of work is wanted: the best of its own priority and of the urgencies it follows, read anew at
+ * each turn of a [PriorityGate]. It only rises. A flight follows each request that joins it, and a folder lends
+ * the urgency of its flight to the books its search tries, so they rise with the folder.
+ */
+internal class Urgency private constructor(private val own: Int) {
+    constructor(priority: ThumbPriority) : this(priority.ordinal)
 
-    val rank: Int get() = best.get()
+    private val followed = CopyOnWriteArrayList<Urgency>()
 
-    fun raise(priority: ThumbPriority) {
-        best.accumulateAndGet(priority.ordinal, ::minOf)
+    val rank: Int get() = followed.fold(own) { best, other -> minOf(best, other.rank) }
+
+    fun follow(other: Urgency) {
+        followed += other
+    }
+
+    companion object {
+        /** An urgency with no priority of its own: as high as [first] and whatever it follows later. */
+        fun following(first: Urgency) = Urgency(Int.MAX_VALUE).also { it.follow(first) }
     }
 }
 
@@ -32,9 +43,9 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
     private val lock = Any()
     private val running = HashMap<K, Flight<V>>()
 
-    suspend fun join(key: K, priority: ThumbPriority, work: suspend (Urgency) -> V): V {
+    suspend fun join(key: K, urgency: Urgency, work: suspend (Urgency) -> V): V {
         val flight = synchronized(lock) {
-            val flight = running[key]?.also { it.urgency.raise(priority) } ?: Flight<V>(Urgency(priority)).also { created ->
+            val flight = running[key]?.also { it.urgency.follow(urgency) } ?: Flight<V>(Urgency.following(urgency)).also { created ->
                 created.result = scope.async(start = CoroutineStart.LAZY) {
                     try {
                         work(created.urgency)
