@@ -21,20 +21,27 @@ class CoverTest {
 
     @Test
     fun theCoverIsTheFirstPageInNaturalOrderUnlessTheUserChoseOne() {
-        assertEquals(0, coverPage(pages, null)!!.index)
-        assertEquals(1, coverPage(pages, 3)!!.index)
-        assertEquals(2, coverPage(pages, 0)!!.index)
+        assertEquals(0, coverPage(pages, null, listingFinal = true)!!.index)
+        assertEquals(1, coverPage(pages, 3, listingFinal = true)!!.index)
+        assertEquals(2, coverPage(pages, 0, listingFinal = true)!!.index)
     }
 
     @Test
     fun aChosenPageTheBookNoLongerHasGivesTheFirstPage() {
-        assertEquals(0, coverPage(pages, 99)!!.index)
+        assertEquals(0, coverPage(pages, 99, listingFinal = true)!!.index)
+    }
+
+    @Test
+    fun aListingThatMayGoOnGivesOnlyAChosenPageItReached() {
+        assertEquals(1, coverPage(pages, 3, listingFinal = false)!!.index)
+        assertNull(coverPage(pages, 99, listingFinal = false))
+        assertNull(coverPage(pages, null, listingFinal = false))
     }
 
     @Test
     fun aBookWithoutPagesHasNoCover() {
-        assertNull(coverPage(emptyList(), null))
-        assertNull(coverPage(emptyList(), 3))
+        assertNull(coverPage(emptyList(), null, listingFinal = true))
+        assertNull(coverPage(emptyList(), 3, listingFinal = true))
     }
 
     @Test

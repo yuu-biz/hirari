@@ -42,7 +42,8 @@ internal class BookThumbnailMaker(private val decoding: ImageDecoding) : Thumbna
     }
 
     private suspend fun cover(open: OpenBook, coverEntry: Int?, sizePx: Int, direction: ReadingDirection): Made {
-        val page = coverPage(open.pages, coverEntry) ?: return open.indexError?.made() ?: Made.Unreadable
+        val listingFinal = open.indexError?.made() != Made.Unavailable
+        val page = coverPage(open.pages, coverEntry, listingFinal) ?: return open.indexError?.made() ?: Made.Unreadable
         val raw: RawPage = when (val read = open.raw(page.index)) {
             is PageResult.Ready -> read.image
             else -> return read.made()

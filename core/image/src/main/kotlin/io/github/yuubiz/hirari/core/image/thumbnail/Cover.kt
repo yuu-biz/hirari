@@ -12,9 +12,19 @@ import io.github.yuubiz.hirari.core.model.ReadingDirection
  * The page a thumbnail shows (docs/spec.md section 4.4): the one with the `entryIndex` [coverEntry] that the user
  * chose, and otherwise the first of [pages], which are in natural order. A chosen page the book no longer has
  * gives the first page. `null` for a book without pages.
+ *
+ * [listingFinal] is false when the listing of [pages] stopped for a reason that may pass. Entries it did not
+ * reach may then hold the chosen page or sort before the first, so only a chosen page it did reach is the cover,
+ * and anything else is `null`.
  */
-internal fun coverPage(pages: List<PageEntry>, coverEntry: Int?): PageEntry? =
-    coverEntry?.let { entry -> pages.firstOrNull { it.entryIndex == entry } } ?: pages.firstOrNull()
+internal fun coverPage(pages: List<PageEntry>, coverEntry: Int?, listingFinal: Boolean): PageEntry? {
+    val chosen = coverEntry?.let { entry -> pages.firstOrNull { it.entryIndex == entry } }
+    return when {
+        chosen != null -> chosen
+        listingFinal -> pages.firstOrNull()
+        else -> null
+    }
+}
 
 /**
  * The size to decode a cover of [shape] to. A cover wider than high is cut to one half (see [coverCrop]), so it
