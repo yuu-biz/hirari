@@ -1,8 +1,11 @@
 package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.LibraryBook
+import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.locationBookId
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -45,10 +48,15 @@ class ListingTimingTest {
 
         val sortName = medianNanos(31) { entries.toRows("作品", byName) }
         val sortDate = medianNanos(31) { entries.toRows("作品", byDate) }
+        val tree = LibraryLocation.SafTree(place, "漫画", UriString("content://tree/manga"))
+        val ids = medianNanos(31) { rows.associateBy({ locationBookId(tree, it.path) }, { it.path }) }
         val mark = medianNanos(31) { rows.withMarks(indexed, progress) }
         val filter = medianNanos(31) { rows.filtered("第1") }
 
-        println("1000 entries, median ms: sort by name %.2f, by date %.2f, marks %.2f, filter %.2f".format(sortName / 1e6, sortDate / 1e6, mark / 1e6, filter / 1e6))
-        assertTrue(sortName + mark + filter < 300_000_000L)
+        println(
+            "1000 entries, median ms: sort by name %.2f, by date %.2f, book ids %.2f, marks %.2f, filter %.2f"
+                .format(sortName / 1e6, sortDate / 1e6, ids / 1e6, mark / 1e6, filter / 1e6),
+        )
+        assertTrue(sortName + ids + mark + filter < 300_000_000L)
     }
 }
