@@ -5,7 +5,9 @@ import androidx.room3.Dao
 import androidx.room3.Entity
 import androidx.room3.PrimaryKey
 import androidx.room3.Query
+import androidx.room3.Transaction
 import androidx.room3.Upsert
+import kotlinx.coroutines.flow.Flow
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.ReadState
@@ -30,26 +32,42 @@ internal interface BookProgressDao {
     @Query("SELECT * FROM book_progress WHERE book_id = :bookId")
     suspend fun get(bookId: String): BookProgressRow?
 
+    @Query("SELECT * FROM book_progress WHERE book_id = :bookId")
+    fun observe(bookId: String): Flow<BookProgressRow?>
+
+    @Query("SELECT * FROM book_progress")
+    suspend fun all(): List<BookProgressRow>
+
     @Upsert
     suspend fun upsert(rows: List<BookProgressRow>)
+
+    /** Stores each row of [rows] that is newer than the stored progress of its book. */
+    @Transaction
+    suspend fun upsertNewer(rows: List<BookProgressRow>) {
+        upsert(rows.filter { row -> get(row.bookId).let { it == null || it.updatedAt < row.updatedAt } })
+    }
+}
+
+internal fun ReadingPosition?.columns(): Triple<PositionKind?, Long, Long> = when (this) {
+    null -> Triple(null, 0L, 0L)
+    is ReadingPosition.Image -> Triple(PositionKind.Image, viewStart.toLong(), pageCount.toLong())
+    is ReadingPosition.Text -> Triple(PositionKind.Text, charOffset, totalChars)
+}
+
+internal fun positionOf(kind: PositionKind?, at: Long, total: Long): ReadingPosition? = when (kind) {
+    null -> null
+    PositionKind.Image -> ReadingPosition.Image(at.toInt(), total.toInt())
+    PositionKind.Text -> ReadingPosition.Text(at, total)
 }
 
 internal fun BookProgress.toRow(): BookProgressRow {
-    val (kind, at, total) = when (val p = position) {
-        null -> Triple(null, 0L, 0L)
-        is ReadingPosition.Image -> Triple(PositionKind.Image, p.viewStart.toLong(), p.pageCount.toLong())
-        is ReadingPosition.Text -> Triple(PositionKind.Text, p.charOffset, p.totalChars)
-    }
+    val (kind, at, total) = position.columns()
     return BookProgressRow(book.value, state, kind, at, total, updatedAt.toEpochMilli())
 }
 
 internal fun BookProgressRow.toModel(): BookProgress = BookProgress(
     book = BookId(bookId),
     state = state,
-    position = when (positionKind) {
-        null -> null
-        PositionKind.Image -> ReadingPosition.Image(positionAt.toInt(), positionTotal.toInt())
-        PositionKind.Text -> ReadingPosition.Text(positionAt, positionTotal)
-    },
+    position = positionOf(positionKind, positionAt, positionTotal),
     updatedAt = Instant.ofEpochMilli(updatedAt),
 )

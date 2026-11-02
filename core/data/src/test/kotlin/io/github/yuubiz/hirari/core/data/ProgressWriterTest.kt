@@ -5,6 +5,8 @@ import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -22,6 +24,10 @@ class ProgressWriterTest {
         var failuresLeft = 0
 
         override suspend fun get(book: BookId): BookProgress? = null
+
+        override fun observe(book: BookId): Flow<BookProgress?> = emptyFlow()
+
+        override suspend fun mark(book: BookId, state: ReadState, at: Instant) = error("unused")
 
         override suspend fun save(progress: Collection<BookProgress>) {
             if (failuresLeft > 0) {

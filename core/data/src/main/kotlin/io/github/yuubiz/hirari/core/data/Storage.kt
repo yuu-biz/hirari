@@ -22,4 +22,12 @@ class Storage internal constructor(
     val settings: SettingsRepository = DataStoreSettingsRepository(settingsStore)
 
     val credentials: CredentialStore = EncryptedCredentialStore(credentialDatabase.credentials(), cipher)
+
+    val locations: LocationRepository = RoomLocationRepository(database, credentials)
+
+    val books: BookRepository = RoomBookRepository(database)
+
+    val history: HistoryRepository = RoomHistoryRepository(database)
+
+    val bookmarks: BookmarkRepository = RoomBookmarkRepository(database)
 }

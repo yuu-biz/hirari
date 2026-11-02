@@ -14,7 +14,7 @@ value class LocationId(val value: Long)
 @JvmInline
 value class BookId(val value: String)
 
-/** The Keystore alias of an encrypted secret. */
+/** Names a secret that the credential store keeps encrypted with a Keystore key. Random, so it tells nothing. */
 @JvmInline
 value class CredentialRef(val alias: String)
 
@@ -26,6 +26,8 @@ sealed interface LibraryLocation {
         override val id: LocationId,
         override val displayName: String,
         val treeUri: UriString,
+        /** False after a restore to another device, until the user picks the folder again. */
+        val permissionHeld: Boolean = true,
     ) : LibraryLocation
 
     data class SmbShare(
