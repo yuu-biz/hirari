@@ -79,7 +79,9 @@ class ReaderServices(
     val decoding: ImageDecoding,
     /** Outlives every screen, on `Dispatchers.IO`. */
     val appScope: CoroutineScope,
-)
+) {
+    val overrides = BookOverridesStore(storage.books, appScope)
+}
 
 /**
  * The book's path for the page bar (docs/spec.md section 4.8, ページバー). A picked book shows the last segment of
@@ -160,7 +162,7 @@ class ReaderViewModel(
         val prefetcher: Prefetcher<Bitmap>,
         val services: ReaderServices,
         val progress: ProgressLog,
-        val overrides: OverridesWriter,
+        val overrides: BookOverridesStore.OverridesWriter,
         val globalAdjust: ImageAdjust,
         val shareDir: File,
         val loader: BookPageLoader,
@@ -333,8 +335,8 @@ class ReaderViewModel(
         val openedAt = Instant.now()
         services.progress.flush().join()
         val saved = services.storage.progress.get(id)
-        val overrides = services.storage.books.overrides(id).first()
-        val config = ReaderConfig.of(settings, overrides)
+        val writer = services.overrides.open(id)
+        val config = ReaderConfig.of(settings, writer.current)
         val indexed = withContext(Dispatchers.IO) { describe(located, book) }
         val start = when (val at = request.start) {
             StartAt.Saved -> (saved?.position as? ReadingPosition.Image)?.viewStart
@@ -352,7 +354,6 @@ class ReaderViewModel(
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
-        val writer = OverridesWriter(id, overrides, services.storage.books, services.appScope)
         opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, settings.adjust, shareDir, loader)
         stops.attach(session)
         phase = ReaderPhase.Reading
