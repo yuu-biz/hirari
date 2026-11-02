@@ -70,6 +70,13 @@ class JxlDecoderTest {
     }
 
     @Test
+    fun aSquareBeyondFourThousandPixelsAveragesInSixtyFourBits() {
+        val bitmap = decoded("lossy_quadrants.jxl", sampleSize = 8192)
+        assertEquals(1 to 1, bitmap.width to bitmap.height)
+        assertColor(Color.rgb(136, 136, 141), bitmap.getPixel(0, 0), tolerance = 12)
+    }
+
+    @Test
     fun sampleSizeAveragesSquaresOfPixels() {
         // 16 is the largest square whose sums fit in 16 bits, 32 the smallest that needs 32.
         for (sampleSize in listOf(2, 16, 32)) {

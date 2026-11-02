@@ -103,4 +103,13 @@ class DecodePlanTest {
         assertEquals(emptyList<PixelSize>(), downscaleSteps(PixelSize(100, 100), PixelSize(100, 100)))
         assertEquals(listOf(PixelSize(90, 100)), downscaleSteps(PixelSize(100, 100), PixelSize(90, 100)))
     }
+
+    @Test
+    fun libjxlIsLeftARoomForWhatItAllocatesOutsideItsLimit() {
+        for (budget in listOf(64L shl 20, 96L shl 20, 256L shl 20)) {
+            val limit = jxlMemoryLimit(budget)
+            assertTrue(limit < budget / 2)
+            assertEquals(budget / 16, budget - budget / 2 - limit)
+        }
+    }
 }

@@ -43,7 +43,8 @@ object JxlDecoder {
     /**
      * Decodes [bytes], whose header is [header], averaging each [sampleSize] x [sampleSize] square of pixels
      * into one, into a new ARGB_8888 bitmap of `sampled(side, sampleSize)` on each side. [sampleSize] is a power of
-     * two. What libjxl allocates, and the sums of the averaging, may total [memoryLimitBytes]. [isActive] is
+     * two. What libjxl allocates through its memory manager, and the sums of the averaging, may total
+     * [memoryLimitBytes]; libjxl's own containers are not counted (docs/spec.md section 3.6). [isActive] is
      * checked before each group of pixels.
      */
     fun decode(

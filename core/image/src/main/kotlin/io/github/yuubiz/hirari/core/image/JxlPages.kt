@@ -24,7 +24,8 @@ internal fun decodeJxlShape(bytes: ByteArray): PageResult<PageShape.Known> =
 /**
  * Decodes the JPEG XL image in [bytes] to fit [target] by the steps of docs/spec.md section 3.7. libjxl cannot
  * decode at a lower resolution, so it decodes every pixel and the JNI side averages them down by the planned
- * sample size, which averages at any power of two. Half of [budgetBytes] goes to the output and half to libjxl.
+ * sample size, which averages at any power of two. Half of [budgetBytes] goes to the output and the rest, less a
+ * reserve for what the limit cannot count, to libjxl ([jxlMemoryLimit]).
  */
 internal fun decodeJxlPage(
     bytes: ByteArray,
@@ -42,7 +43,7 @@ internal fun decodeJxlPage(
     }
     if (!isActive()) throw CancellationException("cancelled at the header")
     fun decodeOnce(extraSample: Int): PageResult<PreparedImage> =
-        when (val decoded = JxlDecoder.decode(bytes, header, plan.sampleSize * extraSample, budgetBytes / 2, isActive)) {
+        when (val decoded = JxlDecoder.decode(bytes, header, plan.sampleSize * extraSample, jxlMemoryLimit(budgetBytes), isActive)) {
             is JxlDecodeResult.Failed -> decoded.failure.pageResult(header.width, header.height)
             is JxlDecodeResult.Decoded -> PageResult.Ready(
                 PreparedImage.Whole(scaledToOutput(decoded.bitmap, plan.output), PageShape.Known(header.width, header.height)),

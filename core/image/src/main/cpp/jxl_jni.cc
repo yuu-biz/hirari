@@ -28,8 +28,11 @@ enum Status : jint {
 
 constexpr size_t kHeaderMemoryLimit = 16u << 20;
 
-// Every allocation libjxl and this file make goes through here, and the one
-// that would pass the limit is refused. libjxl turns the refusal into an error.
+// Every allocation that libjxl makes through its JxlMemoryManager, and every
+// one of this file, goes through here, and the one that would pass the limit is
+// refused. libjxl turns the refusal into an error. The standard containers and
+// `new` inside libjxl do not use the manager, so the limit does not count them;
+// the caller leaves room for them in the budget (docs/spec.md section 3.6).
 struct Memory {
     size_t limit;
     size_t used = 0;
@@ -117,8 +120,11 @@ struct Bytes {
     jbyte* data;
     jsize size;
 
+    // When the elements cannot be pinned or copied, data is null and an
+    // OutOfMemoryError is pending, so no other JNI call may follow until the
+    // caller returns.
     Bytes(JNIEnv* e, jbyteArray a)
-        : env(e), array(a), data(e->GetByteArrayElements(a, nullptr)), size(e->GetArrayLength(a)) {}
+        : env(e), array(a), data(e->GetByteArrayElements(a, nullptr)), size(data == nullptr ? 0 : e->GetArrayLength(a)) {}
     ~Bytes() {
         if (data != nullptr) env->ReleaseByteArrayElements(array, data, JNI_ABORT);
     }
@@ -150,8 +156,18 @@ struct Sink {
     void* sums;
     bool out_of_range = false;
 
-    // 16 bits hold the sum of a 16 x 16 square of 8-bit values, so only larger squares need 32.
-    static size_t SumSize(uint32_t shift) { return shift > 4 ? sizeof(uint32_t) : sizeof(uint16_t); }
+    // A sum holds at most 4^shift values of up to 255. 16 bits hold a 16 x 16 square and 32 bits a
+    // 4096 x 4096 square; only larger squares need 64 bits, which any image of at most 2^28 pixels fits.
+    static constexpr uint32_t kLargestShift16 = 4;
+    static constexpr uint32_t kLargestShift32 = 12;
+    static_assert((uint64_t{255} << (2 * kLargestShift16)) <= UINT16_MAX);
+    static_assert((uint64_t{255} << (2 * (kLargestShift16 + 1))) > UINT16_MAX);
+    static_assert((uint64_t{255} << (2 * kLargestShift32)) <= UINT32_MAX);
+    static_assert((uint64_t{255} << (2 * (kLargestShift32 + 1))) > UINT32_MAX);
+    static size_t SumSize(uint32_t shift) {
+        if (shift <= kLargestShift16) return sizeof(uint16_t);
+        return shift <= kLargestShift32 ? sizeof(uint32_t) : sizeof(uint64_t);
+    }
 
     static uint32_t Premultiplied(uint32_t channel, uint32_t alpha) { return (channel * alpha + 127) / 255; }
 
@@ -175,10 +191,16 @@ struct Sink {
             }
             return;
         }
-        if (SumSize(shift) == sizeof(uint32_t)) {
-            Accumulate<uint32_t>(x, y, count, in);
-        } else {
-            Accumulate<uint16_t>(x, y, count, in);
+        switch (SumSize(shift)) {
+            case sizeof(uint16_t):
+                Accumulate<uint16_t>(x, y, count, in);
+                break;
+            case sizeof(uint32_t):
+                Accumulate<uint32_t>(x, y, count, in);
+                break;
+            default:
+                Accumulate<uint64_t>(x, y, count, in);
+                break;
         }
     }
 
@@ -199,10 +221,16 @@ struct Sink {
     // is less than 4^shift at the right and bottom edges.
     void Finish() {
         if (shift == 0) return;
-        if (SumSize(shift) == sizeof(uint32_t)) {
-            Divide<uint32_t>();
-        } else {
-            Divide<uint16_t>();
+        switch (SumSize(shift)) {
+            case sizeof(uint16_t):
+                Divide<uint16_t>();
+                break;
+            case sizeof(uint32_t):
+                Divide<uint32_t>();
+                break;
+            default:
+                Divide<uint64_t>();
+                break;
         }
     }
 
@@ -215,7 +243,7 @@ struct Sink {
             for (uint32_t ox = 0; ox < out_width; ox++) {
                 uint32_t columns = ((ox + 1) << shift > width ? width : (ox + 1) << shift) - (ox << shift);
                 uint32_t count = rows * columns;
-                for (int c = 0; c < 4; c++) *out++ = static_cast<uint8_t>((uint32_t{*sum++} + count / 2) / count);
+                for (int c = 0; c < 4; c++) *out++ = static_cast<uint8_t>((uint64_t{*sum++} + count / 2) / count);
             }
         }
     }

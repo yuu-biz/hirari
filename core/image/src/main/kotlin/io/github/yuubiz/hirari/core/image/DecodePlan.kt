@@ -61,6 +61,13 @@ fun planDecode(
     return DecodePlan.Decode(sample, needed, shrinkToFit(needed, PixelSize(sampled(width, sample), sampled(height, sample))))
 }
 
+/**
+ * What libjxl may allocate through its memory manager (docs/spec.md section 3.6). The output takes up to half of
+ * [budgetBytes]; libjxl gets the other half less 1/16 of the budget, because its own containers and `new` bypass
+ * the manager and the limit cannot count them.
+ */
+internal fun jxlMemoryLimit(budgetBytes: Long): Long = budgetBytes / 2 - budgetBytes / 16
+
 /** Why dimensions declared in a header cannot be real, or null when they can. */
 internal fun dimensionRefusal(width: Int, height: Int): UnsupportedKind.TooLarge? {
     val pixels = width.toLong() * height
