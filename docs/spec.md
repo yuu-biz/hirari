@@ -1522,7 +1522,7 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 
 | データ | 保存先 | 場所 | 自動バックアップ | 書き出し |
 |---|---|---|---|---|
-| 全体の設定、コマンドバーの項目 | Proto DataStore | `filesDir/datastore/` | 含める | 含める |
+| 全体の設定、コマンドバーの項目 | DataStore（kotlinx.serialization の JSON） | `filesDir/datastore/settings.json` | 含める | 含める |
 | 場所（SAF の URI、SMB サーバーの定義） | Room（本体の DB） | `databases/` | 含める。SAF の許可は復元先で取り直す | SMB のホスト、ポート、共有名、フォルダだけ |
 | SMB のパスワード | Keystore の鍵で AES-256-GCM 暗号化した値を Room の別テーブルに置く | `databases/` | 含めない | 含めない |
 | 本の索引、表紙の選択、本ごとの設定 | Room（本体の DB） | `databases/` | 含める | 本ごとの設定だけ含める |
@@ -1535,6 +1535,8 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 | 開いている本の記録（6.1 節） | DataStore | `filesDir/datastore/` | 含めない | 含めない |
 
 - 自動バックアップの範囲は `dataExtractionRules` で指定する。
+- 全体の設定は、DataStore に kotlinx.serialization の JSON の直列化を組み合わせて保存する。Proto DataStore にしないのは、protoc とその Gradle プラグインをビルドに加えずに済み、4.11 節の書き出しと同じ JSON の形と規則を使えるからである。
+- 設定のファイルのキーは 4.10 節の内部名、列挙の値は列挙子の名前とする。知らないキーは無視し、欠けたキーと知らない列挙の値は既定値にし、範囲の外の整数は許される値のうち最も近いものに丸める。JSON として読めないファイルは既定値で置き換える。
 - Keystore の鍵は端末の外に出せない。端末を移ると SMB のパスワードは入力し直しになる。
 - 資格情報は、DB の主キー、`BookId`、URI、ショートカット、ログのどこにも入れない。
 
@@ -1635,7 +1637,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Jetpack（Compose、Navigation、Lifecycle、Activity、Core） | UI と画面の基盤 | Apache-2.0 | Maven |
 | Room 3.0.3（`androidx.room3`） | DB | Apache-2.0。androidx.sqlite（sqlite、sqlite-async、sqlite-framework）2.7.1、androidx.annotation、androidx.collection、kotlinx-coroutines（core、android）、JetBrains の annotations、jspecify を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。SQLite は同梱せず、端末の `android.database.sqlite` を `AndroidSQLiteDriver` で使う |
 | KSP 2.3.13、room3-compiler、room3 の Gradle プラグイン | Room のコード生成とスキーマの書き出し | Apache-2.0。room3-compiler は room3-external-antlr（BSD-3-Clause）、checker-qual（MIT）、guava、auto-common、auto-value-annotations、javapoet、kotlinpoet、kotlin-metadata-jvm、kotlin-reflect、kotlinx-serialization、jsr305、sqlite-jdbc（Apache-2.0）を伴う。3.0.3 の推移的依存の POM で確かめた | ビルド時だけ。配布物に入らない |
-| DataStore | 設定の保存 | Apache-2.0 | Maven |
+| DataStore 1.3.0 | 設定の保存 | Apache-2.0。datastore-core、datastore-core-okio、okio 3.17.0、androidx.tracing を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。protobuf は使わない（7 章） |
 | kotlinx.coroutines、kotlinx.serialization | 並行処理、設定の JSON | Apache-2.0 | Maven |
 | ImageDecoder、BitmapRegionDecoder、PdfRenderer、ICU の CharsetDetector | 画像、PDF、文字コードの判定 | プラットフォームに内蔵 | 同梱しない |
 | Licensee（Gradle プラグイン） | ライセンスの検査 | Apache-2.0 | ビルド時だけ |

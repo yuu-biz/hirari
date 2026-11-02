@@ -1,5 +1,6 @@
 plugins {
     id("hirari.android.library")
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
 }
@@ -20,6 +21,8 @@ dependencies {
     implementation(project(":core:model"))
     implementation(libs.room.runtime)
     implementation(libs.sqlite.framework)
+    implementation(libs.androidx.datastore)
+    implementation(libs.kotlinx.serialization.json)
     ksp(libs.room.compiler)
 
     testImplementation(kotlin("test-junit"))

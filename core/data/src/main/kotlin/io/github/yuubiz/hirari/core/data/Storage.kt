@@ -7,4 +7,6 @@ class Storage(context: Context) {
     private val database = openDatabase(context)
 
     val progress: ProgressRepository = RoomProgressRepository(database.bookProgress())
+
+    val settings: SettingsRepository = DataStoreSettingsRepository(openSettings(context.applicationContext))
 }
