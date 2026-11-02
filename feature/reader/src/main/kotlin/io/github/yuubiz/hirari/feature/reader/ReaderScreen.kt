@@ -257,7 +257,7 @@ private fun AutoPlayClock(viewModel: ReaderViewModel, autoPlay: AutoPlay?) {
     LaunchedEffect(autoPlay) {
         val due = autoPlay?.dueAtMs ?: return@LaunchedEffect
         delay((due - SystemClock.uptimeMillis()).coerceAtLeast(0))
-        viewModel.dispatch(ReaderEvent.AutoPlayDue(SystemClock.uptimeMillis()))
+        viewModel.dispatch(ReaderEvent.AutoPlayDue(maxOf(SystemClock.uptimeMillis(), due)))
     }
 }
 
