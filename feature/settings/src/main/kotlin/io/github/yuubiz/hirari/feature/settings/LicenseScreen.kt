@@ -58,6 +58,7 @@ private fun LicenseItem(library: LicensedLibrary, texts: List<String>) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.clickable { expanded = !expanded }.padding(16.dp)) {
         Text("${library.name} ${library.version}", style = MaterialTheme.typography.titleMedium)
+        Text(library.id, style = MaterialTheme.typography.bodySmall)
         Text(library.licenses.joinToString(", "), style = MaterialTheme.typography.bodyMedium)
         if (expanded) {
             texts.forEach { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall) }
