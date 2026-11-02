@@ -30,4 +30,6 @@ class Storage internal constructor(
     val history: HistoryRepository = RoomHistoryRepository(database)
 
     val bookmarks: BookmarkRepository = RoomBookmarkRepository(database)
+
+    val transfer: SettingsTransfer = SettingsTransfer(settings, database, locations)
 }
