@@ -18,6 +18,7 @@ class PageListTest {
             "ch1/",
             "__MACOSX/._001.jpg",
             "__MACOSX/ch1/001.jpg",
+            "__macosx/cover.jpg",
             ".hidden.jpg",
             "ch1/.DS_Store",
             ".git/001.jpg",

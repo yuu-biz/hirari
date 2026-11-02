@@ -19,7 +19,7 @@ enum class PageCandidate {
 fun pageCandidate(name: String, isDirectory: Boolean): PageCandidate {
     if (isDirectory || name.endsWith('/') || name.endsWith('\\')) return PageCandidate.Excluded
     val parts = name.split('/', '\\')
-    if (parts.any { it == "__MACOSX" || it.startsWith('.') }) return PageCandidate.Excluded
+    if (parts.any { it.equals("__MACOSX", ignoreCase = true) || it.startsWith('.') }) return PageCandidate.Excluded
     val fileName = parts.last().lowercase(Locale.ROOT)
     if (fileName in EXCLUDED_NAMES) return PageCandidate.Excluded
     val extension = fileName.substringAfterLast('.', "")
