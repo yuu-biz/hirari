@@ -31,9 +31,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             HirariTheme {
                 val nav = rememberNavController()
-                NavHost(nav, startDestination = HOME) {
-                    composable(HOME) { HomeScreen(actions = { HomeMenu(onLicenses = { nav.navigate(LICENSES) }) }) }
+                NavHost(nav, startDestination = prototypeStartRoute(intent) ?: HOME) {
+                    composable(HOME) {
+                        HomeScreen(actions = { HomeMenu(onLicenses = { nav.navigate(LICENSES) }, onOpen = nav::navigate) })
+                    }
                     composable(LICENSES) { LicenseScreen(onBack = { nav.popBackStack() }) }
+                    prototypeRoutes()
                 }
             }
         }
@@ -42,7 +45,7 @@ class MainActivity : ComponentActivity() {
 
 /** Until the settings screen exists, the license screen is opened from here (docs/spec.md M0). */
 @Composable
-private fun HomeMenu(onLicenses: () -> Unit) {
+private fun HomeMenu(onLicenses: () -> Unit, onOpen: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }) { Text(stringResource(R.string.menu)) }
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -53,5 +56,9 @@ private fun HomeMenu(onLicenses: () -> Unit) {
                 onLicenses()
             },
         )
+        PrototypeMenuItem {
+            open = false
+            onOpen(it)
+        }
     }
 }

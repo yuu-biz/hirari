@@ -17,6 +17,11 @@ android {
             isProfileable = true
         }
     }
+    sourceSets {
+        for (buildType in listOf("debug", "benchmark")) {
+            getByName(buildType).kotlin.directories += "src/prototype/kotlin"
+        }
+    }
 }
 
 dependencies {
@@ -27,4 +32,6 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    debugImplementation(project(":feature:reader"))
+    "benchmarkImplementation"(project(":feature:reader"))
 }

@@ -1,0 +1,14 @@
+package io.github.yuubiz.hirari
+
+import android.content.Intent
+import androidx.compose.runtime.Composable
+import androidx.navigation.NavGraphBuilder
+
+@Suppress("UNUSED_PARAMETER")
+internal fun prototypeStartRoute(intent: Intent): String? = null
+
+internal fun NavGraphBuilder.prototypeRoutes() = Unit
+
+@Suppress("UNUSED_PARAMETER")
+@Composable
+internal fun PrototypeMenuItem(onOpen: (String) -> Unit) = Unit
