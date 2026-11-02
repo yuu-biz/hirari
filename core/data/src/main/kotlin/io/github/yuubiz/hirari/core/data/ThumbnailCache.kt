@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.File
@@ -166,7 +167,15 @@ internal class DiskThumbnailCache(
         }
     }
 
+    /**
+     * Not cancellable once started: a cancel between the file and its row, or inside the eviction, would leave a
+     * file the index does not count.
+     */
     override suspend fun put(key: ThumbKey, webp: ByteArray): File = writing.withLock {
+        withContext(NonCancellable) { store(key, webp) }
+    }
+
+    private suspend fun store(key: ThumbKey, webp: ByteArray): File {
         val file = fileOf(key.digest)
         withContext(io) {
             dir.mkdirs()
@@ -176,7 +185,7 @@ internal class DiskThumbnailCache(
         }
         dao.upsert(ThumbRow(key.digest, webp.size.toLong(), now().toEpochMilli(), failed = false))
         evict()
-        file
+        return file
     }
 
     private suspend fun evict() {

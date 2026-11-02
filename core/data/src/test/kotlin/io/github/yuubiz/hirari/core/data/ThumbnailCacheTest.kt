@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.model.BookId
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -120,6 +123,25 @@ class ThumbnailCacheTest {
         assertTrue(cache.isHit("a"))
         assertTrue(File(dir, "${key("a").digest}.webp").isFile)
         assertEquals(listOf(false, true), listOf("b", "c").map { cache.isHit(it) })
+    }
+
+    @Test
+    fun `a put cancelled during eviction leaves no file without a row`() = runTest {
+        var writer: Job? = null
+        val dao = object : ThumbDao by index.thumbs() {
+            override suspend fun delete(digest: String) {
+                index.thumbs().delete(digest)
+                writer?.cancel()
+            }
+        }
+        val cache = DiskThumbnailCache(dir, dao, limitBytes = 100, now = { Instant.ofEpochSecond(++clock) })
+        cache.put(key("a"), bytes(40))
+        cache.put(key("b"), bytes(40))
+        writer = launch(start = CoroutineStart.LAZY) { cache.put(key("c"), bytes(40)) }
+        writer.join()
+        val files = dir.listFiles().orEmpty().map { it.name }.toSet()
+        val rows = index.thumbs().byAge().map { "${it.digest}.webp" }.toSet()
+        assertEquals(rows, files)
     }
 
     @Test
