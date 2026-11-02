@@ -126,8 +126,12 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                    composable<LicensesRoute> { LicenseScreen(onBack = { nav.popBackStack() }) }
-                    composable<SettingsRoute> {
+                    composable<LicensesRoute> { entry ->
+                        ReportSettled(nav, entry, app) {}
+                        LicenseScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable<SettingsRoute> { entry ->
+                        ReportSettled(nav, entry, app) { app.services.await() }
                         val storage by produceState<Storage?>(null) { value = app.services.await().storage }
                         storage?.let { SettingsScreen(it, onBack = { nav.popBackStack() }, onOpenLicenses = { nav.navigate(LicensesRoute) }) }
                     }
