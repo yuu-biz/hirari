@@ -204,17 +204,18 @@ private fun PageSlider(head: Int, pageCount: Int, goTo: (Int) -> Unit) {
 private fun PageNumberRow(head: Int, pageCount: Int, goTo: (Int) -> Unit) {
     val focus = LocalFocusManager.current
     val numberLabel = stringResource(R.string.page_panel_number)
-    var text by remember(head) { mutableStateOf("${head + 1}") }
+    val field = remember { PageNumberField(head) }
+    LaunchedEffect(head) { field.show(head) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
         for (step in PagePanel.STEPS.take(3)) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
         OutlinedTextField(
-            value = text,
-            onValueChange = { text = it.filter(Char::isDigit) },
+            value = field.text,
+            onValueChange = field::edit,
             singleLine = true,
             suffix = { Text("/ $pageCount", color = SheetDisabled) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
             keyboardActions = KeyboardActions(onGo = {
-                PagePanel.typed(text, pageCount)?.let(goTo)
+                field.confirm(pageCount, head)?.let(goTo)
                 focus.clearFocus()
             }),
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = SheetText, textAlign = TextAlign.End),
