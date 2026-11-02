@@ -11,6 +11,9 @@ import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.feature.library.LibraryServices
+import io.github.yuubiz.hirari.feature.library.SafFolderLister
+import io.github.yuubiz.hirari.feature.library.SafTreeGrants
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -30,6 +33,9 @@ class HirariApp : Application() {
     lateinit var services: Deferred<ReaderServices>
         private set
 
+    lateinit var library: Deferred<LibraryServices>
+        private set
+
     override fun onCreate() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) enableStrictMode()
         super.onCreate()
@@ -37,6 +43,19 @@ class HirariApp : Application() {
             val storage = Storage(this@HirariApp)
             appScope.launch { reconcile(storage) }
             ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope)
+        }
+        library = appScope.async {
+            val storage = services.await().storage
+            LibraryServices(
+                locations = storage.locations,
+                books = storage.books,
+                history = storage.history,
+                bookmarks = storage.bookmarks,
+                progress = storage.progress,
+                settings = storage.settings,
+                grants = SafTreeGrants(contentResolver),
+                folders = SafFolderLister(contentResolver),
+            )
         }
     }
 

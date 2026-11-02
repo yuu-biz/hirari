@@ -30,7 +30,9 @@ import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.HirariTheme
+import io.github.yuubiz.hirari.feature.library.HomeActions
 import io.github.yuubiz.hirari.feature.library.HomeScreen
+import io.github.yuubiz.hirari.feature.library.HomeViewModel
 import io.github.yuubiz.hirari.feature.reader.KeyRelay
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
@@ -65,10 +67,21 @@ class MainActivity : ComponentActivity() {
                 val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { open(it, folder = true) }
                 NavHost(nav, startDestination = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: HomeRoute) {
                     composable<HomeRoute> {
+                        val home = viewModel { HomeViewModel(app.library) }
                         HomeScreen(
-                            onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
-                            onOpenFolder = { pickFolder.launch(null) },
-                            actions = { HomeMenu(onLicenses = { nav.navigate(LicensesRoute) }, onOpen = { nav.navigate(it) }) },
+                            home,
+                            HomeActions(
+                                openBook = { nav.navigate(it.toReaderRoute()) },
+                                openFolder = {},
+                                menu = {
+                                    HomeMenu(
+                                        onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
+                                        onOpenFolder = { pickFolder.launch(null) },
+                                        onLicenses = { nav.navigate(LicensesRoute) },
+                                        onOpen = { nav.navigate(it) },
+                                    )
+                                },
+                            ),
                         )
                     }
                     composable<LicensesRoute> { LicenseScreen(onBack = { nav.popBackStack() }) }
@@ -109,12 +122,29 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Until the settings screen exists, the license screen is opened from here (docs/spec.md M0). */
+/**
+ * A book opens without registering a place from here (docs/spec.md section 4.2). Until the settings screen
+ * exists, the license screen is opened from here too (M0).
+ */
 @Composable
-private fun HomeMenu(onLicenses: () -> Unit, onOpen: (Any) -> Unit) {
+private fun HomeMenu(onOpenFile: () -> Unit, onOpenFolder: () -> Unit, onLicenses: () -> Unit, onOpen: (Any) -> Unit) {
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }) { Text(stringResource(R.string.menu)) }
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_open_file)) },
+            onClick = {
+                open = false
+                onOpenFile()
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_open_folder)) },
+            onClick = {
+                open = false
+                onOpenFolder()
+            },
+        )
         DropdownMenuItem(
             text = { Text(stringResource(R.string.menu_licenses)) },
             onClick = {
