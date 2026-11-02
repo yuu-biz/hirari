@@ -69,7 +69,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
 
     fun dismiss() {
         val panelOpen = ui.commandBar.panelVisible || ui.sheet != null
-        when (dismissTarget(guideShown = false, panelOpen = panelOpen, opening = viewModel.phase == ReaderPhase.Opening)) {
+        val autoPlaying = viewModel.state?.autoPlay != null
+        when (dismissTarget(autoPlaying, guideShown = false, panelOpen = panelOpen, opening = viewModel.phase == ReaderPhase.Opening)) {
+            DismissTarget.AutoPlay -> viewModel.dispatch(ReaderEvent.AutoPlayStopped)
             DismissTarget.Panel -> ui.closePanels()
             DismissTarget.Guide, DismissTarget.Opening, DismissTarget.Reader -> close()
         }

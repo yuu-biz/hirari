@@ -89,10 +89,14 @@ data class KeyBindings(val direction: ReadingDirection, val mirrored: Boolean, v
     }
 }
 
-enum class DismissTarget { Guide, Panel, Opening, Reader }
+enum class DismissTarget { AutoPlay, Guide, Panel, Opening, Reader }
 
-/** What Back and Del close, first match wins. [DismissTarget.Reader] saves the position and closes the reader. */
-fun dismissTarget(guideShown: Boolean, panelOpen: Boolean, opening: Boolean): DismissTarget = when {
+/**
+ * What Back and Del close, first match wins: the back key, the system's back gesture and Del all ask here. During
+ * autoplay they only stop it. [DismissTarget.Reader] saves the position and closes the reader.
+ */
+fun dismissTarget(autoPlaying: Boolean, guideShown: Boolean, panelOpen: Boolean, opening: Boolean): DismissTarget = when {
+    autoPlaying -> DismissTarget.AutoPlay
     guideShown -> DismissTarget.Guide
     panelOpen -> DismissTarget.Panel
     opening -> DismissTarget.Opening

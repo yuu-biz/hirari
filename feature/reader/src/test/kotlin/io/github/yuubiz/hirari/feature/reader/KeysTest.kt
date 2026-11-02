@@ -105,9 +105,15 @@ class KeysTest {
 
     @Test
     fun backClosesTheTopmostThingFirst() {
-        assertEquals(DismissTarget.Guide, dismissTarget(guideShown = true, panelOpen = true, opening = true))
-        assertEquals(DismissTarget.Panel, dismissTarget(guideShown = false, panelOpen = true, opening = true))
-        assertEquals(DismissTarget.Opening, dismissTarget(guideShown = false, panelOpen = false, opening = true))
-        assertEquals(DismissTarget.Reader, dismissTarget(guideShown = false, panelOpen = false, opening = false))
+        assertEquals(DismissTarget.Guide, dismissTarget(autoPlaying = false, guideShown = true, panelOpen = true, opening = true))
+        assertEquals(DismissTarget.Panel, dismissTarget(autoPlaying = false, guideShown = false, panelOpen = true, opening = true))
+        assertEquals(DismissTarget.Opening, dismissTarget(autoPlaying = false, guideShown = false, panelOpen = false, opening = true))
+        assertEquals(DismissTarget.Reader, dismissTarget(autoPlaying = false, guideShown = false, panelOpen = false, opening = false))
+    }
+
+    @Test
+    fun backDuringAutoplayOnlyStopsIt() {
+        assertEquals(DismissTarget.AutoPlay, dismissTarget(autoPlaying = true, guideShown = false, panelOpen = false, opening = false))
+        assertEquals(DismissTarget.AutoPlay, dismissTarget(autoPlaying = true, guideShown = true, panelOpen = true, opening = false))
     }
 }
