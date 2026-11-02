@@ -267,7 +267,6 @@ class ReaderViewModel(
         val services = services.await()
         val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
         val settings = services.storage.settings.settings.first()
-        val config = ReaderConfig.of(settings)
         val located = withContext(Dispatchers.IO) {
             openBook(services, copyDir).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
@@ -288,6 +287,8 @@ class ReaderViewModel(
         val openedAt = Instant.now()
         services.progress.flush().join()
         val saved = services.storage.progress.get(id)
+        val overrides = services.storage.books.overrides(id).first()
+        val config = ReaderConfig.of(settings, overrides)
         val indexed = withContext(Dispatchers.IO) { describe(located, book) }
         val start = when (val at = request.start) {
             StartAt.Saved -> (saved?.position as? ReadingPosition.Image)?.viewStart

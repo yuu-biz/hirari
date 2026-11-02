@@ -53,14 +53,12 @@ import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rect
-import io.github.yuubiz.hirari.core.model.ScreenOrientation
 import io.github.yuubiz.hirari.feature.reader.prefetch.PreparedPage
 import kotlin.math.roundToInt
 
 /** The panel background of docs/spec.md section 4.8 (コマンドバー). */
 private val PanelBackground = Color(0x80000070)
 private val CardBackground = Color(0xFF303030)
-private const val PANEL_ROW_DP = 64f
 
 /** A view drawn at [position], shifted by [shift] pixels, for one frame. */
 private data class Layer(val view: PageView, val position: Point, val shift: Float, val alpha: Float)
@@ -347,12 +345,3 @@ internal val ReaderCommand.label: Int
         ReaderCommand.SharePage -> R.string.command_share_page
         ReaderCommand.Settings -> R.string.command_settings
     }
-
-/** The panel under the command bar, in dp. */
-internal fun ReaderState.commandPanel(): CommandPanel {
-    val width = viewport.width / viewport.density
-    val columns = if (viewport.orientation == ScreenOrientation.Portrait) 4 else 8
-    val rows = 1 + ReaderCommand.MAX_ITEMS / columns
-    val top = config.barHeightDp
-    return CommandPanel(ReaderCommand.Available, viewport.orientation, Rect(0f, top, width, top + rows * PANEL_ROW_DP))
-}

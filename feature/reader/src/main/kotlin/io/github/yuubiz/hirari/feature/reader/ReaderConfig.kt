@@ -1,8 +1,10 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
+import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.ScreenOrientation
@@ -12,9 +14,8 @@ import io.github.yuubiz.hirari.core.model.TurnEffect
 import io.github.yuubiz.hirari.core.model.VolumeKeys
 
 /**
- * What the reader reads from the settings: the global settings of docs/spec.md section 4.10, with the changes
- * made from the command bar during this session. Settings that [GlobalSettings] does not hold yet keep their
- * defaults here.
+ * What the reader reads from the settings: the global settings of docs/spec.md section 4.10 under the book's
+ * overrides of section 2.9, with the changes made from the command bar during this session.
  */
 data class ReaderConfig(
     val layout: LayoutSettings = LayoutSettings(LayoutMode.Auto, ReadingDirection.RightToLeft, coverAlone = true),
@@ -30,6 +31,7 @@ data class ReaderConfig(
     val volumeKeys: VolumeKeys = VolumeKeys.DownAdvances,
     val barHeightDp: Float = 60f,
     val gutter: Gutter = Gutter.Gap,
+    val commandBarItems: List<ReaderCommand> = ReaderCommand.Defaults,
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -38,9 +40,13 @@ data class ReaderConfig(
     val keys: KeyBindings get() = KeyBindings(direction, mirrored, volumeKeys)
 
     companion object {
-        fun of(settings: GlobalSettings): ReaderConfig = ReaderConfig(
-            layout = LayoutSettings(settings.layoutMode, settings.readingDirection, settings.coverAlone),
-            scaleMode = settings.scaleMode,
+        fun of(settings: GlobalSettings, overrides: BookOverrides = BookOverrides()): ReaderConfig = ReaderConfig(
+            layout = LayoutSettings(
+                overrides.layoutMode ?: settings.layoutMode,
+                overrides.direction ?: settings.readingDirection,
+                overrides.coverAlone ?: settings.coverAlone,
+            ),
+            scaleMode = overrides.scaleMode ?: settings.scaleMode,
             turnEffect = settings.turnEffect,
             turnDurationMs = settings.turnDurationMs.toLong(),
             stopOrder = settings.stopOrder,
@@ -49,6 +55,7 @@ data class ReaderConfig(
             swipeToTurn = settings.swipeToTurn,
             volumeKeys = settings.volumeKeys,
             barHeightDp = settings.barHeightDp.toFloat(),
+            commandBarItems = settings.commandBarItems,
         )
     }
 }

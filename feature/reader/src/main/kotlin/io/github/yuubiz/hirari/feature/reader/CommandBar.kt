@@ -8,15 +8,16 @@ import io.github.yuubiz.hirari.core.model.ScreenOrientation
 import io.github.yuubiz.hirari.core.model.StopOrder
 import kotlin.math.hypot
 
-/**
- * The commands that do something in this milestone. Until the settings screen can choose the items, the panel shows
- * these instead of [ReaderCommand.Defaults] (docs/spec.md section 4.8, コマンドバー).
- */
-val ReaderCommand.Companion.Available: List<ReaderCommand>
-    get() = AvailableCommands
+private const val PANEL_ROW_DP = 64f
 
-private val AvailableCommands: List<ReaderCommand> =
-    ReaderCommand.entries.filter { ReaderConfig().effectOf(it) != CommandEffect.NotYet }.take(ReaderCommand.MAX_ITEMS)
+/** The panel under the command bar, in dp, holding the chosen `commandBarItems` (docs/spec.md section 4.8, コマンドバー). */
+fun ReaderState.commandPanel(): CommandPanel {
+    val width = viewport.width / viewport.density
+    val columns = if (viewport.orientation == ScreenOrientation.Portrait) 4 else 8
+    val rows = 1 + ReaderCommand.MAX_ITEMS / columns
+    val top = config.barHeightDp
+    return CommandPanel(config.commandBarItems, viewport.orientation, Rect(0f, top, width, top + rows * PANEL_ROW_DP))
+}
 
 /** What running a command does. */
 sealed interface CommandEffect {

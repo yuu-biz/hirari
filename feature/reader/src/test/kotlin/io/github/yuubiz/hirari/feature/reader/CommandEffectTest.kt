@@ -1,7 +1,10 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.PageView
+import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScaleMode
@@ -17,20 +20,24 @@ class CommandEffectTest {
     private val config = ReaderConfig()
 
     @Test
-    fun theM1PanelHoldsTheEightCommandsTheReaderHas() {
-        assertEquals(
-            listOf(
-                ReaderCommand.Layout,
-                ReaderCommand.ShiftPairing,
-                ReaderCommand.ScaleMode,
-                ReaderCommand.Direction,
-                ReaderCommand.Orientation,
-                ReaderCommand.MirrorControls,
-                ReaderCommand.StopOrder,
-                ReaderCommand.Gutter,
-            ),
-            ReaderCommand.Available,
-        )
+    fun thePanelHoldsTheChosenCommandBarItemsInTheirOrder() {
+        val chosen = listOf(ReaderCommand.Gutter, ReaderCommand.Layout, ReaderCommand.StopOrder)
+        val state = readerOf(List(2) { TALL }, spreadConfig().copy(commandBarItems = chosen), PORTRAIT)
+        val panel = state.commandPanel()
+        assertEquals(chosen, panel.commands)
+        val cell = panel.bounds.width / panel.columns
+        val secondRow = panel.bounds.top + panel.bounds.height / panel.rows * 1.5f
+        assertEquals(PanelItem.Command(ReaderCommand.Layout), panel.itemAt(Point(cell * 1.5f, secondRow)))
+    }
+
+    @Test
+    fun theBookOverridesWinOverTheGlobalSettings() {
+        val settings = GlobalSettings(readingDirection = ReadingDirection.RightToLeft, scaleMode = ScaleMode.FitScreen, commandBarItems = listOf(ReaderCommand.Gutter))
+        val config = ReaderConfig.of(settings, BookOverrides(direction = ReadingDirection.LeftToRight, scaleMode = ScaleMode.FitWidth))
+        assertEquals(ReadingDirection.LeftToRight, config.direction)
+        assertEquals(ScaleMode.FitWidth, config.scaleMode)
+        assertEquals(settings.layoutMode, config.layout.mode)
+        assertEquals(listOf(ReaderCommand.Gutter), config.commandBarItems)
     }
 
     @Test
