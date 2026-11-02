@@ -170,6 +170,7 @@ fun parseAozora(source: String, gaiji: JisX0213Table = JisX0213Table.None): Text
 private class AozoraParser(private val source: String, private val gaiji: JisX0213Table) {
     private val blocks = ArrayList<Block>()
     private val headings = ArrayList<Heading>()
+    private val lineStartBlocks = ArrayList<Int>()
     private val open = ArrayList<OpenRange>()
     private var indentBlock: Command.IndentBlock? = null
     private var bottomBlock: Int? = null
@@ -187,10 +188,12 @@ private class AozoraParser(private val source: String, private val gaiji: JisX02
         val hidden = helpBlock(lines, source)
         for ((i, line) in lines.withIndex()) {
             if (hidden != null && i in hidden) continue
+            val first = blocks.size
             parseLine(line.first, line.last + 1)
+            if (blocks.size > first) lineStartBlocks += first
             isFirstLine = false
         }
-        return TextDocument(source.length, blocks, headings)
+        return TextDocument(source.length, blocks, headings, lineStartBlocks.toIntArray())
     }
 
     private fun parseLine(start: Int, end: Int) {

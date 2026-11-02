@@ -101,6 +101,25 @@ class VerticalLayoutTest {
     }
 
     @Test
+    fun `a re-layout starts at the beginning of a source line even when notes split the line`() {
+        val text = "題\n前の行\n［＃ページの左右中央］本文です\n行の途中［＃改ページ］続き\n"
+        val doc = parseAozora(text)
+        val params = LayoutParams(width = 100f, height = 100f, fontSize = 10f)
+        val layout = VerticalLayout(doc, params, FixedGlyphMetrics)
+        for (offset in text.indices) {
+            val block = doc.blocks[layout.blockIndexAt(offset)]
+            val lineStart = if (offset == 0) 0 else text.lastIndexOf('\n', offset - 1) + 1
+            assertEquals(lineStart, block.start, "offset $offset")
+        }
+        val offset = text.indexOf("本文")
+        val page = layout.pages(layout.blockIndexAt(offset)).first { offset in it }
+        val lines = lines(page)
+        val right = lines.maxOf { it.x + it.bodyWidth / 2 }
+        val left = lines.minOf { it.x - it.bodyWidth / 2 }
+        assertEquals(params.width / 2, (right + left) / 2, 0.01f)
+    }
+
+    @Test
     fun `an empty book has one empty page`() {
         assertEquals(listOf(TextPage(PageContent.Lines(emptyList()), 0, 0)), VerticalLayout(parseAozora(""), params(20f), FixedGlyphMetrics).pages().toList())
     }

@@ -109,7 +109,10 @@ class VerticalLayout(
 ) {
     private val fontSize = params.fontSize
 
-    /** The index of the block whose source range holds [offset]. A re-layout for a new size starts there. */
+    /**
+     * The index of the first block of the source line that holds [offset]. A re-layout for a new size starts there, so
+     * the notes that split a line into several blocks stay with their line.
+     */
     fun blockIndexAt(offset: Int): Int {
         val blocks = document.blocks
         var lo = 0
@@ -118,7 +121,14 @@ class VerticalLayout(
             val mid = (lo + hi + 1) ushr 1
             if (blocks[mid].start <= offset) lo = mid else hi = mid - 1
         }
-        return lo.coerceAtLeast(0)
+        val firsts = document.lineStartBlocks
+        var low = 0
+        var high = firsts.size - 1
+        while (low < high) {
+            val mid = (low + high + 1) ushr 1
+            if (firsts[mid] <= lo) low = mid else high = mid - 1
+        }
+        return if (firsts.isEmpty()) 0 else firsts[low]
     }
 
     /**

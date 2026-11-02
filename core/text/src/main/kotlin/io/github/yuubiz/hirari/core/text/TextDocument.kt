@@ -9,6 +9,8 @@ class TextDocument(
     val sourceLength: Int,
     val blocks: List<Block>,
     val headings: List<Heading>,
+    /** The index in [blocks] of the first block of each source line that made blocks, ascending. */
+    val lineStartBlocks: IntArray = IntArray(0),
 ) {
     /** The first line, which docs/spec.md section 4.9 treats as the title. */
     val title: String? get() = (blocks.firstOrNull() as? Paragraph)?.text?.takeIf { it.isNotBlank() }
