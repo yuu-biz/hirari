@@ -12,6 +12,8 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
@@ -38,7 +40,10 @@ class Thumbnails internal constructor(
     private val io: CoroutineDispatcher,
     private val now: () -> Long,
 ) {
-    private val flights = Flights<ThumbnailKey, ThumbResult>(scope)
+    private val bookFlights = Flights<ThumbnailKey, ThumbResult>(scope)
+    private val folderFlights = Flights<FolderRun, ThumbResult?>(scope)
+    private val folderGenerations = ConcurrentHashMap<ThumbnailKey, Long>()
+    private val folderWrites = Mutex()
     private val gates = ThumbLane.entries.associateWith { PriorityGate(it.parallelism) }
     private val unavailableUntil = ConcurrentHashMap<ThumbnailKey, Long>()
 
@@ -110,7 +115,7 @@ class Thumbnails internal constructor(
         stored(key)?.let { return it }
         if (mode == Mode.CacheOnly) return null
         if (backingOff(key)) return ThumbResult.Unavailable
-        return flights.join(key, urgency) { make(book, key, it) }
+        return bookFlights.join(key, urgency) { make(book, key, it) }
     }
 
     private suspend fun stored(key: ThumbnailKey): ThumbResult? = when (val found = store.get(key)) {
@@ -174,32 +179,56 @@ class Thumbnails internal constructor(
         val done: Boolean get() = found != null || exhausted
     }
 
+    /**
+     * One search of the folder [key]. Each regeneration of the folder starts a new [generation], so it does not
+     * join a search that began with an older request, and a search of an older generation stores nothing.
+     */
+    private data class FolderRun(val key: ThumbnailKey, val generation: Long)
+
     /** A folder is stored like a book, under a key of its own, so finding it never lists the folder. */
     private suspend fun folder(folder: ThumbSubject.Folder, request: ThumbRequest, mode: Mode): ThumbResult? {
         val key = keyOf(folder, request)
-        if (mode == Mode.Remake) store.remove(key)
-        stored(key)?.let { return it }
-        if (mode == Mode.CacheOnly) return null
-        return flights.join(key, Urgency(request.priority)) { search(folder, key, Search(request, mode, it)) }
+        val run = if (mode == Mode.Remake) {
+            folderWrites.withLock {
+                store.remove(key)
+                FolderRun(key, folderGenerations.merge(key, 1L, Long::plus)!!)
+            }
+        } else {
+            stored(key)?.let { return it }
+            if (mode == Mode.CacheOnly) return null
+            FolderRun(key, folderGenerations[key] ?: 0L)
+        }
+        // A search that a regeneration overtook answers with what the regeneration finds.
+        return folderFlights.join(run, Urgency(request.priority)) { search(folder, run, Search(request, mode, it)) }
+            ?: folder(folder, request, Mode.Make)
     }
 
     /**
      * Visits the chosen image and then the items in natural order, sub-folders in place, until one gives a
-     * thumbnail, and stores a copy of it under the folder's [key]. A folder none of them gives one for is recorded
-     * as failed when every attempt was final.
+     * thumbnail, and stores a copy of it under the folder's key. A folder none of them gives one for is recorded
+     * as failed when every attempt was final. `null` when a regeneration started after [run], which then stores
+     * nothing.
      */
-    private suspend fun search(folder: ThumbSubject.Folder, key: ThumbnailKey, search: Search): ThumbResult {
+    private suspend fun search(folder: ThumbSubject.Folder, run: FolderRun, search: Search): ThumbResult? {
         // Another flight for the key may have stored it since [folder] looked.
-        stored(key)?.let { return it }
+        stored(run.key)?.let { return it }
         folder.chosen?.let { visit(it, search) }
         if (!search.done) {
             val entries = listing(search, FolderEntry.Directory(folder.id.value, folder.children))
             if (entries != null) walk(entries, depth = 0, search)
         }
-        search.found?.let { return ThumbResult.Ready(store.put(key, it), key) }
-        if (search.unavailable) return ThumbResult.Unavailable
-        store.markFailed(key)
-        return ThumbResult.Failed
+        return folderWrites.withLock {
+            val found = search.found
+            when {
+                (folderGenerations[run.key] ?: 0L) != run.generation -> null
+                found != null -> ThumbResult.Ready(store.put(run.key, found), run.key)
+                search.unavailable -> ThumbResult.Unavailable
+                else -> {
+                    store.markFailed(run.key)
+                    ThumbResult.Failed
+                }
+            }
+        }
     }
 
     private suspend fun walk(entries: List<FolderEntry>, depth: Int, search: Search) {

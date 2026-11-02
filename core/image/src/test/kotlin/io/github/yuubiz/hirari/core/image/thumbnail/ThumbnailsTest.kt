@@ -611,6 +611,54 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun regeneratingAFolderWhileAnOlderSearchRunsSearchesWithTheNewChoice() = runTest {
+        val thumbnails = thumbnails()
+        val oldSearch = CompletableDeferred<Unit>()
+        maker.script = {
+            if (it.id.value == "A") oldSearch.await()
+            image(it)
+        }
+        val first = async { thumbnails.thumbnail(request(folder(item("1"), chosen = book("A")))) }
+        runCurrent()
+        val regenerated = async { thumbnails.regenerate(request(folder(item("1"), chosen = book("B")))) }
+        runCurrent()
+        oldSearch.complete(Unit)
+        runCurrent()
+        assertEquals("B", shows(regenerated.await()))
+        assertEquals("B", shows(first.await()))
+        val hit = async { thumbnails.cached(request(folder(item("1")))) }
+        runCurrent()
+        assertEquals("B", shows(hit.await()))
+    }
+
+    @Test
+    fun anOlderSearchThatEndsFirstLeavesTheFolderToTheRegeneration() = runTest {
+        val thumbnails = thumbnails()
+        val oldSearch = CompletableDeferred<Unit>()
+        val newSearch = CompletableDeferred<Unit>()
+        maker.script = {
+            when (it.id.value) {
+                "A" -> oldSearch.await()
+                "B" -> newSearch.await()
+            }
+            image(it)
+        }
+        val first = async { thumbnails.thumbnail(request(folder(item("1"), chosen = book("A")))) }
+        runCurrent()
+        val regenerated = async { thumbnails.regenerate(request(folder(item("1"), chosen = book("B")))) }
+        runCurrent()
+        oldSearch.complete(Unit)
+        runCurrent()
+        val between = async { thumbnails.cached(request(folder(item("1")))) }
+        runCurrent()
+        assertNull("the older search stored its cover", between.await())
+        newSearch.complete(Unit)
+        runCurrent()
+        assertEquals("B", shows(regenerated.await()))
+        assertEquals("B", shows(first.await()))
+    }
+
+    @Test
     fun observeHoldsTheThumbnailBeforeLookingAndReleasesItWhenCancelled() = runTest {
         val thumbnails = thumbnails()
         val seen = ArrayList<ThumbResult>()
