@@ -143,6 +143,16 @@ class ZoomTest {
     }
 
     @Test
+    fun aResetDuringAPinchStaysUntilTheSpanMovesAgain() {
+        val reset = ZoomState(factor = 3f).after(fitHalf, FingersDown(100f), SpanChanged(120f), SecondFingerTap(0), SecondFingerTap(500))
+        assertEquals(1f, reset.factor)
+        val still = reset.after(fitHalf, SpanChanged(120f), SpanChanged(139f))
+        assertEquals(1f, still.factor)
+        val resumed = still.after(fitHalf, SpanChanged(140f), SpanChanged(280f))
+        assertEquals(2f.pow(1.5f), resumed.factor, 1e-4f)
+    }
+
+    @Test
     fun thePercentIsOverTheScaleMode() {
         assertEquals(150, ZoomState(factor = 1.5f).percent)
         assertEquals(100, ZoomState().percent)

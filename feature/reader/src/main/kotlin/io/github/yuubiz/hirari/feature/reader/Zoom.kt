@@ -117,7 +117,7 @@ data class ZoomState(val factor: Float = 1f, val pinch: Pinch? = null, val lastR
         }
         is ZoomEvent.SecondFingerTap ->
             if (lastResetTapMs != null && event.timeMs - lastResetTapMs <= RESET_TAPS_WINDOW_MS) {
-                copy(factor = 1f, lastResetTapMs = null)
+                copy(factor = 1f, pinch = pinch?.copy(startFactor = 1f, active = false), lastResetTapMs = null)
             } else {
                 copy(lastResetTapMs = event.timeMs)
             }
