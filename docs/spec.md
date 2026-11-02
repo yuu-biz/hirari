@@ -1641,6 +1641,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Kotest、Jazzer、libFuzzer | 試験 | Apache-2.0（libFuzzer は Apache-2.0 WITH LLVM-exception） | 試験時だけ。配布物に入らない |
 | kotest-property 6.2.6 | `:core:model` のプロパティテスト | Apache-2.0。kotest の各モジュールと kotlinx-coroutines（core、test、debug、jdk8）、kotlinx-serialization-core、xmlutil、java-diff-utils、opentest4j、byte-buddy、kotlin-reflect、JetBrains の annotations、rgxgen（Apache-2.0）、kotlin-rgxgen、classgraph（MIT）、JNA（LGPL-2.1-or-later と Apache-2.0 の二重ライセンスのうち Apache-2.0 を選ぶ）を伴う。6.2.6 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | JUnit 4、kotlin-test-junit、AndroidX Test の runner | JVM の単体試験と端末上の試験 | JUnit 4 は EPL-1.0 で、hamcrest-core（BSD-3-Clause）を伴う。kotlin-test-junit と AndroidX Test（runner、monitor、services の storage、tracing、annotation）は Apache-2.0 | 試験時だけ。配布物に入らない |
+| Macrobenchmark（benchmark-macro-junit4、benchmark-traceprocessor）、UiAutomator | `:benchmark` の計測。benchmark-traceprocessor は、トレースを SQL で読む独自の計測（`TurnMetric`）のために直接使う | Apache-2.0。benchmark-traceprocessor は Wire の実行時ライブラリと Okio（どちらも Apache-2.0）を伴う | 計測時だけ。`:benchmark` の APK に入り、アプリの配布物に入らない |
 
 libarchive 3.8.11 のファイルごとのライセンスは次のとおり。`COPYING` と、ビルドする 19 個の `.c` と 22 個の `.h` に含まれるライセンスの表示を、ファイルの途中にあるものも含めて読んで確かめた。
 
