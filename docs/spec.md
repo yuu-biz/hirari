@@ -390,6 +390,8 @@ interface ByteSource : Closeable {
 ```
 
 - `read` は中断関数（`suspend`）にしない。libarchive が JNI のコールバックの中から、書庫のセッションのスレッドで呼ぶためである。取り消しはセッションの取り消しフラグで伝える（8.3 節）。SMB の同時に読む数の上限は、SMB の実装の中で守る。
+- SAF の文書は `ContentResolver.openFileDescriptor` で開く。`ParcelFileDescriptor.getStatSize` が負（パイプかソケット）ならシークできないとみなし、`cacheDir/copy/` に複製する。複製は開いた直後にファイル名を消すので、`ByteSource` を閉じると消える。複製で空き容量が 64 MB を切るときは、そこで止めて開かない (要検証。残す量)。
+- フォルダの一覧は、`DocumentsContract.buildChildDocumentsUriUsingTree` への 1 回のクエリで、文書 ID、表示名、MIME タイプ、大きさを得る。ファイルごとの Binder 呼び出しはしない。
 
 ### 3.2 形式の判定
 
@@ -1530,6 +1532,7 @@ isLowRamDevice なら budget = min(budget, 64 MB)、準備済みのビューは�
 | サムネイルとその索引 | ファイルと、キャッシュ用の Room DB | `cacheDir/thumbs/` | 含めない | 含めない |
 | solid 書庫の展開キャッシュ | ファイル | `cacheDir/extract/` | 含めない | 含めない |
 | SMB の先読み | ファイル | `cacheDir/smb/` | 含めない | 含めない |
+| シークできない文書の複製（3.1 節） | 名前のないファイル | `cacheDir/copy/` | 含めない | 含めない |
 | 共有用の一時ファイル | ファイル | `cacheDir/share/` | 含めない | 含めない |
 | 取り込んだ書体 | ファイル | `filesDir/fonts/` | 含めない | 含めない |
 | 開いている本の記録（6.1 節） | DataStore | `filesDir/datastore/` | 含めない | 含めない |
