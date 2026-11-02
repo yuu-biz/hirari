@@ -89,6 +89,42 @@ data class KeyBindings(val direction: ReadingDirection, val mirrored: Boolean, v
     }
 }
 
+/** What [StoppingKey] lets a key do. */
+enum class KeyGate {
+    /** Autoplay runs, so the key stops it and does nothing else. */
+    StopAutoPlay,
+
+    /** A repeat or the release of the key that stopped autoplay. */
+    Swallow,
+
+    /** The key goes to the bindings. */
+    Pass,
+}
+
+/**
+ * The key that stopped autoplay does nothing else (docs/spec.md section 4.8, 自動再生): its repeats and its release
+ * are swallowed. A new press of it acts, so a release that never came does not leave the key dead. Other keys act
+ * while it is held.
+ */
+class StoppingKey {
+    private var held: Int? = null
+
+    /** A [repeat] comes as another [down] with a repeat count above 0. */
+    fun onKey(code: Int, down: Boolean, repeat: Boolean, autoPlaying: Boolean): KeyGate {
+        if (autoPlaying) {
+            held = code.takeIf { down }
+            return KeyGate.StopAutoPlay
+        }
+        if (code != held) return KeyGate.Pass
+        if (down && !repeat) {
+            held = null
+            return KeyGate.Pass
+        }
+        if (!down) held = null
+        return KeyGate.Swallow
+    }
+}
+
 enum class DismissTarget { AutoPlay, Guide, Panel, Opening, Reader }
 
 /**

@@ -62,6 +62,7 @@ class KeyRelay {
 fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit) {
     val density = LocalDensity.current.density
     val ui = remember { ReaderUi() }
+    val stoppingKey = remember { StoppingKey() }
     val close by rememberUpdatedState(onClose)
     HideSystemBars()
     ScreenOrientationLock(viewModel.orientation)
@@ -79,11 +80,15 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
 
     DisposableEffect(keys, viewModel) {
         keys.handler = handler@{ event ->
-            if (viewModel.state?.autoPlay != null) {
-                viewModel.dispatch(ReaderEvent.AutoPlayStopped)
-                return@handler true
-            }
             val pressed = event.action == KeyEvent.ACTION_DOWN
+            when (stoppingKey.onKey(event.keyCode, pressed, event.repeatCount > 0, viewModel.state?.autoPlay != null)) {
+                KeyGate.StopAutoPlay -> {
+                    viewModel.dispatch(ReaderEvent.AutoPlayStopped)
+                    return@handler true
+                }
+                KeyGate.Swallow -> return@handler true
+                KeyGate.Pass -> Unit
+            }
             val config = viewModel.state?.config ?: ReaderConfig()
             when (val result = config.keys.onKey(event.keyCode, pressed, event.isShiftPressed, ui.sheet)) {
                 KeyResult.NotHandled -> false

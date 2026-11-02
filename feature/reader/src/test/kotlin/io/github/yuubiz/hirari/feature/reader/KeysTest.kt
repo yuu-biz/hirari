@@ -116,4 +116,53 @@ class KeysTest {
         assertEquals(DismissTarget.AutoPlay, dismissTarget(autoPlaying = true, guideShown = false, panelOpen = false, opening = false))
         assertEquals(DismissTarget.AutoPlay, dismissTarget(autoPlaying = true, guideShown = true, panelOpen = true, opening = false))
     }
+
+    /** Keys through [StoppingKey] as the screen feeds it: a key that stops autoplay ends it. */
+    private class Playing(var autoPlaying: Boolean = true) {
+        val key = StoppingKey()
+
+        fun down(code: Int, repeat: Boolean = false) = feed(code, down = true, repeat)
+
+        fun up(code: Int) = feed(code, down = false, repeat = false)
+
+        private fun feed(code: Int, down: Boolean, repeat: Boolean) = key.onKey(code, down, repeat, autoPlaying).also {
+            if (it == KeyGate.StopAutoPlay) autoPlaying = false
+        }
+    }
+
+    @Test
+    fun theKeyThatStopsAutoplayDoesNothingElseUntilItIsReleased() {
+        val playing = Playing()
+        val held = listOf(
+            playing.down(KeyCodes.PAGE_DOWN),
+            playing.down(KeyCodes.PAGE_DOWN, repeat = true),
+            playing.down(KeyCodes.PAGE_DOWN, repeat = true),
+            playing.up(KeyCodes.PAGE_DOWN),
+        )
+        assertEquals(listOf(KeyGate.StopAutoPlay, KeyGate.Swallow, KeyGate.Swallow, KeyGate.Swallow), held)
+        assertEquals(KeyGate.Pass, playing.down(KeyCodes.PAGE_DOWN))
+        assertEquals(KeyGate.Pass, playing.up(KeyCodes.PAGE_DOWN))
+    }
+
+    @Test
+    fun anotherKeyActsWhileTheStoppingKeyIsHeld() {
+        val playing = Playing()
+        playing.down(KeyCodes.VOLUME_DOWN)
+        assertEquals(KeyGate.Pass, playing.down(KeyCodes.PAGE_DOWN))
+        assertEquals(KeyGate.Swallow, playing.down(KeyCodes.VOLUME_DOWN, repeat = true))
+    }
+
+    @Test
+    fun aNewPressOfTheStoppingKeyActsEvenWhenItsReleaseWasLost() {
+        val playing = Playing()
+        playing.down(KeyCodes.PAGE_DOWN)
+        assertEquals(KeyGate.Pass, playing.down(KeyCodes.PAGE_DOWN))
+    }
+
+    @Test
+    fun aReleaseThatStopsAutoplayLeavesTheNextPressAlone() {
+        val playing = Playing()
+        assertEquals(KeyGate.StopAutoPlay, playing.up(KeyCodes.PAGE_DOWN))
+        assertEquals(KeyGate.Pass, playing.down(KeyCodes.PAGE_DOWN))
+    }
 }
