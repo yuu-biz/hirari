@@ -27,7 +27,7 @@ import kotlin.math.min
  * the entries from there ([Extraction]).
  */
 class ArchiveSession private constructor(
-    private val archive: NativeArchive,
+    private val archive: ArchiveHandle,
     private val executor: ExecutorService,
     private val dispatcher: CoroutineDispatcher,
     listing: Listing.Listed,
@@ -187,9 +187,12 @@ class ArchiveSession private constructor(
          * it with itself, or right away when opening fails. A solid archive is extracted into [extractDir], the
          * directory of this book under `cacheDir/extract/` (docs/spec.md section 7), when it is given.
          */
-        suspend fun open(source: ByteSource, extractDir: File? = null): OpenResult {
+        suspend fun open(source: ByteSource, extractDir: File? = null): OpenResult = open(source, extractDir, ::NativeArchive)
+
+        /** [open] with [handle] in place of libarchive, which takes [source] and closes it with itself. */
+        internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle): OpenResult {
             val archive = try {
-                NativeArchive(source)
+                handle(source)
             } catch (e: Throwable) {
                 source.close()
                 if (e is OutOfMemoryError) return OpenResult.Failed(ArchiveFailure.ReadError)
@@ -226,7 +229,7 @@ class ArchiveSession private constructor(
             return buffer.array().copyOf(buffer.position())
         }
 
-        private fun list(archive: NativeArchive): Listing {
+        private fun list(archive: ArchiveHandle): Listing {
             // Telling the format reads ahead past the end of a short file, which is no sign of truncation.
             if (!Status.succeeded(archive.open())) {
                 val failure = archive.failure()
@@ -254,7 +257,7 @@ class ArchiveSession private constructor(
             }
         }
 
-        private fun release(archive: NativeArchive, executor: ExecutorService) {
+        private fun release(archive: ArchiveHandle, executor: ExecutorService) {
             executor.execute(archive::close)
             executor.shutdown()
         }
@@ -282,14 +285,6 @@ class ArchiveSession private constructor(
 
 /** The method an entry gets when it needs the PPMd decoder, which is not built (Q19). */
 internal const val PPMD = "ppmd"
-
-/** What a failed operation of [this] amounts to, from what its callbacks recorded. */
-internal fun NativeArchive.failure(): ArchiveFailure = when {
-    cancelled -> throw CancellationException("archive read cancelled")
-    readFailure != null -> ArchiveFailure.ReadError
-    endReached -> ArchiveFailure.Truncated
-    else -> ArchiveFailure.Corrupt
-}
 
 /** Collects the data of one entry, stopping once it would pass [limit] bytes. */
 internal class EntryBytes(private val limit: Int) : DataSink {

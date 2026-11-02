@@ -32,7 +32,7 @@ import kotlin.math.min
  * whole entry, and two sessions of one book (the reader's and the thumbnail's) can share [dir].
  */
 internal class Extraction(
-    private val archive: NativeArchive,
+    private val archive: ArchiveHandle,
     private val dispatcher: CoroutineDispatcher,
     private val entries: List<ArchiveEntry>,
     private val dir: File,

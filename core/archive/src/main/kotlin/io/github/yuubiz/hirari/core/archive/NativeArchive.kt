@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.core.archive
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.Job
 import java.nio.ByteBuffer
+import kotlin.coroutines.cancellation.CancellationException
 
 /** libarchive's return codes, and the one libarchive_jni.c adds. */
 internal object Status {
@@ -36,78 +37,53 @@ internal fun interface DataSink {
 }
 
 /**
- * One libarchive read handle over [source], which it owns. Not thread-safe: [ArchiveSession] calls it from its
- * one thread only. Each operation starts with [begin], which clears what the callbacks recorded.
+ * A libarchive read handle as [ArchiveSession] drives it, from one thread. Each operation starts with [begin],
+ * and the calls return libarchive's [Status] codes.
  */
-internal class NativeArchive(private val source: ByteSource) : AutoCloseable {
-    private val buffer = ByteBuffer.allocateDirect(BLOCK_SIZE)
-    private var handle = nativeCreate(source.size, buffer)
-
-    private var job: Job? = null
-    private var sink: DataSink? = null
-
+internal interface ArchiveHandle : AutoCloseable {
     /** The header of the last [nextHeader] that succeeded. */
-    var header: Header? = null
-        private set
+    val header: Header?
 
-    /** The source failed to read during this operation. */
-    var readFailure: Exception? = null
-        private set
+    fun begin(job: Job)
 
-    /** libarchive asked for bytes past the end of the source during this operation. */
-    var endReached = false
-        private set
+    fun open(): Int
 
-    /** The operation stopped because its job was cancelled. */
-    var cancelled = false
-        private set
+    fun nextHeader(): Int
 
-    init {
-        if (handle == 0L) {
-            source.close()
-            throw OutOfMemoryError("libarchive session")
-        }
-    }
+    fun readData(sink: DataSink): Int
+
+    /**
+     * What the operation since [begin], which failed, amounts to.
+     *
+     * @throws CancellationException when it stopped because its job was cancelled.
+     */
+    fun failure(): ArchiveFailure
+}
+
+/**
+ * What libarchive's callbacks record during one operation over [source]: whether the source failed, whether
+ * libarchive asked for bytes past its end, and whether the operation's job was cancelled.
+ */
+internal class SourceReads(private val source: ByteSource) {
+    private var job: Job? = null
+    private var readFailure: Exception? = null
+    private var endReached = false
+    private var cancelled = false
 
     fun begin(job: Job) {
-        check(handle != 0L) { "the archive is closed" }
         this.job = job
         readFailure = null
         endReached = false
         cancelled = false
     }
 
-    fun open(): Int = nativeOpen(handle)
-
-    fun nextHeader(): Int {
-        header = null
-        return nativeNextHeader(handle)
-    }
-
-    fun readData(sink: DataSink): Int {
-        this.sink = sink
-        try {
-            return nativeReadData(handle)
-        } finally {
-            this.sink = null
-        }
-    }
-
-    override fun close() {
-        if (handle == 0L) return
-        nativeFree(handle)
-        handle = 0L
-        source.close()
-    }
-
-    private fun stopIfCancelled(): Boolean {
+    fun stopIfCancelled(): Boolean {
         if (job?.isActive == false) cancelled = true
         return cancelled
     }
 
-    // Called from libarchive's read callback. Fills [buffer] from its start.
-    @Suppress("unused")
-    private fun read(position: Long, length: Int): Int {
+    /** libarchive's read callback: fills [buffer] from its start with up to [length] bytes. -1 is an error. */
+    fun read(position: Long, buffer: ByteBuffer, length: Int): Int {
         if (stopIfCancelled()) return -1
         buffer.clear()
         buffer.limit(length)
@@ -124,6 +100,65 @@ internal class NativeArchive(private val source: ByteSource) : AutoCloseable {
         return n
     }
 
+    fun failure(): ArchiveFailure = when {
+        cancelled -> throw CancellationException("archive read cancelled")
+        readFailure != null -> ArchiveFailure.ReadError
+        endReached -> ArchiveFailure.Truncated
+        else -> ArchiveFailure.Corrupt
+    }
+}
+
+/** One libarchive read handle over [source], which it owns. Not thread-safe. */
+internal class NativeArchive(private val source: ByteSource) : ArchiveHandle {
+    private val buffer = ByteBuffer.allocateDirect(BLOCK_SIZE)
+    private var handle = nativeCreate(source.size, buffer)
+    private val reads = SourceReads(source)
+
+    private var sink: DataSink? = null
+
+    override var header: Header? = null
+        private set
+
+    init {
+        if (handle == 0L) {
+            source.close()
+            throw OutOfMemoryError("libarchive session")
+        }
+    }
+
+    override fun begin(job: Job) {
+        check(handle != 0L) { "the archive is closed" }
+        reads.begin(job)
+    }
+
+    override fun open(): Int = nativeOpen(handle)
+
+    override fun nextHeader(): Int {
+        header = null
+        return nativeNextHeader(handle)
+    }
+
+    override fun readData(sink: DataSink): Int {
+        this.sink = sink
+        try {
+            return nativeReadData(handle)
+        } finally {
+            this.sink = null
+        }
+    }
+
+    override fun failure(): ArchiveFailure = reads.failure()
+
+    override fun close() {
+        if (handle == 0L) return
+        nativeFree(handle)
+        handle = 0L
+        source.close()
+    }
+
+    @Suppress("unused")
+    private fun read(position: Long, length: Int): Int = reads.read(position, buffer, length)
+
     @Suppress("unused")
     private fun header(
         name: ByteArray?,
@@ -139,7 +174,7 @@ internal class NativeArchive(private val source: ByteSource) : AutoCloseable {
 
     @Suppress("unused")
     private fun data(block: ByteBuffer, offset: Long): Boolean {
-        if (stopIfCancelled()) return false
+        if (reads.stopIfCancelled()) return false
         return sink!!.write(block, offset)
     }
 
