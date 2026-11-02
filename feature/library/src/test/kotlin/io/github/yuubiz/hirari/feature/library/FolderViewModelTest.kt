@@ -102,9 +102,9 @@ class FolderViewModelTest {
     }
 
     @Test
-    fun `taps open folders, books and images by their place and path`() = runTest {
+    fun `taps open folders, books, images and texts by their place and path`() = runTest {
         fixture.locations.rows.value = listOf(place)
-        fixture.lister.folders["作品"] = listOf(FolderEntry("外伝", "doc:外伝", directory = true, size = null, modified = null), file("1巻.zip"), file("p01.jpg"))
+        fixture.lister.folders["作品"] = listOf(FolderEntry("外伝", "doc:外伝", directory = true, size = null, modified = null), file("1巻.zip"), file("p01.jpg"), file("後書き.txt"))
         val list = viewModel(documentId = null)
         list.setFilter("1")
         val rows = list.shown().rows
@@ -119,6 +119,10 @@ class FolderViewModelTest {
         assertEquals(
             FileTarget.Book(OpenBookRequest(BookAddress.InLocation(place.id, "作品", folder = true, "doc:作品"), StartAt.Image("p01.jpg"))),
             list.open(all[2]),
+        )
+        assertEquals(
+            FileTarget.Text(TextAddress.Document(UriString("content://tree/manga/document/doc:作品/後書き.txt"))),
+            list.open(all.first { it.item is FileItem.Text }),
         )
     }
 

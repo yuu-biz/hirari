@@ -9,7 +9,10 @@ import io.github.yuubiz.hirari.core.model.normalizePath
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
+import android.net.Uri
 import io.github.yuubiz.hirari.feature.library.FolderKey
+import io.github.yuubiz.hirari.feature.library.TextAddress
+import io.github.yuubiz.hirari.feature.text.TextBookRef
 import io.github.yuubiz.hirari.feature.library.childToward
 import kotlinx.serialization.Serializable
 
@@ -99,4 +102,20 @@ internal fun OpenBookRequest.toReaderRoute(): ReaderRoute {
         is StartAt.Page -> route.copy(startPage = start.index)
         is StartAt.Image -> route.copy(startImage = start.name)
     }
+}
+
+/** The text reader's arguments (docs/spec.md section 4.9), flattened like [ReaderRoute]. */
+@Serializable
+internal data class TextRoute(val kind: Kind, val uri: String, val entryIndex: Int = -1) {
+    enum class Kind { Document, ArchiveEntry }
+
+    fun toRef(): TextBookRef = when (kind) {
+        Kind.Document -> TextBookRef.Document(Uri.parse(uri))
+        Kind.ArchiveEntry -> TextBookRef.ArchiveEntry(Uri.parse(uri), entryIndex)
+    }
+}
+
+internal fun TextAddress.toRoute(): TextRoute = when (this) {
+    is TextAddress.Document -> TextRoute(TextRoute.Kind.Document, uri.value)
+    is TextAddress.ArchiveEntry -> TextRoute(TextRoute.Kind.ArchiveEntry, archive.value, entryIndex)
 }

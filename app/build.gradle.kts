@@ -34,6 +34,7 @@ dependencies {
     implementation(project(":feature:library"))
     implementation(project(":feature:reader"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:text"))
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

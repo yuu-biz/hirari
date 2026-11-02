@@ -58,6 +58,7 @@ import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
 /** What the file list asks of the app. [openAncestor] goes up to the folder at that path of the same place. */
 class FolderActions(
     val openBook: (OpenBookRequest) -> Unit,
+    val openText: (TextAddress) -> Unit,
     val openFolder: (FolderKey) -> Unit,
     val openAncestor: (String) -> Unit,
     val close: () -> Unit,
@@ -85,6 +86,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                 actions.openFolder(target.key)
             }
             is FileTarget.Book -> actions.openBook(target.request)
+            is FileTarget.Text -> actions.openText(target.address)
             null -> Unit
         }
     }

@@ -11,9 +11,11 @@ import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.feature.library.LibraryServices
+import io.github.yuubiz.hirari.feature.library.SafDocumentUris
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
+import io.github.yuubiz.hirari.feature.text.TextReaderServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +35,10 @@ class HirariApp : Application() {
         private set
 
     lateinit var library: Deferred<LibraryServices>
+        private set
+
+    /** Shares the image reader's [ProgressWriter], so both write positions the same way. */
+    lateinit var text: Deferred<TextReaderServices>
         private set
 
     /** The last start of this process; it outlives an activity recreated before the start finished. */
@@ -58,8 +64,10 @@ class HirariApp : Application() {
                 grants = SafTreeGrants(contentResolver),
                 folders = SafFolderLister(contentResolver),
                 launch = storage.launch,
+                documents = SafDocumentUris,
             )
         }
+        text = appScope.async { services.await().let { TextReaderServices(it.storage, it.progress, appScope) } }
     }
 
     private fun isAppClass(name: String): Boolean =

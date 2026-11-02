@@ -11,6 +11,7 @@ import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.ThumbSize
+import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
@@ -61,6 +62,16 @@ sealed interface FileTarget {
     data class Folder(val key: FolderKey) : FileTarget
 
     data class Book(val request: OpenBookRequest) : FileTarget
+
+    data class Text(val address: TextAddress) : FileTarget
+}
+
+/** A text the text reader opens (docs/spec.md section 4.9): a document, or a text entry of an archive document. */
+sealed interface TextAddress {
+    data class Document(val uri: UriString) : TextAddress
+
+    /** The entry at [entryIndex], in the archive's stored order. */
+    data class ArchiveEntry(val archive: UriString, val entryIndex: Int) : TextAddress
 }
 
 private sealed interface ListingState {
@@ -179,7 +190,7 @@ class FolderViewModel(
 
     /**
      * What tapping [row] opens (docs/spec.md section 4.3). An image file opens its folder as one book at that
-     * image. A text file waits for the text reader of M5. Moving to another folder clears the filter.
+     * image. A text file opens in the text reader. Moving to another folder clears the filter.
      */
     fun open(row: FileRow, start: StartAt = StartAt.Saved): FileTarget? = when (val item = row.item) {
         is FileItem.Folder -> {
@@ -190,7 +201,9 @@ class FolderViewModel(
         is FileItem.Image -> FileTarget.Book(
             OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),
         )
-        is FileItem.Text -> null.also { notice.value = Notice.TextNotReady }
+        is FileItem.Text -> place.value?.let { place ->
+            FileTarget.Text(TextAddress.Document(services.getCompleted().documents.of(place.treeUri, item.entry.documentId)))
+        }
     }
 
     /** 既読にする and 未読にする of the long-press sheet (docs/spec.md sections 2.7 and 4.3). */

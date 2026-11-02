@@ -46,6 +46,10 @@ import io.github.yuubiz.hirari.feature.reader.ReaderPhase
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.LicenseScreen
+import io.github.yuubiz.hirari.feature.text.TextKeyRelay
+import io.github.yuubiz.hirari.feature.text.TextReaderScreen
+import io.github.yuubiz.hirari.feature.text.TextReaderUiState
+import io.github.yuubiz.hirari.feature.text.TextReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.SettingsScreen
 import io.github.yuubiz.hirari.feature.library.planStart
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +63,7 @@ private val DOCUMENT_TYPES = arrayOf("application/zip", "application/x-cbz", "ap
 
 class MainActivity : ComponentActivity() {
     private val keys = KeyRelay()
+    private val textKeys = TextKeyRelay()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -118,6 +123,7 @@ class MainActivity : ComponentActivity() {
                                 folder,
                                 FolderActions(
                                     openBook = { nav.navigate(it.toReaderRoute()) },
+                                    openText = { nav.navigate(it.toRoute()) },
                                     openFolder = { nav.navigate(it.toRoute()) },
                                     openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null), from = key.path) },
                                     close = { nav.popBackStack() },
@@ -143,6 +149,19 @@ class MainActivity : ComponentActivity() {
                             ReaderScreen(reader, keys, onClose = { if (!nav.popBackStack()) finish() })
                         }
                     }
+                    composable<TextRoute> { entry ->
+                        Kept(app) {
+                            val ref = entry.toRoute<TextRoute>().toRef()
+                            val reader = viewModel(key = ref.toString()) { TextReaderViewModel(application, app.text, ref) }
+                            ReportSettled(nav, entry, app) { reader.state.first { it !is TextReaderUiState.Opening } }
+                            TextReaderScreen(
+                                reader,
+                                textKeys,
+                                onBack = { if (!nav.popBackStack()) finish() },
+                                onOpenSettings = { nav.navigate(SettingsRoute) },
+                            )
+                        }
+                    }
                     prototypeRoutes()
                 }
                 StartUp(nav, app, app.start)
@@ -155,7 +174,7 @@ class MainActivity : ComponentActivity() {
      * this public `Activity` method as restricted.
      */
     @SuppressLint("RestrictedApi")
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean = keys.dispatch(event) || super.dispatchKeyEvent(event)
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = keys.dispatch(event) || textKeys.dispatch(event) || super.dispatchKeyEvent(event)
 
     /** docs/spec.md section 2.7: the position is always written out on `onStop`. */
     override fun onStop() {

@@ -252,5 +252,5 @@ internal class Fixture {
     val grants = FakeGrants()
     val lister = FakeLister()
     val launch = FakeLaunch()
-    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, launch, clock = { T0 })
+    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, launch, { tree, id -> UriString("${tree.value}/document/$id") }, clock = { T0 })
 }
