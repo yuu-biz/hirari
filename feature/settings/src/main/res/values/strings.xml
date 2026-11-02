@@ -21,6 +21,14 @@
     <string name="settings_clear_extraction">展開キャッシュを消す</string>
     <string name="settings_clear_extraction_summary">RAR や 7z などの書庫を読むために一時的に展開したファイルを消します。開いている本は、必要になったときに展開し直します。</string>
     <string name="settings_licenses">ライセンス</string>
+    <string name="settings_about">このアプリについて</string>
+
+    <string name="about_title">このアプリについて</string>
+    <string name="about_version">版</string>
+    <string name="about_build_date">ビルドの日付</string>
+    <string name="about_unknown">不明</string>
+    <string name="about_changes">この版の変更点</string>
+    <string name="about_changes_missing">変更点を読み込めませんでした。</string>
 
     <string name="settings_custom_color">任意の色</string>
     <string name="settings_custom_color_hint">#RRGGBB の形で入力します。</string>

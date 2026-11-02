@@ -28,6 +28,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
+private val NO_ABOUT: suspend () -> AboutInfo = { AboutInfo(null, null, null) }
+
 class SettingsViewModelTest {
     private class FakeSettings(initial: GlobalSettings = GlobalSettings()) : SettingsRepository {
         val stored = MutableStateFlow(initial)
@@ -115,6 +117,7 @@ class SettingsViewModelTest {
                 extractionFailure?.let { throw it }
                 extractionFreed
             },
+            about = NO_ABOUT,
         ),
         io = UnconfinedTestDispatcher(scope.testScheduler),
     ).also { vm -> scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { vm.state.collect {} } }
@@ -136,7 +139,7 @@ class SettingsViewModelTest {
 
             override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = Unit
         }
-        val vm = SettingsViewModel(SettingsServices(broken, transfer, documents, clearThumbnails = {}, clearExtraction = { 0L }),UnconfinedTestDispatcher(testScheduler))
+        val vm = SettingsViewModel(SettingsServices(broken, transfer, documents, clearThumbnails = {}, clearExtraction = { 0L }, about = NO_ABOUT), UnconfinedTestDispatcher(testScheduler))
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertEquals(SettingsLoad.Failed, vm.state.value.load)
     }
@@ -266,7 +269,7 @@ class SettingsViewModelTest {
     @Test
     fun `a second action waits while one is running`() = runTest {
         val vm = SettingsViewModel(
-            SettingsServices(settings, transfer, documents, clearThumbnails = { thumbnailsCleared++ }, clearExtraction = { 0L }),
+            SettingsServices(settings, transfer, documents, clearThumbnails = { thumbnailsCleared++ }, clearExtraction = { 0L }, about = NO_ABOUT),
             StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
@@ -318,7 +321,7 @@ class SettingsViewModelTest {
     fun `clearing the extraction cache shows a working state and ignores a second request`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val vm = SettingsViewModel(
-            SettingsServices(settings, transfer, documents, clearThumbnails = {}, clearExtraction = { gate.await(); 7L }),
+            SettingsServices(settings, transfer, documents, clearThumbnails = {}, clearExtraction = { gate.await(); 7L }, about = NO_ABOUT),
             StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }

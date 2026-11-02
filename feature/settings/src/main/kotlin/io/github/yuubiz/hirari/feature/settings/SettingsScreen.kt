@@ -59,6 +59,7 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
     var openedSetting by rememberSaveable { mutableStateOf<String?>(null) }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var includeReading by rememberSaveable { mutableStateOf(false) }
+    var aboutDialog by rememberSaveable { mutableStateOf(false) }
 
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(JSON_TYPE)) { uri ->
         if (uri != null) viewModel.export(UriString(uri.toString()), includeReading)
@@ -106,6 +107,7 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                         ActionRow(stringResource(R.string.settings_clear_extraction), stringResource(R.string.settings_clear_extraction_summary), viewModel::clearExtraction)
                     }
                     item(key = "licenses") { ActionRow(stringResource(R.string.settings_licenses), null, onOpenLicenses) }
+                    item(key = "about") { ActionRow(stringResource(R.string.settings_about), null) { aboutDialog = true } }
                 }
                 openedSetting?.let { key ->
                     SettingsTable.firstOrNull { it.key == key }?.let { SettingDialog(it, settings, viewModel::change) { openedSetting = null } }
@@ -123,6 +125,16 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                 createDocument.launch(exportFileName(LocalDate.now()))
             },
             onDismiss = { exportDialog = false },
+        )
+    }
+    if (aboutDialog) {
+        AboutDialog(
+            load = services.about,
+            onOpenLicenses = {
+                aboutDialog = false
+                onOpenLicenses()
+            },
+            onDismiss = { aboutDialog = false },
         )
     }
     when (val action = ui.action) {

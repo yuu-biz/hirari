@@ -2,7 +2,9 @@ package io.github.yuubiz.hirari.feature.settings
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import io.github.yuubiz.hirari.core.archive.ExtractionCache
 import io.github.yuubiz.hirari.core.data.ImportPreparation
 import io.github.yuubiz.hirari.core.data.SettingsTransfer
@@ -23,7 +25,33 @@ fun settingsServices(storage: Storage, context: Context): SettingsServices {
         documents = ContentResolverDocuments(application.contentResolver),
         clearThumbnails = storage.thumbnails::clear,
         clearExtraction = { ExtractionCache.under(application.cacheDir).clear() },
+        about = { BundledAbout(application).load() },
     )
+}
+
+/** Reads the version from the package and the build date and the changes from the assets. */
+internal class BundledAbout(private val context: Context, private val io: CoroutineDispatcher = Dispatchers.IO) {
+    suspend fun load(): AboutInfo = withContext(io) {
+        AboutInfo.parse(versionName(), asset(AboutInfo.BUILD_INFO_ASSET), asset(AboutInfo.CHANGES_ASSET))
+    }
+
+    private fun versionName(): String? = try {
+        val packages = context.packageManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packages.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packages.getPackageInfo(context.packageName, 0)
+        }.versionName
+    } catch (_: PackageManager.NameNotFoundException) {
+        null
+    }
+
+    private fun asset(name: String): String? = try {
+        context.assets.open(name).bufferedReader(Charsets.UTF_8).use { it.readText() }
+    } catch (_: IOException) {
+        null
+    }
 }
 
 internal class StorageTransfer(private val transfer: SettingsTransfer) : SettingsFileTransfer {

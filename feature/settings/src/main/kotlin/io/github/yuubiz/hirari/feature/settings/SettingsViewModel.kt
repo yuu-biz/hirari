@@ -58,6 +58,9 @@ class SettingsServices(
 
     /** Deletes the extraction cache (docs/spec.md section 3.3) and returns the bytes freed. */
     val clearExtraction: suspend () -> Long,
+
+    /** The version, build date and changes that このアプリについて shows. Runs its I/O off the main thread. */
+    val about: suspend () -> AboutInfo,
 )
 
 sealed interface SettingsLoad {
