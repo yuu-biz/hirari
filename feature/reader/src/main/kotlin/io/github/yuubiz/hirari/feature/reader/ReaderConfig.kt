@@ -29,9 +29,10 @@ data class ReaderConfig(
     val swipeToTurn: Boolean = true,
     val volumeKeys: VolumeKeys = VolumeKeys.DownAdvances,
     val barHeightDp: Float = 60f,
-    /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
-    val gutterPx: Float = 2f,
+    val gutter: Gutter = Gutter.Gap,
 ) {
+    /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
+    val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
     val direction: ReadingDirection get() = layout.direction
     val mirrored: Boolean get() = tapZones.mirrored
     val keys: KeyBindings get() = KeyBindings(direction, mirrored, volumeKeys)
@@ -51,6 +52,9 @@ data class ReaderConfig(
         )
     }
 }
+
+/** 綴じ目の表示 (docs/spec.md section 4.8, 見開き). [Shadow] darkens the bound edge of each page of a pair. */
+enum class Gutter { None, Gap, Shadow }
 
 /** The reader's drawing area in pixels, and the pixels per dp. */
 data class Viewport(val width: Float, val height: Float, val density: Float) {

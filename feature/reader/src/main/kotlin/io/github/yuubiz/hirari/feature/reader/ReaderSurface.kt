@@ -29,6 +29,7 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
@@ -177,6 +178,23 @@ private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, 
             null -> Unit
         }
     }
+    if (state.config.gutter == Gutter.Shadow && layer.view is PageView.Two) {
+        val (leftPage, rightPage) = geometry.pages.sortedBy { it.left }
+        val dx = layer.shift - layer.position.x
+        val dy = -layer.position.y
+        drawSeamShadow(leftPage.right + dx, leftPage.right + dx - leftPage.width * SHADOW_SHARE, leftPage.top + dy, leftPage.height, layer.alpha)
+        drawSeamShadow(rightPage.left + dx, rightPage.left + dx + rightPage.width * SHADOW_SHARE, rightPage.top + dy, rightPage.height, layer.alpha)
+    }
+}
+
+/** The share of a page's width that the shadow of 綴じ目の表示 covers (docs/spec.md section 4.8, 見開き). */
+private const val SHADOW_SHARE = 0.05f
+private val SeamShadow = Color(0x59000000)
+
+/** A shadow darkest at [seamX] that fades out toward [fadeX]. */
+private fun DrawScope.drawSeamShadow(seamX: Float, fadeX: Float, top: Float, height: Float, alpha: Float) {
+    val brush = Brush.horizontalGradient(listOf(SeamShadow, Color.Transparent), startX = seamX, endX = fadeX)
+    drawRect(brush, Offset(minOf(seamX, fadeX), top), androidx.compose.ui.geometry.Size(kotlin.math.abs(fadeX - seamX), height), alpha)
 }
 
 private fun DrawScope.drawPage(bitmap: Bitmap, left: Float, top: Float, rect: Rect, alpha: Float) {
@@ -317,5 +335,5 @@ internal fun ReaderState.commandPanel(): CommandPanel {
     val columns = if (viewport.orientation == ScreenOrientation.Portrait) 4 else 8
     val rows = 1 + ReaderCommand.MAX_ITEMS / columns
     val top = config.barHeightDp
-    return CommandPanel(ReaderCommand.Defaults, viewport.orientation, Rect(0f, top, width, top + rows * PANEL_ROW_DP))
+    return CommandPanel(ReaderCommand.Available, viewport.orientation, Rect(0f, top, width, top + rows * PANEL_ROW_DP))
 }

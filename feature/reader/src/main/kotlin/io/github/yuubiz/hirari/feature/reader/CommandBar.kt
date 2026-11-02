@@ -2,7 +2,9 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rect
+import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScreenOrientation
+import io.github.yuubiz.hirari.core.model.StopOrder
 import kotlin.math.hypot
 
 /** The commands the command bar can hold (docs/spec.md section 4.8, コマンドバー). */
@@ -34,8 +36,48 @@ enum class ReaderCommand {
         /** The default `commandBarItems`. */
         val Defaults = listOf(Orientation, Trim, Layout, ScaleMode)
         const val MAX_ITEMS = 8
+
+        /**
+         * The commands that do something in this milestone. Until the settings screen can choose the items, the
+         * panel shows these instead of [Defaults] (docs/spec.md section 4.8, コマンドバー).
+         */
+        val Available: List<ReaderCommand> = entries.filter { ReaderConfig().effectOf(it) != CommandEffect.NotYet }.take(MAX_ITEMS)
     }
 }
+
+/** What running a command does. */
+sealed interface CommandEffect {
+    data class Configure(val config: ReaderConfig) : CommandEffect
+
+    /** 組ずらし: the pairing one page later. */
+    data object ShiftForward : CommandEffect
+
+    /** 画面の向き: the device's, then portrait, then landscape. */
+    data object NextOrientation : CommandEffect
+
+    /** A command of a later milestone. */
+    data object NotYet : CommandEffect
+}
+
+/** The effect of [command] on a reader set up as this (docs/spec.md section 4.8, コマンドバー). */
+fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command) {
+    ReaderCommand.Layout -> CommandEffect.Configure(copy(layout = layout.copy(mode = layout.mode.next())))
+    ReaderCommand.ScaleMode -> CommandEffect.Configure(copy(scaleMode = scaleMode.next()))
+    ReaderCommand.Direction -> CommandEffect.Configure(
+        copy(layout = layout.copy(direction = if (direction == ReadingDirection.RightToLeft) ReadingDirection.LeftToRight else ReadingDirection.RightToLeft)),
+    )
+    ReaderCommand.MirrorControls -> CommandEffect.Configure(copy(tapZones = tapZones.copy(mirrored = !mirrored)))
+    ReaderCommand.StopOrder -> CommandEffect.Configure(copy(stopOrder = if (stopOrder == StopOrder.RowsFirst) StopOrder.ColumnsFirst else StopOrder.RowsFirst))
+    ReaderCommand.Gutter -> CommandEffect.Configure(copy(gutter = gutter.next()))
+    ReaderCommand.ShiftPairing -> CommandEffect.ShiftForward
+    ReaderCommand.Orientation -> CommandEffect.NextOrientation
+    ReaderCommand.Trim, ReaderCommand.Rotate, ReaderCommand.AddBookmark, ReaderCommand.Bookmarks, ReaderCommand.AutoPlay,
+    ReaderCommand.ReverseOrder, ReaderCommand.ImageAdjust, ReaderCommand.EditCommandBar, ReaderCommand.Breath,
+    ReaderCommand.BookSettings, ReaderCommand.SetCover, ReaderCommand.SharePage, ReaderCommand.Settings,
+    -> CommandEffect.NotYet
+}
+
+private inline fun <reified E : Enum<E>> E.next(): E = enumValues<E>().let { it[(ordinal + 1) % it.size] }
 
 sealed interface PanelItem {
     /** Closes the reader. */

@@ -22,14 +22,10 @@ import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.BookId
-import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
-import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ReadingPosition
-import io.github.yuubiz.hirari.core.model.ScaleMode
-import io.github.yuubiz.hirari.core.model.StopOrder
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.documentBookId
 import io.github.yuubiz.hirari.core.model.folderBookId
@@ -174,29 +170,15 @@ class ReaderViewModel(
         opened?.prefetcher?.retry(page)
     }
 
-    /** Runs a command of the command bar, or returns false for one M1 does not have. */
+    /** Runs a command of the command bar, or returns false for one of a later milestone. */
     fun command(command: ReaderCommand, nowMs: Long): Boolean {
         val current = state ?: return false
-        val config = current.config
-        val next = when (command) {
-            ReaderCommand.Layout -> config.copy(layout = config.layout.copy(mode = config.layout.mode.next()))
-            ReaderCommand.ScaleMode -> config.copy(scaleMode = config.scaleMode.next())
-            ReaderCommand.Direction -> config.copy(
-                layout = config.layout.copy(
-                    direction = if (config.direction == ReadingDirection.RightToLeft) ReadingDirection.LeftToRight else ReadingDirection.RightToLeft,
-                ),
-            )
-            ReaderCommand.MirrorControls -> config.copy(tapZones = config.tapZones.copy(mirrored = !config.mirrored))
-            ReaderCommand.StopOrder -> config.copy(
-                stopOrder = if (config.stopOrder == StopOrder.RowsFirst) StopOrder.ColumnsFirst else StopOrder.RowsFirst,
-            )
-            ReaderCommand.ShiftPairing -> {
-                act(ReaderAction.Shift(forward = true), nowMs)
-                return true
-            }
-            else -> return false
+        when (val effect = current.config.effectOf(command)) {
+            is CommandEffect.Configure -> dispatch(ReaderEvent.ConfigChanged(effect.config))
+            CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
+            CommandEffect.NextOrientation -> nextOrientation()
+            CommandEffect.NotYet -> return false
         }
-        dispatch(ReaderEvent.ConfigChanged(next))
         return true
     }
 
@@ -309,7 +291,3 @@ private fun Exception.openFailure(): BookFailure = when (this) {
     is NoRoomForCopyException -> BookFailure.NoRoomForCopy
     else -> BookFailure.ReadError
 }
-
-private fun LayoutMode.next(): LayoutMode = LayoutMode.entries[(ordinal + 1) % LayoutMode.entries.size]
-
-private fun ScaleMode.next(): ScaleMode = ScaleMode.entries[(ordinal + 1) % ScaleMode.entries.size]

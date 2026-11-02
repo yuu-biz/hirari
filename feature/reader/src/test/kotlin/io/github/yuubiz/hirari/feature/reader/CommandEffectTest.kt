@@ -1,0 +1,82 @@
+package io.github.yuubiz.hirari.feature.reader
+
+import io.github.yuubiz.hirari.core.model.LayoutMode
+import io.github.yuubiz.hirari.core.model.PageView
+import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.ScaleMode
+import io.github.yuubiz.hirari.core.model.StopOrder
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+
+private fun ReaderConfig.configured(command: ReaderCommand): ReaderConfig = assertIs<CommandEffect.Configure>(effectOf(command)).config
+
+class CommandEffectTest {
+    private val config = ReaderConfig()
+
+    @Test
+    fun theM1PanelHoldsTheEightCommandsTheReaderHas() {
+        assertEquals(
+            listOf(
+                ReaderCommand.Layout,
+                ReaderCommand.ShiftPairing,
+                ReaderCommand.ScaleMode,
+                ReaderCommand.Direction,
+                ReaderCommand.Orientation,
+                ReaderCommand.MirrorControls,
+                ReaderCommand.StopOrder,
+                ReaderCommand.Gutter,
+            ),
+            ReaderCommand.Available,
+        )
+    }
+
+    @Test
+    fun theDefaultItemsStayTheFourOfTheSpec() {
+        assertEquals(listOf(ReaderCommand.Orientation, ReaderCommand.Trim, ReaderCommand.Layout, ReaderCommand.ScaleMode), ReaderCommand.Defaults)
+    }
+
+    @Test
+    fun commandsOfLaterMilestonesSayTheyAreNotYetThere() {
+        for (command in listOf(ReaderCommand.Trim, ReaderCommand.Rotate, ReaderCommand.AutoPlay, ReaderCommand.Breath, ReaderCommand.SharePage)) {
+            assertEquals(CommandEffect.NotYet, config.effectOf(command), "$command")
+        }
+    }
+
+    @Test
+    fun layoutAndScaleModeStepThroughTheirChoices() {
+        val layouts = generateSequence(config) { it.configured(ReaderCommand.Layout) }.take(LayoutMode.entries.size + 1).map { it.layout.mode }.toList()
+        assertEquals(LayoutMode.entries.toSet(), layouts.toSet())
+        assertEquals(layouts.first(), layouts.last())
+        val modes = generateSequence(config) { it.configured(ReaderCommand.ScaleMode) }.take(ScaleMode.entries.size + 1).map { it.scaleMode }.toList()
+        assertEquals(ScaleMode.entries.toSet(), modes.toSet())
+        assertEquals(modes.first(), modes.last())
+    }
+
+    @Test
+    fun directionMirrorAndStopOrderFlip() {
+        assertEquals(ReadingDirection.LeftToRight, config.configured(ReaderCommand.Direction).direction)
+        assertEquals(true, config.configured(ReaderCommand.MirrorControls).mirrored)
+        assertEquals(StopOrder.ColumnsFirst, config.configured(ReaderCommand.StopOrder).stopOrder)
+    }
+
+    @Test
+    fun theGutterGoesFromGapToShadowToNoneAndBack() {
+        val shadow = config.configured(ReaderCommand.Gutter)
+        val none = shadow.configured(ReaderCommand.Gutter)
+        assertEquals(listOf(Gutter.Gap, Gutter.Shadow, Gutter.None, Gutter.Gap), listOf(config.gutter, shadow.gutter, none.gutter, none.configured(ReaderCommand.Gutter).gutter))
+        assertEquals(listOf(2f, 0f, 0f), listOf(config.gutterPx, shadow.gutterPx, none.gutterPx))
+    }
+
+    @Test
+    fun noGapPutsThePairEdgeToEdge() {
+        val gap = readerOf(List(2) { TALL })
+        val none = gap.reduce(ReaderEvent.ConfigChanged(gap.config.copy(gutter = Gutter.None)))
+        assertEquals(PageView.Two(0, 1), none.current)
+        val (left, right) = none.geometry()!!.pages.sortedBy { it.left }
+        assertEquals(left.right, right.left, 0.01f)
+        val (gapLeft, gapRight) = gap.geometry()!!.pages.sortedBy { it.left }
+        assertNotEquals(gapLeft.right, gapRight.left)
+    }
+}

@@ -92,10 +92,7 @@ internal class ReaderInput(
         when (item) {
             PanelItem.Close -> onClose()
             PanelItem.Menu -> ui.message = R.string.reader_not_yet
-            is PanelItem.Command -> when {
-                item.command == ReaderCommand.Orientation -> viewModel.nextOrientation()
-                !viewModel.command(item.command, now) -> ui.message = R.string.reader_not_yet
-            }
+            is PanelItem.Command -> if (!viewModel.command(item.command, now)) ui.message = R.string.reader_not_yet
         }
     }
 
