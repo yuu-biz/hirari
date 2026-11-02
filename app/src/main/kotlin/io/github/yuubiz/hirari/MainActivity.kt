@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.core.net.toUri
@@ -32,7 +33,9 @@ import io.github.yuubiz.hirari.feature.reader.KeyRelay
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.LicenseScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val HOME = "home"
 private const val LICENSES = "licenses"
@@ -56,18 +59,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             HirariTheme {
                 val nav = rememberNavController()
-                val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                    if (uri != null) {
-                        keepPermission(uri)
-                        nav.navigate(readerRoute(folder = false, uri))
+                val scope = rememberCoroutineScope()
+                fun open(uri: Uri?, folder: Boolean) {
+                    if (uri == null) return
+                    scope.launch {
+                        withContext(Dispatchers.IO) { keepPermission(uri) }
+                        nav.navigate(readerRoute(folder, uri))
                     }
                 }
-                val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-                    if (uri != null) {
-                        keepPermission(uri)
-                        nav.navigate(readerRoute(folder = true, uri))
-                    }
-                }
+                val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, folder = false) }
+                val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { open(it, folder = true) }
                 NavHost(nav, startDestination = prototypeStartRoute(intent) ?: debugBookRoute(intent) ?: HOME) {
                     composable(HOME) {
                         HomeScreen(
@@ -103,7 +104,10 @@ class MainActivity : ComponentActivity() {
         app.appScope.launch { app.services.await().progress.flush() }
     }
 
-    /** A picked book opens again after a restart, so keep its grant (docs/spec.md section 3.1). */
+    /**
+     * A picked book opens again after a restart, so keep its grant (docs/spec.md section 3.1). It is a Binder call
+     * to the system, so it runs off the main thread (section 6.4).
+     */
     private fun keepPermission(uri: Uri) {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
