@@ -13,6 +13,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 class CredentialStoreTest {
@@ -67,6 +68,22 @@ class CredentialStoreTest {
         assertEquals(StoredSecret.Unreadable, store.read(first))
 
         assertEquals(StoredSecret.Unreadable, EncryptedCredentialStore(dao, softwareCipher()).read(second))
+    }
+
+    @Test
+    fun `adding a server leaves no password in the main database file`() = runTest {
+        val password = "hirari-test-password-9d2e"
+        val main = Room.databaseBuilder<HirariDatabase>(context, MAIN_DATABASE).configure()
+        RoomLocationRepository(main, store).addSmbShare(SmbServer(displayName = "NAS", host = "nas", share = "s", user = "u"), password.toCharArray())
+        main.close()
+        val bytes = context.getDatabasePath(MAIN_DATABASE).parentFile!!.listFiles()!!
+            .filter { it.name.startsWith(MAIN_DATABASE) }
+            .flatMap { it.readBytes().toList() }
+            .toByteArray()
+        assertTrue(bytes.contains("nas".toByteArray()), "the server row is in the file")
+        for (encoding in listOf(Charsets.UTF_8, Charsets.UTF_16LE, Charsets.UTF_16BE)) {
+            assertFalse(bytes.contains(password.toByteArray(encoding)), "found the password as $encoding")
+        }
     }
 
     @Test
