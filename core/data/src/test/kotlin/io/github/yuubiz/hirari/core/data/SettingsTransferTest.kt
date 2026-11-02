@@ -48,13 +48,17 @@ class SettingsTransferTest {
         val job = Job()
         val database = inMemoryDatabase()
         val credentials = inMemoryCredentialDatabase()
+        val thumbs = inMemoryThumbnailIndex()
         val file = File(folder.newFolder(), "settings.json")
         try {
-            return block(Storage(database, credentials, softwareCipher(), openSettings(CoroutineScope(Dispatchers.IO + job)) { file }))
+            val settings = openSettings(CoroutineScope(Dispatchers.IO + job)) { file }
+            val thumbnails = DiskThumbnailCache(folder.newFolder(), thumbs.thumbs())
+            return block(Storage(database, credentials, softwareCipher(), settings, thumbnails))
         } finally {
             job.cancelAndJoin()
             database.close()
             credentials.close()
+            thumbs.close()
         }
     }
 

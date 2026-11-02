@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import java.io.File
 
 /** The app's persistent data (docs/spec.md section 7). Create one instance per process, off the main thread. */
 class Storage internal constructor(
@@ -9,12 +10,15 @@ class Storage internal constructor(
     credentialDatabase: CredentialDatabase,
     cipher: SecretCipher,
     settingsStore: DataStore<GlobalSettings>,
+    /** The thumbnail disk cache. */
+    val thumbnails: ThumbnailCache,
 ) {
     constructor(context: Context) : this(
         database = openDatabase(context),
         credentialDatabase = openCredentialDatabase(context),
         cipher = SecretCipher(::keystoreKey),
         settingsStore = openSettings(context.applicationContext),
+        thumbnails = DiskThumbnailCache(File(context.cacheDir, "thumbs"), openThumbnailIndex(context).thumbs()),
     )
 
     val progress: ProgressRepository = RoomProgressRepository(database.bookProgress())

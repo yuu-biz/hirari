@@ -19,3 +19,5 @@ internal fun inMemoryCredentialDatabase(): CredentialDatabase = Room.inMemoryDat
 
 internal fun testCredentials(database: CredentialDatabase = inMemoryCredentialDatabase()): CredentialStore =
     EncryptedCredentialStore(database.credentials(), softwareCipher())
+
+internal fun inMemoryThumbnailIndex(): ThumbnailIndexDatabase = Room.inMemoryDatabaseBuilder<ThumbnailIndexDatabase>(context).configure()
