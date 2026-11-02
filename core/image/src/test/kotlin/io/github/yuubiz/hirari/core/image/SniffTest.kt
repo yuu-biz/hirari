@@ -71,4 +71,13 @@ class SniffTest {
         assertFalse(isSixteenBitPng(png))
         assertFalse(isSixteenBitPng(bytes(0xff, 0xd8, 0xff)))
     }
+
+    @Test
+    fun aPdfStartsWithinItsFirst1024Bytes() {
+        assertTrue(isPdf(ascii("%PDF-1.7\n")))
+        assertTrue(isPdf(ByteArray(1019) + ascii("%PDF-")))
+        assertFalse(isPdf(ByteArray(1020) + ascii("%PDF-")))
+        assertFalse(isPdf(ascii("%PDF")))
+        assertFalse(isPdf(ascii("PK\u0003\u0004")))
+    }
 }

@@ -134,6 +134,7 @@ private val BookFailure.message: Int
         BookFailure.NotFound -> R.string.reader_failed_not_found
         BookFailure.NoPermission -> R.string.reader_failed_no_permission
         BookFailure.NoRoomForCopy -> R.string.reader_failed_no_room
+        BookFailure.Encrypted -> R.string.reader_failed_encrypted
         BookFailure.Corrupt -> R.string.reader_failed_corrupt
         BookFailure.Truncated -> R.string.reader_failed_truncated
         BookFailure.ReadError -> R.string.reader_failed_read

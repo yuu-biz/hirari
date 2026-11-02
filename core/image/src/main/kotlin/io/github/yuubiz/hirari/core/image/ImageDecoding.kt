@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.core.image
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.storage.StorageManager
 import io.github.yuubiz.hirari.core.model.PageShape
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -28,10 +29,11 @@ enum class Tiling {
 }
 
 /**
- * What every decode in the process shares: the memory budget of docs/spec.md section 5.3 and the decode
- * dispatcher of section 8.3. Make one per process.
+ * What every decode in the process shares: the memory budget of docs/spec.md section 5.3, the decode
+ * dispatcher of section 8.3, and [storage], which serves the descriptors PDF documents read through (section
+ * 3.9). Without it, PDF books do not open. Make one per process.
  */
-class ImageDecoding(val budgetBytes: Long, parallelism: Int) {
+class ImageDecoding(val budgetBytes: Long, parallelism: Int, internal val storage: StorageManager? = null) {
     val dispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(parallelism)
 
     companion object {
@@ -42,7 +44,8 @@ class ImageDecoding(val budgetBytes: Long, parallelism: Int) {
             val activityManager = context.getSystemService(ActivityManager::class.java)
             val memory = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
             val budget = MemoryBudget.bytes(activityManager.memoryClass, memory.totalMem, activityManager.isLowRamDevice)
-            return ImageDecoding(budget, MemoryBudget.decodeParallelism(Runtime.getRuntime().availableProcessors(), budget))
+            val parallelism = MemoryBudget.decodeParallelism(Runtime.getRuntime().availableProcessors(), budget)
+            return ImageDecoding(budget, parallelism, context.getSystemService(StorageManager::class.java))
         }
     }
 }

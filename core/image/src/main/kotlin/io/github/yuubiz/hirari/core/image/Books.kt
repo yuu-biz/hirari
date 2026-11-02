@@ -9,6 +9,7 @@ import io.github.yuubiz.hirari.core.archive.EntryNames
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.archive.OpenResult
 import io.github.yuubiz.hirari.core.model.FailureReason
+import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.source.ByteSource
@@ -38,6 +39,9 @@ enum class BookFailure {
 
     /** The provider cannot seek and the copy does not fit (docs/spec.md section 3.1). */
     NoRoomForCopy,
+
+    /** A password protects the whole book, such as a PDF with a user password (docs/spec.md section 3.8). */
+    Encrypted,
     Corrupt,
     Truncated,
     ReadError,
@@ -67,7 +71,7 @@ object Books {
                         ?.let { page.copy(sniffed = it) }
                 }
             }
-            BookResult.Opened(OpenBook(ArchivePages(session), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
+            BookResult.Opened(OpenBook(BookContent.Images(ArchivePages(session)), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
         } catch (_: OutOfMemoryError) {
             session.close()
             BookResult.Failed(BookFailure.ReadError)
@@ -89,16 +93,48 @@ object Books {
                 }
             }
         }
-        return BookResult.Opened(OpenBook(FolderPages(files), sortedPages(pages), indexError = null, decoding))
+        return BookResult.Opened(OpenBook(BookContent.Images(FolderPages(files)), sortedPages(pages), indexError = null, decoding))
     }
 
-    /** Opens the ZIP document at [uri]. A provider that cannot seek gets the document copied into [copyDir]. */
+    /**
+     * Opens the book in [source], which the book owns from here on: a PDF when `%PDF-` starts within its first
+     * 1024 bytes (docs/spec.md section 3.2), and otherwise an archive.
+     */
+    suspend fun openBook(source: ByteSource, decoding: ImageDecoding): BookResult {
+        val prefix = when (val read = safely { readPrefix(source, PDF_SNIFF_BYTES) }) {
+            is Safely.Done -> read.value
+            is Safely.Failed -> {
+                source.close()
+                return BookResult.Failed(read.reason)
+            }
+        }
+        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding)
+    }
+
+    /** Opens the PDF in [source], which the book owns from here on (docs/spec.md section 3.9). */
+    suspend fun openPdf(source: ByteSource, decoding: ImageDecoding): BookResult {
+        val storage = decoding.storage ?: run {
+            source.close()
+            return BookResult.Failed(BookFailure.ReadError)
+        }
+        val document = when (val opened = PdfDocument.open(source, storage)) {
+            is PdfDocument.Opened.Document -> opened.document
+            is PdfDocument.Opened.Failed -> return BookResult.Failed(opened.reason)
+        }
+        val pages = document.shapes.indices.map { i ->
+            val name = "${i + 1}"
+            PageEntry(i, i, name.toByteArray(Charsets.US_ASCII), name, declaredSize = null, sniffed = ImageType.PdfPage)
+        }
+        return BookResult.Opened(OpenBook(BookContent.Pdf(document), pages, indexError = null, decoding))
+    }
+
+    /** Opens the ZIP or PDF document at [uri]. A provider that cannot seek gets the document copied into [copyDir]. */
     suspend fun openDocument(resolver: ContentResolver, uri: Uri, copyDir: File, decoding: ImageDecoding): BookResult {
         val source = when (val opened = safely(release = ByteSource::close) { resolver.openByteSource(uri, copyDir) }) {
             is Safely.Done -> opened.value
             is Safely.Failed -> return BookResult.Failed(opened.reason)
         }
-        return openArchive(source, decoding)
+        return openBook(source, decoding)
     }
 
     /**
@@ -124,13 +160,16 @@ object Books {
     }
 
     private fun sniffPrefix(file: FolderFile) = try {
-        file.open().use { source ->
-            val prefix = ByteBuffer.allocate(SNIFF_BYTES)
-            while (prefix.hasRemaining() && source.read(prefix.position().toLong(), prefix) > 0) Unit
-            sniffImage(prefix.array().copyOf(prefix.position()))
-        }
+        file.open().use { source -> sniffImage(readPrefix(source, SNIFF_BYTES)) }
     } catch (_: Exception) {
         null
+    }
+
+    /** Up to the first [count] bytes of [source]. */
+    private fun readPrefix(source: ByteSource, count: Int): ByteArray {
+        val prefix = ByteBuffer.allocate(minOf(count.toLong(), source.size).toInt())
+        while (prefix.hasRemaining() && source.read(prefix.position().toLong(), prefix) > 0) Unit
+        return prefix.array().copyOf(prefix.position())
     }
 
     internal sealed interface Safely<out T> {
@@ -162,6 +201,7 @@ object Books {
     }
 
     private const val SNIFF_BYTES = 32
+    private const val PDF_SNIFF_BYTES = 1024
 }
 
 /** Why a book did not open, from what the provider or the copy threw. */

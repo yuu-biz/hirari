@@ -298,7 +298,7 @@ class ReaderViewModel(
                 source.close()
                 return BookId("") to BookResult.Failed(e.openFailure())
             }
-            id to Books.openArchive(source, services.decoding)
+            id to Books.openBook(source, services.decoding)
         }
     }
 

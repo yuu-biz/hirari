@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
 import android.graphics.Bitmap
+import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
@@ -59,7 +60,7 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
         val options = alternatives(wanted.drop(1))
         if (actual !in options) problems += "${page.name}: expected ${options.joinToString(" or ")}, got $actual"
         if (result is PageResult.Ready) {
-            sizeProblem(result.image, target)?.let { problems += "${page.name}: $it" }
+            sizeProblem(result.image, target, enlarges = page.sniffed == ImageType.PdfPage)?.let { problems += "${page.name}: $it" }
             val shape = describe(book.shape(page.index))
             if (shape != actual) problems += "${page.name}: shape gave $shape"
             problems += tileProblems(book, page.index, target, result.image).map { "${page.name}: $it" }
@@ -145,11 +146,12 @@ private fun meanColor(bitmap: Bitmap, rect: PixelRect): IntArray {
 private fun alternatives(fields: List<String>): List<List<String>> =
     fields.fold(listOf(emptyList<String>())) { acc, field -> if (field == "|") acc + listOf(emptyList()) else acc.dropLast(1) + listOf(acc.last() + field) }
 
-/** Why the bitmap of [image] is not the size that fits [target], or null when it is. */
-private fun sizeProblem(image: PreparedImage, target: PixelSize): String? {
+/** Why the bitmap of [image] is not the size that fits [target], or null when it is. Only PDF pages [enlarges]. */
+private fun sizeProblem(image: PreparedImage, target: PixelSize, enlarges: Boolean): String? {
     val bitmap = (image as PreparedImage.Whole).bitmap
     val shape = image.shape
-    val scale = minOf(1.0, target.width / shape.width.toDouble(), target.height / shape.height.toDouble())
+    val fit = minOf(target.width / shape.width.toDouble(), target.height / shape.height.toDouble())
+    val scale = if (enlarges) fit else minOf(1.0, fit)
     val width = (shape.width * scale).roundToInt().coerceAtLeast(1)
     val height = (shape.height * scale).roundToInt().coerceAtLeast(1)
     return if (bitmap.width == width && bitmap.height == height) null else "bitmap ${bitmap.width}x${bitmap.height}, expected ${width}x$height"

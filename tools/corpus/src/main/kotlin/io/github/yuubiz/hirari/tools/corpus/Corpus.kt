@@ -225,9 +225,10 @@ const val PAGES_MANIFEST = "pages.tsv"
 /** Every corpus file by its path, with the archive expectations in [MANIFEST] and the page ones in [PAGES_MANIFEST]. */
 fun corpus(): Map<String, ByteArray> {
     val cases = corpusCases()
-    return cases.mapValues { it.value.bytes } +
+    val pdfs = pdfCases()
+    return cases.mapValues { it.value.bytes } + pdfs.mapValues { it.value.bytes } +
         (MANIFEST to manifest(cases).toByteArray(Charsets.UTF_8)) +
-        (PAGES_MANIFEST to pagesManifest(cases).toByteArray(Charsets.UTF_8))
+        (PAGES_MANIFEST to (pagesManifest(cases) + pdfPagesManifest(pdfs)).toByteArray(Charsets.UTF_8))
 }
 
 /** Writes the corpus into the directory given as the only argument. */

@@ -13,6 +13,10 @@ fun sniffImage(bytes: ByteArray): ImageType? = when {
     else -> isoBrandType(bytes)
 }
 
+/** Whether `%PDF-` starts within the first 1024 bytes of [prefix] (docs/spec.md section 3.2). */
+fun isPdf(prefix: ByteArray): Boolean =
+    (0..minOf(prefix.size, 1024) - PDF.size).any { prefix.startsWith(PDF, at = it) }
+
 /** Whether [bytes] is a PNG with 16 bits per sample, which decodes to 8 bytes a pixel. */
 internal fun isSixteenBitPng(bytes: ByteArray): Boolean =
     bytes.startsWith(PNG) && bytes.startsWith(IHDR, at = 12) && bytes.size > 24 && bytes[24].toInt() == 16
@@ -64,6 +68,7 @@ private val BM = "BM".toByteArray(Charsets.US_ASCII)
 private val JXL_CODESTREAM = bytes(0xff, 0x0a)
 private val JXL_CONTAINER = bytes(0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a)
 private val FTYP = "ftyp".toByteArray(Charsets.US_ASCII)
+private val PDF = "%PDF-".toByteArray(Charsets.US_ASCII)
 
 /** The sizes of the BMP info headers: OS/2 1.x, Windows 3.x and its extensions, OS/2 2.x, and Windows 4 and 5. */
 private val BMP_INFO_HEADER_SIZES = setOf(12L, 16L, 40L, 52L, 56L, 64L, 108L, 124L)
