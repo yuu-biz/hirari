@@ -7,19 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       minutes:
-        description: Minutes of device fuzzing (at most 270, to stay inside the six hours a job may take)
+        description: Minutes of device fuzzing (1 to 270, to stay inside the six hours a job may take)
         default: "240"
         type: string
       seed:
-        description: Seed of the input stream. Empty uses the run number, so every run explores new inputs
+        description: Seed of the input stream, a whole number of at most 18 digits. Empty uses the run number, so every run explores new inputs
         default: ""
         type: string
       monkey_events:
-        description: Monkey events over the corpus books, 0 to skip the monkey test
+        description: Monkey events over the corpus books (at most 50000), 0 to skip the monkey test
         default: "10000"
         type: string
       host_minutes:
-        description: Minutes of host libFuzzer for each of archive and jxl, 0 to skip
+        description: Minutes of host libFuzzer for each of archive and jxl (at most 30), 0 to skip
         default: "10"
         type: string
 
@@ -37,14 +37,18 @@ jobs:
       MONKEY_EVENTS: ${{ inputs.monkey_events }}
       HOST_MINUTES: ${{ inputs.host_minutes }}
     steps:
-      - name: Check the inputs
-        run: |
-          for value in "$FUZZ_MINUTES" "$FUZZ_SEED" "$MONKEY_EVENTS" "$HOST_MINUTES"; do
-            [[ "$value" =~ ^[0-9]+$ ]] || { echo "not a whole number: '$value'"; exit 1; }
-          done
-          [ "$FUZZ_MINUTES" -le 270 ] || { echo "minutes is at most 270"; exit 1; }
       # Actions pinned to full commit SHAs (tag noted for readability), as in ci.yml. No secrets are used.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The inputs are text that whoever may start the workflow chooses. Every later step needs this one to succeed, and
+      # the steps that put an input into arithmetic or an argument check it again first (tools/fuzz/inputs.sh).
+      - name: Check the inputs
+        id: inputs
+        run: |
+          source tools/fuzz/inputs.sh
+          fuzz_number FUZZ_MINUTES 1 270 >/dev/null
+          fuzz_number FUZZ_SEED 0 999999999999999999 >/dev/null
+          fuzz_number MONKEY_EVENTS 0 50000 >/dev/null
+          fuzz_number HOST_MINUTES 0 30 >/dev/null
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -64,6 +68,7 @@ jobs:
             unzip -o previous.zip -d tools/fuzz/build
           fi
       - name: Build the APKs and the corpus
+        id: build
         run: ./gradlew :core:image:assembleDebugAndroidTest :app:assembleDebug :tools:corpus:generateCorpus -Pandroid.injected.build.abi=x86_64
       # The emulator needs KVM, which the runner allows to every user only after this rule.
       - name: Enable KVM
@@ -82,19 +87,28 @@ jobs:
           ram-size: 3072M
           disable-animations: true
           script: bash tools/fuzz/ci-device.sh
+      # Runs after a failure of the device step, which does not prevent the host fuzz, but not after a failure of the
+      # input check or the build.
       - name: Fuzz the native readers on the host
-        if: ${{ always() && inputs.host_minutes != '0' }}
+        if: ${{ always() && steps.inputs.outcome == 'success' && steps.build.outcome == 'success' }}
         run: |
+          source tools/fuzz/inputs.sh
+          minutes=$(fuzz_number HOST_MINUTES 0 30) || exit 1
+          seed=$(fuzz_number FUZZ_SEED 0 999999999999999999) || exit 1
+          if [ "$minutes" -eq 0 ]; then
+            echo "host fuzz skipped"
+            exit 0
+          fi
           sudo apt-get install -y --no-install-recommends clang-18 libclang-rt-18-dev ninja-build zlib1g-dev
           export CC=clang-18 CXX=clang++-18
           export TIME_LOG=tools/fuzz/build/fuzz-time.log
           status=0
           for target in archive jxl; do
-            bash tools/fuzz/native/run.sh "$target" "$((HOST_MINUTES * 60))" "$FUZZ_SEED" || status=1
+            bash tools/fuzz/native/run.sh "$target" "$((minutes * 60))" "$seed" || status=1
           done
           exit $status
       - name: Summarise
-        if: always()
+        if: ${{ always() && steps.inputs.outcome == 'success' }}
         run: |
           {
             echo '### Fuzz'

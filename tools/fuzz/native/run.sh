@@ -13,6 +13,9 @@ set -euo pipefail
 target="${1:?usage: run.sh archive|jxl SECONDS [SEED]}"
 seconds="${2:?usage: run.sh archive|jxl SECONDS [SEED]}"
 seed="${3:-1}"
+# libFuzzer takes a time of 0 for no limit, and the numbers reach its command line.
+[[ "$seconds" =~ ^[1-9][0-9]{0,9}$ ]] || { printf 'SECONDS must be a whole number of at least 1: %q\n' "$seconds" >&2; exit 2; }
+[[ "$seed" =~ ^[0-9]{1,18}$ ]] || { printf 'SEED must be a whole number: %q\n' "$seed" >&2; exit 2; }
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
