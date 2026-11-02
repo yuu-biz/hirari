@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_title">Hirari</string>
+    <string name="home_tab_shelf">本棚</string>
+    <string name="home_tab_history">履歴</string>
+    <string name="home_tab_bookmarks">しおり</string>
+    <string name="home_empty_shelf">場所がまだありません</string>
+    <string name="home_empty_history">履歴はまだありません</string>
+    <string name="home_empty_bookmarks">しおりはまだありません</string>
+</resources>
