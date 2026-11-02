@@ -92,9 +92,10 @@ class DocumentChild(
 fun ContentResolver.listChildren(
     treeUri: Uri,
     documentId: String = DocumentsContract.getTreeDocumentId(treeUri),
+    signal: CancellationSignal? = null,
 ): List<DocumentChild> {
     val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
-    val cursor = query(childrenUri, CHILD_COLUMNS, null, null, null) ?: throw IOException("the provider returned no cursor")
+    val cursor = query(childrenUri, CHILD_COLUMNS, null, null, null, signal) ?: throw IOException("the provider returned no cursor")
     return cursor.use {
         val children = ArrayList<DocumentChild>(it.count.coerceAtLeast(0))
         while (it.moveToNext()) {
@@ -110,6 +111,23 @@ fun ContentResolver.listChildren(
         }
         children
     }
+}
+
+/** A folder of a document tree: its own document id and its direct children. */
+class ListedFolder(val documentId: String, val children: List<DocumentChild>)
+
+/**
+ * The folder at [path] in the tree [treeUri] and its direct children, or null when a name on the way is missing.
+ * A known [documentId] saves looking the path up. Blocks on Binder, so never call it on the main thread.
+ * Cancelling the caller tells the provider to stop the query in flight, so a provider that never answers does not
+ * hold the caller.
+ *
+ * @throws SecurityException when the permission to the tree is gone.
+ * @throws IOException when the provider gives no result.
+ */
+suspend fun ContentResolver.listFolder(treeUri: Uri, path: String, documentId: String? = null): ListedFolder? = withCancellationSignal { signal ->
+    val id = documentId ?: findDocumentId(treeUri, path, signal) ?: return@withCancellationSignal null
+    ListedFolder(id, listChildren(treeUri, id, signal))
 }
 
 /** What a provider reports about one document; a field is null when it does not report it. */
@@ -163,10 +181,10 @@ private val CHILD_COLUMNS = arrayOf(
  * @throws SecurityException when the permission to the tree is gone.
  * @throws IOException when the provider gives no result.
  */
-fun ContentResolver.findDocumentId(treeUri: Uri, path: String): String? {
+fun ContentResolver.findDocumentId(treeUri: Uri, path: String, signal: CancellationSignal? = null): String? {
     var id = DocumentsContract.getTreeDocumentId(treeUri)
     for (name in normalizePath(path).split('/').filter { it.isNotEmpty() }) {
-        id = listChildren(treeUri, id).firstOrNull { normalizePath(it.name) == name }?.documentId ?: return null
+        id = listChildren(treeUri, id, signal).firstOrNull { normalizePath(it.name) == name }?.documentId ?: return null
     }
     return id
 }

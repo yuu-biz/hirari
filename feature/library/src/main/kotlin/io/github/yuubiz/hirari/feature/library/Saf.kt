@@ -7,8 +7,7 @@ import android.os.Trace
 import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.source.documentInfo
-import io.github.yuubiz.hirari.core.source.findDocumentId
-import io.github.yuubiz.hirari.core.source.listChildren
+import io.github.yuubiz.hirari.core.source.listFolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
@@ -53,11 +52,11 @@ class SafFolderLister(private val resolver: ContentResolver) : FolderLister {
         val uri = Uri.parse(tree.value)
         Trace.beginSection(TRACE_LIST)
         try {
-            val id = documentId ?: resolver.findDocumentId(uri, path) ?: return@withContext Listing.Failed(ListFailure.NotFound)
-            val entries = resolver.listChildren(uri, id).map { child ->
+            val folder = resolver.listFolder(uri, path, documentId) ?: return@withContext Listing.Failed(ListFailure.NotFound)
+            val entries = folder.children.map { child ->
                 FolderEntry(child.name, child.documentId, child.isDirectory, child.size, child.lastModifiedMs?.let(Instant::ofEpochMilli))
             }
-            Listing.Listed(id, entries)
+            Listing.Listed(folder.documentId, entries)
         } catch (e: CancellationException) {
             throw e
         } catch (_: SecurityException) {
