@@ -14,6 +14,7 @@ private val allowedDependencies: Map<String, (String) -> Boolean> = mapOf(
     ":core:data" to { it == ":core:model" },
     ":core:ui" to { it == ":core:model" },
     ":tools:corpus" to { it == ":core:model" },
+    ":tools:fuzz" to { _ -> false },
     ":benchmark" to { it == ":app" },
     ":app" to { _ -> true },
 )
