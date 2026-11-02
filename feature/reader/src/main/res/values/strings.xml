@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reader_failed_not_found">本が見つかりません</string>
+    <string name="reader_failed_no_permission">本を読む許可がありません。もう一度選んでください</string>
+    <string name="reader_failed_no_room">複製する空き容量が足りないので開けません</string>
+    <string name="reader_failed_corrupt">書庫が壊れています</string>
+    <string name="reader_failed_truncated">書庫が途中で切れています</string>
+    <string name="reader_failed_read">本を読み込めませんでした</string>
+    <string name="reader_no_pages">この本には画像がありません</string>
+    <string name="reader_all_pages_failed">どのページも読み込めませんでした</string>
+    <string name="reader_back">戻る</string>
+
+    <string name="page_error_corrupt">このページのデータは壊れています</string>
+    <string name="page_error_read">このページを読み込めませんでした</string>
+    <string name="page_error_timeout">読み込みに時間がかかりすぎました</string>
+    <string name="page_error_encrypted">このページは暗号化されています</string>
+    <string name="page_error_compression">対応していない圧縮方式です（%1$s）</string>
+    <string name="page_error_image_feature">対応していない画像です（%1$s）</string>
+    <string name="page_error_too_large">画像が大きすぎます</string>
+    <string name="page_error_too_large_size">画像が大きすぎます（%1$d × %2$d）</string>
+    <string name="page_error_not_an_image">画像ではありません</string>
+    <string name="page_error_retry">再試行</string>
+    <string name="page_error_details">詳細</string>
+
+    <string name="panel_close">閉じる</string>
+    <string name="panel_menu">メニュー</string>
+    <string name="command_layout">組み方</string>
+    <string name="command_shift_pairing">組ずらし</string>
+    <string name="command_scale_mode">拡大モード</string>
+    <string name="command_trim">余白トリミング</string>
+    <string name="command_direction">綴じ方向</string>
+    <string name="command_rotate">回転</string>
+    <string name="command_orientation">画面の向き</string>
+    <string name="command_add_bookmark">しおりを追加</string>
+    <string name="command_bookmarks">しおり一覧</string>
+    <string name="command_auto_play">自動再生</string>
+    <string name="command_reverse_order">並びを逆に</string>
+    <string name="command_image_adjust">画像補正</string>
+    <string name="command_mirror_controls">操作の反転</string>
+    <string name="command_stop_order">停止点の順序</string>
+    <string name="command_gutter">綴じ目の表示</string>
+    <string name="command_edit_command_bar">コマンドバーの編集</string>
+    <string name="command_breath">息で操作</string>
+    <string name="command_book_settings">本ごとの設定</string>
+    <string name="command_set_cover">表紙にする</string>
+    <string name="command_share_page">ページを共有</string>
+    <string name="command_settings">設定</string>
+    <string name="reader_not_yet">この操作はまだ使えません</string>
+</resources>
