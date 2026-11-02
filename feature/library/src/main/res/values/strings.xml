@@ -7,4 +7,6 @@
     <string name="home_empty_shelf">場所がまだありません</string>
     <string name="home_empty_history">履歴はまだありません</string>
     <string name="home_empty_bookmarks">しおりはまだありません</string>
+    <string name="home_open_file">ファイルを開く</string>
+    <string name="home_open_folder">フォルダを開く</string>
 </resources>
