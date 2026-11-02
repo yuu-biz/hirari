@@ -72,4 +72,8 @@
     <string name="adjust_mono">グレースケール</string>
     <string name="adjust_negative">白黒反転</string>
     <string name="adjust_global">全体の設定に戻す</string>
+
+    <string name="share_which_page">どちらのページを共有しますか</string>
+    <string name="share_page_number">p. %1$d</string>
+    <string name="share_failed">このページを共有できませんでした</string>
 </resources>

@@ -47,7 +47,7 @@ class CommandEffectTest {
 
     @Test
     fun commandsOfLaterMilestonesSayTheyAreNotYetThere() {
-        for (command in listOf(ReaderCommand.Trim, ReaderCommand.Breath, ReaderCommand.SharePage)) {
+        for (command in listOf(ReaderCommand.Trim, ReaderCommand.Breath, ReaderCommand.SetCover)) {
             assertEquals(CommandEffect.NotYet, config.effectOf(command), "$command")
         }
     }

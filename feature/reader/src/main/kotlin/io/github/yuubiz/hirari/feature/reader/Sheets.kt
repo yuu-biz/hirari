@@ -14,12 +14,15 @@ sealed interface ReaderSheet {
     /** 画像補正: 明るさ, シャープ, グレースケール, and 白黒反転 of this book. */
     data object Adjust : ReaderSheet
 
+    /** ページを共有 on a pair: which of its two pages. */
+    data class SharePick(val view: PageView.Two) : ReaderSheet
+
     /**
      * Whether the reader takes [code] while this sheet is up. Back closes it and Menu opens or closes the menu.
      * Every other key goes to the sheet's controls, and on the page panel Del goes to the page number field.
      */
     fun takes(code: Int): Boolean = when (this) {
-        is Pages, Adjust -> code == KeyCodes.BACK || code == KeyCodes.MENU
+        is Pages, Adjust, is SharePick -> code == KeyCodes.BACK || code == KeyCodes.MENU
         Menu -> code == KeyCodes.BACK || code == KeyCodes.MENU || code == KeyCodes.DEL
     }
 }
@@ -58,7 +61,7 @@ enum class MenuItem(val group: MenuGroup, val available: Boolean) {
     BookSettings(MenuGroup.Book, false),
     SetCover(MenuGroup.Book, false),
     SetCoverFromRange(MenuGroup.Book, false),
-    SharePage(MenuGroup.Book, false),
+    SharePage(MenuGroup.Book, true),
     RestoreAndClose(MenuGroup.Book, true),
     AutoPlay(MenuGroup.Reading, true),
     Breath(MenuGroup.Reading, false),

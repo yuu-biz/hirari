@@ -1,8 +1,11 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -29,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -111,13 +115,15 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
                 ReaderSurface(viewModel, state, ui, onClose)
                 when (val sheet = ui.sheet) {
                     is ReaderSheet.Pages -> PagePanelSheet(viewModel, state, sheet, onClose = { ui.sheet = null })
-                    ReaderSheet.Menu -> MenuSheet(viewModel, state, onCloseMenu = { ui.sheet = null }, onCloseReader = onClose)
+                    ReaderSheet.Menu -> MenuSheet(viewModel, state, onCloseMenu = { ui.sheet = null }, onCloseReader = onClose, onEffect = ui::follow)
                     ReaderSheet.Adjust -> AdjustSheet(viewModel, state, onClose = { ui.sheet = null })
+                    is ReaderSheet.SharePick -> SharePickSheet(sheet.view, state.config.direction, onPick = { ui.follow(CommandEffect.Share(it)) }, onClose = { ui.sheet = null })
                     null -> Unit
                 }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
             }
         }
+        SharePageEffect(viewModel, ui)
         ui.message?.let { message ->
             LaunchedEffect(message) {
                 delay(MESSAGE_MS)
@@ -145,6 +151,9 @@ internal class ReaderUi {
     var sheet: ReaderSheet? by mutableStateOf(null)
     var message: Int? by mutableStateOf(null)
 
+    /** The page ページを共有 is writing for the share sheet. */
+    var sharing: Int? by mutableStateOf(null)
+
     fun closePanels() {
         commandBar = CommandBarState.Closed
         sheet = null
@@ -156,6 +165,10 @@ internal class ReaderUi {
             is CommandEffect.Show -> {
                 closePanels()
                 sheet = effect.sheet
+            }
+            is CommandEffect.Share -> {
+                closePanels()
+                sharing = effect.page
             }
             CommandEffect.NotYet -> message = R.string.reader_not_yet
             else -> Unit
@@ -204,6 +217,31 @@ private fun BookError(text: String, onBack: () -> Unit) {
     ) {
         Text(text, color = Color.White, style = MaterialTheme.typography.titleMedium)
         Button(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.reader_back)) }
+    }
+}
+
+/** Writes the page of [ReaderUi.sharing] and hands it to the system's share sheet (docs/spec.md section 4.8). */
+@Composable
+private fun SharePageEffect(viewModel: ReaderViewModel, ui: ReaderUi) {
+    val context = LocalContext.current
+    val page = ui.sharing ?: return
+    LaunchedEffect(page) {
+        val shared = viewModel.sharePage(page)
+        ui.sharing = null
+        if (shared == null) {
+            ui.message = R.string.share_failed
+            return@LaunchedEffect
+        }
+        val send = Intent(Intent.ACTION_SEND)
+            .setType(shared.mimeType)
+            .putExtra(Intent.EXTRA_STREAM, shared.uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        send.clipData = ClipData.newRawUri(null, shared.uri)
+        try {
+            context.startActivity(Intent.createChooser(send, null))
+        } catch (_: ActivityNotFoundException) {
+            ui.message = R.string.share_failed
+        }
     }
 }
 

@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.data.ProgressWriter
@@ -22,6 +23,7 @@ import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
+import io.github.yuubiz.hirari.core.image.RawPage
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookAddress
@@ -29,6 +31,7 @@ import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.ImageAdjust
+import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -62,8 +65,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 
 /** What the app shares with every reader: one of each per process. */
@@ -156,6 +161,7 @@ class ReaderViewModel(
         val progress: ProgressLog,
         val overrides: OverridesWriter,
         val globalAdjust: ImageAdjust,
+        val shareDir: File,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -195,6 +201,36 @@ class ReaderViewModel(
         val book = opened?.book ?: return null
         val image = (book.page(page, size) as? PageResult.Ready)?.image as? PreparedImage.Whole ?: return null
         return image.bitmap.also { thumbnails[page] = it }
+    }
+
+    /**
+     * ページを共有: the data of [page] as the book holds it, or a PDF page drawn as PNG, written for other apps
+     * to read (docs/spec.md section 4.8). `null` when the page cannot be read or written.
+     */
+    suspend fun sharePage(page: Int): SharedPage? {
+        val book = opened ?: return null
+        val entry = book.book.pages.getOrNull(page) ?: return null
+        val raw = (book.book.raw(page) as? PageResult.Ready)?.image ?: return null
+        val (type, write) = when (raw) {
+            is RawPage.Encoded -> raw.type to raw::writeTo
+            RawPage.Drawn -> ImageType.PdfPage to (drawn(book.book, page) ?: return null)
+        }
+        val file = SharedPageFiles.write(book.shareDir, shareFileName(entry.name, type, page), write) ?: return null
+        val uri = withContext(Dispatchers.IO) { FileProvider.getUriForFile(application, "${application.packageName}$SHARE_AUTHORITY", file) }
+        return SharedPage(uri, shareMimeType(type))
+    }
+
+    /** A PDF page drawn at the size of its shape, to be written as PNG. */
+    private suspend fun drawn(book: OpenBook, page: Int): ((OutputStream) -> Unit)? {
+        val shape = (book.shape(page) as? PageResult.Ready)?.image ?: return null
+        val image = (book.page(page, PixelSize(shape.width, shape.height)) as? PageResult.Ready)?.image as? PreparedImage.Whole ?: return null
+        return { out ->
+            try {
+                image.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            } finally {
+                image.bitmap.recycle()
+            }
+        }
     }
 
     /** 位置を戻して閉じる: the book gets back the position and state it had when it opened. The screen closes next. */
@@ -241,7 +277,8 @@ class ReaderViewModel(
             is CommandEffect.Configure -> dispatch(ReaderEvent.ConfigChanged(effect.config))
             CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
             CommandEffect.StartAutoPlay -> dispatch(ReaderEvent.AutoPlayStarted(nowMs))
-            is CommandEffect.Show, CommandEffect.NotYet -> return effect
+            CommandEffect.SharePage -> return shareChoice(current.current)
+            is CommandEffect.Show, is CommandEffect.Share, CommandEffect.NotYet -> return effect
         }
         return null
     }
@@ -261,6 +298,7 @@ class ReaderViewModel(
         opened?.let {
             it.prefetcher.close()
             it.services.progress.flush()
+            it.services.appScope.launch { SharedPageFiles.clear(it.shareDir) }
         }
         stops.stop()
         bookOwner.release()
@@ -268,7 +306,9 @@ class ReaderViewModel(
 
     private suspend fun open() {
         val services = services.await()
-        val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
+        val (copyDir, shareDir) = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") to File(application.cacheDir, SHARE_DIR) }
+        // What a reader of an earlier process shared is left only by a process that ended before closing it.
+        if (firstReader.getAndSet(false)) services.appScope.launch { SharedPageFiles.clear(shareDir) }
         val settings = services.storage.settings.settings.first()
         orientation = settings.readerOrientation
         val located = withContext(Dispatchers.IO) {
@@ -311,7 +351,7 @@ class ReaderViewModel(
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val writer = OverridesWriter(id, overrides, services.storage.books, services.appScope)
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, settings.adjust)
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, settings.adjust, shareDir)
         stops.attach(session)
         phase = ReaderPhase.Reading
         start()
@@ -436,6 +476,15 @@ class ReaderViewModel(
 }
 
 private const val THUMBNAILS = 64
+
+/** The authority of [SharedPageProvider] after the package name, as `AndroidManifest.xml` declares it. */
+private const val SHARE_AUTHORITY = ".share"
+
+/** Whether no reader has opened in this process yet. */
+private val firstReader = AtomicBoolean(true)
+
+/** A page written for other apps: its content URI and the MIME type to send it as. */
+data class SharedPage(val uri: Uri, val mimeType: String)
 
 private fun Exception.openFailure(): BookFailure = when (this) {
     is FileNotFoundException, is IllegalArgumentException -> BookFailure.NotFound

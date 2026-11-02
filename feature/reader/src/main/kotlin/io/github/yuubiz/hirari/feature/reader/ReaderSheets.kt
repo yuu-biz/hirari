@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.ImageAdjust
+import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
@@ -237,28 +238,37 @@ private fun StepButton(step: Int, modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SheetButton(label: Int, enabled: Boolean = true, onClick: () -> Unit) {
+private fun SheetButton(label: Int, enabled: Boolean = true, args: Array<Any> = emptyArray(), onClick: () -> Unit) {
     TextButton(onClick = onClick, enabled = enabled) {
-        Text(stringResource(label), color = if (enabled) SheetText else SheetDisabled)
+        Text(stringResource(label, *args), color = if (enabled) SheetText else SheetDisabled)
     }
 }
 
 /** メニュー (docs/spec.md section 4.8). Items of later milestones show disabled under their names. */
 @Composable
-internal fun MenuSheet(viewModel: ReaderViewModel, state: ReaderState, onCloseMenu: () -> Unit, onCloseReader: () -> Unit) {
+internal fun MenuSheet(
+    viewModel: ReaderViewModel,
+    state: ReaderState,
+    onCloseMenu: () -> Unit,
+    onCloseReader: () -> Unit,
+    onEffect: (CommandEffect?) -> Unit,
+) {
     fun run(item: MenuItem) {
-        when (item) {
+        val command = when (item) {
             MenuItem.RestoreAndClose -> {
                 viewModel.restorePosition()
                 onCloseReader()
                 return
             }
-            MenuItem.AutoPlay -> viewModel.command(ReaderCommand.AutoPlay, android.os.SystemClock.uptimeMillis())
-            MenuItem.Orientation -> viewModel.command(ReaderCommand.Orientation, android.os.SystemClock.uptimeMillis())
-            MenuItem.MirrorControls -> viewModel.command(ReaderCommand.MirrorControls, android.os.SystemClock.uptimeMillis())
+            MenuItem.SharePage -> ReaderCommand.SharePage
+            MenuItem.AutoPlay -> ReaderCommand.AutoPlay
+            MenuItem.Orientation -> ReaderCommand.Orientation
+            MenuItem.MirrorControls -> ReaderCommand.MirrorControls
             else -> return
         }
+        val effect = viewModel.command(command, android.os.SystemClock.uptimeMillis())
         onCloseMenu()
+        onEffect(effect)
     }
 
     Scrim(onCloseMenu) {
@@ -375,6 +385,31 @@ internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose
 }
 
 private val ADJUST_LEVELS = -5..5
+
+/** ページを共有 on a pair: the two pages as they sit on screen, the earlier one on the right in a right-to-left book. */
+@Composable
+internal fun SharePickSheet(view: PageView.Two, direction: ReadingDirection, onPick: (Int) -> Unit, onClose: () -> Unit) {
+    val onScreen = if (direction == ReadingDirection.RightToLeft) listOf(view.later, view.earlier) else listOf(view.earlier, view.later)
+    Scrim(onClose) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .width(menuWidthDp(maxWidth.value, maxHeight.value).dp)
+                    .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(stringResource(R.string.share_which_page), color = SheetText, modifier = Modifier.padding(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    for (page in onScreen) SheetButton(R.string.share_page_number, args = arrayOf(page + 1)) { onPick(page) }
+                }
+                SheetButton(R.string.panel_close, onClick = onClose)
+            }
+        }
+    }
+}
 
 @Composable
 private fun SwitchRow(label: Int, checked: Boolean, onChange: (Boolean) -> Unit) {

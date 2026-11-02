@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.core.image
 import android.graphics.Bitmap
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
+import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
@@ -16,6 +17,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
+import java.io.OutputStream
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Where the bytes of the pages of an open book come from: an archive session, or the files of a folder. */
@@ -144,6 +146,12 @@ sealed interface RawPage {
     /** The bytes of an image entry or file. */
     class Encoded internal constructor(internal val bytes: ByteArray) : RawPage {
         override val byteCount: Long get() = bytes.size.toLong()
+
+        /** The image type the first bytes show, or `null` when they show none (docs/spec.md section 3.2). */
+        val type: ImageType? get() = sniffImage(bytes)
+
+        /** Writes the bytes as the book holds them, as when the page is shared (docs/spec.md section 4.8). */
+        fun writeTo(out: OutputStream) = out.write(bytes)
     }
 
     /** A page drawn from the open document, which has no bytes of its own to hold. */

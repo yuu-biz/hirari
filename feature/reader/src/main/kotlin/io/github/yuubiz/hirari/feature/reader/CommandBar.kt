@@ -32,6 +32,12 @@ sealed interface CommandEffect {
     /** A sheet over the reader, which the screen opens. */
     data class Show(val sheet: ReaderSheet) : CommandEffect
 
+    /** ページを共有 of the view on screen, which [shareChoice] makes into [Show] or [Share]. */
+    data object SharePage : CommandEffect
+
+    /** The screen shares [page]. */
+    data class Share(val page: Int) : CommandEffect
+
     /** A command of a later milestone. */
     data object NotYet : CommandEffect
 }
@@ -51,9 +57,10 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.Rotate -> CommandEffect.Configure(copy(rotation = rotation.next()))
     ReaderCommand.ImageAdjust -> CommandEffect.Show(ReaderSheet.Adjust)
     ReaderCommand.AutoPlay -> CommandEffect.StartAutoPlay
+    ReaderCommand.SharePage -> CommandEffect.SharePage
     ReaderCommand.Trim, ReaderCommand.AddBookmark, ReaderCommand.Bookmarks,
     ReaderCommand.ReverseOrder, ReaderCommand.EditCommandBar, ReaderCommand.Breath,
-    ReaderCommand.BookSettings, ReaderCommand.SetCover, ReaderCommand.SharePage, ReaderCommand.Settings,
+    ReaderCommand.BookSettings, ReaderCommand.SetCover, ReaderCommand.Settings,
     -> CommandEffect.NotYet
 }
 
