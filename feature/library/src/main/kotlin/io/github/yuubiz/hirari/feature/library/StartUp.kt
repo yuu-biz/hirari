@@ -25,28 +25,36 @@ sealed interface Reopen {
     data class Now(override val request: OpenBookRequest) : Reopen
 }
 
-/**
- * What a start opens on top of home: the folder the file list showed last, scrolled to [reveal], and then the
- * last book. An empty plan starts at home.
- */
-data class StartPlan(val folder: FolderKey? = null, val reveal: String? = null, val reopen: Reopen? = null)
+/** What a start shows (docs/spec.md section 4.3, 起動時の動作). */
+sealed interface StartPlan {
+    /** The screens the system kept when the process ended, as they were. */
+    data object Restore : StartPlan
+
+    /**
+     * Home alone, and on top of it the folder the file list showed last, scrolled to [reveal], and then the last
+     * book. An empty plan starts at home.
+     */
+    data class Open(val folder: FolderKey? = null, val reveal: String? = null, val reopen: Reopen? = null) : StartPlan
+}
 
 /** Starts in a row that did not finish before the next one starts at home with the defaults. */
 const val FAILED_STARTS = 3
 
 /**
- * Counts this start and plans it. After [FAILED_STARTS] unfinished starts in a row, it forgets the last folder,
- * puts the view back to its default, and starts at home without the last book. The places first take the grants
- * the system holds now, so a place that lost its grant is not opened (docs/spec.md section 7).
+ * Counts this start and plans it. A start [restoring] the screens the system kept keeps them. After
+ * [FAILED_STARTS] unfinished starts in a row, it forgets the last folder, puts the view back to its default, and
+ * starts at home without the last book, even over kept screens. The places first take the grants the system
+ * holds now, so a place that lost its grant is not opened (docs/spec.md section 7).
  */
-suspend fun LibraryServices.planStart(): StartPlan {
+suspend fun LibraryServices.planStart(restoring: Boolean = false): StartPlan {
     locations.syncGrants(grants.held())
     val record = launch.beginStart()
     if (record.unfinishedStarts >= FAILED_STARTS) {
         launch.setLastFolder(null)
         settings.update { it.copy(libraryView = GlobalSettings().libraryView) }
-        return StartPlan()
+        return StartPlan.Open()
     }
+    if (restoring) return StartPlan.Restore
     val current = settings.settings.first()
     val reopen = current.reopenLastBook
     val last = if (reopen == ReopenLastBook.Off || current.historyLimit == 0) null else history.observe(HistorySort.Newest).first().firstOrNull()
@@ -57,7 +65,7 @@ suspend fun LibraryServices.planStart(): StartPlan {
  * The plan from what the last starts left. A folder or book whose place is gone or lost its grant is left out, as
  * is a text book until the text reader exists (M5).
  */
-fun decideStart(record: LaunchRecord, reopen: ReopenLastBook, last: HistoryItem?, places: List<LibraryLocation>): StartPlan {
+fun decideStart(record: LaunchRecord, reopen: ReopenLastBook, last: HistoryItem?, places: List<LibraryLocation>): StartPlan.Open {
     fun usable(id: LocationId) = (places.firstOrNull { it.id == id } as? LibraryLocation.SafTree)?.permissionHeld == true
     val folder = record.lastFolder?.takeIf { usable(it.location) }?.let { FolderKey(it.location, it.path, it.documentId) }
     val book = last?.book?.takeIf { book ->
@@ -74,5 +82,5 @@ fun decideStart(record: LaunchRecord, reopen: ReopenLastBook, last: HistoryItem?
     val inFolder = (offered?.request?.book as? BookAddress.InLocation)?.takeIf { address ->
         folder != null && address.location == folder.location && childToward(folder.path, address.path) == address.path
     }
-    return StartPlan(folder, inFolder?.path, offered)
+    return StartPlan.Open(folder, inFolder?.path, offered)
 }

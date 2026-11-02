@@ -35,8 +35,8 @@ class HirariApp : Application() {
     lateinit var library: Deferred<LibraryServices>
         private set
 
-    /** The start in progress; it outlives an activity recreated before the start finished. */
-    internal var start: StartGate? = null
+    /** The last start of this process; it outlives an activity recreated before the start finished. */
+    internal var start: AppStart? = null
 
     override fun onCreate() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) enableStrictMode()

@@ -31,4 +31,16 @@ class StartGateTest {
         gate.settled("home", top = "home")
         assertEquals(0, finished)
     }
+
+    @Test
+    fun anActivityWithNoKeptStateStartsEvenWhileTheProcessLives() {
+        assertEquals(StartKind.Fresh, startKind(savedState = false, startInProcess = false))
+        assertEquals(StartKind.Fresh, startKind(savedState = false, startInProcess = true))
+    }
+
+    @Test
+    fun keptStateInANewProcessIsAStartAndInTheSameProcessIsNot() {
+        assertEquals(StartKind.Restored, startKind(savedState = true, startInProcess = false))
+        assertEquals(StartKind.Recreated, startKind(savedState = true, startInProcess = true))
+    }
 }

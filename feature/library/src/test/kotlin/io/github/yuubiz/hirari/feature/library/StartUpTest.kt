@@ -34,19 +34,19 @@ class StartUpTest {
     @Test
     fun `a start opens the last folder over home, and the last book only when the setting asks for it`() = runTest {
         given(ReopenLastBook.Off)
-        assertEquals(StartPlan(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
+        assertEquals(StartPlan.Open(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
 
         given(ReopenLastBook.Ask)
-        assertEquals(StartPlan(FolderKey(place.id, "作品", "doc:作品"), "作品/2巻.zip", Reopen.Ask("2巻.zip", request)), fixture.services.planStart())
+        assertEquals(StartPlan.Open(FolderKey(place.id, "作品", "doc:作品"), "作品/2巻.zip", Reopen.Ask("2巻.zip", request)), fixture.services.planStart())
 
         given(ReopenLastBook.Immediately, lastFolder = null)
-        assertEquals(StartPlan(reopen = Reopen.Now(request)), fixture.services.planStart())
+        assertEquals(StartPlan.Open(reopen = Reopen.Now(request)), fixture.services.planStart())
     }
 
     @Test
     fun `with no history kept there is no last book, even one the history still holds`() = runTest {
         given(ReopenLastBook.Immediately, historyLimit = 0)
-        assertEquals(StartPlan(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
+        assertEquals(StartPlan.Open(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
     }
 
     @Test
@@ -63,9 +63,20 @@ class StartUpTest {
     @Test
     fun `after three unfinished starts the next starts at home with the last folder and the view reset`() = runTest {
         given(ReopenLastBook.Immediately, unfinished = FAILED_STARTS - 1)
-        assertEquals(Reopen.Now(request), fixture.services.planStart().reopen)
+        assertEquals(Reopen.Now(request), (fixture.services.planStart() as StartPlan.Open).reopen)
 
-        assertEquals(StartPlan(), fixture.services.planStart())
+        assertEquals(StartPlan.Open(), fixture.services.planStart())
+        assertEquals(null, fixture.launch.record.lastFolder)
+        assertEquals(LibraryView.Grid, fixture.settings.value.value.libraryView)
+    }
+
+    @Test
+    fun `a start over the screens the system kept keeps them, and counts itself`() = runTest {
+        given(ReopenLastBook.Immediately, unfinished = FAILED_STARTS - 1)
+        assertEquals(StartPlan.Restore, fixture.services.planStart(restoring = true))
+        assertEquals(FAILED_STARTS, fixture.launch.record.unfinishedStarts)
+
+        assertEquals(StartPlan.Open(), fixture.services.planStart(restoring = true))
         assertEquals(null, fixture.launch.record.lastFolder)
         assertEquals(LibraryView.Grid, fixture.settings.value.value.libraryView)
     }
@@ -74,16 +85,16 @@ class StartUpTest {
     fun `a place that is gone or lost its grant leaves its folder and book out`() = runTest {
         given(ReopenLastBook.Immediately)
         fixture.grants.held.clear()
-        assertEquals(StartPlan(), fixture.services.planStart())
+        assertEquals(StartPlan.Open(), fixture.services.planStart())
 
         fixture.locations.rows.value = emptyList()
-        assertEquals(StartPlan(), fixture.services.planStart())
+        assertEquals(StartPlan.Open(), fixture.services.planStart())
     }
 
     @Test
     fun `a text book is not reopened before the text reader exists`() = runTest {
         given(ReopenLastBook.Immediately, lastFolder = null)
         fixture.books.put(last.copy(format = BookFormat.Text(null)))
-        assertEquals(StartPlan(), fixture.services.planStart())
+        assertEquals(StartPlan.Open(), fixture.services.planStart())
     }
 }

@@ -47,7 +47,9 @@ import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.LicenseScreen
 import io.github.yuubiz.hirari.feature.settings.SettingsScreen
+import io.github.yuubiz.hirari.feature.library.planStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,8 +65,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val app = application as HirariApp
         val debugStart = prototypeStartRoute(intent) ?: debugBookRoute(intent)
-        val fresh = savedInstanceState == null && debugStart == null
-        if (fresh) app.start = StartGate { app.appScope.launch { app.library.await().launch.finishStart() } }
+        val kind = startKind(savedState = savedInstanceState != null, startInProcess = app.start != null)
+        when {
+            debugStart != null -> app.start = null
+            kind != StartKind.Recreated -> {
+                val restoring = kind == StartKind.Restored
+                val plan = app.appScope.async { app.library.await().planStart(restoring) }
+                app.start = AppStart(restoring, plan) { app.appScope.launch { app.library.await().launch.finishStart() } }
+            }
+        }
         setContent {
             HirariTheme {
                 val nav = rememberNavController()
@@ -100,20 +109,22 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable<FolderRoute> { entry ->
-                        val route = entry.toRoute<FolderRoute>()
-                        val key = route.toKey()
-                        val folder = viewModel { FolderViewModel(app.library, key) }
-                        ReportSettled(nav, entry, app) { folder.state.first { it.content is FolderContent.Shown || it.content is FolderContent.Failed } }
-                        FolderScreen(
-                            folder,
-                            FolderActions(
-                                openBook = { nav.navigate(it.toReaderRoute()) },
-                                openFolder = { nav.navigate(it.toRoute()) },
-                                openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null), from = key.path) },
-                                close = { nav.popBackStack() },
-                            ),
-                            reveal = route.reveal,
-                        )
+                        Kept(app) {
+                            val route = entry.toRoute<FolderRoute>()
+                            val key = route.toKey()
+                            val folder = viewModel { FolderViewModel(app.library, key) }
+                            ReportSettled(nav, entry, app) { folder.state.first { it.content is FolderContent.Shown || it.content is FolderContent.Failed } }
+                            FolderScreen(
+                                folder,
+                                FolderActions(
+                                    openBook = { nav.navigate(it.toReaderRoute()) },
+                                    openFolder = { nav.navigate(it.toRoute()) },
+                                    openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null), from = key.path) },
+                                    close = { nav.popBackStack() },
+                                ),
+                                reveal = route.reveal,
+                            )
+                        }
                     }
                     composable<LicensesRoute> { LicenseScreen(onBack = { nav.popBackStack() }) }
                     composable<SettingsRoute> {
@@ -121,14 +132,16 @@ class MainActivity : ComponentActivity() {
                         storage?.let { SettingsScreen(it, onBack = { nav.popBackStack() }, onOpenLicenses = { nav.navigate(LicensesRoute) }) }
                     }
                     composable<ReaderRoute> { entry ->
-                        val request = entry.toRoute<ReaderRoute>().toRequest()
-                        val reader = viewModel { ReaderViewModel(app, app.services, request) }
-                        ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent() }.first { it } }
-                        ReaderScreen(reader, keys, onClose = { if (!nav.popBackStack()) finish() })
+                        Kept(app) {
+                            val request = entry.toRoute<ReaderRoute>().toRequest()
+                            val reader = viewModel { ReaderViewModel(app, app.services, request) }
+                            ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent() }.first { it } }
+                            ReaderScreen(reader, keys, onClose = { if (!nav.popBackStack()) finish() })
+                        }
                     }
                     prototypeRoutes()
                 }
-                StartUp(nav, app, fresh)
+                StartUp(nav, app, app.start)
             }
         }
     }
