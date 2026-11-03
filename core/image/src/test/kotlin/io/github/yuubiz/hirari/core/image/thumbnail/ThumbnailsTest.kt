@@ -785,6 +785,25 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun aHoldWithoutLookingKeepsWhatObserveShowedThroughAnEviction() = runTest {
+        val thumbnails = thumbnails()
+        val subject = folder(item("1"))
+        val shown = async { thumbnails.observe(request(subject)).first() }
+        runCurrent()
+        val key = (shown.await() as ThumbResult.Ready).key
+        var looked = 0
+        store.afterGet = { looked++ }
+
+        val hold = thumbnails.hold(request(subject))
+        assertEquals("holding looked in the store", 0, looked)
+        store.evictUnheld()
+        assertTrue("the held thumbnail was evicted", store.get(key) is StoredThumb.Hit)
+        hold.close()
+        store.evictUnheld()
+        assertTrue(store.get(key) is StoredThumb.Miss)
+    }
+
+    @Test
     fun observeHoldsWhatAFolderShowsAndReleasesItWhenCancelled() = runTest {
         val thumbnails = thumbnails()
         val seen = ArrayList<ThumbResult>()

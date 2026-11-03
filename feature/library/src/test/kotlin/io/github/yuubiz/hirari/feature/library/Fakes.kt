@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import java.io.Closeable
 import java.nio.charset.Charset
 import java.time.Instant
 
@@ -406,7 +407,10 @@ internal class FakeCoverIndex : CoverIndex {
     override fun folderCovers(location: LocationId): Flow<Map<String, FolderCover>> = folderCovers
 }
 
-/** The thumbnail source: every `observe` is recorded when it starts and when it is cancelled; results are what the test sets. */
+/**
+ * The thumbnail source: every `observe` and `hold` is recorded when it starts and when it ends; results are what the
+ * test sets.
+ */
 internal class FakeThumbnails : ThumbnailSource {
     class Watch(val request: ThumbRequest) {
         var active = false
@@ -414,6 +418,7 @@ internal class FakeThumbnails : ThumbnailSource {
     }
 
     val watches = mutableListOf<Watch>()
+    val holds = mutableListOf<Watch>()
     val regenerated = mutableListOf<ThumbRequest>()
     var result: ThumbResult = ThumbResult.Unavailable
 
@@ -427,6 +432,11 @@ internal class FakeThumbnails : ThumbnailSource {
         } finally {
             watch.active = false
         }
+    }
+
+    override fun hold(request: ThumbRequest): Closeable {
+        val hold = Watch(request).also { it.active = true; it.starts++; holds += it }
+        return Closeable { hold.active = false }
     }
 
     override suspend fun regenerate(request: ThumbRequest): ThumbResult {

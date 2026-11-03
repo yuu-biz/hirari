@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -80,15 +81,22 @@ class Thumbnails internal constructor(
      * at once.
      */
     fun observe(request: ThumbRequest): Flow<ThumbResult> = flow {
-        val key = when (val subject = request.subject) {
-            is ThumbSubject.Book -> keyOf(subject, request)
-            is ThumbSubject.Folder -> keyOf(subject, request)
-        }
-        store.hold(key).use {
+        hold(request).use {
             emit(cached(request) ?: thumbnail(request))
             awaitCancellation()
         }
     }
+
+    /**
+     * Holds the thumbnail of [request] against eviction until the result is closed, as [observe] does, but looks
+     * at nothing: for an item shown from the image a list already decoded.
+     */
+    fun hold(request: ThumbRequest): Closeable = store.hold(
+        when (val subject = request.subject) {
+            is ThumbSubject.Book -> keyOf(subject, request)
+            is ThumbSubject.Folder -> keyOf(subject, request)
+        },
+    )
 
     /** Cancels all work. */
     fun close() = scope.cancel()

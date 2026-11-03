@@ -94,8 +94,10 @@ class CoverLoader<I : Any>(
 
     private fun look(key: CoverKey, request: ThumbRequest): Flow<CoverState<I>> = flow {
         memory[key]?.let {
-            emit(CoverState.Loaded(it))
-            awaitCancellation()
+            source.hold(request).use { _ ->
+                emit(CoverState.Loaded(it))
+                awaitCancellation()
+            }
         }
         source.observe(request).collect { result ->
             emit(

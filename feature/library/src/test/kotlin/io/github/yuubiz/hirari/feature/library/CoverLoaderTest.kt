@@ -86,6 +86,20 @@ class CoverLoaderTest {
     }
 
     @Test
+    fun `a row shown from memory holds its thumbnail in the store while it is bound`() = runTest(UnconfinedTestDispatcher()) {
+        source.result = ready("a.webp")
+        launch { loader.show(key, request()).collect {} }.cancel()
+
+        val again = launch { loader.show(key, request()).collect {} }
+        assertEquals(1, source.watches.size, "memory served the row")
+        val held = source.holds.single { it.active }.request
+        assertEquals(spec.id, held.subject.id)
+        assertEquals(300, held.sizePx)
+        again.cancel()
+        assertTrue(source.holds.none { it.active })
+    }
+
+    @Test
     fun `cancelling the collector of a row that left releases the hold`() = runTest(UnconfinedTestDispatcher()) {
         source.result = ready("a.webp")
         val job = launch { loader.show(key, request()).collect {} }
