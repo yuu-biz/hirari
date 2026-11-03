@@ -34,7 +34,7 @@ data class LibraryColors(
             stateFolder = Color(0xFF007A00),
             stateImage = Color(0xFF7A6A00),
             itemDetail = Color(0xFF5F5F5F),
-            itemPressed = Color(0xFFB3C6F2),
+            itemPressed = Color(0xFFBDCDF4),
         )
     }
 }
