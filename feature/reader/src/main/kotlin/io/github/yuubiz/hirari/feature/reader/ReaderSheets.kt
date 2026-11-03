@@ -429,6 +429,7 @@ internal fun MenuSheet(
             MenuItem.SetCover -> ReaderCommand.SetCover
             MenuItem.AddBookmark -> ReaderCommand.AddBookmark
             MenuItem.Bookmarks -> ReaderCommand.Bookmarks
+            MenuItem.BookSettings -> ReaderCommand.BookSettings
             MenuItem.AutoPlay -> ReaderCommand.AutoPlay
             MenuItem.Breath -> ReaderCommand.Breath
             MenuItem.Orientation -> ReaderCommand.Orientation
@@ -519,8 +520,6 @@ internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose
     val adjust = state.config.adjust
     fun set(next: ImageAdjust) = viewModel.dispatch(ReaderEvent.ConfigChanged(state.config.copy(adjust = next)))
 
-    val levelLabel = stringResource(R.string.adjust_level)
-    val levelText = if (adjust.level > 0) "+${adjust.level}" else "${adjust.level}"
     Scrim(stringResource(R.string.command_image_adjust), onClose) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             Column(
@@ -532,26 +531,7 @@ internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = 8.dp),
             ) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp).decorative(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(levelLabel, color = SheetText, modifier = Modifier.weight(1f))
-                    Text(levelText, color = SheetDisabled)
-                }
-                Slider(
-                    value = adjust.level.toFloat(),
-                    onValueChange = { value ->
-                        val level = value.roundToInt().coerceIn(ADJUST_LEVELS)
-                        if (level != adjust.level) set(adjust.copy(level = level))
-                    },
-                    valueRange = ADJUST_LEVELS.first.toFloat()..ADJUST_LEVELS.last.toFloat(),
-                    steps = ADJUST_LEVELS.last - ADJUST_LEVELS.first - 1,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).semantics {
-                        contentDescription = levelLabel
-                        stateDescription = levelText
-                    },
-                )
-                SwitchRow(R.string.adjust_sharpen, adjust.sharpen) { set(adjust.copy(sharpen = it)) }
-                SwitchRow(R.string.adjust_mono, adjust.mono) { set(adjust.copy(mono = it)) }
-                SwitchRow(R.string.adjust_negative, adjust.negative) { set(adjust.copy(negative = it)) }
+                AdjustControls(adjust, ::set)
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
                     SheetButton(R.string.adjust_global, enabled = adjust != viewModel.globalAdjust) { set(viewModel.globalAdjust) }
                     SheetButton(R.string.panel_close, onClick = onClose)
@@ -562,6 +542,33 @@ internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose
 }
 
 private val ADJUST_LEVELS = -5..5
+
+/** 明るさ, シャープ, グレースケール, and 白黒反転, each change shown at once. */
+@Composable
+internal fun AdjustControls(adjust: ImageAdjust, set: (ImageAdjust) -> Unit) {
+    val levelLabel = stringResource(R.string.adjust_level)
+    val levelText = if (adjust.level > 0) "+${adjust.level}" else "${adjust.level}"
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp).decorative(), verticalAlignment = Alignment.CenterVertically) {
+        Text(levelLabel, color = SheetText, modifier = Modifier.weight(1f))
+        Text(levelText, color = SheetDisabled)
+    }
+    Slider(
+        value = adjust.level.toFloat(),
+        onValueChange = { value ->
+            val level = value.roundToInt().coerceIn(ADJUST_LEVELS)
+            if (level != adjust.level) set(adjust.copy(level = level))
+        },
+        valueRange = ADJUST_LEVELS.first.toFloat()..ADJUST_LEVELS.last.toFloat(),
+        steps = ADJUST_LEVELS.last - ADJUST_LEVELS.first - 1,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).semantics {
+            contentDescription = levelLabel
+            stateDescription = levelText
+        },
+    )
+    SwitchRow(R.string.adjust_sharpen, adjust.sharpen) { set(adjust.copy(sharpen = it)) }
+    SwitchRow(R.string.adjust_mono, adjust.mono) { set(adjust.copy(mono = it)) }
+    SwitchRow(R.string.adjust_negative, adjust.negative) { set(adjust.copy(negative = it)) }
+}
 
 /** ページを共有 or 範囲を選んで表紙にする ([title] asks) on a pair: the two pages as they sit on screen, the earlier one on the right in a right-to-left book. */
 @Composable

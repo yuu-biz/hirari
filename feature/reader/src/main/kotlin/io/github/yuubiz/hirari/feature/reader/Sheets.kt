@@ -16,6 +16,9 @@ sealed interface ReaderSheet {
     /** 画像補正: 明るさ, シャープ, グレースケール, and 白黒反転 of this book. */
     data object Adjust : ReaderSheet
 
+    /** 本ごとの設定, opened on [opened], where 元に戻す goes back to. */
+    data class BookSettings(val opened: ReaderConfig) : ReaderSheet
+
     /** ページを共有 on a pair: which of its two pages. */
     data class SharePick(val view: PageView.Two) : ReaderSheet
 
@@ -39,7 +42,7 @@ sealed interface ReaderSheet {
      * Every other key goes to the sheet's controls, and on the page panel Del goes to the page number field.
      */
     fun takes(code: Int): Boolean = when (this) {
-        is Pages, Adjust, is SharePick, is CoverPick, is BookEnd, is AddBookmark, Bookmarks -> code == KeyCodes.BACK || code == KeyCodes.MENU
+        is Pages, Adjust, is SharePick, is CoverPick, is BookEnd, is AddBookmark, Bookmarks, is BookSettings -> code == KeyCodes.BACK || code == KeyCodes.MENU
         Menu -> code == KeyCodes.BACK || code == KeyCodes.MENU || code == KeyCodes.DEL
     }
 }
@@ -75,7 +78,7 @@ enum class MenuGroup { Book, Reading, App }
 enum class MenuItem(val group: MenuGroup, val available: Boolean) {
     AddBookmark(MenuGroup.Book, true),
     Bookmarks(MenuGroup.Book, true),
-    BookSettings(MenuGroup.Book, false),
+    BookSettings(MenuGroup.Book, true),
     SetCover(MenuGroup.Book, true),
     SetCoverFromRange(MenuGroup.Book, true),
     SharePage(MenuGroup.Book, true),

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -93,6 +94,7 @@ fun ReaderScreen(
     val close by rememberUpdatedState(onClose)
     HideSystemBars()
     ScreenOrientationLock(viewModel.orientation)
+    ScreenBrightness(viewModel.state?.config?.brightness)
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
 
     fun dismiss() {
@@ -197,6 +199,7 @@ fun ReaderScreen(
                         onAdd = { ui.sheet = ReaderSheet.AddBookmark(state.current.pages.first()) },
                         onClose = { ui.sheet = null },
                     )
+                    is ReaderSheet.BookSettings -> BookSettingsSheet(viewModel, state, sheet, onMessage = { ui.message = it }, onClose = { ui.sheet = null })
                     null -> Unit
                 }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
@@ -449,6 +452,16 @@ private fun HideSystemBars() {
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+}
+
+/** 画面の明るさ (docs/spec.md section 4.10): the window's brightness while the reader is up, else the device's. */
+@Composable
+private fun ScreenBrightness(percent: Int?) {
+    val window = LocalView.current.context.findActivity()?.window
+    DisposableEffect(window, percent) {
+        window?.attributes = window.attributes.apply { screenBrightness = windowBrightness(percent) ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE }
+        onDispose { window?.attributes = window.attributes.apply { screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE } }
     }
 }
 

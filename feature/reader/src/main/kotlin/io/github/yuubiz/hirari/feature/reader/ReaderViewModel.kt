@@ -565,6 +565,30 @@ class ReaderViewModel(
         }
     }
 
+    /** The reader as the global settings alone set it up, where 全体の設定に戻す of 本ごとの設定 goes back to. */
+    val globalConfig: ReaderConfig? get() = opened?.global
+
+    /**
+     * 既定にする (docs/spec.md section 2.9): the book's values become the global settings, and once they are stored,
+     * the book's overrides of them go, so the book follows the global settings again. [done] hears whether it was stored.
+     */
+    fun makeDefault(done: (Boolean) -> Unit) {
+        val book = opened ?: return done(false)
+        val config = state?.config ?: return done(false)
+        val write = book.services.appScope.async { quietly { book.services.storage.settings.update { it.adopting(config) } } }
+        viewModelScope.launch {
+            val stored = write.await()
+            if (stored) book.overrides.update { it.adopted() }
+            done(stored)
+        }
+    }
+
+    /** 画面の明るさ of the 本ごとの設定 sheet, which is the global `readerBrightness`; the reader follows it once stored. */
+    fun setBrightness(percent: Int?) {
+        val book = opened ?: return
+        book.services.appScope.launch { quietly { book.services.storage.settings.update { it.copy(readerBrightness = percent) } } }
+    }
+
     /** The reader left the screen. The process may end before [onCleared], so the history is written now. */
     fun onStop() {
         dispatch(ReaderEvent.AutoPlayStopped)
