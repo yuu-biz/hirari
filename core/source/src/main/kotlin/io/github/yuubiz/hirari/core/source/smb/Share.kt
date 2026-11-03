@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.core.source.smb
 
+import java.time.Instant
+
 /**
  * The transport under [SmbServer]: one authenticated connection to one share. smbj implements it in
  * [SmbjConnector]; the JVM tests use a fake. Every method blocks.
@@ -24,6 +26,9 @@ internal interface ShareConnection {
 
 internal interface RemoteFile {
     val size: Long
+
+    /** The last write time, to the millisecond, as a listing of its folder reports it. */
+    val modified: Instant
 
     /** Reads up to [length] bytes at [offset] into [dst] from [dstOffset]. Returns the count, or -1 at the end. */
     fun read(offset: Long, dst: ByteArray, dstOffset: Int, length: Int): Int

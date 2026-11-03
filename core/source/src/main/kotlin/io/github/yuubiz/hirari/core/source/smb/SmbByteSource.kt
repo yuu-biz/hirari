@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.source.smb
 
 import io.github.yuubiz.hirari.core.source.ByteSource
 import java.nio.ByteBuffer
+import java.time.Instant
 
 /** The bytes [SmbByteSource] fetches per request and keeps for the reads that follow (docs/spec.md section 3.1). */
 const val SMB_READ_BLOCK = 128 * 1024
@@ -20,6 +21,9 @@ class SmbByteSource internal constructor(
     generation: Long,
 ) : ByteSource {
     override val size: Long = file.size
+
+    /** The file's last write time when it was opened. */
+    val modified: Instant = file.modified
 
     private var file: RemoteFile? = file
     private var fileGeneration = generation

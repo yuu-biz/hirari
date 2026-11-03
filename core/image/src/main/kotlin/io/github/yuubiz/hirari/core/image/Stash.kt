@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -7,14 +8,17 @@ import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Where the entries of an archive on a server go on disk once read (docs/spec.md section 5.3). [book] tells the
- * book's entries apart from those of every other book in [cache].
+ * Where the entries of the archive of book [id] on a server go on disk once read (docs/spec.md section 5.3). The
+ * archive's [size] and last write time [modified] tell its entries apart from those of an archive it replaced.
  */
-class DiskStash(val cache: SmbPrefetchCache, val book: String)
+class DiskStash(val cache: SmbPrefetchCache, id: BookId, size: Long, modified: Instant) {
+    internal val book = "${id.value}/$size/${modified.toEpochMilli()}"
+}
 
 /** The SMB prefetch layer of an open book (docs/spec.md section 5.3): its pages' bytes on disk. */
 interface PageStash {

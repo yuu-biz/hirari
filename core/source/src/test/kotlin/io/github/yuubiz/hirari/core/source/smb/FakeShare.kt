@@ -34,6 +34,8 @@ internal class FakeShare(private val files: Map<String, ByteArray>, private val 
         return object : RemoteFile {
             override val size = bytes.size.toLong()
 
+            override val modified: Instant = Instant.EPOCH
+
             override fun read(offset: Long, dst: ByteArray, dstOffset: Int, length: Int): Int {
                 ensureOpen()
                 reads.incrementAndGet()

@@ -96,6 +96,17 @@ class SmbShareTest {
     }
 
     @Test
+    fun `an open file reports its size and the last write time its folder lists`() = runBlocking {
+        server().use { smb ->
+            val listed = smb.list("").single { it.name == "small.bin" }
+            smb.open("small.bin").use {
+                assertEquals(listed.size, it.size)
+                assertEquals(listed.modified, it.modified)
+            }
+        }
+    }
+
+    @Test
     fun `reads a file with a Japanese name and an empty file`() {
         server().use { smb ->
             smb.open("漫画/第1巻.bin").use { assertArrayEquals(SmbFixture.pattern.copyOf(1000), it.readAt(0, 1000)) }

@@ -611,8 +611,7 @@ class ReaderViewModel(
         } catch (e: Exception) {
             return failed(e.openFailure())
         }
-        // The size tells a file replaced at the same path apart, so its entries are not taken from the old one's.
-        val stash = opening.services.smbCache?.let { DiskStash(it, "${id.value}/${file.size}") }
+        val stash = opening.services.smbCache?.let { DiskStash(it, id, file.size, file.modified) }
         val result = Books.openBook(meter.counted(file), opening.services.decoding, File(application.cacheDir, "extract/${id.value}"), naming, stash)
         return Located(id, source, Uri.EMPTY, folder = false, result, remote, overrides, fileSize = file.size)
     }

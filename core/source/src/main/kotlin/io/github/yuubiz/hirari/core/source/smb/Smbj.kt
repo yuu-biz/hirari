@@ -3,7 +3,6 @@ package io.github.yuubiz.hirari.core.source.smb
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.mserref.NtStatus
 import com.hierynomus.msfscc.FileAttributes
-import com.hierynomus.msfscc.fileinformation.FileStandardInformation
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2Dialect
 import com.hierynomus.mssmb2.SMB2ShareAccess
@@ -21,6 +20,7 @@ import java.net.NoRouteToHostException
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.time.Instant
 import java.util.EnumSet
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutionException
@@ -195,7 +195,7 @@ private class SmbjShare(
                 path = if (parent.isEmpty()) name else "$parent/$name",
                 isDirectory = info.fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L,
                 size = info.endOfFile,
-                modified = java.time.Instant.ofEpochMilli(info.lastWriteTime.toEpochMillis()),
+                modified = Instant.ofEpochMilli(info.lastWriteTime.toEpochMillis()),
             )
         }
     }
@@ -210,7 +210,8 @@ private class SmbjShare(
             null,
         )
         try {
-            SmbjFile(file, file.getFileInformation(FileStandardInformation::class.java).endOfFile)
+            val info = file.fileInformation
+            SmbjFile(file, info.standardInformation.endOfFile, Instant.ofEpochMilli(info.basicInformation.lastWriteTime.toEpochMillis()))
         } catch (e: Exception) {
             file.closeSilently()
             throw e
@@ -223,7 +224,7 @@ private class SmbjShare(
     }
 }
 
-private class SmbjFile(private val file: File, override val size: Long) : RemoteFile {
+private class SmbjFile(private val file: File, override val size: Long, override val modified: Instant) : RemoteFile {
     override fun read(offset: Long, dst: ByteArray, dstOffset: Int, length: Int): Int =
         request { file.read(dst, offset, dstOffset, length) }
 

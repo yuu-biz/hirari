@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -16,6 +17,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 class StashTest {
@@ -48,8 +50,10 @@ class StashTest {
 
     private val pages = List(3) { PageEntry(it, 10 + it, byteArrayOf(it.toByte()), "$it.jpg", declaredSize = null, sniffed = null) }
 
-    private fun book(server: PageBytes, name: String = "book") =
-        OpenBook(BookContent.Images(StashedPages(server, DiskStash(cache, name))), Container.Zip, pages, indexError = null, decoding)
+    private val written = Instant.parse("2026-11-01T10:00:00Z")
+
+    private fun book(server: PageBytes, name: String = "book", size: Long = 1000, modified: Instant = written) =
+        OpenBook(BookContent.Images(StashedPages(server, DiskStash(cache, BookId(name), size, modified))), Container.Zip, pages, indexError = null, decoding)
 
     private fun RawResult.bytes(): List<Byte> = ByteArrayOutputStream().also { ((this as PageResult.Ready).image as RawPage.Encoded).writeTo(it) }.toByteArray().toList()
 
@@ -68,6 +72,18 @@ class StashTest {
         assertEquals(listOf<Byte>(2, 2, 2), reopened.raw(2).bytes())
         assertEquals(0, again.reads.get())
         assertFalse(book(again, name = "another book").stash!!.holds(2))
+    }
+
+    @Test
+    fun anArchiveReplacedByOneOfTheSameSizeIsReadFromTheServerAgain() = runBlocking {
+        book(Server()).raw(2)
+        val replaced = Server()
+        val opened = book(replaced, modified = written.plusSeconds(60))
+        assertFalse(opened.stash!!.holds(2))
+        opened.raw(2)
+        assertEquals(1, replaced.reads.get())
+        assertFalse(book(Server(), size = 1001).stash!!.holds(2))
+        assertTrue(book(Server()).stash!!.holds(2))
     }
 
     @Test
@@ -97,7 +113,7 @@ class StashTest {
     fun aViewWaitingOnThePrefetchOfItsPageGetsItOnceEvenWhenTheDiskCannotKeepIt() = runBlocking {
         val full = SmbPrefetchCache(temp.root.resolve("full"), maxBytes = 1, reserveBytes = 0)
         val server = Server().apply { gate = CompletableDeferred() }
-        val opened = OpenBook(BookContent.Images(StashedPages(server, DiskStash(full, "book"))), Container.Zip, pages, indexError = null, decoding)
+        val opened = OpenBook(BookContent.Images(StashedPages(server, DiskStash(full, BookId("book"), 1000, written))), Container.Zip, pages, indexError = null, decoding)
         val filling = async { opened.stash!!.fill(2) }
         while (server.reads.get() == 0) kotlinx.coroutines.yield()
         val reading = async { opened.raw(2) }
@@ -128,7 +144,7 @@ class StashTest {
         assertEquals(Fill.NotKept, opened.stash!!.fill(0))
         assertEquals(readError, opened.raw(0))
         assertFalse(opened.stash!!.holds(0))
-        assertNull(cache.get(SmbPrefetchCache.Key("book", 10)))
+        assertEquals(0L, cache.sizeBytes)
     }
 
     @Test
