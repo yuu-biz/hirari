@@ -302,6 +302,9 @@ internal interface BookOverridesDao {
     @Query("SELECT * FROM book_overrides")
     suspend fun all(): List<BookOverridesRow>
 
+    @Query("SELECT * FROM book_overrides")
+    fun observeAll(): Flow<List<BookOverridesRow>>
+
     @Upsert
     suspend fun upsert(rows: List<BookOverridesRow>)
 
@@ -342,6 +345,9 @@ internal interface FolderDao {
 
     @Query("SELECT * FROM folder_covers WHERE location_id = :locationId AND path = :path")
     fun observeCover(locationId: Long, path: String): Flow<FolderCoverRow?>
+
+    @Query("SELECT * FROM folder_covers WHERE location_id = :locationId")
+    fun observeCovers(locationId: Long): Flow<List<FolderCoverRow>>
 
     @Upsert
     suspend fun setCover(row: FolderCoverRow)

@@ -13,6 +13,7 @@ import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.Rotation
@@ -40,6 +41,7 @@ class LibraryRepositoriesTest {
     private val progress = RoomProgressRepository(database.bookProgress())
     private val history = RoomHistoryRepository(database)
     private val bookmarks = RoomBookmarkRepository(database)
+    private val covers = RoomCoverIndex(database)
 
     @After
     fun close() {
@@ -302,5 +304,34 @@ class LibraryRepositoriesTest {
         books.setOverrides(BookId("a"), BookOverrides())
         assertEquals(BookOverrides(), books.overrides(BookId("a")).first())
         assertEquals(emptyList(), database.bookOverrides().all())
+    }
+
+    @Test
+    fun `the cover index gives every set direction and every chosen folder cover of a place at once`() = runTest {
+        books.setOverrides(BookId("a"), BookOverrides(direction = ReadingDirection.LeftToRight))
+        books.setOverrides(BookId("b"), BookOverrides(rotation = Rotation.Quarter))
+        books.setOverrides(BookId("c"), BookOverrides(direction = ReadingDirection.RightToLeft))
+        assertEquals(mapOf(BookId("a") to ReadingDirection.LeftToRight, BookId("c") to ReadingDirection.RightToLeft), covers.directions().first())
+        books.setOverrides(BookId("a"), BookOverrides())
+        assertEquals(mapOf(BookId("c") to ReadingDirection.RightToLeft), covers.directions().first())
+
+        val here = locations.addSafTree("Manga", UriString("content://tree/1"))
+        val there = locations.addSafTree("Other", UriString("content://tree/2"))
+        locations.setFolderCover(here, "series/a", FolderCover("series/a/cover.jpg"))
+        locations.setFolderCover(here, "series/b", FolderCover("series/b/vol1.zip", entry = 3))
+        locations.setFolderCover(there, "series/a", FolderCover("series/a/other.jpg"))
+        assertEquals(
+            mapOf("series/a" to FolderCover("series/a/cover.jpg"), "series/b" to FolderCover("series/b/vol1.zip", 3)),
+            covers.folderCovers(here).first(),
+        )
+    }
+
+    @Test
+    fun `history carries the cover the user chose`() = runTest {
+        val place = locations.addSafTree("Manga", UriString("content://tree/1"))
+        books.record(book("a", place, "s/a.zip"))
+        books.setCover(BookId("a"), 4)
+        history.record(BookId("a"), at(1), 100)
+        assertEquals(4, history.observe(HistorySort.Newest).first().single().coverEntry)
     }
 }

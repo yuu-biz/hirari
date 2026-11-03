@@ -86,6 +86,8 @@ data class HistoryItem(
     val book: Book?,
     val location: LibraryLocation?,
     val progress: BookProgress?,
+    /** The `entryIndex` of the page the user chose as the cover of [book], or `null` for the first page. */
+    val coverEntry: Int? = null,
 )
 
 /** The history tab (docs/spec.md sections 2.8 and 4.6). Safe to call from the main thread. */
@@ -113,6 +115,7 @@ internal class RoomHistoryRepository(private val database: HirariDatabase) : His
                     book = book,
                     location = (book?.source as? BookSource.InLocation)?.let { locations[it.location.value] },
                     progress = row.progress?.toModel(),
+                    coverEntry = row.book?.coverEntry,
                 )
             }
             when (sort) {

@@ -38,6 +38,8 @@ class Storage internal constructor(
 
     val books: BookRepository = RoomBookRepository(database)
 
+    val covers: CoverIndex = RoomCoverIndex(database)
+
     val history: HistoryRepository = RoomHistoryRepository(database)
 
     val bookmarks: BookmarkRepository = RoomBookmarkRepository(database)
