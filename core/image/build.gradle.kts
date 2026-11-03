@@ -16,6 +16,13 @@ android {
             version = "4.1.2"
         }
     }
+    testOptions {
+        unitTests.all { test ->
+            // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
+            // without it.
+            test.systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
+        }
+    }
 }
 
 dependencies {

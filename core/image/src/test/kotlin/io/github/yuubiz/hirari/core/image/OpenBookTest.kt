@@ -3,7 +3,9 @@ package io.github.yuubiz.hirari.core.image
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageResult
+import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.source.ByteSource
+import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -186,6 +188,14 @@ class OpenBookTest {
         val files = listOf(FolderFile("001.jpg", size = null) { throw IOException("gone") })
         val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
         assertEquals(readError, book.raw(0))
+        book.close()
+    }
+
+    @Test
+    fun aFileOnABrokenConnectionIsAPageToRetryOnceItComesBack() = runTest {
+        val files = listOf(FolderFile("001.jpg", size = null) { throw ConnectionLostException("SMB is reconnecting") })
+        val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
+        assertEquals(PageResult.Failed(FailureReason.ConnectionLost, retryable = true), book.raw(0))
         book.close()
     }
 }

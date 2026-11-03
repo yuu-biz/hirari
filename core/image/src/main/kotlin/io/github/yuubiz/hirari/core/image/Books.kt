@@ -18,6 +18,8 @@ import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.listChildren
 import io.github.yuubiz.hirari.core.source.openByteSource
+import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
+import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -211,6 +213,29 @@ object Books {
         return openFolder(files, decoding)
     }
 
+    /**
+     * Opens the folder at [path] of [server], counted from the root of the share, as a folder book (docs/spec.md
+     * sections 3.10 and 6.5). Every file the book reads goes through [counted], which counts it for 取得の状況.
+     */
+    suspend fun openServerFolder(
+        server: SmbServer,
+        path: String,
+        decoding: ImageDecoding,
+        counted: (ByteSource) -> ByteSource = { it },
+    ): BookResult {
+        val entries = try {
+            server.list(path)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return BookResult.Failed(e.bookFailure())
+        }
+        val files = entries.filterNot { it.isDirectory }.map { entry ->
+            FolderFile(entry.name, entry.size) { counted(server.open(entry.path)) }
+        }
+        return openFolder(files, decoding)
+    }
+
     private fun sniffPrefix(file: FolderFile) = try {
         file.open().use { source -> sniffImage(readPrefix(source, SNIFF_BYTES)) }
     } catch (_: Exception) {
@@ -301,12 +326,17 @@ private class SinglePage(private val source: ByteSource) : PageBytes {
     override fun close() = source.close()
 }
 
-/** [read] on [Dispatchers.IO], with what it throws as a page failure (docs/spec.md section 2.4). */
+/**
+ * [read] on [Dispatchers.IO], with what it throws as a page failure (docs/spec.md section 2.4). A broken SMB connection
+ * can be retried once it comes back (section 6.5).
+ */
 private suspend fun readSafely(read: () -> PageResult<ByteArray>): PageResult<ByteArray> = withContext(Dispatchers.IO) {
     try {
         read()
     } catch (e: CancellationException) {
         throw e
+    } catch (_: ConnectionLostException) {
+        connectionLost
     } catch (_: Exception) {
         readError
     }

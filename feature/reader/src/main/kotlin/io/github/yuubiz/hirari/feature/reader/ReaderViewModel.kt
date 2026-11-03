@@ -103,6 +103,7 @@ private fun BookAddress.initialPath(): String = when (this) {
  * Where an opened book was found: its id, the source the index records, and the document whose name and dates
  * describe it (for a folder, the folder's own document). [overrides] is the book's writer, opened before the book
  * since its chosen charset decodes the names (docs/spec.md section 3.4); null when the book was not found.
+ * [fileSize] is the size of a file on a server, which has no document to report it.
  */
 private class Located(
     val id: BookId,
@@ -112,10 +113,11 @@ private class Located(
     val result: BookResult,
     val remote: Remote? = null,
     val overrides: BookOverridesStore.OverridesWriter? = null,
+    val fileSize: Long? = null,
 )
 
-/** A book read from an SMB server, the size of its file, and the meter of what it fetched. */
-private class Remote(val server: SmbServer, val size: Long, val meter: FetchMeter)
+/** A book read from an SMB server, and the meter of what it fetched. */
+private class Remote(val server: SmbServer, val meter: FetchMeter)
 
 sealed interface ReaderPhase {
     data object Opening : ReaderPhase
@@ -423,7 +425,7 @@ class ReaderViewModel(
         } catch (_: Exception) {
             null
         }
-        val size = located.remote?.size ?: if (located.folder) book.pages.sumOf { it.declaredSize ?: 0L } else info?.size ?: 0L
+        val size = if (located.folder) book.pages.sumOf { it.declaredSize ?: 0L } else located.fileSize ?: info?.size ?: 0L
         val fallbackName = when (val source = located.source) {
             is BookSource.InLocation -> source.path.substringAfterLast('/')
             is BookSource.External -> request.book.initialPath()
@@ -551,25 +553,30 @@ class ReaderViewModel(
     )
 
     /**
-     * A book in an SMB place, read through the server's shared connection (docs/spec.md sections 3.1 and 6.5). A
-     * password that cannot be read is a missing permission, and the connection breaking while the book opens is a
-     * read failure. The images of a folder on a server are not read yet.
+     * A book in an SMB place, an archive, a PDF, or a folder of images, read through the server's shared connection
+     * (docs/spec.md sections 3.1 and 6.5). A password that cannot be read is a missing permission, and the connection
+     * breaking while the book opens is a read failure.
      */
     private suspend fun openOnServer(location: LibraryLocation.SmbShare, path: String, folder: Boolean, source: BookSource, opening: Opening): Located {
         fun failed(reason: BookFailure) = Located(BookId(""), source, Uri.EMPTY, folder, BookResult.Failed(reason))
         withContext(Dispatchers.Main) { bookPath = if (path.isEmpty()) location.displayName else "${location.displayName}/$path" }
-        if (folder) return failed(BookFailure.ReadError)
         val server = opening.services.smb.serverOf(location) ?: return failed(BookFailure.NoPermission)
         val id = locationBookId(location, path)
         val (overrides, naming) = opening.overrides(id)
+        val meter = FetchMeter()
+        val remote = Remote(server, meter)
+        val serverPath = normalizePath("${location.basePath}/$path")
+        if (folder) {
+            val result = Books.openServerFolder(server, serverPath, opening.services.decoding, meter::counted)
+            return Located(id, source, Uri.EMPTY, folder = true, result, remote, overrides)
+        }
         val file = try {
-            server.open(normalizePath("${location.basePath}/$path"))
+            server.open(serverPath)
         } catch (e: Exception) {
             return failed(e.openFailure())
         }
-        val meter = FetchMeter()
         val result = Books.openBook(meter.counted(file), opening.services.decoding, File(application.cacheDir, "extract/${id.value}"), naming)
-        return Located(id, source, Uri.EMPTY, folder = false, result, Remote(server, file.size, meter), overrides)
+        return Located(id, source, Uri.EMPTY, folder = false, result, remote, overrides, fileSize = file.size)
     }
 
     /** A picked document has no lasting address, so its [id] comes from its first bytes when the caller has none. */
