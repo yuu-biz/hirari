@@ -421,17 +421,14 @@ class ReaderViewModel(
         val book = opened ?: return false
         val entry = book.book.pages.getOrNull(page)?.entryIndex ?: return false
         val shared = book.services
-        return shared.appScope.async {
-            try {
+        return shared.appScope.storeCover(
+            store = {
                 book.session.indexed()
                 shared.storage.books.setCover(book.id, entry)
                 shared.storage.books.get(book.id) != null
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                false
-            }
-        }.await().also { stored -> if (stored) shared.appScope.launch { remakeQuietly(shared.covers, book.id) } }
+            },
+            remake = { remakeQuietly(shared.covers, book.id) },
+        ).await()
     }
 
     /** Whether the operation guide was shown to the end before (docs/spec.md section 4.8, 操作ガイド). */
