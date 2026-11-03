@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import java.nio.charset.Charset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -30,10 +31,10 @@ private class SlowBooks : BookRepository {
 
     override fun overrides(id: BookId): Flow<BookOverrides> = flow { emit(stored[id] ?: BookOverrides()) }
 
-    override suspend fun setOverrides(id: BookId, overrides: BookOverrides) {
+    override suspend fun updateOverrides(id: BookId, change: (BookOverrides) -> BookOverrides) {
         gate?.await()
         if (refuse) throw java.io.IOException("disk full")
-        stored[id] = overrides
+        stored[id] = change(stored[id] ?: BookOverrides())
     }
 
     override suspend fun record(book: Book) = Unit
@@ -48,6 +49,18 @@ private class SlowBooks : BookRepository {
 }
 
 class OverridesWriterTest {
+    @Test
+    fun aReaderChangeWrittenAfterTheArchiveListChoseACharsetKeepsBoth() = runTest {
+        val books = SlowBooks()
+        val store = BookOverridesStore(books, CoroutineScope(StandardTestDispatcher(testScheduler)))
+        val charset = Charset.forName("EUC-JP")
+        store.open(ID).update { it.copy(rotation = Rotation.Quarter) }
+        books.updateOverrides(ID) { it.copy(nameCharset = charset) }
+        assertEquals(BookOverrides(rotation = Rotation.Quarter, nameCharset = charset), store.open(ID).current)
+        advanceUntilIdle()
+        assertEquals(BookOverrides(rotation = Rotation.Quarter, nameCharset = charset), books.stored[ID])
+    }
+
     @Test
     fun aReaderOpenedBeforeTheLastOneWroteStartsFromItsChangeAndKeepsIt() = runTest {
         val books = SlowBooks().apply { gate = CompletableDeferred() }

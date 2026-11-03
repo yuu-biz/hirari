@@ -182,7 +182,8 @@ internal class FakeBooks : BookRepository {
 
     override fun overrides(id: BookId): Flow<BookOverrides> = overrides.map { it[id] ?: BookOverrides() }
 
-    override suspend fun setOverrides(id: BookId, overrides: BookOverrides) = this.overrides.update { it + (id to overrides) }
+    override suspend fun updateOverrides(id: BookId, change: (BookOverrides) -> BookOverrides) =
+        overrides.update { it + (id to change(it[id] ?: BookOverrides())) }
 
     val progressRepository = object : ProgressRepository {
         override suspend fun get(book: BookId): BookProgress? = progress.value[book]

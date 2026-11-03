@@ -76,7 +76,7 @@ class SettingsTransferTest {
         settings.update { everything }
         val id = locations.addSmbShare(server, password.toCharArray())
         val book = locationBookId(locations.get(id)!!, "series/vol1.zip")
-        books.setOverrides(book, overrides)
+        books.updateOverrides(book) { overrides }
         progress.save(listOf(BookProgress(book, ReadState.Reading, ReadingPosition.Image(40, 180), at(1))))
         bookmarks.add(book, ReadingPosition.Image(12, 180), "fight", at(2))
         history.record(book, at(3), limit = 100)
@@ -238,7 +238,7 @@ class SettingsTransferTest {
     private suspend fun Storage.holdingOtherData(exported: String): ImportPlan {
         settings.update { GlobalSettings(tapBandPercent = 40) }
         val book = BookId("kept")
-        books.setOverrides(book, BookOverrides(direction = ReadingDirection.RightToLeft))
+        books.updateOverrides(book) { BookOverrides(direction = ReadingDirection.RightToLeft) }
         progress.save(listOf(BookProgress(book, ReadState.Reading, ReadingPosition.Image(2, 9), at(-5))))
         bookmarks.add(book, ReadingPosition.Image(1, 9), "kept", at(-4))
         history.record(book, at(-3), limit = 100)

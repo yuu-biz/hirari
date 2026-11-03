@@ -299,6 +299,9 @@ internal interface BookOverridesDao {
     @Query("SELECT * FROM book_overrides WHERE book_id = :bookId")
     fun observe(bookId: String): Flow<BookOverridesRow?>
 
+    @Query("SELECT * FROM book_overrides WHERE book_id = :bookId")
+    suspend fun get(bookId: String): BookOverridesRow?
+
     @Query("SELECT * FROM book_overrides")
     suspend fun all(): List<BookOverridesRow>
 

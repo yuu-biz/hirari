@@ -209,7 +209,7 @@ class ArchiveViewModel(
             val (before, after) = withContext(compute) {
                 listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id).pages }
             }
-            books.setOverrides(id, overrides.copy(nameCharset = charset))
+            books.updateOverrides(id) { it.copy(nameCharset = charset) }
             val saved = progress.get(id) ?: return@write
             val moved = saved.movedTo(before, after)
             if (moved != saved) progress.save(listOf(moved))

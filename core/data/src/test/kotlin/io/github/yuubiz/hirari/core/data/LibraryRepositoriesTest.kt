@@ -308,20 +308,28 @@ class LibraryRepositoriesTest {
             nameCharset = Charset.forName("EUC-JP"),
             adjust = ImageAdjust(level = 2, mono = true),
         )
-        books.setOverrides(BookId("a"), overrides)
+        books.updateOverrides(BookId("a")) { overrides }
         assertEquals(overrides, books.overrides(BookId("a")).first())
-        books.setOverrides(BookId("a"), BookOverrides())
+        books.updateOverrides(BookId("a")) { BookOverrides() }
         assertEquals(BookOverrides(), books.overrides(BookId("a")).first())
         assertEquals(emptyList(), database.bookOverrides().all())
     }
 
     @Test
+    fun `a change of one override keeps the others stored`() = runTest {
+        val charset = Charset.forName("EUC-JP")
+        books.updateOverrides(BookId("a")) { it.copy(rotation = Rotation.Quarter) }
+        books.updateOverrides(BookId("a")) { it.copy(nameCharset = charset) }
+        assertEquals(BookOverrides(rotation = Rotation.Quarter, nameCharset = charset), books.overrides(BookId("a")).first())
+    }
+
+    @Test
     fun `the cover index gives every set direction and every chosen folder cover of a place at once`() = runTest {
-        books.setOverrides(BookId("a"), BookOverrides(direction = ReadingDirection.LeftToRight))
-        books.setOverrides(BookId("b"), BookOverrides(rotation = Rotation.Quarter))
-        books.setOverrides(BookId("c"), BookOverrides(direction = ReadingDirection.RightToLeft))
+        books.updateOverrides(BookId("a")) { BookOverrides(direction = ReadingDirection.LeftToRight) }
+        books.updateOverrides(BookId("b")) { BookOverrides(rotation = Rotation.Quarter) }
+        books.updateOverrides(BookId("c")) { BookOverrides(direction = ReadingDirection.RightToLeft) }
         assertEquals(mapOf(BookId("a") to ReadingDirection.LeftToRight, BookId("c") to ReadingDirection.RightToLeft), covers.directions().first())
-        books.setOverrides(BookId("a"), BookOverrides())
+        books.updateOverrides(BookId("a")) { BookOverrides() }
         assertEquals(mapOf(BookId("c") to ReadingDirection.RightToLeft), covers.directions().first())
 
         val here = locations.addSafTree("Manga", UriString("content://tree/1"))

@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.data
 
+import androidx.room3.withWriteTransaction
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookOverrides
@@ -45,7 +46,11 @@ interface BookRepository {
 
     fun overrides(id: BookId): Flow<BookOverrides>
 
-    suspend fun setOverrides(id: BookId, overrides: BookOverrides)
+    /**
+     * Stores [change] of the stored overrides of book [id], read and written in one transaction, so writers that
+     * change different fields keep each other's change (docs/spec.md section 2.9).
+     */
+    suspend fun updateOverrides(id: BookId, change: (BookOverrides) -> BookOverrides)
 }
 
 internal class RoomBookRepository(private val database: HirariDatabase) : BookRepository {
@@ -69,11 +74,12 @@ internal class RoomBookRepository(private val database: HirariDatabase) : BookRe
     override fun overrides(id: BookId): Flow<BookOverrides> =
         overrides.observe(id.value).map { it?.overrides?.toBookOverrides() ?: BookOverrides() }
 
-    override suspend fun setOverrides(id: BookId, overrides: BookOverrides) {
-        if (overrides == BookOverrides()) {
-            this.overrides.delete(id.value)
+    override suspend fun updateOverrides(id: BookId, change: (BookOverrides) -> BookOverrides) = database.withWriteTransaction {
+        val next = change(overrides.get(id.value)?.overrides?.toBookOverrides() ?: BookOverrides())
+        if (next == BookOverrides()) {
+            overrides.delete(id.value)
         } else {
-            this.overrides.upsert(listOf(BookOverridesRow(id.value, overrides.toJson().toString())))
+            overrides.upsert(listOf(BookOverridesRow(id.value, next.toJson().toString())))
         }
     }
 }

@@ -54,7 +54,7 @@ class ReadingSessionTest {
 
         override fun overrides(id: BookId): Flow<BookOverrides> = emptyFlow()
 
-        override suspend fun setOverrides(id: BookId, overrides: BookOverrides) = Unit
+        override suspend fun updateOverrides(id: BookId, change: (BookOverrides) -> BookOverrides) = Unit
     }
 
     private val history = object : HistoryRepository {
