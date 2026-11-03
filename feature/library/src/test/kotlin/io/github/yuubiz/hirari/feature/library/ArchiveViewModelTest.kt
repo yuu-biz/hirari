@@ -65,13 +65,13 @@ class ArchiveViewModelTest {
         assertEquals(listOf("あとがき.txt"), shown.texts.map { it.text.name })
         assertEquals(entryBookId(id, byteArrayOf(2)), shown.texts.single().text.id)
         assertEquals(listOf("第1話.jpg", "第2話.jpg", "第10話.jpg"), shown.pages.map { it.page.name })
-        assertEquals(listOf(0, 1, 2), shown.pages.map { it.page.readerIndex })
+        assertEquals(listOf(0, 1, 2), shown.pages.map { it.page.index })
         assertEquals(cp932, shown.charset)
         assertEquals(null, shown.chosen)
     }
 
     @Test
-    fun `choosing another charset sorts the pages anew, is kept for the book, and taps still open the right page`() = runTest {
+    fun `choosing another charset sorts the pages anew, is kept for the book, and a tap opens the reader at the place the list shows`() = runTest {
         val list = viewModel()
         list.chooseCharset(utf8)
 
@@ -81,12 +81,26 @@ class ArchiveViewModelTest {
         assertEquals(listOf("a.jpg", "b.jpg", "c.jpg"), shown.pages.map { it.page.name })
         assertEquals(listOf("x.txt"), shown.texts.map { it.text.name })
         assertEquals(
-            ArchiveTarget.Page(OpenBookRequest(BookAddress.InLocation(place.id, "作品/book.zip", folder = false, "doc:book"), StartAt.Page(2))),
-            list.open(shown.pages.first().page),
+            ArchiveTarget.Page(OpenBookRequest(BookAddress.InLocation(place.id, "作品/book.zip", folder = false, "doc:book"), StartAt.Page(1))),
+            list.open(shown.pages[1].page),
         )
 
         list.chooseCharset(null)
         assertEquals(listOf("第1話.jpg", "第2話.jpg", "第10話.jpg"), list.shown().pages.map { it.page.name })
+    }
+
+    @Test
+    fun `the stored position follows its page when another charset reorders the pages`() = runTest {
+        val list = viewModel()
+        list.readUpTo(list.shown().pages[0].page)
+        assertEquals(ReadingPosition.Image(0, 3), fixture.books.progress.value[id]?.position)
+
+        list.chooseCharset(utf8)
+        assertEquals(ReadingPosition.Image(1, 3), fixture.books.progress.value[id]?.position)
+        assertEquals(listOf(true, false, false), list.shown().pages.map { it.read })
+
+        list.chooseCharset(null)
+        assertEquals(ReadingPosition.Image(0, 3), fixture.books.progress.value[id]?.position)
     }
 
     @Test

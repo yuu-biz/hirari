@@ -323,12 +323,11 @@ internal class FakeSmb : SmbPlaces {
 
 /**
  * An archive whose entry names read as [names] gives them for each charset, in stored order. The detected charset is
- * [detected]; the reader decodes in [reader].
+ * [detected].
  */
 internal class FakeContents(
     private val names: Map<Charset, List<String>>,
     private val detected: Charset,
-    private val reader: Charset = detected,
     override val documentUri: UriString? = UriString("content://tree/manga/document/book.zip"),
 ) : ArchiveContents {
     var closed = false
@@ -336,8 +335,6 @@ internal class FakeContents(
     override val entries: List<ArchiveItem> = names.getValue(detected).indices.map { ArchiveItem(it, byteArrayOf(it.toByte()), 100L + it, isDirectory = false, unreadable = false) }
 
     override fun charset(override: Charset?, fallback: Charset): Charset = override ?: detected
-
-    override fun readerCharset(): Charset = reader
 
     override fun name(item: ArchiveItem, charset: Charset): String = names.getValue(charset)[item.entryIndex]
 

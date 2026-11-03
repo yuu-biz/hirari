@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.archive.OpenResult
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
+import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -22,6 +23,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
 import java.nio.ByteBuffer
+import java.nio.charset.Charset
 import kotlin.coroutines.cancellation.CancellationException
 
 sealed interface BookResult {
@@ -48,6 +50,14 @@ enum class BookFailure {
     ReadError,
 }
 
+/**
+ * How the entry names of an archive are decoded (docs/spec.md section 3.4): in [chosen], the book's
+ * `BookOverrides.nameCharset`, when the user picked one, else in the charset the names point to, else in
+ * [undetermined], the setting `fallbackCharset`. The archive list decodes them the same way, so both put the pages
+ * in one order.
+ */
+data class EntryNaming(val chosen: Charset? = null, val undetermined: FallbackCharset = FallbackCharset.Cp932)
+
 /** One image file of a folder book. [open] blocks, and is called on [Dispatchers.IO]. */
 class FolderFile(val name: String, val size: Long?, val open: () -> ByteSource)
 
@@ -57,14 +67,19 @@ object Books {
      * Opens the archive in [source], which the book owns from here on. A solid archive is extracted into
      * [extractDir], the book's directory under `cacheDir/extract/` (docs/spec.md section 3.3), when it is given.
      */
-    suspend fun openArchive(source: ByteSource, decoding: ImageDecoding, extractDir: File? = null): BookResult {
+    suspend fun openArchive(
+        source: ByteSource,
+        decoding: ImageDecoding,
+        extractDir: File? = null,
+        naming: EntryNaming = EntryNaming(),
+    ): BookResult {
         val session = when (val opened = ArchiveSession.open(source, extractDir)) {
             is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
             OpenResult.Encrypted -> return BookResult.Failed(BookFailure.Encrypted)
             is OpenResult.Opened -> opened.session
         }
         return try {
-            val charset = session.nameCharset()
+            val charset = session.nameCharset(naming.chosen, Charset.forName(naming.undetermined.charsetName))
             val pages = session.entries.mapNotNull { entry ->
                 val name = session.name(entry, charset)
                 val page = PageEntry(-1, entry.entryIndex, entry.rawName, name, entry.declaredSize, sniffed = null)
@@ -105,7 +120,12 @@ object Books {
      * Opens the book in [source], which the book owns from here on: a PDF when `%PDF-` starts within its first
      * 1024 bytes (docs/spec.md section 3.2), and otherwise an archive, extracted into [extractDir] when solid.
      */
-    suspend fun openBook(source: ByteSource, decoding: ImageDecoding, extractDir: File? = null): BookResult {
+    suspend fun openBook(
+        source: ByteSource,
+        decoding: ImageDecoding,
+        extractDir: File? = null,
+        naming: EntryNaming = EntryNaming(),
+    ): BookResult {
         val read = try {
             safely { readPrefix(source, PDF_SNIFF_BYTES) }
         } catch (e: CancellationException) {
@@ -119,7 +139,7 @@ object Books {
                 return BookResult.Failed(read.reason)
             }
         }
-        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding, extractDir)
+        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding, extractDir, naming)
     }
 
     /** Opens the PDF in [source], which the book owns from here on (docs/spec.md section 3.9). */
@@ -141,7 +161,7 @@ object Books {
 
     /**
      * Opens the archive or PDF document at [uri]. A provider that cannot seek gets the document copied into
-     * [copyDir]. A solid archive is extracted into [extractDir] when it is given.
+     * [copyDir]. A solid archive is extracted into [extractDir] when it is given. [naming] decodes an archive's names.
      */
     suspend fun openDocument(
         resolver: ContentResolver,
@@ -149,12 +169,13 @@ object Books {
         copyDir: File,
         decoding: ImageDecoding,
         extractDir: File? = null,
+        naming: EntryNaming = EntryNaming(),
     ): BookResult {
         val source = when (val opened = safely(release = ByteSource::close) { resolver.openByteSource(uri, copyDir) }) {
             is Safely.Done -> opened.value
             is Safely.Failed -> return BookResult.Failed(opened.reason)
         }
-        return openBook(source, decoding, extractDir)
+        return openBook(source, decoding, extractDir, naming)
     }
 
     /**

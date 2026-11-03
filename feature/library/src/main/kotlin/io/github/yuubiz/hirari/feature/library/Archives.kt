@@ -53,14 +53,11 @@ interface ArchiveContents : Closeable {
     /** The archive's own document, which the text reader opens a text entry of; null in an SMB place. */
     val documentUri: UriString?
 
-    /** The charset of the names: [override] when the user chose one, else the detected one, else [fallback]. */
-    fun charset(override: Charset?, fallback: Charset): Charset
-
     /**
-     * The charset the image reader decodes the names in. The reader does not apply the book's choice yet, so a tap
-     * finds the page by the reader's own order.
+     * The charset of the names: [override] when the user chose one, else the detected one, else [fallback]. The image
+     * reader decodes them the same way, so the list and the reader put the pages in one order.
      */
-    fun readerCharset(): Charset
+    fun charset(override: Charset?, fallback: Charset): Charset
 
     fun name(item: ArchiveItem, charset: Charset): String
 
@@ -81,8 +78,8 @@ fun interface ArchiveOpener {
     suspend fun open(place: LibraryLocation, path: String, documentId: String?, book: BookId): ArchiveOpenResult
 }
 
-/** A page of the list. [readerIndex] is its place in the image reader's order, which a tap opens it at. */
-data class ArchivePage(val entryIndex: Int, val name: String, val size: Long?, val readerIndex: Int, val unreadable: Boolean)
+/** A page of the list. [index] is its place in the list, which is the image reader's order too, and a tap opens it there. */
+data class ArchivePage(val entryIndex: Int, val name: String, val size: Long?, val index: Int, val unreadable: Boolean)
 
 /** A text entry, read and marked as a book of its own (docs/spec.md section 2.2). */
 data class ArchiveText(val entryIndex: Int, val name: String, val size: Long?, val id: BookId)
@@ -91,14 +88,12 @@ data class ArchiveRows(val texts: List<ArchiveText>, val pages: List<ArchivePage
 
 /**
  * The texts and the pages of [contents] with its names in [charset] (docs/spec.md sections 3.5 and 4.7). Pages are
- * in natural order of those names, so another charset can reorder them; each keeps the position the reader gives it.
- * Texts are the `.txt` entries in natural order.
+ * in natural order of those names, so another charset can reorder them. Texts are the `.txt` entries in natural order.
  */
 suspend fun ArchiveContents.rows(charset: Charset, book: BookId): ArchiveRows {
-    val readerOrder = pagesIn(readerCharset()).associate { it.entryIndex to it.index }
     val pages = pagesIn(charset).map { page ->
         val item = entries[page.entryIndex]
-        ArchivePage(page.entryIndex, page.name, item.size, readerOrder[page.entryIndex] ?: 0, item.unreadable)
+        ArchivePage(page.entryIndex, page.name, item.size, page.index, item.unreadable)
     }
     val texts = entries
         .filter { !it.isDirectory && name(it, charset).lowercase(Locale.ROOT).endsWith(".txt") }
@@ -162,8 +157,6 @@ private class SessionContents(private val session: ArchiveSession, override val 
     }
 
     override fun charset(override: Charset?, fallback: Charset): Charset = session.nameCharset(override, fallback)
-
-    override fun readerCharset(): Charset = session.nameCharset()
 
     override fun name(item: ArchiveItem, charset: Charset): String = session.name(session.entries[item.entryIndex], charset)
 

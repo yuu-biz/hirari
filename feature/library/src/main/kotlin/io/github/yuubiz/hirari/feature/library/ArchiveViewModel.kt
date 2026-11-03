@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.charset.Charset
 import java.time.Instant
 
@@ -168,7 +169,7 @@ class ArchiveViewModel(
                 charset = charset,
                 chosen = chosen,
                 texts = rows.texts.map { TextRow(it, progress[it.id].mark()) },
-                pages = rows.pages.map { PageRow(it, own.covers(it.readerIndex)) },
+                pages = rows.pages.map { PageRow(it, own.covers(it.index)) },
                 indexed = indexed,
                 covers = covers,
                 folderCoverPage = folderCover?.takeIf { it.imagePath == normalizePath(book.path) }?.entry,
@@ -186,7 +187,7 @@ class ArchiveViewModel(
     fun open(page: ArchivePage): ArchiveTarget? {
         if (opened?.place is LibraryLocation.SmbShare) return null.also { notice.value = Notice.SmbBookNotReady }
         val address = BookAddress.InLocation(book.location, book.path, folder = false, book.documentId)
-        return ArchiveTarget.Page(OpenBookRequest(address, StartAt.Page(page.readerIndex)))
+        return ArchiveTarget.Page(OpenBookRequest(address, StartAt.Page(page.index)))
     }
 
     fun open(text: ArchiveText): ArchiveTarget? {
@@ -195,10 +196,24 @@ class ArchiveViewModel(
         return ArchiveTarget.Text(TextAddress.ArchiveEntry(uri, text.entryIndex, opened.id))
     }
 
-    /** 文字コード of the menu (docs/spec.md section 3.4); null goes back to the detected one. */
+    /**
+     * 文字コード of the menu (docs/spec.md section 3.4); null goes back to the detected one. The stored position
+     * follows its page to the place the new names sort it to (section 2.7).
+     */
     fun chooseCharset(charset: Charset?) {
-        val id = opened?.id ?: return
-        write { books.setOverrides(id, books.overrides(id).first().copy(nameCharset = charset)) }
+        val opened = opened ?: return
+        val id = opened.id
+        write {
+            val overrides = books.overrides(id).first()
+            val fallback = Charset.forName(settings.settings.first().fallbackCharset.charsetName)
+            val (before, after) = withContext(compute) {
+                listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id).pages }
+            }
+            books.setOverrides(id, overrides.copy(nameCharset = charset))
+            val saved = progress.get(id) ?: return@write
+            val moved = saved.movedTo(before, after)
+            if (moved != saved) progress.save(listOf(moved))
+        }
     }
 
     /** 未読 and 既読 of a text entry, which reads as a book of its own. */
@@ -208,8 +223,8 @@ class ArchiveViewModel(
     fun readUpTo(page: ArchivePage) {
         val id = opened?.id ?: return
         val count = (state.value.content as? ArchiveUi.Shown)?.pages?.size ?: return
-        val state = if (page.readerIndex >= count - 1) ReadState.Read else ReadState.Reading
-        write { progress.save(listOf(BookProgress(id, state, ReadingPosition.Image(page.readerIndex, count), clock()))) }
+        val state = if (page.index >= count - 1) ReadState.Read else ReadState.Reading
+        write { progress.save(listOf(BookProgress(id, state, ReadingPosition.Image(page.index, count), clock()))) }
     }
 
     /** このページを表紙にする (docs/spec.md section 4.4). */
@@ -242,9 +257,17 @@ class ArchiveViewModel(
     }
 }
 
-/** Whether the page at [readerIndex] lies before the stored position, or the book is read. */
-private fun BookProgress?.covers(readerIndex: Int): Boolean = when (this?.state) {
+/** Whether the page at [index] lies before the stored position, or the book is read. */
+private fun BookProgress?.covers(index: Int): Boolean = when (this?.state) {
     ReadState.Read -> true
-    ReadState.Reading -> (position as? ReadingPosition.Image)?.let { readerIndex < it.viewStart } == true
+    ReadState.Reading -> (position as? ReadingPosition.Image)?.let { index < it.viewStart } == true
     null, ReadState.Unread -> false
+}
+
+/** This progress with its position on the page of [before] it named, at that page's place in [after]. */
+internal fun BookProgress.movedTo(before: List<ArchivePage>, after: List<ArchivePage>): BookProgress {
+    val at = position as? ReadingPosition.Image ?: return this
+    val entry = before.getOrNull(at.viewStart)?.entryIndex ?: return this
+    val index = after.indexOfFirst { it.entryIndex == entry }.takeIf { it >= 0 } ?: return this
+    return copy(position = at.copy(viewStart = index))
 }

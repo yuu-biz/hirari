@@ -19,6 +19,7 @@ import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.Books
+import io.github.yuubiz.hirari.core.image.EntryNaming
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.OpenBook
@@ -31,6 +32,7 @@ import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -99,7 +101,8 @@ private fun BookAddress.initialPath(): String = when (this) {
 
 /**
  * Where an opened book was found: its id, the source the index records, and the document whose name and dates
- * describe it (for a folder, the folder's own document).
+ * describe it (for a folder, the folder's own document). [overrides] is the book's writer, opened before the book
+ * since its chosen charset decodes the names (docs/spec.md section 3.4); null when the book was not found.
  */
 private class Located(
     val id: BookId,
@@ -108,6 +111,7 @@ private class Located(
     val folder: Boolean,
     val result: BookResult,
     val remote: Remote? = null,
+    val overrides: BookOverridesStore.OverridesWriter? = null,
 )
 
 /** A book read from an SMB server, the size of its file, and the meter of what it fetched. */
@@ -359,7 +363,7 @@ class ReaderViewModel(
         val settings = services.storage.settings.settings.first()
         orientation = settings.readerOrientation
         val located = withContext(Dispatchers.IO) {
-            openBook(services, copyDir).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
+            openBook(Opening(services, copyDir, settings.fallbackCharset)).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
         val id = located.id
         val book = when (val result = located.result) {
@@ -378,7 +382,7 @@ class ReaderViewModel(
         val openedAt = Instant.now()
         services.progress.flush().join()
         val saved = services.storage.progress.get(id)
-        val writer = services.overrides.open(id)
+        val writer = checkNotNull(located.overrides)
         val config = ReaderConfig.of(settings, writer.current)
         val indexed = withContext(Dispatchers.IO) { describe(located, book) }
         val start = when (val at = request.start) {
@@ -493,23 +497,30 @@ class ReaderViewModel(
         }
     }
 
-    private suspend fun openBook(services: ReaderServices, copyDir: File): Located = when (val book = request.book) {
+    /** What every way of opening the book shares: the services, where copies go, and the setting `fallbackCharset`. */
+    private class Opening(val services: ReaderServices, val copyDir: File, val fallback: FallbackCharset) {
+        /** The writer of book [id], and how the names are decoded with the charset it holds (docs/spec.md section 3.4). */
+        suspend fun overrides(id: BookId): Pair<BookOverridesStore.OverridesWriter, EntryNaming> =
+            services.overrides.open(id).let { it to EntryNaming(it.current.nameCharset, fallback) }
+    }
+
+    private suspend fun openBook(opening: Opening): Located = when (val book = request.book) {
         is BookAddress.Tree -> {
             val tree = Uri.parse(book.uri.value)
-            openFolder(folderBookId(book.uri), BookSource.External(book.uri), tree, DocumentsContract.getTreeDocumentId(tree), services, copyDir)
+            openFolder(folderBookId(book.uri), BookSource.External(book.uri), tree, DocumentsContract.getTreeDocumentId(tree), opening)
         }
-        is BookAddress.Document -> openDocument(id = null, BookSource.External(book.uri), Uri.parse(book.uri.value), services, copyDir)
-        is BookAddress.InLocation -> openInLocation(book, services, copyDir)
+        is BookAddress.Document -> openDocument(id = null, BookSource.External(book.uri), Uri.parse(book.uri.value), opening)
+        is BookAddress.InLocation -> openInLocation(book, opening)
     }
 
     /** A book in a place, by its path inside the place (docs/spec.md section 2.2). */
-    private suspend fun openInLocation(book: BookAddress.InLocation, services: ReaderServices, copyDir: File): Located {
+    private suspend fun openInLocation(book: BookAddress.InLocation, opening: Opening): Located {
         val path = normalizePath(book.path)
         val source = BookSource.InLocation(book.location, path)
         fun failed(reason: BookFailure) = Located(BookId(""), source, Uri.EMPTY, book.folder, BookResult.Failed(reason))
-        val location = when (val found = services.storage.locations.get(book.location)) {
+        val location = when (val found = opening.services.storage.locations.get(book.location)) {
             is LibraryLocation.SafTree -> found
-            is LibraryLocation.SmbShare -> return openOnServer(found, path, book.folder, source, services)
+            is LibraryLocation.SmbShare -> return openOnServer(found, path, book.folder, source, opening)
             null -> return failed(BookFailure.NotFound)
         }
         if (!location.permissionHeld) return failed(BookFailure.NoPermission)
@@ -524,18 +535,19 @@ class ReaderViewModel(
         } ?: return failed(BookFailure.NotFound)
         val id = locationBookId(location, path)
         return if (book.folder) {
-            openFolder(id, source, tree, documentId, services, copyDir)
+            openFolder(id, source, tree, documentId, opening)
         } else {
-            openDocument(id, source, DocumentsContract.buildDocumentUriUsingTree(tree, documentId), services, copyDir)
+            openDocument(id, source, DocumentsContract.buildDocumentUriUsingTree(tree, documentId), opening)
         }
     }
 
-    private suspend fun openFolder(id: BookId, source: BookSource, tree: Uri, documentId: String, services: ReaderServices, copyDir: File) = Located(
+    private suspend fun openFolder(id: BookId, source: BookSource, tree: Uri, documentId: String, opening: Opening) = Located(
         id = id,
         source = source,
         documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId),
         folder = true,
-        result = Books.openTreeFolder(application.contentResolver, tree, documentId, copyDir, services.decoding),
+        result = Books.openTreeFolder(application.contentResolver, tree, documentId, opening.copyDir, opening.services.decoding),
+        overrides = opening.overrides(id).first,
     )
 
     /**
@@ -543,27 +555,28 @@ class ReaderViewModel(
      * password that cannot be read is a missing permission, and the connection breaking while the book opens is a
      * read failure. The images of a folder on a server are not read yet.
      */
-    private suspend fun openOnServer(location: LibraryLocation.SmbShare, path: String, folder: Boolean, source: BookSource, services: ReaderServices): Located {
+    private suspend fun openOnServer(location: LibraryLocation.SmbShare, path: String, folder: Boolean, source: BookSource, opening: Opening): Located {
         fun failed(reason: BookFailure) = Located(BookId(""), source, Uri.EMPTY, folder, BookResult.Failed(reason))
         withContext(Dispatchers.Main) { bookPath = if (path.isEmpty()) location.displayName else "${location.displayName}/$path" }
         if (folder) return failed(BookFailure.ReadError)
-        val server = services.smb.serverOf(location) ?: return failed(BookFailure.NoPermission)
+        val server = opening.services.smb.serverOf(location) ?: return failed(BookFailure.NoPermission)
+        val id = locationBookId(location, path)
+        val (overrides, naming) = opening.overrides(id)
         val file = try {
             server.open(normalizePath("${location.basePath}/$path"))
         } catch (e: Exception) {
             return failed(e.openFailure())
         }
-        val id = locationBookId(location, path)
         val meter = FetchMeter()
-        val result = Books.openBook(meter.counted(file), services.decoding, File(application.cacheDir, "extract/${id.value}"))
-        return Located(id, source, Uri.EMPTY, folder = false, result, Remote(server, file.size, meter))
+        val result = Books.openBook(meter.counted(file), opening.services.decoding, File(application.cacheDir, "extract/${id.value}"), naming)
+        return Located(id, source, Uri.EMPTY, folder = false, result, Remote(server, file.size, meter), overrides)
     }
 
     /** A picked document has no lasting address, so its [id] comes from its first bytes when the caller has none. */
-    private suspend fun openDocument(id: BookId?, source: BookSource, uri: Uri, services: ReaderServices, copyDir: File): Located {
+    private suspend fun openDocument(id: BookId?, source: BookSource, uri: Uri, opening: Opening): Located {
         fun failed(e: Exception) = Located(BookId(""), source, uri, folder = false, BookResult.Failed(e.openFailure()))
         val bytes = try {
-            application.contentResolver.openByteSource(uri, copyDir)
+            application.contentResolver.openByteSource(uri, opening.copyDir)
         } catch (e: Exception) {
             return failed(e)
         }
@@ -573,7 +586,14 @@ class ReaderViewModel(
             bytes.close()
             return failed(e)
         }
-        return Located(bookId, source, uri, folder = false, Books.openBook(bytes, services.decoding, File(application.cacheDir, "extract/${bookId.value}")))
+        val (overrides, naming) = try {
+            opening.overrides(bookId)
+        } catch (e: Throwable) {
+            bytes.close()
+            throw e
+        }
+        val result = Books.openBook(bytes, opening.services.decoding, File(application.cacheDir, "extract/${bookId.value}"), naming)
+        return Located(bookId, source, uri, folder = false, result, overrides = overrides)
     }
 
     private fun prefixOf(source: ByteSource): ByteArray {
