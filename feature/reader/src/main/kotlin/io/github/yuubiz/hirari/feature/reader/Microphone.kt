@@ -7,6 +7,7 @@ import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -38,6 +39,7 @@ object DeviceMicrophone : Microphone {
         }
         try {
             if (record.state != AudioRecord.STATE_INITIALIZED) return@flow
+            currentCoroutineContext().ensureActive()
             try {
                 record.startRecording()
             } catch (_: IllegalStateException) {

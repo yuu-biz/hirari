@@ -2,11 +2,16 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
 import io.github.yuubiz.hirari.core.model.Turn
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -33,7 +38,32 @@ private class FakeMicrophone : Microphone {
     fun hear(vararg windows: Int) = windows.forEach { sound.trySend(it) }
 }
 
-private val READING = BreathInput(enabled = true, sensitivity = BreathSensitivity.Medium, granted = true, foreground = true)
+/** A microphone that is slow to let go: after it is stopped it stays held until the test lets it go. */
+private class HeldMicrophone : Microphone {
+    var held = 0
+    var peak = 0
+    var starts = 0
+    private val lettingGo = ArrayDeque<CompletableDeferred<Unit>>()
+
+    override fun windows(): Flow<Int> = flow {
+        starts++
+        held++
+        peak = maxOf(peak, held)
+        val release = CompletableDeferred<Unit>().also(lettingGo::addLast)
+        try {
+            awaitCancellation()
+        } finally {
+            withContext(NonCancellable) {
+                release.await()
+                held--
+            }
+        }
+    }
+
+    fun letGo() = lettingGo.removeFirstOrNull()?.complete(Unit)
+}
+
+private val READING =BreathInput(enabled = true, sensitivity = BreathSensitivity.Medium, granted = true, foreground = true)
 private const val LOUD = 20000
 private const val QUIET = 50
 
@@ -69,6 +99,50 @@ class BreathSessionTest {
         session.update(READING)
         assertEquals(1, mic.on)
         assertEquals(2, mic.starts)
+    }
+
+    @Test
+    fun theMicrophoneStartsAgainOnlyAfterTheLastOneLetGo() = runTest(UnconfinedTestDispatcher()) {
+        val mic = HeldMicrophone()
+        val session = BreathSession(backgroundScope, mic) {}
+        session.update(READING)
+        session.update(READING.copy(foreground = false))
+        session.update(READING)
+        assertEquals(1, mic.starts)
+        assertEquals(1, mic.held)
+        mic.letGo()
+        assertEquals(2, mic.starts)
+        assertEquals(1, mic.held)
+        assertEquals(1, mic.peak)
+    }
+
+    @Test
+    fun aQuickPauseAndResumeAgainStartsOnceAfterEveryRelease() = runTest(UnconfinedTestDispatcher()) {
+        val mic = HeldMicrophone()
+        val session = BreathSession(backgroundScope, mic) {}
+        session.update(READING)
+        repeat(3) {
+            session.update(READING.copy(foreground = false))
+            session.update(READING)
+        }
+        assertEquals(1, mic.starts)
+        mic.letGo()
+        assertEquals(2, mic.starts)
+        assertEquals(1, mic.peak)
+        assertEquals(1, mic.held)
+    }
+
+    @Test
+    fun aMicrophoneNotWantedAnyMoreIsNotStartedAfterTheWait() = runTest(UnconfinedTestDispatcher()) {
+        val mic = HeldMicrophone()
+        val session = BreathSession(backgroundScope, mic) {}
+        session.update(READING)
+        session.update(READING.copy(foreground = false))
+        session.update(READING)
+        session.update(READING.copy(foreground = false))
+        mic.letGo()
+        assertEquals(1, mic.starts)
+        assertEquals(0, mic.held)
     }
 
     @Test

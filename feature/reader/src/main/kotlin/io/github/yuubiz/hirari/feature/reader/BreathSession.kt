@@ -7,7 +7,10 @@ import io.github.yuubiz.hirari.core.model.BreathSensitivity
 import io.github.yuubiz.hirari.core.model.Turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * What decides whether the microphone is on: the setting `breathControl` and its sensitivity, the permission, and
@@ -56,6 +59,9 @@ class BreathSession(private val scope: CoroutineScope, private val microphone: M
 
     private var listening: Job? = null
 
+    /** The newest start, stopped or not: a stopped one holds the microphone until it lets go, and the next start waits for it. */
+    private var latest: Job? = null
+
     fun update(next: BreathInput) {
         input = next
         if (!next.listens) {
@@ -71,10 +77,15 @@ class BreathSession(private val scope: CoroutineScope, private val microphone: M
             else -> BreathView.Listening(BreathDetector(next.sensitivity))
         }
         if (next.listens && listening == null) {
-            listening = scope.launch {
+            val before = latest
+            val started = scope.launch {
+                withContext(NonCancellable) { before?.join() }
+                ensureActive()
                 microphone.windows().collect(::heard)
                 view = BreathView.Unavailable
             }
+            latest = started
+            listening = started
         }
     }
 
