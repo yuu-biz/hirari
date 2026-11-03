@@ -7,9 +7,6 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.Trace
 import android.util.LruCache
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.data.FontStore
@@ -23,13 +20,11 @@ import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.Siblings
 import io.github.yuubiz.hirari.core.model.TextTypeface
-import io.github.yuubiz.hirari.core.model.bookEndEffect
 import io.github.yuubiz.hirari.core.text.Heading
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,6 +64,7 @@ class TextReaderViewModel(
     private var typefaces: TypefaceCache? = null
     private var stopped = false
     private var viewport: Viewport? = null
+    private val ends = BookEnds(viewModelScope) { edge -> services.await().siblings.beside(ref, edge) }
 
     /** Decoded 挿絵, by path and size, so a turn back does not decode again. */
     private val pictures = object : LruCache<String, Bitmap>(PICTURE_CACHE_BYTES) {
@@ -127,40 +123,37 @@ class TextReaderViewModel(
 
     /** Turns [views] views; a turn that runs into an end of the text goes on to [bookEnd] too. */
     fun turn(views: Int): TurnResult {
+        ends.pageActed()
         val result = model?.turn(views) ?: TurnResult.Waiting
         if (result is TurnResult.Edge) edgeReached(result.edge)
         return result
     }
 
     /** What running into an end of the text asks of the screen, until it says it is handled. */
-    var bookEnd: BookEndEffect<TextBookRef.InLocation>? by mutableStateOf(null)
-        private set
+    val bookEnd: BookEndEffect<TextBookRef.InLocation>? get() = ends.effect
 
-    fun bookEndHandled() {
-        bookEnd = null
-    }
-
-    private val siblings = HashMap<BookEdge, Sibling<TextBookRef.InLocation>>()
-    private var asking: Job? = null
+    fun bookEndHandled() = ends.handled()
 
     /** The text beside this one in its folder toward [edge], asked of the library once per edge. */
-    suspend fun sibling(edge: BookEdge): Sibling<TextBookRef.InLocation> {
-        siblings[edge]?.let { return it }
-        return services.await().siblings.beside(ref, edge).also { siblings[edge] = it }
-    }
+    suspend fun sibling(edge: BookEdge): Sibling<TextBookRef.InLocation> = ends.sibling(edge)
 
     private fun edgeReached(edge: BookEdge) {
         val action = (pending.value as? TextReaderUiState.Reading)?.settings?.atBookEnd ?: return
-        if (asking?.isActive == true || bookEnd != null) return
-        asking = viewModelScope.launch { bookEnd = bookEndEffect(edge, action, ::sibling) }
+        ends.reached(edge, action)
+    }
+
+    /** Runs [move] as a page action: an end of the text still waiting for the library is dropped, since the reader moved on. */
+    private inline fun moving(move: (TextReaderModel) -> Unit) {
+        ends.pageActed()
+        model?.let(move)
     }
 
     /** 位置を戻して閉じる: the text gets back the position and state it had when it opened. The screen closes next. */
     fun restorePosition() = model?.restorePosition() ?: Unit
 
-    fun scrolledTo(index: Int) = model?.scrolledTo(index) ?: Unit
+    fun scrolledTo(index: Int) = moving { it.scrolledTo(index) }
 
-    fun jumpTo(offset: Int) = model?.jumpTo(offset) ?: Unit
+    fun jumpTo(offset: Int) = moving { it.jumpTo(offset) }
 
     /** Saves a change to the settings, as the 文字の大きさ and 組み方 commands make. The reader follows the new settings. */
     fun updateSettings(transform: (GlobalSettings) -> GlobalSettings) {
@@ -172,17 +165,17 @@ class TextReaderViewModel(
     /** The imported fonts, read off the main thread. */
     suspend fun importedFonts(): List<String> = withContext(Dispatchers.IO) { fonts().list() }
 
-    fun first() = model?.first() ?: Unit
+    fun first() = moving { it.first() }
 
-    fun last() = model?.last() ?: Unit
+    fun last() = moving { it.last() }
 
-    fun goToFraction(fraction: Float) = model?.goToFraction(fraction) ?: Unit
+    fun goToFraction(fraction: Float) = moving { it.goToFraction(fraction) }
 
-    fun goTo(heading: Heading) = model?.goTo(heading) ?: Unit
+    fun goTo(heading: Heading) = moving { it.goTo(heading) }
 
-    fun goTo(bookmark: Bookmark) = model?.goTo(bookmark) ?: Unit
+    fun goTo(bookmark: Bookmark) = moving { it.goTo(bookmark) }
 
-    fun show(hit: SearchHit) = model?.show(hit) ?: Unit
+    fun show(hit: SearchHit) = moving { it.show(hit) }
 
     fun search(query: String) = model?.search(query) ?: Unit
 
