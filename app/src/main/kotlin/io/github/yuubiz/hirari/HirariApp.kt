@@ -24,6 +24,7 @@ import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
+import io.github.yuubiz.hirari.feature.text.SmbFiles
 import io.github.yuubiz.hirari.feature.text.TextReaderServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -108,7 +109,10 @@ class HirariApp : Application() {
                 covers = covers,
             )
         }
-        text = appScope.async { services.await().let { TextReaderServices(it.storage, it.progress, appScope) } }
+        text = appScope.async {
+            val smb = smbPlaces.await()
+            services.await().let { TextReaderServices(it.storage, it.progress, appScope, SmbFiles { place, path -> smb.open(place, path) }) }
+        }
     }
 
     private fun isAppClass(name: String): Boolean =

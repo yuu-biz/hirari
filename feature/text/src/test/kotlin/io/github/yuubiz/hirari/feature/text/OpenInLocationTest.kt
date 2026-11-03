@@ -65,7 +65,7 @@ class HangingTreeProvider : ContentProvider() {
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<String>?) = 0
 }
 
-private class OnePlace(private val place: LibraryLocation) : LocationRepository {
+internal class OnePlace(private val place: LibraryLocation) : LocationRepository {
     override val locations: Flow<List<LibraryLocation>> = emptyFlow()
     override val pinned: Flow<List<PinnedFolder>> = emptyFlow()
 
@@ -103,7 +103,7 @@ class OpenInLocationTest {
 
     @Test
     fun `leaving the reader cancels the lookup of a text opened from the history by its path`() = runBlocking {
-        val open = opener(TextBookRef.InLocation(place.id, "shelf/story.txt"), resolver, OnePlace(place), temp.newFolder()) { error("no archive") }
+        val open = opener(TextBookRef.InLocation(place.id, "shelf/story.txt"), TextSources(resolver, OnePlace(place), { _, _ -> error("no server") }, temp.newFolder()) { error("no archive") })
         val call = async(Dispatchers.IO) { open.open() }
         assertTrue(provider.queryStarted.await(10, TimeUnit.SECONDS))
         call.cancel()

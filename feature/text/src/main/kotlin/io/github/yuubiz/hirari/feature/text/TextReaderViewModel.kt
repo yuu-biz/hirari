@@ -32,9 +32,10 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * What the app shares with every text reader, one per process. Build it from the app's [Storage], the same
- * [ProgressWriter] the image reader uses, and a scope that outlives every screen on `Dispatchers.IO`.
+ * [ProgressWriter] the image reader uses, a scope that outlives every screen on `Dispatchers.IO`, and the files of
+ * the SMB places through the connection the library shares.
  */
-class TextReaderServices(val storage: Storage, val progress: ProgressWriter, val appScope: CoroutineScope)
+class TextReaderServices(val storage: Storage, val progress: ProgressWriter, val appScope: CoroutineScope, val smb: SmbFiles)
 
 /**
  * One open text (docs/spec.md section 4.9). The state is immutable and comes from [TextReaderModel]; this class
@@ -69,7 +70,10 @@ class TextReaderViewModel(
             val model = TextReaderModel(
                 scope = viewModelScope,
                 work = Dispatchers.Default.limitedParallelism(1),
-                opener = opener(ref, application.contentResolver, services.storage.locations, copyDir) { entryCharsets(it, services.storage.books, services.storage.settings) },
+                opener = opener(
+                    ref,
+                    TextSources(application.contentResolver, services.storage.locations, services.smb, copyDir) { entryCharsets(it, services.storage.books, services.storage.settings) },
+                ),
                 settings = services.storage.settings.settings,
                 progress = services.storage.progress,
                 writer = services.progress,

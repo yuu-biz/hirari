@@ -193,7 +193,7 @@ class ArchiveViewModel(
     fun open(text: ArchiveText): ArchiveTarget? {
         val opened = opened ?: return null
         val uri = opened.contents.documentUri ?: return null.also { notice.value = Notice.SmbBookNotReady }
-        return ArchiveTarget.Text(TextAddress.ArchiveEntry(uri, text.entryIndex, opened.id))
+        return ArchiveTarget.Text(TextAddress.ArchiveEntry(ArchiveFile.Document(uri), text.entryIndex, opened.id))
     }
 
     /**

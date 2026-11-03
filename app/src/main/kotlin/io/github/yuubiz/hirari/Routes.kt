@@ -11,9 +11,11 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import android.net.Uri
+import io.github.yuubiz.hirari.feature.library.ArchiveFile
 import io.github.yuubiz.hirari.feature.library.ArchiveKey
 import io.github.yuubiz.hirari.feature.library.FolderKey
 import io.github.yuubiz.hirari.feature.library.TextAddress
+import io.github.yuubiz.hirari.feature.text.EntryArchive
 import io.github.yuubiz.hirari.feature.text.TextBookRef
 import io.github.yuubiz.hirari.feature.library.childToward
 import kotlinx.serialization.Serializable
@@ -129,17 +131,23 @@ internal data class TextRoute(
     val entryIndex: Int = -1,
     val archiveId: String = "",
 ) {
-    enum class Kind { Document, InLocation, ArchiveEntry }
+    /** [ServerArchiveEntry] is an entry of an archive of an SMB place, which has no document [uri]. */
+    enum class Kind { Document, InLocation, ArchiveEntry, ServerArchiveEntry }
 
     fun toRef(): TextBookRef = when (kind) {
         Kind.Document -> TextBookRef.Document(Uri.parse(uri))
         Kind.InLocation -> TextBookRef.InLocation(LocationId(location), path, documentId)
-        Kind.ArchiveEntry -> TextBookRef.ArchiveEntry(Uri.parse(uri), entryIndex, BookId(archiveId))
+        Kind.ArchiveEntry -> TextBookRef.ArchiveEntry(EntryArchive.Document(Uri.parse(uri)), entryIndex, BookId(archiveId))
+        Kind.ServerArchiveEntry -> TextBookRef.ArchiveEntry(EntryArchive.OnServer(LocationId(location), path), entryIndex, BookId(archiveId))
     }
 }
 
 internal fun TextAddress.toRoute(): TextRoute = when (this) {
     is TextAddress.Document -> TextRoute(TextRoute.Kind.Document, uri = uri.value)
     is TextAddress.InLocation -> TextRoute(TextRoute.Kind.InLocation, location = location.value, path = path, documentId = documentId)
-    is TextAddress.ArchiveEntry -> TextRoute(TextRoute.Kind.ArchiveEntry, uri = archive.value, entryIndex = entryIndex, archiveId = archiveId.value)
+    is TextAddress.ArchiveEntry -> when (val archive = archive) {
+        is ArchiveFile.Document -> TextRoute(TextRoute.Kind.ArchiveEntry, uri = archive.uri.value, entryIndex = entryIndex, archiveId = archiveId.value)
+        is ArchiveFile.OnServer ->
+            TextRoute(TextRoute.Kind.ServerArchiveEntry, location = archive.location.value, path = archive.path, entryIndex = entryIndex, archiveId = archiveId.value)
+    }
 }

@@ -87,8 +87,17 @@ sealed interface TextAddress {
     /** The text at [path] of a place. [documentId] is the provider's id when the caller knows it. */
     data class InLocation(val location: LocationId, val path: String, val documentId: String? = null) : TextAddress
 
-    /** The entry at [entryIndex], in the stored order, of the archive document [archive], whose id is [archiveId]. */
-    data class ArchiveEntry(val archive: UriString, val entryIndex: Int, val archiveId: BookId) : TextAddress
+    /** The entry at [entryIndex], in the stored order, of [archive], whose id is [archiveId]. */
+    data class ArchiveEntry(val archive: ArchiveFile, val entryIndex: Int, val archiveId: BookId) : TextAddress
+}
+
+/** The archive a text entry is read from. */
+sealed interface ArchiveFile {
+    /** The archive's document, of a SAF place. */
+    data class Document(val uri: UriString) : ArchiveFile
+
+    /** The archive at [path] of an SMB place, which has no document. */
+    data class OnServer(val location: LocationId, val path: String) : ArchiveFile
 }
 
 private sealed interface ListingState {
