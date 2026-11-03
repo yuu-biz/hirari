@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.locationBookId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -27,10 +28,16 @@ internal suspend fun LibraryServices.directionOf(id: BookId): ReadingDirection =
  */
 internal fun LibraryServices.applyFolderCover(place: LibraryLocation, folder: String, cover: FolderCover?): Job =
     folderCoverRuns.run(place.id to folder) {
-        locations.setFolderCover(place.id, folder, cover)
-        val direction = directionOf(locationBookId(place, folder))
-        val spec = covers.folderSpec(place, folder, direction, cover?.let { covers.chosen(place, it) }) ?: return@run
-        covers.regenerate(spec, covers.sizesFrom(settings.settings.first().thumbSize))
+        try {
+            locations.setFolderCover(place.id, folder, cover)
+            val direction = directionOf(locationBookId(place, folder))
+            val spec = covers.folderSpec(place, folder, direction, cover?.let { covers.chosen(place, it) }) ?: return@run
+            covers.regenerate(spec, covers.sizesFrom(settings.settings.first().thumbSize))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // The choice or its thumbnails could not be written; the folder keeps what it showed, and choosing again retries.
+        }
     }
 
 /**

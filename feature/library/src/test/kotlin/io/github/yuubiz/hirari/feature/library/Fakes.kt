@@ -151,7 +151,10 @@ internal class FakeLocations : LocationRepository {
 
     val chosenCovers = mutableListOf<Triple<LocationId, String, FolderCover?>>()
 
+    var folderCoverFailure: Throwable? = null
+
     override suspend fun setFolderCover(location: LocationId, path: String, cover: FolderCover?) {
+        folderCoverFailure?.let { throw it }
         chosenCovers += Triple(location, path, cover)
         covers.update { if (cover == null) it - (location to path) else it + ((location to path) to cover) }
     }

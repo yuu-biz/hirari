@@ -239,6 +239,18 @@ class FolderCoversTest {
     }
 
     @Test
+    fun `a folder cover that cannot be saved does not end the app`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(entry("p.png"))
+        fixture.locations.folderCoverFailure = java.io.IOException("disk full")
+        val list = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, "作品", "doc:作品"), UnconfinedTestDispatcher(testScheduler))
+        watch(list.state)
+
+        list.chooseFolderCover(list.shown().rows.single(), choose = true)
+        assertEquals(emptyList(), fixture.uncaught)
+    }
+
+    @Test
     fun `choosing another folder cover while the first choice is still looked up ends on the second`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(entry("a.png"), entry("b.png"))

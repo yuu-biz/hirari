@@ -305,7 +305,14 @@ class ReaderViewModel(
     }
 
     /** Whether the operation guide was shown to the end before (docs/spec.md section 4.8, 操作ガイド). */
-    suspend fun guideSeen(): Boolean = services.await().storage.launch.readerGuideSeen()
+    /** Whether the guide was closed before; a record that cannot be read counts as not seen, so the guide shows. */
+    suspend fun guideSeen(): Boolean = try {
+        services.await().storage.launch.readerGuideSeen()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        false
+    }
 
     fun markGuideSeen() {
         viewModelScope.launch {
