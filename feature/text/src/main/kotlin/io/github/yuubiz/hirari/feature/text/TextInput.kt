@@ -12,6 +12,9 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.CommandBarEffect
+import io.github.yuubiz.hirari.core.model.CommandBarEvent
+import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.KeyBindings
 import io.github.yuubiz.hirari.core.model.PAGE_BAR_EDGE_DP
 import io.github.yuubiz.hirari.core.model.PageBar
@@ -31,9 +34,9 @@ import io.github.yuubiz.hirari.core.model.TouchOutcome
 import io.github.yuubiz.hirari.core.model.TouchState
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.model.TurnAreaTouch
+import io.github.yuubiz.hirari.core.model.reduce
 import io.github.yuubiz.hirari.core.ui.HoldTimer
 import io.github.yuubiz.hirari.core.ui.awaitOrHold
-import kotlin.math.hypot
 
 /** A text always binds on the right (docs/spec.md section 4.9, 操作). */
 internal val TEXT_DIRECTION = ReadingDirection.RightToLeft
@@ -75,10 +78,11 @@ internal fun pageBarJump(page: Int, atEdge: Boolean, run: PageRun): PageBarJump 
     else -> PageBarJump.Page(page)
 }
 
-/** The touch state the text reader draws: the page bar's preview. */
+/** The touch state the text reader draws: the page bar's preview and the command under the finger. */
 @Stable
 internal class TextTouch {
     var pageBar by mutableStateOf<PageBarState>(PageBarState.Idle)
+    var highlight by mutableStateOf<TextPanelItem?>(null)
 }
 
 /**
@@ -91,7 +95,9 @@ internal class TextInput(
     private val touch: TextTouch,
     private val onTouch: () -> Unit,
     private val onPanel: (TextPanel?) -> Unit,
-    private val onCommandAt: (Offset) -> Unit,
+    private val panelBounds: TextPanelBounds,
+    private val onItem: (TextPanelItem) -> Unit,
+    private val haptic: () -> Unit,
     private val act: (ReaderAction) -> Unit,
 ) {
     suspend fun PointerInputScope.handle() {
@@ -104,25 +110,45 @@ internal class TextInput(
             val region = regions.regionAt(down.position.dp(density)) ?: return@awaitEachGesture
             onTouch()
             when (region) {
-                ReaderRegion.CommandBar -> commandBar(down, slop)
+                ReaderRegion.CommandBar -> commandBar(down, settings, slop)
                 ReaderRegion.PageBar -> pageBar(down, current, regions, slop)
                 ReaderRegion.TurnArea -> turnArea(down, current, regions, slop)
             }
         }
     }
 
-    private suspend fun AwaitPointerEventScope.commandBar(down: PointerInputChange, slop: Float) {
-        onPanel(TextPanel.Commands)
-        var last = down
-        while (true) {
-            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return
-            last = change
-            if (!change.pressed) break
+    /**
+     * Press, slide, and release on the command bar. While the system bars are hidden, the panel opens only once the
+     * press is held. A tap leaves it open, and the panel then takes the taps itself.
+     */
+    private suspend fun AwaitPointerEventScope.commandBar(down: PointerInputChange, settings: GlobalSettings, slop: Float) {
+        var bar: CommandBarState = CommandBarState.Closed
+        fun step(event: CommandBarEvent) {
+            val step = panelBounds.reduce(bar, event, slop)
+            bar = step.state
+            touch.highlight = (bar as? CommandBarState.Sliding)?.highlight as? TextPanelItem
+            onPanel(if (bar.panelVisible) TextPanel.Commands else null)
+            when (val effect = step.effect) {
+                CommandBarEffect.Haptic -> haptic()
+                is CommandBarEffect.Execute -> (effect.item as? TextPanelItem)?.let(onItem)
+                null -> Unit
+            }
         }
-        val moved = hypot(last.position.x - down.position.x, last.position.y - down.position.y) / density > slop
-        if (moved) {
-            onPanel(null)
-            onCommandAt(last.position)
+        step(CommandBarEvent.Down(down.position.dp(density), down.uptimeMillis, settings.hideSystemBars))
+        down.consume()
+        val hold = HoldTimer(down.uptimeMillis)
+        while (true) {
+            val holding = bar is CommandBarState.Holding
+            val event = awaitOrHold(hold, waiting = holding)
+            if (holding && hold.due) step(CommandBarEvent.Hold(hold.at))
+            if (event == null) continue
+            val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
+            change.consume()
+            if (!change.pressed) {
+                step(CommandBarEvent.Up(change.position.dp(density)))
+                return
+            }
+            step(CommandBarEvent.Move(change.position.dp(density)))
         }
     }
 

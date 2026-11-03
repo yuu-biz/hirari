@@ -38,15 +38,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -152,7 +152,9 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
         TextReaderUiState.Opening -> Box(Modifier.fillMaxSize().background(DEFAULT_BACKGROUND), contentAlignment = Alignment.Center) { DelayedProgress() }
         is TextReaderUiState.Failed -> Failure(s.reason, onBack)
         is TextReaderUiState.Reading -> {
-            val bounds = remember { mutableStateMapOf<TextCommand, Rect>() }
+            val density = LocalDensity.current.density
+            val bounds = remember(density) { TextPanelBounds(density) }
+            val touch = remember { TextTouch() }
             val run = rememberCommandRunner(viewModel, onPanel = { panel = it }, onOpenSettings) {
                 orientation = when (orientation ?: s.settings.readerOrientation) {
                     ReaderOrientation.System -> ReaderOrientation.Portrait
@@ -160,17 +162,20 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
                     ReaderOrientation.Landscape -> ReaderOrientation.System
                 }
             }
-            // The command bounds are in root coordinates and the touches in the reader's; the reader fills the root,
-            // edge to edge, so the two agree.
             Box(Modifier.fillMaxSize()) {
                 Reading(
-                    s, viewModel,
+                    s, viewModel, touch, bounds,
                     onRegionTouch = { touched++ },
                     onPanel = { panel = it },
-                    onCommandAt = { point -> bounds.entries.firstOrNull { point in it.value }?.key?.let(run) ?: Unit },
+                    onItem = { item ->
+                        when (item) {
+                            TextPanelItem.Close -> back()
+                            is TextPanelItem.Command -> run(item.command)
+                        }
+                    },
                     act = ::act,
                 )
-                TextPanels(panel, s, viewModel, bounds, onPanel = { panel = it }, onClose = back, onCommand = run)
+                TextPanels(panel, s, viewModel, bounds, touch.highlight, onPanel = { panel = it }, onClose = back, onCommand = run)
             }
         }
     }
@@ -180,15 +185,19 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
 private fun Reading(
     state: TextReaderUiState.Reading,
     viewModel: TextReaderViewModel,
+    touch: TextTouch,
+    panelBounds: TextPanelBounds,
     onRegionTouch: () -> Unit,
     onPanel: (TextPanel?) -> Unit,
-    onCommandAt: (Offset) -> Unit,
+    onItem: (TextPanelItem) -> Unit,
     act: (ReaderAction) -> Unit,
 ) {
     val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(state)
-    val touch = remember { TextTouch() }
-    val input = remember(viewModel) { TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, onCommandAt, act) }
+    val input = remember(viewModel, panelBounds) {
+        TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, panelBounds, onItem, { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }, act)
+    }
     Box(
         Modifier
             .fillMaxSize()

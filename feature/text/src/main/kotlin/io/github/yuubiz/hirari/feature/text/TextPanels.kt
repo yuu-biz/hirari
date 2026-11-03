@@ -22,6 +22,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -44,12 +45,16 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import io.github.yuubiz.hirari.core.data.FontImport
 import io.github.yuubiz.hirari.core.data.FontStore
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.CommandTargets
+import io.github.yuubiz.hirari.core.model.PanelTarget
+import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.TextTypeface
 
 /** The text commands of docs/spec.md section 4.9, in the order of the spec. */
@@ -62,6 +67,34 @@ internal enum class TextCommand(val label: Int) {
     Layout(R.string.text_command_layout),
     Orientation(R.string.text_command_orientation),
     Settings(R.string.text_command_settings),
+}
+
+/** What a finger can land on in the command panel: 閉じる, or a command. */
+internal sealed interface TextPanelItem : PanelTarget {
+    data object Close : TextPanelItem
+
+    data class Command(val command: TextCommand) : TextPanelItem
+}
+
+/**
+ * Where the command panel and its items are on screen, as the panel lays them out in pixels of the root; the reader
+ * fills the root, so they match its touches once turned into dp by [density]. Empty while the panel is closed.
+ */
+internal class TextPanelBounds(private val density: Float) : CommandTargets {
+    var panel: Rect? = null
+    val items = HashMap<TextPanelItem, Rect>()
+
+    fun clear() {
+        panel = null
+        items.clear()
+    }
+
+    private fun Point.px() = Offset(x * density, y * density)
+
+    override fun contains(point: Point): Boolean = panel?.contains(point.px()) == true
+
+    override fun itemAt(point: Point): TextPanelItem? =
+        if (contains(point)) items.entries.firstOrNull { point.px() in it.value }?.key else null
 }
 
 /** Runs [command] of the command panel; the panel is closed by then. */
@@ -97,22 +130,26 @@ internal fun rememberCommandRunner(
 }
 
 /**
- * The panels over the reader. [commandBounds] collects where each command sits on screen, so a finger that pressed
- * the command bar and slid onto a command runs it on release (docs/spec.md section 4.8, コマンドバー).
+ * The panels over the reader. [commandBounds] collects where the command panel and its items sit on screen, so a
+ * finger that pressed the command bar and slid onto an item runs it on release, with [highlight] under the finger
+ * (docs/spec.md section 4.8, コマンドバー).
  */
 @Composable
 internal fun TextPanels(
     panel: TextPanel?,
     state: TextReaderUiState.Reading,
     viewModel: TextReaderViewModel,
-    commandBounds: MutableMap<TextCommand, Rect>,
+    commandBounds: TextPanelBounds,
+    highlight: TextPanelItem?,
     onPanel: (TextPanel?) -> Unit,
     onClose: () -> Unit,
     onCommand: (TextCommand) -> Unit,
 ) {
     when (panel) {
         null -> Unit
-        TextPanel.Commands -> Commands(commandBounds, onDismiss = { onPanel(null) }, onClose = onClose, onCommand = onCommand)
+        TextPanel.Commands -> Commands(
+            commandBounds, highlight, state.settings.barHeightDp, onDismiss = { onPanel(null) }, onClose = onClose, onCommand = onCommand,
+        )
         TextPanel.Contents -> Sheet(onDismiss = { onPanel(null) }) {
             if (state.contents.isEmpty()) Message(R.string.text_contents_empty)
             LazyColumn {
@@ -153,20 +190,33 @@ internal fun TextPanels(
 
 /** The command panel under the command bar: 閉じる and 設定 on top, then the commands, four to a row. */
 @Composable
-private fun Commands(bounds: MutableMap<TextCommand, Rect>, onDismiss: () -> Unit, onClose: () -> Unit, onCommand: (TextCommand) -> Unit) {
+private fun Commands(
+    bounds: TextPanelBounds,
+    highlight: TextPanelItem?,
+    barHeightDp: Int,
+    onDismiss: () -> Unit,
+    onClose: () -> Unit,
+    onCommand: (TextCommand) -> Unit,
+) {
+    DisposableEffect(bounds) { onDispose { bounds.clear() } }
+    fun Modifier.item(item: TextPanelItem) =
+        onGloballyPositioned { bounds.items[item] = it.boundsInRoot() }.background(if (item == highlight) HIGHLIGHT else Color.Transparent)
     Box(Modifier.fillMaxSize().clickable(onClick = onDismiss)) {
-        Column(Modifier.fillMaxWidth().background(PANEL_BACKGROUND).clickable(enabled = false) {}.padding(8.dp)) {
+        Column(
+            Modifier.padding(top = barHeightDp.dp).fillMaxWidth().onGloballyPositioned { bounds.panel = it.boundsInRoot() }
+                .background(PANEL_BACKGROUND).clickable(enabled = false) {}.padding(8.dp),
+        ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                PanelButton(R.string.text_close, onClose)
-                PanelButton(R.string.text_command_settings) { onCommand(TextCommand.Settings) }
+                PanelButton(R.string.text_close, Modifier.item(TextPanelItem.Close), onClose)
+                PanelButton(R.string.text_command_settings, Modifier.item(TextPanelItem.Command(TextCommand.Settings))) {
+                    onCommand(TextCommand.Settings)
+                }
             }
             TextCommand.entries.filter { it != TextCommand.Settings }.chunked(4).forEach { row ->
                 Row(Modifier.fillMaxWidth()) {
                     row.forEach { command ->
                         Box(
-                            Modifier.weight(1f).heightIn(min = 56.dp)
-                                .onGloballyPositioned { bounds[command] = it.boundsInRoot() }
-                                .clickable { onCommand(command) },
+                            Modifier.weight(1f).heightIn(min = 56.dp).item(TextPanelItem.Command(command)).clickable { onCommand(command) },
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(stringResource(command.label), color = Color.White)
@@ -179,9 +229,12 @@ private fun Commands(bounds: MutableMap<TextCommand, Rect>, onDismiss: () -> Uni
     }
 }
 
+/** The item under the finger as it slides over the panel. */
+private val HIGHLIGHT = Color(0x40FFFFFF)
+
 @Composable
-private fun PanelButton(label: Int, onClick: () -> Unit) {
-    TextButton(onClick = onClick) { Text(stringResource(label), color = Color.White) }
+private fun PanelButton(label: Int, modifier: Modifier, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = modifier) { Text(stringResource(label), color = Color.White) }
 }
 
 /** A sheet from the bottom; a tap above it closes it. */
