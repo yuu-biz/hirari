@@ -275,10 +275,13 @@ internal class TextReaderModel(
     }
 
     /** The page at [index] of the current run, as the continuous layout scrolls onto it. A scroll is not a turn. */
-    fun showPage(index: Int) {
+    fun scrolledTo(index: Int) {
         val run = run?.takeIf { index in 0 until it.size } ?: return
         if (run.indexOf(anchor) != index) moveTo(run.start(index), scrolled = true)
     }
+
+    /** The page that holds source offset [offset], as the page bar picks it: a jump, which ticks when the view changes. */
+    fun jumpTo(offset: Int) = goTo(offset)
 
     fun first() = goTo(0)
 

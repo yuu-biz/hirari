@@ -158,7 +158,9 @@ class TextReaderViewModel(
     /** 位置を戻して閉じる: the text gets back the position and state it had when it opened. The screen closes next. */
     fun restorePosition() = model?.restorePosition() ?: Unit
 
-    fun showPage(index: Int) = model?.showPage(index) ?: Unit
+    fun scrolledTo(index: Int) = model?.scrolledTo(index) ?: Unit
+
+    fun jumpTo(offset: Int) = model?.jumpTo(offset) ?: Unit
 
     /** Saves a change to the settings, as the 文字の大きさ and 組み方 commands make. The reader follows the new settings. */
     fun updateSettings(transform: (GlobalSettings) -> GlobalSettings) {

@@ -413,7 +413,7 @@ class TextReaderModelTest {
         assertEquals(3, ticks)
         model.first()
         assertEquals(4, ticks)
-        model.showPage(2)
+        model.scrolledTo(2)
         assertEquals(4, ticks, "scrolling the continuous layout")
         settings.value = settings.value.copy(textSizeSp = 30)
         settle()
@@ -484,6 +484,28 @@ class TextReaderModelTest {
         assertEquals(TurnResult.Waiting, model.turn(2))
         pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
         assertEquals(2, model.reading.current)
+    }
+
+    @Test
+    fun `a jump to the page a bar named lands on it after the pages before it are laid out, and ticks`() = runTest {
+        settings.value = settings.value.copy(turnHaptics = true)
+        val offset = source.indexOf("名前はまだ3章の10 番目")
+        progress.stored.value = mapOf(id to BookProgress(id, ReadState.Reading, ReadingPosition.Text(offset.toLong(), source.length.toLong()), Instant.EPOCH))
+        val pump = HandPump()
+        var ticks = 0
+        val model = model(work = pump, onTurned = { ticks++ })
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        val pressed = model.reading.run!!
+        assertTrue(!pressed.fromStart, "the pages before the saved position are still being laid out")
+        val named = pressed.start(pressed.indexOf(offset) + 1)
+        pump.until(this) { model.reading.run!!.fromStart }
+        val live = model.reading.run!!
+        assertTrue(live.indexOf(named) != pressed.indexOf(offset) + 1, "the index named in the earlier run is another page now")
+        model.jumpTo(named)
+        assertEquals(named, live.start(model.reading.current))
+        assertEquals(1, ticks)
+        model.scrolledTo(0)
+        assertEquals(1, ticks, "scrolling is not a jump")
     }
 }
 

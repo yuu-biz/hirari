@@ -62,7 +62,8 @@ internal val Turn.views: Int get() = if (this == Turn.Forward) 1 else -1
 
 /** Where a release on the page bar goes in a text. */
 internal sealed interface PageBarJump {
-    data class Page(val index: Int) : PageBarJump
+    /** The page that holds source offset [offset], which does not depend on how many pages are laid out by the release. */
+    data class Page(val offset: Int) : PageBarJump
 
     data object First : PageBarJump
 
@@ -70,14 +71,18 @@ internal sealed interface PageBarJump {
 }
 
 /**
- * Where the page bar's move to [page] of [run] goes. An end page picked at an edge of the bar, [atEdge], is the first
- * or last page of the text, which the pages laid out so far may not reach yet.
+ * Where the page bar's move to [page] of [run], the run the finger pressed on, goes. An end page picked at an edge of
+ * the bar, [atEdge], is the first or last page of the text, which the pages laid out so far may not reach yet.
  */
 internal fun pageBarJump(page: Int, atEdge: Boolean, run: PageRun): PageBarJump = when {
     atEdge && page == run.lastIndex && !run.complete -> PageBarJump.Last
     atEdge && page == 0 && !run.fromStart -> PageBarJump.First
-    else -> PageBarJump.Page(page)
+    else -> PageBarJump.Page(run.start(page))
 }
+
+/** The index in [later] of [page] of [pressed], the run the page bar was pressed on: the pages are told apart by where they start. */
+internal fun pageInLaterRun(pressed: PageRun, page: Int, later: PageRun): Int =
+    later.indexOf(pressed.start(page.coerceIn(0, pressed.lastIndex)))
 
 /**
  * What the text reader draws besides the pages at rest: the page bar's preview, the command under the finger, and
@@ -86,6 +91,9 @@ internal fun pageBarJump(page: Int, atEdge: Boolean, run: PageRun): PageBarJump 
 @Stable
 internal class TextTouch {
     var pageBar by mutableStateOf<PageBarState>(PageBarState.Idle)
+
+    /** The run the page bar's pages are counted in: the one on screen when the finger pressed, while the layout goes on. */
+    var pageBarRun by mutableStateOf<PageRun?>(null)
     var highlight by mutableStateOf<TextPanelItem?>(null)
     var motion by mutableStateOf<TextMotion?>(null)
 }
@@ -176,7 +184,7 @@ internal class TextInput(
             when (val effect = step.effect) {
                 is PageBarEffect.GoTo -> {
                     when (val jump = pageBarJump(effect.page, atEdge, run)) {
-                        is PageBarJump.Page -> viewModel.showPage(jump.index)
+                        is PageBarJump.Page -> viewModel.jumpTo(jump.offset)
                         PageBarJump.First -> viewModel.first()
                         PageBarJump.Last -> viewModel.last()
                     }
@@ -185,6 +193,7 @@ internal class TextInput(
                 null -> Unit
             }
         }
+        touch.pageBarRun = run
         step(PageBarEvent.Down(down.position.dp(density), down.uptimeMillis, current.current))
         down.consume()
         val hold = HoldTimer(down.uptimeMillis)

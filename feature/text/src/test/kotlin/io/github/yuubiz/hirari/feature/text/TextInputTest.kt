@@ -36,9 +36,17 @@ class TextInputTest {
     fun `an end page picked at the edge of the bar goes to the end of the text before it is all laid out`() {
         assertEquals(PageBarJump.Last, pageBarJump(2, atEdge = true, partial))
         assertEquals(PageBarJump.First, pageBarJump(0, atEdge = true, partial))
-        assertEquals(PageBarJump.Page(2), pageBarJump(2, atEdge = false, partial))
+        assertEquals(PageBarJump.Page(300), pageBarJump(2, atEdge = false, partial))
         val whole = PageRun(intArrayOf(0, 100, 200), end = 300, fromStart = true, complete = true, sourceLength = 300)
-        assertEquals(PageBarJump.Page(2), pageBarJump(2, atEdge = true, whole))
+        assertEquals(PageBarJump.Page(200), pageBarJump(2, atEdge = true, whole))
         assertEquals(PageBarJump.Page(0), pageBarJump(0, atEdge = true, whole))
+    }
+
+    @Test
+    fun `a page of the run pressed on is found again in the run laid out since`() {
+        val grown = PageRun(intArrayOf(0, 50, 100, 200, 300), end = 400, fromStart = true, complete = false, sourceLength = 1000)
+        assertEquals(4, pageInLaterRun(partial, 2, grown))
+        assertEquals(2, pageInLaterRun(partial, 0, grown))
+        assertEquals(4, pageInLaterRun(partial, 9, grown))
     }
 }

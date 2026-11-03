@@ -284,15 +284,15 @@ private fun Reading(
         } else {
             Box(Modifier.fillMaxSize().background(Color(argb(state.colors.paper))), contentAlignment = Alignment.Center) { DelayedProgress() }
         }
-        (touch.pageBar as? PageBarState.Dragging)?.let { PageBarPreview(state, it) }
+        (touch.pageBar as? PageBarState.Dragging)?.let { PageBarPreview(state, it, touch.pageBarRun) }
     }
 }
 
 /** The page a slide on the page bar goes to, grayed out while the slide is cancelled. */
 @Composable
-private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarState.Dragging) {
+private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarState.Dragging, pressed: PageRun?) {
     val run = state.run ?: return
-    val target = drag.preview.coerceIn(0, run.lastIndex)
+    val target = pageInLaterRun(pressed ?: run, drag.preview, run)
     Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
         Text(
             pageNumberText(run.number(target)),
@@ -368,7 +368,7 @@ private fun ContinuousPages(state: TextReaderUiState.Reading, viewModel: TextRea
         if (list.firstVisibleItemIndex != state.current) list.scrollToItem(state.current)
     }
     LaunchedEffect(list) {
-        snapshotFlow { list.firstVisibleItemIndex }.collect { if (it != latest.current) viewModel.showPage(it) }
+        snapshotFlow { list.firstVisibleItemIndex }.collect { if (it != latest.current) viewModel.scrolledTo(it) }
     }
     val gutter = with(LocalDensity.current) { frame.gutter.toDp() }
     LazyRow(Modifier.fillMaxSize(), state = list, reverseLayout = true, horizontalArrangement = Arrangement.spacedBy(gutter)) {
