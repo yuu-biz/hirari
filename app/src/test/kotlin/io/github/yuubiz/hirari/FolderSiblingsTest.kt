@@ -19,23 +19,23 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-private val TREE = UriString("content://tree")
-private val PLACE = LocationId(1)
+internal val TREE = UriString("content://tree")
+internal val PLACE = LocationId(1)
 
-private fun file(name: String) = FolderEntry(name, "doc:$name", directory = false, size = 1, modified = null)
+internal fun file(name: String) = FolderEntry(name, "doc:$name", directory = false, size = 1, modified = null)
 
-private fun folder(name: String) = FolderEntry(name, "doc:$name", directory = true, size = null, modified = null)
+internal fun folder(name: String) = FolderEntry(name, "doc:$name", directory = true, size = null, modified = null)
 
 private fun Map<String, List<FolderEntry>>.listing(path: String, documentId: String?): Listing =
     this[path]?.let { Listing.Listed(documentId, it) } ?: Listing.Failed(ListFailure.NotFound)
 
-private class Folders(private val listings: Map<String, List<FolderEntry>>) : FolderLister {
+internal class Folders(private val listings: Map<String, List<FolderEntry>>) : FolderLister {
     override suspend fun list(tree: UriString, path: String, documentId: String?): Listing =
         if (tree == TREE) listings.listing(path, "doc:$path") else Listing.Failed(ListFailure.NotFound)
 }
 
 /** The folders of one SMB place, counted from the place's folder, as [SmbPlaces.list] gives them. */
-private class Shares(private val listings: Map<String, List<FolderEntry>>) : SmbPlaces {
+internal class Shares(private val listings: Map<String, List<FolderEntry>>) : SmbPlaces {
     val listed = mutableListOf<Pair<LibraryLocation.SmbShare, String>>()
 
     override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
@@ -52,17 +52,17 @@ private class Shares(private val listings: Map<String, List<FolderEntry>>) : Smb
     override suspend fun forget(id: LocationId) = error("not used")
 }
 
-private val SAF_PLACE = LibraryLocation.SafTree(PLACE, "漫画", TREE)
-private val SMB_PLACE = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "manga", null, "reader", null)
+internal val SAF_PLACE = LibraryLocation.SafTree(PLACE, "漫画", TREE)
+internal val SMB_PLACE = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "manga", null, "reader", null)
 
 private fun siblings(listings: Map<String, List<FolderEntry>>, dotFiles: Boolean = false) =
     FolderSiblings(placeFolders({ if (it == PLACE) SAF_PLACE else null }, Folders(listings), Shares(emptyMap())), dotFiles = { dotFiles })
 
 private fun book(path: String, isFolder: Boolean = false) = BookAddress.InLocation(PLACE, path, isFolder)
 
-private fun smbFile(name: String) = FolderEntry(name, documentId = null, directory = false, size = 1, modified = null)
+internal fun smbFile(name: String) = FolderEntry(name, documentId = null, directory = false, size = 1, modified = null)
 
-private fun smbFolder(name: String) = FolderEntry(name, documentId = null, directory = true, size = null, modified = null)
+internal fun smbFolder(name: String) = FolderEntry(name, documentId = null, directory = true, size = null, modified = null)
 
 class FolderSiblingsTest {
     private val series = mapOf(

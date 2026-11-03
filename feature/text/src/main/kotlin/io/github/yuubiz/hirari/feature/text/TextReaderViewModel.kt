@@ -7,12 +7,16 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.Trace
 import android.util.LruCache
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.data.FontStore
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.Bookmark
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.text.Heading
@@ -20,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,9 +38,15 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * What the app shares with every text reader, one per process. Build it from the app's [Storage], the same
  * [ProgressWriter] the image reader uses, a scope that outlives every screen on `Dispatchers.IO`, and the files of
- * the SMB places through the connection the library shares.
+ * the SMB places through the connection the library shares. [siblings] finds the texts beside the open one.
  */
-class TextReaderServices(val storage: Storage, val progress: ProgressWriter, val appScope: CoroutineScope, val smb: SmbFiles)
+class TextReaderServices(
+    val storage: Storage,
+    val progress: ProgressWriter,
+    val appScope: CoroutineScope,
+    val smb: SmbFiles,
+    val siblings: TextSiblings = TextSiblings.None,
+)
 
 /**
  * One open text (docs/spec.md section 4.9). The state is immutable and comes from [TextReaderModel]; this class
@@ -45,6 +56,7 @@ class TextReaderViewModel(
     private val application: Application,
     private val services: Deferred<TextReaderServices>,
     private val ref: TextBookRef,
+    private val startAt: TextStart = TextStart.Saved,
 ) : ViewModel() {
     private val pending = MutableStateFlow<TextReaderUiState>(TextReaderUiState.Opening)
     private var model: TextReaderModel? = null
@@ -80,6 +92,8 @@ class TextReaderViewModel(
                 bookmarks = services.storage.bookmarks,
                 fonts = fonts,
                 history = RepositoryTextHistory(services.storage.books, services.storage.history, services.appScope),
+                startAt = startAt,
+                onEdge = ::edgeReached,
             )
             this@TextReaderViewModel.model = model
             launch { model.state.collect { pending.value = it } }
@@ -101,7 +115,38 @@ class TextReaderViewModel(
         model?.onViewport(viewport)
     }
 
-    fun turn(views: Int): TurnResult = model?.turn(views) ?: TurnResult.Waiting
+    /** Turns [views] views; a turn that runs into an end of the text goes on to [bookEnd] too. */
+    fun turn(views: Int): TurnResult {
+        val result = model?.turn(views) ?: TurnResult.Waiting
+        if (result is TurnResult.Edge) edgeReached(result.edge)
+        return result
+    }
+
+    /** What running into an end of the text asks of the screen, until it says it is handled. */
+    var bookEnd: TextBookEnd? by mutableStateOf(null)
+        private set
+
+    fun bookEndHandled() {
+        bookEnd = null
+    }
+
+    private val siblings = HashMap<BookEdge, TextSibling>()
+    private var asking: Job? = null
+
+    /** The text beside this one in its folder toward [edge], asked of the library once per edge. */
+    suspend fun sibling(edge: BookEdge): TextSibling {
+        siblings[edge]?.let { return it }
+        return services.await().siblings.beside(ref, edge).also { siblings[edge] = it }
+    }
+
+    private fun edgeReached(edge: BookEdge) {
+        val action = (pending.value as? TextReaderUiState.Reading)?.settings?.atBookEnd ?: return
+        if (asking?.isActive == true || bookEnd != null) return
+        asking = viewModelScope.launch { bookEnd = textBookEnd(edge, action, ::sibling) }
+    }
+
+    /** 位置を戻して閉じる: the text gets back the position and state it had when it opened. The screen closes next. */
+    fun restorePosition() = model?.restorePosition() ?: Unit
 
     fun showPage(index: Int) = model?.showPage(index) ?: Unit
 

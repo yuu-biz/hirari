@@ -38,6 +38,16 @@
     <string name="text_orientation_portrait">縦に固定</string>
     <string name="text_orientation_landscape">横に固定</string>
     <string name="text_orientation_system">端末に従う</string>
+    <string name="text_book_end_next">次の本（%1$s）</string>
+    <string name="text_book_end_previous">前の本（%1$s）</string>
+    <string name="text_neighbor_saved">続きから</string>
+    <string name="text_neighbor_first">先頭から</string>
+    <string name="text_neighbor_last">末尾から</string>
+    <string name="text_book_end_from_first">最初から読む</string>
+    <string name="text_book_end_restore">位置を戻して閉じる</string>
+    <string name="text_book_end_last_in_folder">このフォルダの最後の本です</string>
+    <string name="text_book_end_first_in_folder">このフォルダの最初の本です</string>
+    <string name="text_book_end_no_folder">フォルダから開いた本ではないので、前後の本はありません</string>
     <string name="text_first">先頭</string>
     <string name="text_last">末尾</string>
     <string name="text_page_number">%1$s / %2$s</string>

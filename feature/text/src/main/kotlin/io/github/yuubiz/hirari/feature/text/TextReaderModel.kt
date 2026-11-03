@@ -108,6 +108,9 @@ internal class TextReaderModel(
     private val history: TextHistory,
     private val clock: () -> Instant = Instant::now,
     private val heapBudget: Long = textHeapBudget(),
+    private val startAt: TextStart = TextStart.Saved,
+    /** A turn that waited for the layout and then ran into an end of the text (docs/spec.md section 4.9). */
+    private val onEdge: (BookEdge) -> Unit = {},
 ) {
     private val _state = MutableStateFlow<TextReaderUiState>(TextReaderUiState.Opening)
     val state: StateFlow<TextReaderUiState> = _state.asStateFlow()
@@ -132,6 +135,10 @@ internal class TextReaderModel(
     private var marks = emptyList<Bookmark>()
     private var readState = ReadState.Reading
     private var lastWritten: Pair<ReadState, Int>? = null
+
+    /** The progress the text had when it opened, which 位置を戻して閉じる puts back. */
+    private var before: BookProgress? = null
+    private var restoring = false
 
     /** A turn asked for before its page was laid out; it runs when the page comes. */
     private var pendingTurn: Int? = null
@@ -166,7 +173,12 @@ internal class TextReaderModel(
         writer.flush().join()
         val saved = progress.get(text.id)
         val length = parsed.first.sourceLength
-        anchor = ((saved?.position as? ReadingPosition.Text)?.charOffset ?: 0L).coerceIn(0L, length.toLong()).toInt()
+        before = saved
+        anchor = when (startAt) {
+            TextStart.Saved -> ((saved?.position as? ReadingPosition.Text)?.charOffset ?: 0L).coerceIn(0L, length.toLong()).toInt()
+            TextStart.First -> 0
+            TextStart.Last -> maxOf(0, length - 1)
+        }
         readState = if (saved?.state == ReadState.Read) ReadState.Read else ReadState.Reading
         lastWritten = saved?.let { it.state to ((it.position as? ReadingPosition.Text)?.charOffset?.toInt() ?: -1) }
         history.opened(text.id, text.book, openedAt, first.historyLimit)
@@ -333,6 +345,16 @@ internal class TextReaderModel(
         return reader.read(resolved)
     }
 
+    /**
+     * 位置を戻して閉じる (docs/spec.md section 4.8): the text gets back the position and state it had when it opened,
+     * or none when it had none. The reader is closing, so nothing is written after it.
+     */
+    fun restorePosition() {
+        val id = opened?.id ?: return
+        restoring = true
+        writer.submit(before ?: BookProgress(id, ReadState.Unread, null, clock()))
+    }
+
     /** The reader left the screen: the position goes out now, and the history, since the process may end before [close]. */
     fun onStop() {
         writer.flush()
@@ -416,7 +438,7 @@ internal class TextReaderModel(
         window = window + near.associateBy { it.start }
         val pending = pendingTurn
         pendingTurn = null
-        if (pending != null) turn(pending)
+        if (pending != null) (turn(pending) as? TurnResult.Edge)?.let { onEdge(it.edge) }
         fill()
         render()
         record()
@@ -452,6 +474,7 @@ internal class TextReaderModel(
 
     /** Hands the position to the writer when it or the read state changed (docs/spec.md section 2.7). */
     private fun record() {
+        if (restoring) return
         val run = run ?: return
         val id = opened?.id ?: return
         val position = position() ?: return

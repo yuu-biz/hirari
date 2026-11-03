@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,6 +53,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import io.github.yuubiz.hirari.core.data.FontImport
 import io.github.yuubiz.hirari.core.data.FontStore
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.CommandTargets
 import io.github.yuubiz.hirari.core.model.PanelTarget
 import io.github.yuubiz.hirari.core.model.Point
@@ -251,6 +253,53 @@ private fun Sheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 private fun Message(text: Int) {
     Text(stringResource(text), Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
 }
+
+/**
+ * The text beside this one toward [edge] (docs/spec.md section 4.8, 本の端での動作). Until the library has answered,
+ * its items show disabled; a text with no folder has none.
+ */
+@Composable
+internal fun TextBookEndSheet(
+    edge: BookEdge,
+    viewModel: TextReaderViewModel,
+    onDismiss: () -> Unit,
+    onCloseReader: () -> Unit,
+    onOpen: (TextOpening) -> Unit,
+) {
+    var sibling by remember(edge) { mutableStateOf<TextSibling?>(null) }
+    LaunchedEffect(edge) { sibling = viewModel.sibling(edge) }
+    val atEnd = edge == BookEdge.End
+    val starts = if (atEnd) listOf(TextStart.Saved, TextStart.First) else listOf(TextStart.Saved, TextStart.Last)
+    Sheet(onDismiss) {
+        when (val found = sibling) {
+            TextSibling.Last -> Message(if (atEnd) R.string.text_book_end_last_in_folder else R.string.text_book_end_first_in_folder)
+            TextSibling.NoFolder -> Unit
+            is TextSibling.Found, null -> for (start in starts) {
+                TextButton(onClick = { (found as? TextSibling.Found)?.let { onOpen(it.opening(start)) } }, enabled = found != null) {
+                    Text(stringResource(if (atEnd) R.string.text_book_end_next else R.string.text_book_end_previous, stringResource(start.label)))
+                }
+            }
+        }
+        if (atEnd) {
+            TextButton(onClick = {
+                viewModel.first()
+                onDismiss()
+            }) { Text(stringResource(R.string.text_book_end_from_first)) }
+        }
+        TextButton(onClick = onCloseReader) { Text(stringResource(R.string.text_close)) }
+        TextButton(onClick = {
+            viewModel.restorePosition()
+            onCloseReader()
+        }) { Text(stringResource(R.string.text_book_end_restore)) }
+    }
+}
+
+private val TextStart.label: Int
+    get() = when (this) {
+        TextStart.Saved -> R.string.text_neighbor_saved
+        TextStart.First -> R.string.text_neighbor_first
+        TextStart.Last -> R.string.text_neighbor_last
+    }
 
 @Composable
 private fun SearchPanel(search: SearchState, viewModel: TextReaderViewModel, onShown: () -> Unit) {

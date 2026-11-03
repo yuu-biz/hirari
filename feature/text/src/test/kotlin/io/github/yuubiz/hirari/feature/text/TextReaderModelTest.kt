@@ -13,6 +13,7 @@ import io.github.yuubiz.hirari.core.text.FixedGlyphMetrics
 import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.text.VerticalLayout
 import io.github.yuubiz.hirari.core.text.parseAozora
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.time.Instant
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -41,11 +43,14 @@ class TextReaderModelTest {
         fonts: TextFonts = FakeFonts(),
         bytes: ByteArray = text.toByteArray(Charsets.UTF_8),
         heapBudget: Long = textHeapBudget(),
+        startAt: TextStart = TextStart.Saved,
+        work: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
+        onEdge: (BookEdge) -> Unit = {},
     ): TextReaderModel {
         val opened = OpenedText(id, "file.txt", "dir/file.txt", book = null, pictures = null) { closed++ }
         return TextReaderModel(
             scope = backgroundScope,
-            work = StandardTestDispatcher(testScheduler),
+            work = work,
             opener = { TextOpenResult.Opened(opened, bytes) },
             settings = settings,
             progress = progress,
@@ -55,6 +60,8 @@ class TextReaderModelTest {
             history = history,
             clock = { Instant.ofEpochSecond(testScheduler.currentTime) },
             heapBudget = heapBudget,
+            startAt = startAt,
+            onEdge = onEdge,
         ).also {
             it.start()
             it.onViewport(screen)
@@ -327,5 +334,96 @@ class TextReaderModelTest {
         assertEquals(1, closed)
         model.close()
         assertEquals(1, closed)
+    }
+
+    @Test
+    fun `a text opens at its start whatever it saved`() = runTest {
+        progress.stored.value = mapOf(id to BookProgress(id, ReadState.Reading, ReadingPosition.Text(source.length / 2L, source.length.toLong()), Instant.EPOCH))
+        val model = model(startAt = TextStart.First)
+        settle()
+        assertEquals(0, model.reading.current)
+    }
+
+    @Test
+    fun `a text opens on its last page whatever it saved, and 位置を戻して閉じる puts the saved position back`() = runTest {
+        val saved = BookProgress(id, ReadState.Reading, ReadingPosition.Text(source.length / 2L, source.length.toLong()), Instant.EPOCH)
+        progress.stored.value = mapOf(id to saved)
+        val model = model(startAt = TextStart.Last)
+        settle()
+        assertEquals(model.reading.run!!.lastIndex, model.reading.current)
+        assertTrue(source.length - 1 in model.page)
+
+        model.turn(-1)
+        model.restorePosition()
+        model.turn(-1)
+        model.close()
+        settle()
+        assertEquals(saved, progress.stored.value.getValue(id))
+    }
+
+    @Test
+    fun `a text that saved nothing goes back to unread with no position`() = runTest {
+        val model = model()
+        settle()
+        model.turn(1)
+        model.restorePosition()
+        model.turn(1)
+        model.close()
+        settle()
+        assertEquals(BookProgress(id, ReadState.Unread, null, progress.stored.value.getValue(id).updatedAt), progress.stored.value.getValue(id))
+    }
+
+    @Test
+    fun `a turn that waited for the layout and then ran into an end of the text reports the end`() = runTest {
+        settings.value = settings.value.copy(textSizeSp = 28)
+        val pump = HandPump()
+        val edges = ArrayList<BookEdge>()
+        val model = model(text = sampleText(chapters = 1, sentencesPerChapter = 60), work = pump, onEdge = edges::add)
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        val laidOut = model.reading.run!!
+        assertTrue(!laidOut.complete && laidOut.lastIndex >= 2, "a text still being laid out, $laidOut pages")
+        repeat(laidOut.lastIndex) { assertTrue(model.turn(1) is TurnResult.Moved) }
+        assertEquals(laidOut.lastIndex, model.reading.current)
+        assertEquals(TurnResult.Waiting, model.turn(1))
+        assertEquals(emptyList(), edges)
+
+        settings.value = settings.value.copy(textSizeSp = 6)
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run?.let { it.complete && it.size == 1 } == true }
+        assertEquals(listOf(BookEdge.End), edges)
+    }
+
+    @Test
+    fun `a turn that waited for the layout and then moved reports no end`() = runTest {
+        settings.value = settings.value.copy(textSizeSp = 28)
+        val pump = HandPump()
+        val edges = ArrayList<BookEdge>()
+        val model = model(text = sampleText(chapters = 1, sentencesPerChapter = 60), work = pump, onEdge = edges::add)
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        val laidOut = model.reading.run!!
+        repeat(laidOut.lastIndex) { model.turn(1) }
+        assertEquals(TurnResult.Waiting, model.turn(1))
+        pump.until(this) { model.reading.run!!.size > laidOut.size }
+        assertEquals(emptyList(), edges)
+        assertEquals(laidOut.lastIndex + 1, model.reading.current)
+    }
+}
+
+/** A dispatcher that runs what it is given only when the test says, one piece at a time, so a test can act between the layout's steps. */
+private class HandPump : CoroutineDispatcher() {
+    private val queue = ArrayDeque<Runnable>()
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        queue.addLast(block)
+    }
+
+    /** Lets the model's own coroutines run, then one piece of work, until [done]. */
+    fun until(scope: TestScope, limit: Int = 200, done: () -> Boolean) {
+        repeat(limit) {
+            scope.runCurrent()
+            if (done()) return
+            queue.removeFirstOrNull()?.run()
+        }
+        scope.runCurrent()
+        assertTrue(done(), "did not get there in $limit pieces of work")
     }
 }

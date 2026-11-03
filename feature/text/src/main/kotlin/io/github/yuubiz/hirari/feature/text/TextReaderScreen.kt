@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.os.SystemClock
+import android.widget.Toast
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -61,6 +62,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.KeyCodes
@@ -102,21 +104,33 @@ fun TextReaderScreen(
     keys: TextKeyRelay,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit = {},
+    startAt: TextStart = TextStart.Saved,
+    onOpenText: (TextOpening) -> Unit = {},
 ) {
     val application = LocalContext.current.applicationContext as Application
-    val viewModel = viewModel(key = ref.toString()) { TextReaderViewModel(application, services, ref) }
-    TextReaderScreen(viewModel, keys, onBack, onOpenSettings)
+    val viewModel = viewModel(key = "$ref/$startAt") { TextReaderViewModel(application, services, ref, startAt) }
+    TextReaderScreen(viewModel, keys, onBack, onOpenSettings, onOpenText)
 }
 
 /** The panels over the reader. At most one is up. */
 internal enum class TextPanel { Commands, Contents, Search, Bookmarks, Size, PageJump }
 
-/** The text reader for a [viewModel] the caller keeps. */
+/**
+ * The text reader for a [viewModel] the caller keeps. [onOpenText] opens the text beside this one, which replaces
+ * the reader rather than stacking on it (docs/spec.md section 4.8, 本の端での動作).
+ */
 @Composable
-fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack: () -> Unit, onOpenSettings: () -> Unit = {}) {
+fun TextReaderScreen(
+    viewModel: TextReaderViewModel,
+    keys: TextKeyRelay,
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    onOpenText: (TextOpening) -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val back by rememberUpdatedState(onBack)
     var panel by rememberSaveable { mutableStateOf<TextPanel?>(null) }
+    var bookEndEdge by rememberSaveable { mutableStateOf<BookEdge?>(null) }
     var orientation by rememberSaveable { mutableStateOf<ReaderOrientation?>(null) }
     var touched by remember { mutableIntStateOf(0) }
     val touch = remember { TextTouch() }
@@ -126,13 +140,12 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
     OrientationLock(orientation ?: settings?.readerOrientation ?: ReaderOrientation.System)
     KeepAwake(settings?.keepAwake ?: KeepAwake.System, touched)
 
-    fun dismiss() = if (panel != null) panel = null else back()
+    fun dismiss() = if (bookEndEdge != null) bookEndEdge = null else if (panel != null) panel = null else back()
 
     fun turn(turn: Turn, pulled: Float?) {
         val reading = viewModel.state.value as? TextReaderUiState.Reading ?: return
         val now = SystemClock.uptimeMillis()
         val result = viewModel.turn(turn.views)
-        if (result is TurnResult.Edge && textEdgeAction(result.edge, reading.settings.atBookEnd) == TextEdgeAction.Close) back()
         touch.motion = motionAfter(result, turn, pulled, reading.settings, reading.frame?.continuous == true, now)
     }
 
@@ -152,7 +165,8 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
     DisposableEffect(keys) {
         keys.handler = handler@{ event ->
             val current = (viewModel.state.value as? TextReaderUiState.Reading)?.settings ?: return@handler false
-            if (panel != null && panel != TextPanel.Commands && event.keyCode != KeyCodes.BACK) return@handler false
+            val covered = bookEndEdge != null || (panel != null && panel != TextPanel.Commands)
+            if (covered && event.keyCode != KeyCodes.BACK) return@handler false
             when (val outcome = current.textKeys().onKey(event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.isShiftPressed)) {
                 KeyResult.NotHandled -> false
                 KeyResult.Consumed -> true
@@ -192,7 +206,40 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
                     turn = ::turn,
                 )
                 TextPanels(panel, s, viewModel, bounds, touch.highlight, onPanel = { panel = it }, onClose = back, onCommand = run)
+                BookEndEffects(viewModel, onAsk = { edge ->
+                    panel = null
+                    bookEndEdge = edge
+                }, onClose = back, onOpen = onOpenText)
+                bookEndEdge?.let { edge ->
+                    TextBookEndSheet(edge, viewModel, onDismiss = { bookEndEdge = null }, onCloseReader = back, onOpen = onOpenText)
+                }
             }
+        }
+    }
+}
+
+/** Does what running into an end of the text asks of the screen (docs/spec.md section 4.8, 本の端での動作). */
+@Composable
+private fun BookEndEffects(viewModel: TextReaderViewModel, onAsk: (BookEdge) -> Unit, onClose: () -> Unit, onOpen: (TextOpening) -> Unit) {
+    val effect = viewModel.bookEnd ?: return
+    val context = LocalContext.current
+    val last = stringResource(R.string.text_book_end_last_in_folder)
+    val first = stringResource(R.string.text_book_end_first_in_folder)
+    val noFolder = stringResource(R.string.text_book_end_no_folder)
+    LaunchedEffect(effect) {
+        viewModel.bookEndHandled()
+        when (effect) {
+            is TextBookEnd.Ask -> onAsk(effect.edge)
+            is TextBookEnd.Open -> onOpen(effect.opening)
+            is TextBookEnd.Missing -> {
+                val message = when {
+                    effect.sibling == TextSibling.NoFolder -> noFolder
+                    effect.edge == BookEdge.End -> last
+                    else -> first
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
+            TextBookEnd.Close -> onClose()
         }
     }
 }

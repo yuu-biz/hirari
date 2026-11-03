@@ -1,8 +1,6 @@
 package io.github.yuubiz.hirari.feature.text
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
-import io.github.yuubiz.hirari.core.model.BookEdge
-import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookEndOutcome
 import io.github.yuubiz.hirari.core.model.EdgeHit
 import io.github.yuubiz.hirari.core.model.Turn
@@ -105,18 +103,5 @@ internal fun motionAfter(result: TurnResult, turn: Turn, pulled: Float?, setting
         }
         TurnResult.Waiting -> null
         is TurnResult.Edge ->
-            TextMotion.Bouncing(EdgeHit(result.edge, nowMs)).takeIf { textEdgeAction(result.edge, settings.atBookEnd) == TextEdgeAction.Bounce }
+            TextMotion.Bouncing(EdgeHit(result.edge, nowMs)).takeIf { bookEndOutcome(result.edge, settings.atBookEnd, autoPlaying = false) == BookEndOutcome.Bounce }
     }
-
-/** What a turn past an end of a text does (docs/spec.md section 4.9). */
-internal enum class TextEdgeAction { Bounce, Close, None }
-
-/**
- * The 本の端での動作 of a text. 閉じる and 止まる act as in the image reader; 確認する and 次の本へ need the texts
- * beside this one, which the reader is not given yet, so they do nothing.
- */
-internal fun textEdgeAction(edge: BookEdge, action: BookEndAction): TextEdgeAction = when (bookEndOutcome(edge, action, autoPlaying = false)) {
-    BookEndOutcome.Bounce -> TextEdgeAction.Bounce
-    BookEndOutcome.CloseReader -> TextEdgeAction.Close
-    BookEndOutcome.Ignore, BookEndOutcome.StopAutoPlay, is BookEndOutcome.NeedsNeighbor -> TextEdgeAction.None
-}

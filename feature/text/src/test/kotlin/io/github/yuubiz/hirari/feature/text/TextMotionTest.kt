@@ -67,10 +67,5 @@ class TextMotionTest {
         val stop = settings.copy(atBookEnd = BookEndAction.Stop)
         assertEquals(TextMotion.Bouncing(EdgeHit(BookEdge.End, 5)), motionAfter(TurnResult.Edge(BookEdge.End), Turn.Forward, null, stop, false, 5))
         assertNull(motionAfter(TurnResult.Edge(BookEdge.End), Turn.Forward, null, settings.copy(atBookEnd = BookEndAction.Ask), false, 5))
-        assertEquals(TextEdgeAction.Close, textEdgeAction(BookEdge.End, BookEndAction.Close))
-        assertEquals(TextEdgeAction.None, textEdgeAction(BookEdge.Start, BookEndAction.Close))
-        assertEquals(TextEdgeAction.Bounce, textEdgeAction(BookEdge.Start, BookEndAction.Stop))
-        assertEquals(TextEdgeAction.None, textEdgeAction(BookEdge.End, BookEndAction.Ask))
-        assertEquals(TextEdgeAction.None, textEdgeAction(BookEdge.End, BookEndAction.NextBook))
     }
 }

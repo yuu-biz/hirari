@@ -112,7 +112,15 @@ class HirariApp : Application() {
         }
         text = appScope.async {
             val smb = smbPlaces.await()
-            services.await().let { TextReaderServices(it.storage, it.progress, appScope, SmbFiles { place, path -> smb.open(place, path) }) }
+            services.await().let {
+                TextReaderServices(
+                    it.storage,
+                    it.progress,
+                    appScope,
+                    SmbFiles { place, path -> smb.open(place, path) },
+                    TextFolderSiblings(it.storage.locations, SafFolderLister(contentResolver), smb, it.storage.settings),
+                )
+            }
         }
     }
 

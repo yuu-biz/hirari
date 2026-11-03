@@ -18,6 +18,8 @@ import io.github.yuubiz.hirari.feature.library.FolderKey
 import io.github.yuubiz.hirari.feature.library.TextAddress
 import io.github.yuubiz.hirari.feature.text.EntryArchive
 import io.github.yuubiz.hirari.feature.text.TextBookRef
+import io.github.yuubiz.hirari.feature.text.TextOpening
+import io.github.yuubiz.hirari.feature.text.TextStart
 import io.github.yuubiz.hirari.feature.library.childToward
 import kotlinx.serialization.Serializable
 
@@ -139,6 +141,8 @@ internal data class TextRoute(
     val documentId: String? = null,
     val entryIndex: Int = -1,
     val archiveId: String = "",
+    /** Where the text opens: the neighboring text of 本の端での動作 opens at its start or end. */
+    val start: TextStart = TextStart.Saved,
 ) {
     /** [ServerArchiveEntry] is an entry of an archive of an SMB place, which has no document [uri]. */
     enum class Kind { Document, InLocation, ArchiveEntry, ServerArchiveEntry }
@@ -150,6 +154,9 @@ internal data class TextRoute(
         Kind.ServerArchiveEntry -> TextBookRef.ArchiveEntry(EntryArchive.OnServer(LocationId(location), path), entryIndex, BookId(archiveId))
     }
 }
+
+internal fun TextOpening.toRoute(): TextRoute =
+    TextRoute(TextRoute.Kind.InLocation, location = book.location.value, path = book.path, documentId = book.documentId, start = start)
 
 internal fun TextAddress.toRoute(): TextRoute = when (this) {
     is TextAddress.Document -> TextRoute(TextRoute.Kind.Document, uri = uri.value)

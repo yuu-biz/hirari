@@ -217,14 +217,16 @@ class MainActivity : ComponentActivity() {
                     }
                     composable<TextRoute> { entry ->
                         Kept(app, entry) {
-                            val ref = entry.toRoute<TextRoute>().toRef()
-                            val reader = viewModel(key = ref.toString()) { TextReaderViewModel(application, app.text, ref) }
+                            val route = entry.toRoute<TextRoute>()
+                            val ref = route.toRef()
+                            val reader = viewModel(key = ref.toString()) { TextReaderViewModel(application, app.text, ref, route.start) }
                             ReportSettled(nav, entry, app) { reader.state.first { it !is TextReaderUiState.Opening } }
                             TextReaderScreen(
                                 reader,
                                 textKeys,
                                 onBack = { if (!nav.popBackStack()) finish() },
                                 onOpenSettings = { nav.navigate(SettingsRoute) },
+                                onOpenText = { nav.navigate(it.toRoute()) { popUpTo<TextRoute> { inclusive = true } } },
                             )
                         }
                     }
