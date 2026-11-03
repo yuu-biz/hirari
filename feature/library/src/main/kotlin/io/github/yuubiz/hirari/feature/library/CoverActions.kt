@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.FolderCover
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.locationBookId
@@ -18,6 +19,18 @@ import kotlinx.coroutines.withContext
 /** The binding direction a book is shown with: its own, else the global one (docs/spec.md section 4.4). */
 internal suspend fun LibraryServices.directionOf(id: BookId): ReadingDirection =
     coverIndex.directions().first()[id] ?: settings.settings.first().readingDirection
+
+/**
+ * Makes the thumbnails of the cover of the indexed book [id] again at every size, the one the lists show first, after
+ * its cover was chosen elsewhere, as in the reader (docs/spec.md section 4.8, 表紙にする). A book not in the index,
+ * or whose place is gone, is left for the lists to make when they show it.
+ */
+suspend fun LibraryServices.remakeCover(id: BookId) {
+    val stored = books.get(id) ?: return
+    val place = (stored.book.source as? BookSource.InLocation)?.let { locations.get(it.location) ?: return }
+    val spec = coverSpecOf(stored.book, stored.coverEntry, place, directionOf(id), stored.coverCrop) ?: return
+    covers.regenerate(spec, covers.sizesFrom(settings.settings.first().thumbSize))
+}
 
 /**
  * 子の画像やページをフォルダの表紙にする / 選ぶのをやめる (docs/spec.md section 4.4): saves the choice for the

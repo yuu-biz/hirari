@@ -76,7 +76,7 @@ class SheetsTest {
         assertEquals(
             setOf(
                 MenuItem.SetCoverFromRange, MenuItem.SharePage, MenuItem.RestoreAndClose, MenuItem.AutoPlay, MenuItem.Breath, MenuItem.Orientation, MenuItem.MirrorControls, MenuItem.Guide,
-                MenuItem.Settings, MenuItem.EditCommandBar, MenuItem.About,
+                MenuItem.SetCover, MenuItem.Settings, MenuItem.EditCommandBar, MenuItem.About,
             ),
             MenuItem.entries.filter { it.available }.toSet(),
         )

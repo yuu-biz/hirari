@@ -119,6 +119,9 @@
     <string name="share_which_page">どちらのページを共有しますか</string>
     <string name="cover_range_which_page">どちらのページの範囲を選びますか</string>
     <string name="cover_range_unavailable">この本の表紙の範囲は選べません</string>
+    <string name="cover_which_page">どちらのページを表紙にしますか</string>
+    <string name="cover_set">このページを表紙にしました</string>
+    <string name="cover_set_failed">表紙にできませんでした</string>
     <string name="share_page_number">p. %1$d</string>
     <string name="share_failed">このページを共有できませんでした</string>
 

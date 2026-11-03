@@ -109,6 +109,20 @@ class CoverRangeViewModelTest {
     }
 
     @Test
+    fun `a cover chosen in the reader has its thumbnail made again at every size, and a book not in the index has none`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.books.put(indexed)
+        fixture.books.setCover(indexed.id, 5)
+
+        fixture.services.remakeCover(indexed.id)
+        fixture.services.remakeCover(book(place.id, "other.zip").id)
+
+        val remade = fixture.thumbnails.regenerated
+        assertEquals(ThumbSize.entries.size, remade.size)
+        assertEquals(setOf(5), remade.map { (it.subject as ThumbSubject.Book).coverEntry }.toSet())
+    }
+
+    @Test
     fun `a write that fails is shown as a failed save and does not end the process, and choosing again stores it`() = runTest {
         val model = viewModel(entry = 3)
         fixture.books.coverFailure = java.io.IOException("no space left")

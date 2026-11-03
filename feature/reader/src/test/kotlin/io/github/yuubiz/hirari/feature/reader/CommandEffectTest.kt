@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookOverrides
+import io.github.yuubiz.hirari.core.model.HalfPart
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
@@ -63,6 +64,14 @@ class CommandEffectTest {
     }
 
     @Test
+    fun setCoverMakesTheOnePageOfAViewTheCoverAndAsksWhichPageOfAPair() {
+        assertEquals(CommandEffect.SetCover, config.effectOf(ReaderCommand.SetCover))
+        assertEquals(CommandEffect.Cover(4), coverChoice(PageView.One(4)))
+        assertEquals(CommandEffect.Cover(4), coverChoice(PageView.Half(4, HalfPart.Second)))
+        assertEquals(CommandEffect.Show(ReaderSheet.CoverPick(PageView.Two(5, 4), range = false)), coverChoice(PageView.Two(5, 4)))
+    }
+
+    @Test
     fun aChangeOfTheSettingsReachesTheOpenReaderButNotWhatTheSessionSwitched() {
         val before = GlobalSettings()
         val global = ReaderConfig.of(before)
@@ -86,7 +95,7 @@ class CommandEffectTest {
 
     @Test
     fun commandsOfLaterMilestonesSayTheyAreNotYetThere() {
-        for (command in listOf(ReaderCommand.AddBookmark, ReaderCommand.SetCover)) {
+        for (command in listOf(ReaderCommand.AddBookmark)) {
             assertEquals(CommandEffect.NotYet, config.effectOf(command), "$command")
         }
     }

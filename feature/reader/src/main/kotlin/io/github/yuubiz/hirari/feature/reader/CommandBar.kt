@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.CommandTargets
+import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.PanelTarget
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rect
@@ -42,11 +43,24 @@ sealed interface CommandEffect {
     /** 息で操作, which the screen runs since turning it on may ask for the microphone. */
     data object ToggleBreath : CommandEffect
 
+    /** 表紙にする of the view on screen, which [coverChoice] makes into [Show] or [Cover]. */
+    data object SetCover : CommandEffect
+
+    /** The screen makes [page] the book's cover. */
+    data class Cover(val page: Int) : CommandEffect
+
     /** A screen of the settings that the app opens over the reader. */
     data class OpenSettings(val target: SettingsTarget) : CommandEffect
 
     /** A command of a later milestone. */
     data object NotYet : CommandEffect
+}
+
+/** What 表紙にする does on [view]: a pair asks which page, any other view makes its one page the cover. */
+fun coverChoice(view: PageView): CommandEffect = when (view) {
+    is PageView.Two -> CommandEffect.Show(ReaderSheet.CoverPick(view, range = false))
+    is PageView.One -> CommandEffect.Cover(view.page)
+    is PageView.Half -> CommandEffect.Cover(view.page)
 }
 
 /** Where 設定, コマンドバーの編集, and このアプリについて go: the settings screen, its `commandBarItems` dialog, or its about dialog. */
@@ -70,11 +84,12 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.AutoPlay -> CommandEffect.StartAutoPlay
     ReaderCommand.SharePage -> CommandEffect.SharePage
     ReaderCommand.Breath -> CommandEffect.ToggleBreath
+    ReaderCommand.SetCover -> CommandEffect.SetCover
     ReaderCommand.Settings -> CommandEffect.OpenSettings(SettingsTarget.Settings)
     ReaderCommand.EditCommandBar -> CommandEffect.OpenSettings(SettingsTarget.CommandBar)
     ReaderCommand.AddBookmark, ReaderCommand.Bookmarks,
     ReaderCommand.ReverseOrder,
-    ReaderCommand.BookSettings, ReaderCommand.SetCover,
+    ReaderCommand.BookSettings,
     -> CommandEffect.NotYet
 }
 

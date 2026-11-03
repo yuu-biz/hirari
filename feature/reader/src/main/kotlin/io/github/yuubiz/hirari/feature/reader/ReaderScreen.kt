@@ -176,10 +176,10 @@ fun ReaderScreen(
                     is ReaderSheet.CoverPick -> SharePickSheet(
                         sheet.view,
                         state.config.direction,
-                        R.string.cover_range_which_page,
+                        if (sheet.range) R.string.cover_range_which_page else R.string.cover_which_page,
                         onPick = { page ->
                             ui.sheet = null
-                            openCoverRange(page, viewModel, ui, onCoverRange)
+                            if (sheet.range) openCoverRange(page, viewModel, ui, onCoverRange) else ui.follow(CommandEffect.Cover(page))
                         },
                         onClose = { ui.sheet = null },
                     )
@@ -192,6 +192,7 @@ fun ReaderScreen(
             }
         }
         SharePageEffect(viewModel, ui)
+        CoverEffect(viewModel, ui)
         ui.settings?.let { target ->
             LaunchedEffect(target) {
                 ui.settings = null
@@ -234,6 +235,10 @@ internal class ReaderUi {
 
     /** 息で操作 was chosen, for [BreathControl] to run. */
     var breathToggled: Boolean by mutableStateOf(false)
+
+    /** The page 表紙にする is making the book's cover. */
+    var covering: Int? by mutableStateOf(null)
+
     /** The settings the screen is about to open over the reader. */
     var settings: SettingsTarget? by mutableStateOf(null)
 
@@ -255,6 +260,10 @@ internal class ReaderUi {
                 sharing = effect.page
             }
             CommandEffect.ToggleBreath -> breathToggled = true
+            is CommandEffect.Cover -> {
+                closePanels()
+                covering = effect.page
+            }
             is CommandEffect.OpenSettings -> {
                 closePanels()
                 settings = effect.target
@@ -355,7 +364,7 @@ private fun GuideEffects(viewModel: ReaderViewModel, ui: ReaderUi) {
 /** 範囲を選んで表紙にする from the menu (docs/spec.md section 4.8): the page of the view, or for a pair the one the user picks. */
 private fun chooseCoverRange(state: ReaderState, viewModel: ReaderViewModel, ui: ReaderUi, open: (BookId, Int) -> Unit) {
     when (val view = state.current) {
-        is PageView.Two -> ui.sheet = ReaderSheet.CoverPick(view)
+        is PageView.Two -> ui.sheet = ReaderSheet.CoverPick(view, range = true)
         else -> openCoverRange(view.pages.min(), viewModel, ui, open)
     }
 }
@@ -363,6 +372,17 @@ private fun chooseCoverRange(state: ReaderState, viewModel: ReaderViewModel, ui:
 private fun openCoverRange(page: Int, viewModel: ReaderViewModel, ui: ReaderUi, open: (BookId, Int) -> Unit) {
     val target = viewModel.coverRangeTarget(page)
     if (target == null) ui.message = R.string.cover_range_unavailable else open(target.book, target.entry)
+}
+
+/** Makes the page of [ReaderUi.covering] the book's cover, and says whether it did (docs/spec.md section 4.8, 表紙にする). */
+@Composable
+private fun CoverEffect(viewModel: ReaderViewModel, ui: ReaderUi) {
+    val page = ui.covering ?: return
+    LaunchedEffect(page) {
+        val chosen = viewModel.setCover(page)
+        ui.covering = null
+        ui.message = if (chosen) R.string.cover_set else R.string.cover_set_failed
+    }
 }
 
 /** Writes the page of [ReaderUi.sharing] and hands it to the system's share sheet (docs/spec.md section 4.8). */

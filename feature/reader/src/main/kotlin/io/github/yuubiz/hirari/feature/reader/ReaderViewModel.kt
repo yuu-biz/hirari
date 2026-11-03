@@ -79,6 +79,7 @@ import io.github.yuubiz.hirari.feature.reader.prefetch.travelDirection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -107,8 +108,21 @@ class ReaderServices(
     val smb: SmbServers = SmbServers.None,
     /** The SMB prefetch layer on disk, `cacheDir/smb/` (docs/spec.md section 5.3). */
     val smbCache: SmbPrefetchCache? = null,
+    val covers: CoverRemaker = CoverRemaker.None,
 ) {
     val overrides = BookOverridesStore(storage.books, appScope)
+}
+
+/**
+ * Makes the thumbnails of a book's cover again once the reader chose another page for it (docs/spec.md section 4.8,
+ * 表紙にする). The lists own the thumbnails, so the app hands this in.
+ */
+fun interface CoverRemaker {
+    suspend fun remake(book: BookId)
+
+    companion object {
+        val None = CoverRemaker {}
+    }
 }
 
 /**
@@ -253,6 +267,7 @@ class ReaderViewModel(
         var settings: GlobalSettings,
         val shareDir: File,
         val loader: BookPageLoader,
+        val session: ReadingSession,
         val remote: Remote?,
         /** The SMB prefetch layer, for an archive on a server that is not extracted (docs/spec.md section 5.3). */
         val disk: DiskPrefetch?,
@@ -358,6 +373,28 @@ class ReaderViewModel(
         return CoverRangeTarget(book.id, entry)
     }
 
+    /**
+     * 表紙にする: [page] becomes the cover of the book in the index, whole (docs/spec.md section 4.8). The write runs on
+     * the process's scope, so leaving the screen does not stop it, and once it is stored the thumbnails are made
+     * again. Whether it was stored; a book the index does not hold has no cover to choose.
+     */
+    suspend fun setCover(page: Int): Boolean {
+        val book = opened ?: return false
+        val entry = book.book.pages.getOrNull(page)?.entryIndex ?: return false
+        val shared = book.services
+        return shared.appScope.async {
+            try {
+                book.session.indexed()
+                shared.storage.books.setCover(book.id, entry)
+                shared.storage.books.get(book.id) != null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+        }.await().also { stored -> if (stored) shared.appScope.launch { remakeQuietly(shared.covers, book.id) } }
+    }
+
     /** Whether the operation guide was shown to the end before (docs/spec.md section 4.8, 操作ガイド). */
     /** Whether the guide was closed before; a record that cannot be read counts as not seen, so the guide shows. */
     suspend fun guideSeen(): Boolean = try {
@@ -440,7 +477,8 @@ class ReaderViewModel(
             CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
             CommandEffect.StartAutoPlay -> dispatch(ReaderEvent.AutoPlayStarted(nowMs))
             CommandEffect.SharePage -> return shareChoice(current.current)
-            is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.OpenSettings, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
+            CommandEffect.SetCover -> return coverChoice(current.current)
+            is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.Cover, is CommandEffect.OpenSettings, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
         }
         return null
     }
@@ -568,7 +606,7 @@ class ReaderViewModel(
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val remote = located.remote
         val disk = book.stash?.let { DiskPrefetch(viewModelScope, it, book.pages.size) }
-        opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), settings, shareDir, loader, remote, disk)
+        opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), settings, shareDir, loader, session, remote, disk)
         remote?.server?.state?.let { connection -> viewModelScope.launch { connection.collect { dispatch(ReaderEvent.ConnectionChanged(it)) } } }
         stops.attach(session)
         phase = ReaderPhase.Reading
@@ -825,4 +863,14 @@ private fun Exception.openFailure(): BookFailure = when (this) {
     is SecurityException -> BookFailure.NoPermission
     is NoRoomForCopyException -> BookFailure.NoRoomForCopy
     else -> BookFailure.ReadError
+}
+
+/** A thumbnail that fails to be made again is made by the lists when they show the book. */
+private suspend fun remakeQuietly(covers: CoverRemaker, book: BookId) {
+    try {
+        covers.remake(book)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+    }
 }

@@ -26,6 +26,8 @@ import io.github.yuubiz.hirari.feature.library.ThumbnailsSource
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
+import io.github.yuubiz.hirari.feature.library.remakeCover
+import io.github.yuubiz.hirari.feature.reader.CoverRemaker
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
 import io.github.yuubiz.hirari.feature.text.SmbFiles
 import io.github.yuubiz.hirari.feature.text.TextReaderServices
@@ -87,6 +89,7 @@ class HirariApp : Application() {
                 siblings,
                 smbPool.await(),
                 SmbPrefetchCache(File(cacheDir, "smb")),
+                CoverRemaker { library.await().remakeCover(it) },
             )
         }
         library = appScope.async {

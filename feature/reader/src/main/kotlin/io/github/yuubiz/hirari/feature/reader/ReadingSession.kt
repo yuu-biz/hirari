@@ -27,6 +27,9 @@ internal class ReadingSession(
     private val stopped = AtomicBoolean(false)
     private val indexed: Job = scope.launch { quietly { books.record(book) } }
 
+    /** Waits until the book was written to the index, or failed to be. */
+    suspend fun indexed() = indexed.join()
+
     /** Moves the book to the newest place of the history. Stopping again, or closing after a stop, writes nothing more. */
     fun stop() {
         if (!stopped.compareAndSet(false, true)) return
