@@ -1,9 +1,5 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
-import io.github.yuubiz.hirari.core.model.Point
-import io.github.yuubiz.hirari.core.model.ReadingDirection
-import io.github.yuubiz.hirari.core.model.Side
-import io.github.yuubiz.hirari.core.model.leadingSide
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.hypot

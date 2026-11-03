@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.LoupeFrame
 import io.github.yuubiz.hirari.core.model.LoupeZoom
+import io.github.yuubiz.hirari.core.model.Motion
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Size

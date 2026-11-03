@@ -12,8 +12,21 @@ import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import io.github.yuubiz.hirari.core.model.LONG_PRESS_MS
+import io.github.yuubiz.hirari.core.model.PageBar
+import io.github.yuubiz.hirari.core.model.PageBarEffect
+import io.github.yuubiz.hirari.core.model.PageBarEvent
+import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.Point
+import io.github.yuubiz.hirari.core.model.ReaderRegion
+import io.github.yuubiz.hirari.core.model.ReaderRegions
 import io.github.yuubiz.hirari.core.model.Size
+import io.github.yuubiz.hirari.core.model.TouchEvent
+import io.github.yuubiz.hirari.core.model.TouchOutcome
+import io.github.yuubiz.hirari.core.model.TouchState
+import io.github.yuubiz.hirari.core.model.TurnAreaTouch
+import io.github.yuubiz.hirari.core.model.pullableSides
+import io.github.yuubiz.hirari.core.model.tapAction
 import kotlin.math.hypot
 
 /** A second finger that goes up within this time, without moving past the touch slop, taps. */

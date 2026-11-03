@@ -1,10 +1,9 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
 import io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight
 import io.github.yuubiz.hirari.core.model.ReadingDirection.RightToLeft
-import io.github.yuubiz.hirari.core.model.TurnEffect
-import io.github.yuubiz.hirari.feature.reader.Turn.Back
-import io.github.yuubiz.hirari.feature.reader.Turn.Forward
+import io.github.yuubiz.hirari.core.model.Turn.Back
+import io.github.yuubiz.hirari.core.model.Turn.Forward
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

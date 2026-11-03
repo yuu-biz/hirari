@@ -1,8 +1,13 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.HalfPart
+import io.github.yuubiz.hirari.core.model.KeyBindings
+import io.github.yuubiz.hirari.core.model.KeyCodes
+import io.github.yuubiz.hirari.core.model.KeyResult
 import io.github.yuubiz.hirari.core.model.PageView
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.model.VolumeKeys
 import kotlin.test.Test
 import kotlin.test.assertEquals

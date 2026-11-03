@@ -7,8 +7,10 @@ import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReadState
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ReadingPosition
+import io.github.yuubiz.hirari.core.model.Turn
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals

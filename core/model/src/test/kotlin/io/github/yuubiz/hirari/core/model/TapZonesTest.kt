@@ -1,14 +1,11 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
-import io.github.yuubiz.hirari.core.model.Point
-import io.github.yuubiz.hirari.core.model.Rect
-import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.TapLayout.OneSideBand
 import io.github.yuubiz.hirari.core.model.TapLayout.BothSideBands
 import io.github.yuubiz.hirari.core.model.TapLayout.TopAndBottom
 import io.github.yuubiz.hirari.core.model.TapLayout.TopAndBottomBands
-import io.github.yuubiz.hirari.feature.reader.Turn.Back
-import io.github.yuubiz.hirari.feature.reader.Turn.Forward
+import io.github.yuubiz.hirari.core.model.Turn.Back
+import io.github.yuubiz.hirari.core.model.Turn.Forward
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.boolean
 import io.kotest.property.arbitrary.element

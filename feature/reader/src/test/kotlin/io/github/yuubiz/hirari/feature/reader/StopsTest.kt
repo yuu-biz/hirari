@@ -9,8 +9,8 @@ import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.StopOrder
 import io.github.yuubiz.hirari.core.model.StopOrder.ColumnsFirst
 import io.github.yuubiz.hirari.core.model.StopOrder.RowsFirst
-import io.github.yuubiz.hirari.feature.reader.Turn.Back
-import io.github.yuubiz.hirari.feature.reader.Turn.Forward
+import io.github.yuubiz.hirari.core.model.Turn.Back
+import io.github.yuubiz.hirari.core.model.Turn.Forward
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.enum
 import io.kotest.property.arbitrary.int

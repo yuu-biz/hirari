@@ -13,7 +13,7 @@ import io.github.yuubiz.hirari.feature.library.FolderLister
 import io.github.yuubiz.hirari.feature.library.Listing
 import io.github.yuubiz.hirari.feature.library.SmbPlaces
 import io.github.yuubiz.hirari.feature.library.toItem
-import io.github.yuubiz.hirari.feature.reader.BookEdge
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.feature.reader.Sibling
 import io.github.yuubiz.hirari.feature.reader.SiblingBooks
 import kotlinx.coroutines.flow.first

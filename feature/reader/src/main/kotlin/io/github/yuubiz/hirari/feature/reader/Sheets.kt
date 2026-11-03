@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.KeyCodes
 import io.github.yuubiz.hirari.core.model.PageView
 import kotlin.math.roundToInt
 

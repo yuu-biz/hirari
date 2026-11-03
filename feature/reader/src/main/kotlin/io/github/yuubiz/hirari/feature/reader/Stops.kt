@@ -1,10 +1,12 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.Motion
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.StopOrder
+import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.model.scrollStops
 import kotlin.math.abs
 import kotlin.math.ceil

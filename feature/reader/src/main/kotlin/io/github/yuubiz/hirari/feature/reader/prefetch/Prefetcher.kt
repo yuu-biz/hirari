@@ -8,7 +8,7 @@ import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.feature.reader.PagePart
-import io.github.yuubiz.hirari.feature.reader.Turn
+import io.github.yuubiz.hirari.core.model.Turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job

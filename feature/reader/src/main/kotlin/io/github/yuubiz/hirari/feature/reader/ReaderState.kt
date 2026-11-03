@@ -2,7 +2,13 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.model.EdgeHit
 import io.github.yuubiz.hirari.core.model.PageShape
+import io.github.yuubiz.hirari.core.model.ReaderAction
+import io.github.yuubiz.hirari.core.model.Turn
+import io.github.yuubiz.hirari.core.model.TurnAnimation
+import io.github.yuubiz.hirari.core.model.edgeOf
+import io.github.yuubiz.hirari.core.model.turnMovement
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageSteps
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Pagination

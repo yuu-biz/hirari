@@ -1,9 +1,4 @@
-package io.github.yuubiz.hirari.feature.reader
-
-import io.github.yuubiz.hirari.core.model.Point
-import io.github.yuubiz.hirari.core.model.Rect
-import io.github.yuubiz.hirari.core.model.Size
-import io.github.yuubiz.hirari.core.model.TapLayout
+package io.github.yuubiz.hirari.core.model
 
 enum class Turn { Forward, Back }
 

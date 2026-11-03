@@ -1,8 +1,7 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
-import io.github.yuubiz.hirari.core.model.BookEndAction
-import io.github.yuubiz.hirari.feature.reader.BookEdge.End
-import io.github.yuubiz.hirari.feature.reader.BookEdge.Start
+import io.github.yuubiz.hirari.core.model.BookEdge.End
+import io.github.yuubiz.hirari.core.model.BookEdge.Start
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

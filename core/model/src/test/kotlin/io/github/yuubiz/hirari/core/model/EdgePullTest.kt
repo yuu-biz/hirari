@@ -1,15 +1,13 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
-import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight
 import io.github.yuubiz.hirari.core.model.ReadingDirection.RightToLeft
-import io.github.yuubiz.hirari.core.model.Side
-import io.github.yuubiz.hirari.feature.reader.TouchEvent.Cancel
-import io.github.yuubiz.hirari.feature.reader.TouchEvent.Down
-import io.github.yuubiz.hirari.feature.reader.TouchEvent.Move
-import io.github.yuubiz.hirari.feature.reader.TouchEvent.Up
-import io.github.yuubiz.hirari.feature.reader.Turn.Back
-import io.github.yuubiz.hirari.feature.reader.Turn.Forward
+import io.github.yuubiz.hirari.core.model.TouchEvent.Cancel
+import io.github.yuubiz.hirari.core.model.TouchEvent.Down
+import io.github.yuubiz.hirari.core.model.TouchEvent.Move
+import io.github.yuubiz.hirari.core.model.TouchEvent.Up
+import io.github.yuubiz.hirari.core.model.Turn.Back
+import io.github.yuubiz.hirari.core.model.Turn.Forward
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.float
 import io.kotest.property.checkAll

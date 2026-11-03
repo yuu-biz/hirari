@@ -1,12 +1,11 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
-import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight
 import io.github.yuubiz.hirari.core.model.ReadingDirection.RightToLeft
-import io.github.yuubiz.hirari.feature.reader.PageBarEvent.Down
-import io.github.yuubiz.hirari.feature.reader.PageBarEvent.Hold
-import io.github.yuubiz.hirari.feature.reader.PageBarEvent.Move
-import io.github.yuubiz.hirari.feature.reader.PageBarEvent.Up
+import io.github.yuubiz.hirari.core.model.PageBarEvent.Down
+import io.github.yuubiz.hirari.core.model.PageBarEvent.Hold
+import io.github.yuubiz.hirari.core.model.PageBarEvent.Move
+import io.github.yuubiz.hirari.core.model.PageBarEvent.Up
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.float
 import io.kotest.property.checkAll

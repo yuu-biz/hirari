@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.ImageAdjust
+import io.github.yuubiz.hirari.core.model.KeyBindings
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.LoupeFrame
@@ -16,6 +17,7 @@ import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.ScreenOrientation
 import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.StopOrder
+import io.github.yuubiz.hirari.core.model.TapZones
 import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.core.model.TurnEffect
 import io.github.yuubiz.hirari.core.model.VolumeKeys

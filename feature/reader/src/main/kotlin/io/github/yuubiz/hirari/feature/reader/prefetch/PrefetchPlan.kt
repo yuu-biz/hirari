@@ -2,7 +2,7 @@ package io.github.yuubiz.hirari.feature.reader.prefetch
 
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
-import io.github.yuubiz.hirari.feature.reader.Turn
+import io.github.yuubiz.hirari.core.model.Turn
 
 /** How many items a layer holds in the reading direction ([ahead]) and against it ([behind]). */
 data class Reach(val ahead: Int, val behind: Int) {

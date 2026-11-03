@@ -10,9 +10,9 @@ import io.github.yuubiz.hirari.core.model.PageView.One
 import io.github.yuubiz.hirari.core.model.PageView.Two
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.layoutViews
-import io.github.yuubiz.hirari.feature.reader.Turn
-import io.github.yuubiz.hirari.feature.reader.Turn.Back
-import io.github.yuubiz.hirari.feature.reader.Turn.Forward
+import io.github.yuubiz.hirari.core.model.Turn
+import io.github.yuubiz.hirari.core.model.Turn.Back
+import io.github.yuubiz.hirari.core.model.Turn.Forward
 import io.github.yuubiz.hirari.feature.reader.prefetch.PrefetchJob.PrepareView
 import io.github.yuubiz.hirari.feature.reader.prefetch.PrefetchJob.ReadRaw
 import io.github.yuubiz.hirari.feature.reader.prefetch.PrefetchJob.ReadShape

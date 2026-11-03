@@ -1,13 +1,17 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import android.view.KeyEvent
+import io.github.yuubiz.hirari.core.model.KeyBindings
+import io.github.yuubiz.hirari.core.model.KeyCodes
+import io.github.yuubiz.hirari.core.model.KeyResult
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight
 import io.github.yuubiz.hirari.core.model.ReadingDirection.RightToLeft
 import io.github.yuubiz.hirari.core.model.VolumeKeys
-import io.github.yuubiz.hirari.feature.reader.ReaderAction.StepStops
-import io.github.yuubiz.hirari.feature.reader.ReaderAction.TurnView
-import io.github.yuubiz.hirari.feature.reader.Turn.Back
-import io.github.yuubiz.hirari.feature.reader.Turn.Forward
+import io.github.yuubiz.hirari.core.model.ReaderAction.StepStops
+import io.github.yuubiz.hirari.core.model.ReaderAction.TurnView
+import io.github.yuubiz.hirari.core.model.Turn.Back
+import io.github.yuubiz.hirari.core.model.Turn.Forward
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

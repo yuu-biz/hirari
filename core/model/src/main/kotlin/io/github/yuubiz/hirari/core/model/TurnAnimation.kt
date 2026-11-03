@@ -1,7 +1,5 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
-import io.github.yuubiz.hirari.core.model.ReadingDirection
-import io.github.yuubiz.hirari.core.model.TurnEffect
 import kotlin.math.roundToLong
 
 /** A pull that does not turn goes back to rest in about this long. */

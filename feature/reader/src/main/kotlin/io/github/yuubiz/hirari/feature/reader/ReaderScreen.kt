@@ -43,7 +43,11 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.KeyResult
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
+import io.github.yuubiz.hirari.core.model.PageBarState
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import kotlinx.coroutines.delay
 

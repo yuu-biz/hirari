@@ -1,4 +1,4 @@
-package io.github.yuubiz.hirari.feature.reader
+package io.github.yuubiz.hirari.core.model
 
 /**
  * A value that runs linearly from [from] to [to] over [durationMs] from [startMs]. Turn effects

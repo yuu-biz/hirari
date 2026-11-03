@@ -12,7 +12,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.feature.library.FolderLister
 import io.github.yuubiz.hirari.feature.library.Listing
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
-import io.github.yuubiz.hirari.feature.reader.BookEdge
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.feature.reader.Sibling
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob

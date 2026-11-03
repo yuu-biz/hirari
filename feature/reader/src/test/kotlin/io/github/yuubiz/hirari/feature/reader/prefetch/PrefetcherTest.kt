@@ -16,13 +16,13 @@ import io.github.yuubiz.hirari.core.model.UnsupportedKind
 import io.github.yuubiz.hirari.feature.reader.DEEP_BOTTOM
 import io.github.yuubiz.hirari.feature.reader.LANDSCAPE
 import io.github.yuubiz.hirari.feature.reader.PORTRAIT
-import io.github.yuubiz.hirari.feature.reader.ReaderAction
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.feature.reader.ReaderConfig
 import io.github.yuubiz.hirari.feature.reader.ReaderEvent
 import io.github.yuubiz.hirari.feature.reader.ReaderState
 import io.github.yuubiz.hirari.feature.reader.TALL
 import io.github.yuubiz.hirari.feature.reader.scanOf
-import io.github.yuubiz.hirari.feature.reader.Turn
+import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.feature.reader.Viewport
 import io.github.yuubiz.hirari.feature.reader.WIDE
 import io.github.yuubiz.hirari.feature.reader.spreadConfig

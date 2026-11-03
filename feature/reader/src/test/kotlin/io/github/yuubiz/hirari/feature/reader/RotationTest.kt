@@ -2,9 +2,11 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals

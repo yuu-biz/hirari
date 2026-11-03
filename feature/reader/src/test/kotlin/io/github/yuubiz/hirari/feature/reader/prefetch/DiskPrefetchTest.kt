@@ -2,7 +2,7 @@ package io.github.yuubiz.hirari.feature.reader.prefetch
 
 import io.github.yuubiz.hirari.core.image.Fill
 import io.github.yuubiz.hirari.core.image.PageStash
-import io.github.yuubiz.hirari.feature.reader.Turn
+import io.github.yuubiz.hirari.core.model.Turn
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent

@@ -2011,7 +2011,7 @@ RAR、7z、tar の書庫は次のように作る。
 | モジュール | 責務 | 依存してよいもの |
 |---|---|---|
 | `:app` | Application、依存の組み立て、画面遷移、マニフェスト、外部からの Intent | すべて |
-| `:core:model` | 2 章の型、`layoutViews`、`scrollStops`、自然順、設定の値の型（列挙など）。Android に依存しない | なし |
+| `:core:model` | 2 章の型、`layoutViews`、`scrollStops`、自然順、設定の値の型（列挙など）、画像のリーダーとテキストリーダーが共有する操作の規則（画面の領域、タップ領域、キー操作、ページバー、端引き、めくり効果、本の端での動作の判定）。Android に依存しない | なし |
 | `:core:source` | `ByteSource` の実装（SAF、SMB、キャッシュへの複製）、フォルダの一覧 | `:core:model` |
 | `:core:archive` | libarchive と JNI、`ArchiveSession`、エントリの索引、展開キャッシュ、名前の文字コード | `:core:model`、`:core:source` |
 | `:core:image` | 形式の判定、デコードの計画、各デコーダの接続、縮小、トリミング、タイル、PDF、サムネイルの生成（`Thumbnails`） | `:core:model`、`:core:source`、`:core:archive` |
