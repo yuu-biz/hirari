@@ -11,6 +11,7 @@ import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.TextLayout
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.text.FixedGlyphMetrics
+import io.github.yuubiz.hirari.core.text.GlyphMetrics
 import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.text.VerticalLayout
 import io.github.yuubiz.hirari.core.text.parseAozora
@@ -506,6 +507,29 @@ class TextReaderModelTest {
         assertEquals(1, ticks)
         model.scrolledTo(0)
         assertEquals(1, ticks, "scrolling is not a jump")
+    }
+
+    @Test
+    fun `a jump to a page not laid out yet ticks when the page is shown, and not when the layout fails`() = runTest {
+        settings.value = settings.value.copy(textSizeSp = 28, turnHaptics = true)
+        val pump = HandPump()
+        var ticks = 0
+        var boom = false
+        val metrics = GlyphMetrics { text, size, bold -> if (boom) throw OutOfMemoryError() else FixedGlyphMetrics.width(text, size, bold) }
+        val text = sampleText(chapters = 1, sentencesPerChapter = 60)
+        val model = model(text = text, work = pump, fonts = FakeFonts(metrics = metrics), onTurned = { ticks++ })
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        assertTrue(!model.reading.run!!.complete)
+        model.last()
+        assertEquals(0, ticks, "the last page is not shown yet")
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run?.covers(text.length - 1) == true }
+        assertEquals(1, ticks)
+
+        assertTrue(!model.reading.run!!.fromStart)
+        boom = true
+        model.first()
+        pump.until(this) { model.state.value is TextReaderUiState.Failed }
+        assertEquals(1, ticks, "the layout failed before the first page was shown")
     }
 }
 

@@ -146,6 +146,9 @@ internal class TextReaderModel(
 
     /** A turn asked for before its page was laid out; it runs when the page comes. */
     private var pendingTurn: Int? = null
+
+    /** A jump to a page not laid out yet owes its tick, which goes out when the first layout after it shows the page. */
+    private var tickOnLanding = false
     private var layoutJob: Job? = null
 
     /** The params and typeface of the pages in [run], or of the layout making them. */
@@ -235,6 +238,7 @@ internal class TextReaderModel(
         setter = null
         window = emptyMap()
         pendingTurn = null
+        tickOnLanding = false
         search = SearchState.Idle
         highlight = null
         release()
@@ -389,8 +393,8 @@ internal class TextReaderModel(
         if (run != null && run.covers(offset)) {
             moveTo(offset, keepHighlight = true)
         } else {
-            // A page the run does not reach is another view than the one shown.
-            if (run != null && current?.turnHaptics == true) onTurned()
+            // A page the run does not reach is another view than the one shown; it ticks once the page is.
+            if (run != null) tickOnLanding = true
             anchor = offset
             pendingTurn = null
             relayout()
@@ -451,6 +455,10 @@ internal class TextReaderModel(
     private fun publish(snapshot: PageRun, near: List<TextPage>) {
         run = snapshot
         window = window + near.associateBy { it.start }
+        if (tickOnLanding) {
+            tickOnLanding = false
+            if (current?.turnHaptics == true) onTurned()
+        }
         val pending = pendingTurn
         pendingTurn = null
         if (pending != null) (turn(pending) as? TurnResult.Edge)?.let { onEdge(it.edge) }
