@@ -62,7 +62,7 @@ data class PageBar(
 
     private fun moved(state: PageBarState.Dragging, point: Point): PageBarState.Dragging {
         val armed = state.armedEdges + Side.entries.filterNot { inEdge(it, point.x) }
-        val edge = armed.firstOrNull { inEdge(it, point.x) }
+        val edge = pickedEdge(point.x, armed)
         val forward = if (direction.leadingSide == Side.Right) state.origin.x - point.x else point.x - state.origin.x
         val preview = when (edge) {
             null -> (state.startPage + pageBarSteps(forward)).coerceIn(0, pageCount - 1)
@@ -76,6 +76,9 @@ data class PageBar(
             armedEdges = armed,
         )
     }
+
+    /** The end of the bar a finger at [x] picks, out of the [armed] edges it has left once since it pressed. */
+    fun pickedEdge(x: Float, armed: Set<Side>): Side? = armed.firstOrNull { inEdge(it, x) }
 
     private fun inEdge(side: Side, x: Float): Boolean =
         if (side == Side.Left) x <= left + PAGE_BAR_EDGE_DP else x >= right - PAGE_BAR_EDGE_DP

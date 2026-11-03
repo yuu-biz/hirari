@@ -16,7 +16,6 @@ import io.github.yuubiz.hirari.core.model.CommandBarEffect
 import io.github.yuubiz.hirari.core.model.CommandBarEvent
 import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.KeyBindings
-import io.github.yuubiz.hirari.core.model.PAGE_BAR_EDGE_DP
 import io.github.yuubiz.hirari.core.model.PageBar
 import io.github.yuubiz.hirari.core.model.PageBarEffect
 import io.github.yuubiz.hirari.core.model.PageBarEvent
@@ -171,12 +170,11 @@ internal class TextInput(
             direction = TEXT_DIRECTION,
             touchSlop = slop,
         )
-        fun step(event: PageBarEvent, at: Point?) {
+        fun step(event: PageBarEvent, atEdge: Boolean = false) {
             val step = bar.reduce(touch.pageBar, event)
             touch.pageBar = step.state
             when (val effect = step.effect) {
                 is PageBarEffect.GoTo -> {
-                    val atEdge = at != null && (at.x <= bar.left + PAGE_BAR_EDGE_DP || at.x >= bar.right - PAGE_BAR_EDGE_DP)
                     when (val jump = pageBarJump(effect.page, atEdge, run)) {
                         is PageBarJump.Page -> viewModel.showPage(jump.index)
                         PageBarJump.First -> viewModel.first()
@@ -187,7 +185,7 @@ internal class TextInput(
                 null -> Unit
             }
         }
-        step(PageBarEvent.Down(down.position.dp(density), down.uptimeMillis, current.current), null)
+        step(PageBarEvent.Down(down.position.dp(density), down.uptimeMillis, current.current))
         down.consume()
         val hold = HoldTimer(down.uptimeMillis)
         var held = false
@@ -195,17 +193,19 @@ internal class TextInput(
             val event = awaitOrHold(hold, waiting = !held)
             if (!held && hold.due) {
                 held = true
-                step(PageBarEvent.Hold(hold.at), null)
+                step(PageBarEvent.Hold(hold.at))
                 if (touch.pageBar == PageBarState.Idle) return
             }
             if (event == null) continue
             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
             change.consume()
             if (!change.pressed) {
-                step(PageBarEvent.Up(change.position.dp(density)), change.position.dp(density))
+                val at = change.position.dp(density)
+                val armed = (touch.pageBar as? PageBarState.Dragging)?.armedEdges.orEmpty()
+                step(PageBarEvent.Up(at), atEdge = bar.pickedEdge(at.x, armed) != null)
                 return
             }
-            step(PageBarEvent.Move(change.position.dp(density)), null)
+            step(PageBarEvent.Move(change.position.dp(density)))
         }
     }
 

@@ -29,6 +29,15 @@ class PageBarTest {
     private fun at(x: Float, y: Float = 770f) = Point(x, y)
 
     @Test
+    fun anEdgeIsPickedOnlyOnceTheFingerHasLeftIt() {
+        val pressedInside = assertIs<PageBarState.Dragging>(rtl.run(Down(at(10f), 0, page = 100), Move(at(5f))).last().state)
+        assertNull(rtl.pickedEdge(5f, pressedInside.armedEdges))
+        val cameBack = assertIs<PageBarState.Dragging>(rtl.run(Down(at(10f), 0, page = 100), Move(at(60f)), Move(at(5f))).last().state)
+        assertEquals(Side.Left, rtl.pickedEdge(5f, cameBack.armedEdges))
+        assertNull(rtl.pickedEdge(200f, cameBack.armedEdges))
+    }
+
+    @Test
     fun theStaircaseFollowsTheFiveDpUnit() {
         assertEquals(0, pageBarSteps(0f))
         assertEquals(0, pageBarSteps(9.9f))
