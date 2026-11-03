@@ -12,7 +12,6 @@ import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import io.github.yuubiz.hirari.core.model.LONG_PRESS_MS
 import io.github.yuubiz.hirari.core.model.PageBar
 import io.github.yuubiz.hirari.core.model.PageBarEffect
 import io.github.yuubiz.hirari.core.model.PageBarEvent
@@ -27,6 +26,8 @@ import io.github.yuubiz.hirari.core.model.TouchState
 import io.github.yuubiz.hirari.core.model.TurnAreaTouch
 import io.github.yuubiz.hirari.core.model.pullableSides
 import io.github.yuubiz.hirari.core.model.tapAction
+import io.github.yuubiz.hirari.core.ui.HoldTimer
+import io.github.yuubiz.hirari.core.ui.awaitOrHold
 import kotlin.math.hypot
 
 /** A second finger that goes up within this time, without moving past the touch slop, taps. */
@@ -298,27 +299,3 @@ internal class ReaderInput(
 }
 
 private fun Offset.dp(density: Float) = Point(x / density, y / density)
-
-/**
- * A press held for [holdMs]: [LONG_PRESS_MS] on the bars, `loupeHoldMs` on the turn area. Small moves within the
- * touch slop keep coming while a finger rests, so the press is due by the clock of the events as well as by a
- * timeout when none comes.
- */
-private class HoldTimer(downAtMs: Long, holdMs: Long = LONG_PRESS_MS) {
-    val at = downAtMs + holdMs
-    var lastMs = downAtMs
-
-    val due: Boolean get() = lastMs >= at
-
-    fun seen(event: PointerEvent) {
-        lastMs = maxOf(lastMs, event.changes.maxOf { it.uptimeMillis })
-    }
-}
-
-/** The next event, or `null` when the press of [hold] became due first. */
-private suspend fun AwaitPointerEventScope.awaitOrHold(hold: HoldTimer, waiting: Boolean): PointerEvent? {
-    if (!waiting || hold.due) return awaitPointerEvent().also(hold::seen)
-    val event = withTimeoutOrNull((hold.at - hold.lastMs).coerceAtLeast(1)) { awaitPointerEvent() }
-    if (event == null) hold.lastMs = hold.at else hold.seen(event)
-    return event
-}

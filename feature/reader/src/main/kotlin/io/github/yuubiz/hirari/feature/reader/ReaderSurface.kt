@@ -30,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -65,6 +64,8 @@ import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rect
+import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
+import io.github.yuubiz.hirari.core.ui.drawSeamShadow
 import io.github.yuubiz.hirari.feature.reader.prefetch.PreparedPage
 import kotlin.math.roundToInt
 
@@ -296,19 +297,9 @@ private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, 
         val (leftPage, rightPage) = geometry.pages.sortedBy { it.left }
         val dx = layer.shift - layer.position.x
         val dy = -layer.position.y
-        drawSeamShadow(leftPage.right + dx, leftPage.right + dx - leftPage.width * SHADOW_SHARE, leftPage.top + dy, leftPage.height, layer.alpha)
-        drawSeamShadow(rightPage.left + dx, rightPage.left + dx + rightPage.width * SHADOW_SHARE, rightPage.top + dy, rightPage.height, layer.alpha)
+        drawSeamShadow(leftPage.right + dx, leftPage.right + dx - leftPage.width * SEAM_SHADOW_SHARE, leftPage.top + dy, leftPage.height, layer.alpha)
+        drawSeamShadow(rightPage.left + dx, rightPage.left + dx + rightPage.width * SEAM_SHADOW_SHARE, rightPage.top + dy, rightPage.height, layer.alpha)
     }
-}
-
-/** The share of a page's width that the shadow of 綴じ目の表示 covers (docs/spec.md section 4.8, 見開き). */
-private const val SHADOW_SHARE = 0.05f
-private val SeamShadow = Color(0x59000000)
-
-/** A shadow darkest at [seamX] that fades out toward [fadeX]. */
-private fun DrawScope.drawSeamShadow(seamX: Float, fadeX: Float, top: Float, height: Float, alpha: Float) {
-    val brush = Brush.horizontalGradient(listOf(SeamShadow, Color.Transparent), startX = seamX, endX = fadeX)
-    drawRect(brush, Offset(minOf(seamX, fadeX), top), androidx.compose.ui.geometry.Size(kotlin.math.abs(fadeX - seamX), height), alpha)
 }
 
 /**

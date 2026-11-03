@@ -2017,7 +2017,7 @@ RAR、7z、tar の書庫は次のように作る。
 | `:core:image` | 形式の判定、デコードの計画、各デコーダの接続、縮小、トリミング、タイル、PDF、サムネイルの生成（`Thumbnails`） | `:core:model`、`:core:source`、`:core:archive` |
 | `:core:text` | 本文の文字コード、青空文庫記法の解析、縦書きの組版、ページ分割 | `:core:model` |
 | `:core:data` | Room、DataStore、資格情報の保存、設定の保存形式（`GlobalSettings`）、設定の書き出しと読み込み、サムネイルのディスクキャッシュ、自動バックアップの規則 | `:core:model` |
-| `:core:ui` | テーマ、共通の Compose 部品 | `:core:model` |
+| `:core:ui` | テーマ、共通の Compose 部品（両方のリーダーが使う長押しの待ちと綴じ目の影を含む） | `:core:model` |
 | `:feature:library` | ホーム、ファイル一覧、場所、履歴、しおり、書庫内一覧 | `:core:*` |
 | `:feature:reader` | リーダー画面、操作の判定、先読みの計画、重ねる表示 | `:core:*` |
 | `:feature:text` | テキストリーダー画面 | `:core:*` |
