@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.Rotation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
@@ -28,8 +29,15 @@ private class SlowBooks : BookRepository {
     val stored = HashMap<BookId, BookOverrides>()
     var gate: CompletableDeferred<Unit>? = null
     var refuse = false
+    var readGate: CompletableDeferred<Unit>? = null
 
-    override fun overrides(id: BookId): Flow<BookOverrides> = flow { emit(stored[id] ?: BookOverrides()) }
+    override fun overrides(id: BookId): Flow<BookOverrides> {
+        val gate = readGate
+        return flow {
+            gate?.await()
+            emit(stored[id] ?: BookOverrides())
+        }
+    }
 
     override suspend fun updateOverrides(id: BookId, change: (BookOverrides) -> BookOverrides) {
         gate?.await()
@@ -97,5 +105,56 @@ class OverridesWriterTest {
         reopened.update { it.copy(adjust = ImageAdjust(sharpen = true)) }
         advanceUntilIdle()
         assertEquals(BookOverrides(rotation = Rotation.Quarter, adjust = ImageAdjust(sharpen = true)), books.stored[ID])
+    }
+
+    @Test
+    fun aReaderOpenedWhileAnotherChangesTheSameFieldStartsFromTheNewerValue() = runTest {
+        val books = SlowBooks().apply { gate = CompletableDeferred() }
+        val store = BookOverridesStore(books, CoroutineScope(StandardTestDispatcher(testScheduler)))
+        val first = store.open(ID)
+        val second = store.open(ID)
+        first.update { it.copy(rotation = Rotation.Quarter) }
+        runCurrent()
+        books.readGate = CompletableDeferred()
+        val reopening = async { store.open(ID) }
+        runCurrent()
+        val readGate = books.readGate!!
+        books.readGate = null
+        second.update { it.copy(rotation = Rotation.Half) }
+        books.gate!!.complete(Unit)
+        advanceUntilIdle()
+        readGate.complete(Unit)
+        assertEquals(Rotation.Half, books.stored[ID]?.rotation)
+        assertEquals(Rotation.Half, reopening.await().current.rotation)
+    }
+
+    @Test
+    fun aChangeKeepsOnlyTheFieldsTheReaderChangedWhenItIsWrittenAndWhenAReaderReopens() = runTest {
+        val books = SlowBooks().apply { gate = CompletableDeferred() }
+        val store = BookOverridesStore(books, CoroutineScope(StandardTestDispatcher(testScheduler)))
+        val charset = Charset.forName("EUC-JP")
+        val writer = store.open(ID)
+        val snapshot = writer.current.copy(rotation = Rotation.Quarter)
+        writer.update { snapshot }
+        runCurrent()
+        books.stored[ID] = BookOverrides(nameCharset = charset)
+        assertEquals(BookOverrides(rotation = Rotation.Quarter, nameCharset = charset), store.open(ID).current)
+        books.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(BookOverrides(rotation = Rotation.Quarter, nameCharset = charset), books.stored[ID])
+    }
+
+    @Test
+    fun aFieldTheReaderClearedIsClearedAgainOnTheStoredRowOnlyForThatField() = runTest {
+        val books = SlowBooks().apply { gate = CompletableDeferred() }
+        val store = BookOverridesStore(books, CoroutineScope(StandardTestDispatcher(testScheduler)))
+        books.stored[ID] = BookOverrides(rotation = Rotation.Quarter, reverseOrder = true)
+        store.open(ID).update { it.copy(rotation = null) }
+        runCurrent()
+        books.stored[ID] = BookOverrides(rotation = Rotation.Quarter, reverseOrder = false)
+        assertEquals(BookOverrides(reverseOrder = false), store.open(ID).current)
+        books.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(BookOverrides(reverseOrder = false), books.stored[ID])
     }
 }

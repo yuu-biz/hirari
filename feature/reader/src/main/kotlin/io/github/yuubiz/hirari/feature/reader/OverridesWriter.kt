@@ -17,14 +17,21 @@ import kotlin.coroutines.cancellation.CancellationException
  * [scope] outlives every screen, so a change made just before closing is kept.
  */
 class BookOverridesStore(private val books: BookRepository, private val scope: CoroutineScope) {
-    private val pending = HashMap<BookId, (BookOverrides) -> BookOverrides>()
+    private val pending = HashMap<BookId, OverridesPatch>()
+    private var revision = 0
     private val writing = Mutex()
 
-    /** A writer for book [id], starting from the stored overrides with the changes not written yet. */
+    /**
+     * A writer for book [id], starting from the stored overrides with the changes not written yet. The stored row and
+     * the changes are read as of one [revision], so a change queued or written while the row is read is not applied
+     * onto a row that already holds a newer value.
+     */
     suspend fun open(id: BookId): OverridesWriter {
-        val unwritten = synchronized(pending) { pending[id] }
-        val stored = books.overrides(id).first()
-        return OverridesWriter(id, unwritten?.invoke(stored) ?: stored)
+        while (true) {
+            val (unwritten, seen) = synchronized(pending) { pending[id] to revision }
+            val stored = books.overrides(id).first()
+            if (synchronized(pending) { revision } == seen) return OverridesWriter(id, unwritten?.applyTo(stored) ?: stored)
+        }
     }
 
     /** The overrides of one open book, as its reader changes them. */
@@ -34,25 +41,28 @@ class BookOverridesStore(private val books: BookRepository, private val scope: C
             private set
 
         /**
-         * [transform] sets the fields the reader changed and keeps the others. It runs again on the stored row when
-         * the change is written.
+         * [transform] sets the fields the reader changed and keeps the others. Only the fields it changes are
+         * written, onto the stored row.
          */
         fun update(transform: (BookOverrides) -> BookOverrides) {
             val next = transform(current)
-            if (next == current) return
+            val patch = OverridesPatch.between(current, next) ?: return
             current = next
-            store(id, transform)
+            store(id, patch)
         }
     }
 
     /** Each write applies every change not written yet, so writes that start out of order still end on the latest. */
-    private fun store(id: BookId, change: (BookOverrides) -> BookOverrides) {
-        synchronized(pending) { pending[id] = pending[id]?.let { before -> { change(before(it)) } } ?: change }
+    private fun store(id: BookId, change: OverridesPatch) {
+        synchronized(pending) {
+            pending[id] = pending[id]?.let { it + change } ?: change
+            revision++
+        }
         scope.launch {
             writing.withLock {
                 val latest = synchronized(pending) { pending[id] } ?: return@withLock
                 try {
-                    books.updateOverrides(id, latest)
+                    books.updateOverrides(id, latest::applyTo)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -60,7 +70,12 @@ class BookOverridesStore(private val books: BookRepository, private val scope: C
                     // still starts from it, and the next change writes it again.
                     return@withLock
                 }
-                synchronized(pending) { if (pending[id] === latest) pending.remove(id) }
+                synchronized(pending) {
+                    if (pending[id] === latest) {
+                        pending.remove(id)
+                        revision++
+                    }
+                }
             }
         }
     }
