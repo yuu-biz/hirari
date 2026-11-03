@@ -2513,7 +2513,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
   - 試験用のパスワードが logcat、DB の平文、書き出したファイルのどれにも現れない。`SmbLogHygieneTest`（ログと例外）、`CredentialStoreTest`（メインのデータベースのファイルに平文がない）、`SettingsTransferTest`（書き出し）が通った（JVM）。
   - サーバーのパスワードを変えても、既読の情報が残る。`SmbServerViewModelTest` の `a new password leaves the books of the server where they were` が通った（JVM）。
   - 接続が切れたときの回復の論理は、`SmbRecoveryTest`（JVM。中継器で止める）で確かめた。
-  - 端末に保存（4.5 節）の中身。`SmbSaveTest`（JVM。サーバーの代わりのメモリ上の共有に対して、進み具合、フォルダの再帰、名前の重なり（`(1)` から `(9)` と全部埋まったとき）、取り消しで `.part` が消えること、接続が戻る場合と戻らない場合、空き容量、保存先の失敗の写像）、`SafSaveFolderTest`（Robolectric。書き込める SAF の提供元の代わりに対して、`.part` を作って名前を変えること、名前を変えられない提供元を断ること）、`DeviceSavesTest` と `FolderViewModelTest`（JVM。保存の一覧、取り消し、前回の保存先と書き込みの許可）が通った。Docker の Samba（`tools/smb-fixture`）に対して、8 MB のファイルが 1 バイトも違わずに保存でき（localhost で 154 ms）、サブフォルダを含むフォルダが保存でき、2 回目は `画像 (1)` になる。`SmbSaveFixtureTest`（保存先は普通のフォルダ）。
+  - 端末に保存（4.5 節）の中身。`SmbSaveTest`（JVM。サーバーの代わりのメモリ上の共有に対して、進み具合、フォルダの再帰、名前の重なり（`(1)` から `(9)` と全部埋まったとき）、取り消しで `.part` が消えること、接続が戻る場合と戻らない場合、空き容量、保存先の失敗の写像）、`SafSaveFolderTest`（Robolectric。書き込める SAF の提供元の代わりに対して、`.part` を作って名前を変えること、名前を変えられない提供元を断って `NoPermission` で失敗すること）、`DeviceSavesTest` と `FolderViewModelTest`（JVM。保存の一覧、取り消し、前回の保存先と書き込みの許可）が通った。Docker の Samba（`tools/smb-fixture`）に対して、8 MB のファイルが 1 バイトも違わずに保存でき（localhost で 154 ms）、サブフォルダを含むフォルダが保存でき、2 回目は `画像 (1)` になる。`SmbSaveFixtureTest`（保存先は普通のフォルダ）。
   - 保存のフォアグラウンドサービスと通知が API 37 のエミュレータで動く。`SaveServiceTest` が通った（進行中の通知が出て、通知の **取り消す** で保存とサービスが終わる。失敗すると結果の通知が出てサービスが終わる）。
 - 実機が要る。
   - 基準 NAS で P4 の SMB の目標（1500 ms）を満たすこと。

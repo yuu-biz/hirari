@@ -57,8 +57,8 @@ data class SaveProgress(
 
 /**
  * A folder the saved files are written into. The SAF folder implements it in [SafSaveFolder]; the JVM tests use a
- * fake. Every method blocks. A failure of the destination is thrown as [SaveDestinationException], [NoRoomException] or
- * [SecurityException].
+ * fake. Every method blocks. A failure of the destination is thrown as [SaveDestinationException], [NoRoomException],
+ * [CannotRenameException] or [SecurityException].
  */
 interface SaveFolder {
     /** The names of the children. */
@@ -90,6 +90,9 @@ interface SaveFile {
 
 /** The destination has no room for the bytes. */
 class NoRoomException : IOException("the destination is full")
+
+/** The provider of the destination cannot rename a document, so a file cannot be written under its `.part` name. */
+class CannotRenameException : IOException("the provider cannot rename a document")
 
 /** The destination failed; [cause] says how. */
 class SaveDestinationException(message: String, cause: Throwable? = null) : IOException(message, cause)

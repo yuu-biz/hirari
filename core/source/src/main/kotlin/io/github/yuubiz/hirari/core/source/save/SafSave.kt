@@ -18,7 +18,7 @@ import java.io.IOException
  *
  * Files are made with the generic MIME type, so a provider that fixes the extension to the type keeps the name
  * `名前.part` as it is, and are then renamed. A provider that cannot rename a document cannot be saved to: the file is
- * deleted and [SaveDestinationException] is thrown before anything is written.
+ * deleted and [CannotRenameException] is thrown before anything is written.
  */
 class SafSaveFolder(
     private val resolver: ContentResolver,
@@ -38,7 +38,7 @@ class SafSaveFolder(
         val uri = documentUri(createDocument(GENERIC_MIME, name))
         try {
             val flags = resolver.query(uri, arrayOf(Document.COLUMN_FLAGS), null, null, null)?.use { if (it.moveToFirst()) it.getInt(0) else 0 } ?: 0
-            if (flags and Document.FLAG_SUPPORTS_RENAME == 0) throw SaveDestinationException("the provider cannot rename a document")
+            if (flags and Document.FLAG_SUPPORTS_RENAME == 0) throw CannotRenameException()
             val descriptor = resolver.openFileDescriptor(uri, "w") ?: throw SaveDestinationException("the provider returned no descriptor")
             return SafSaveFile(resolver, uri, descriptor)
         } catch (t: Throwable) {

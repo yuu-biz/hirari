@@ -59,6 +59,7 @@ suspend fun SmbServer.saveTo(
 private fun IOException.toFailure(): SaveFailure = when (this) {
     is NoRoomException -> SaveFailure.NoRoom
     is NamesTakenException -> SaveFailure.NamesTaken
+    is CannotRenameException -> SaveFailure.NoPermission
     is ConnectionLostException -> SaveFailure.ConnectionLost
     is SmbConnectException -> when (failure) {
         SmbConnectFailure.NameNotResolved, SmbConnectFailure.Unreachable -> SaveFailure.Unreachable
@@ -203,6 +204,8 @@ private class SmbSaveRun(
     } catch (e: NoRoomException) {
         throw e
     } catch (e: NamesTakenException) {
+        throw e
+    } catch (e: CannotRenameException) {
         throw e
     } catch (e: SaveDestinationException) {
         throw e

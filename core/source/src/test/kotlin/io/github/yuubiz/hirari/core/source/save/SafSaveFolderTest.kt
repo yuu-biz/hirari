@@ -169,8 +169,17 @@ class SafSaveFolderTest {
     fun `a provider that cannot rename is refused before anything is written`() {
         provider.renames = false
         val root = SafSaveFolder(resolver, tree)
-        assertFailsWith<SaveDestinationException> { root.create("vol1.cbz.part") }
+        assertFailsWith<CannotRenameException> { root.create("vol1.cbz.part") }
         assertEquals(emptySet(), root.names())
+    }
+
+    @Test
+    fun `a save into a provider that cannot rename fails for want of permission`() {
+        provider.renames = false
+        val server = SmbServer(FakeConnector(mapOf("vol1.cbz" to byteArrayOf(1, 2, 3))), SmbLogin.Guest, scope, emptyFlow(), Dispatchers.IO, 15.seconds)
+        val outcome = runBlocking { server.saveTo("vol1.cbz", false, SafSaveFolder(resolver, tree)) }
+        assertEquals(SaveOutcome.Failed(SaveFailure.NoPermission), outcome)
+        assertEquals(setOf("root"), provider.docs.keys)
     }
 
     @Test
