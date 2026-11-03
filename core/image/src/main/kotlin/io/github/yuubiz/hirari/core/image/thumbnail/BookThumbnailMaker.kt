@@ -97,7 +97,8 @@ internal class BookThumbnailMaker(private val decoding: ImageDecoding) : Thumbna
     }
 
     private suspend fun page(open: OpenBook, entryIndex: Int, maxSidePx: Int): PagePreview {
-        val page = open.pages.firstOrNull { it.entryIndex == entryIndex } ?: return PagePreview.Missing
+        val page = open.pages.firstOrNull { it.entryIndex == entryIndex }
+            ?: return if (open.indexError?.made() == Made.Unavailable) PagePreview.Unavailable else PagePreview.Missing
         val raw: RawPage = when (val read = open.raw(page.index)) {
             is PageResult.Ready -> read.image
             else -> return read.made().asPreview()

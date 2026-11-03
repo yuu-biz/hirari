@@ -118,6 +118,30 @@ class BookThumbnailMakerTest {
     }
 
     @Test
+    fun aPagePreviewOfAPageTheListingHasNotReachedMayBeShownLater() = runTest {
+        val listed = listOf(page(0, entryIndex = 0, "001.jpg"))
+        for (reason in listOf(FailureReason.ReadError, FailureReason.ConnectionLost, FailureReason.Timeout)) {
+            assertEquals(reason.name, PagePreview.Unavailable, preview(listed, entryIndex = 5, indexError = reason))
+        }
+        assertEquals(emptyList<String>(), read)
+    }
+
+    @Test
+    fun aPagePreviewOfAPageBeyondAListingThatBrokeForGoodIsMissing() = runTest {
+        val listed = listOf(page(0, entryIndex = 0, "001.jpg"))
+        for (reason in listOf(FailureReason.Corrupt, FailureReason.Truncated)) {
+            assertEquals(reason.name, PagePreview.Missing, preview(listed, entryIndex = 5, indexError = reason))
+        }
+    }
+
+    @Test
+    fun aPagePreviewOfAPageTheListingReachedIsShownThoughTheListingStopped() = runTest {
+        val listed = listOf(page(0, entryIndex = 0, "001.jpg"), page(1, entryIndex = 5, "002.jpg"))
+        assertEquals(PagePreview.Failed, preview(listed, entryIndex = 5, indexError = FailureReason.Timeout))
+        assertEquals(listOf("002.jpg"), read)
+    }
+
+    @Test
     fun aPagePreviewOfABookThatDoesNotOpenIsFailedOrUnavailableAsThumbnailsAre() = runTest {
         fun failing(failure: BookFailure) = ThumbSubject.Book(BookId("a"), Instant.EPOCH, byteSize = 100) { BookResult.Failed(failure) }
         assertEquals(PagePreview.Failed, maker.preview(failing(BookFailure.Encrypted), 0, 1000))
