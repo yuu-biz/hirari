@@ -50,8 +50,9 @@ internal class SmbjConnector(
     private val login: SmbLogin,
     private val timeouts: SmbTimeouts,
 ) : ShareConnector {
-    private val plain = config(encrypt = false)
-    private val encrypting = config(encrypt = true)
+    // Built on the connect thread: the first SmbConfig loads smbj's logger, which scans the APK for providers.
+    private val plain by lazy { config(encrypt = false) }
+    private val encrypting by lazy { config(encrypt = true) }
 
     private fun config(encrypt: Boolean) = SmbConfig.builder()
         .withDialects(SMB2Dialect.SMB_3_1_1, SMB2Dialect.SMB_3_0_2, SMB2Dialect.SMB_3_0, SMB2Dialect.SMB_2_1, SMB2Dialect.SMB_2_0_2)
