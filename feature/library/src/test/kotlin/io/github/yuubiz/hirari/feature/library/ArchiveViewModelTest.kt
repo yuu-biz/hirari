@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
+import androidx.lifecycle.ViewModelStore
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
@@ -153,6 +154,35 @@ class ArchiveViewModelTest {
         val list = ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip"), UnconfinedTestDispatcher(testScheduler))
             .also { watch(it.state) }
         assertEquals(ArchiveUi.Failed(ArchiveFailure.Encrypted), list.state.value)
+    }
+
+    @Test
+    fun `leaving while the folder of the archive is still read closes the opened archive`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.archives.result = ArchiveOpenResult.Opened(contents)
+        fixture.coverBooks.gate = CompletableDeferred()
+        val screen = ViewModelStore()
+        val list = screen.own { ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip"), UnconfinedTestDispatcher(testScheduler)) }
+        watch(list.state)
+        assertEquals(ArchiveUi.Loading, list.state.value.content)
+
+        screen.clear()
+        assertTrue(contents.closed)
+    }
+
+    @Test
+    fun `an archive whose opening ends after the screen was left is closed`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.archives.result = ArchiveOpenResult.Opened(contents)
+        val opening = CompletableDeferred<Unit>()
+        fixture.archives.gate = opening
+        val screen = ViewModelStore()
+        val list = screen.own { ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip"), UnconfinedTestDispatcher(testScheduler)) }
+        watch(list.state)
+
+        screen.clear()
+        opening.complete(Unit)
+        assertTrue(contents.closed)
     }
 
     private val at = java.time.Instant.parse("2026-02-03T04:05:06Z")

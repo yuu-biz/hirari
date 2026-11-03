@@ -46,7 +46,10 @@ import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.source.ByteSource
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -350,8 +353,12 @@ internal class FakeArchives : ArchiveOpener {
     var result: ArchiveOpenResult = ArchiveOpenResult.Failed(ArchiveFailure.NotFound)
     val opened = mutableListOf<Pair<String, BookId>>()
 
+    /** Holds the opening until it completes, as blocking I/O does, which leaving the screen does not stop. */
+    var gate: CompletableDeferred<Unit>? = null
+
     override suspend fun open(place: LibraryLocation, path: String, documentId: String?, book: BookId): ArchiveOpenResult {
         opened += path to book
+        gate?.let { withContext(NonCancellable) { it.await() } }
         return result
     }
 }
@@ -433,7 +440,7 @@ internal class FakeCoverBooks : CoverBooks {
     var listCalls = mutableListOf<String>()
 
     /** Holds every listing until it completes, as a slow server does. */
-    var gate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    var gate: CompletableDeferred<Unit>? = null
 
     override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = BookResult.Failed(BookFailure.NotFound)
 

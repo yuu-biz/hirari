@@ -19,6 +19,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,6 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.charset.Charset
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 
 /** The archive book of a place whose list the screen shows (docs/spec.md section 4.7). */
 data class ArchiveKey(val location: LocationId, val path: String, val documentId: String? = null)
@@ -122,9 +124,20 @@ class ArchiveViewModel(
             val place = services.locations.get(book.location) ?: return@launch run { opening.value = Opening.Failed(ArchiveFailure.NotFound) }
             val id = locationBookId(place, book.path)
             val base = async { coverBase(services, place, id) }
-            opening.value = when (val result = services.archives.open(place, book.path, book.documentId, id)) {
-                is ArchiveOpenResult.Failed -> Opening.Failed(result.reason).also { base.cancel() }
-                is ArchiveOpenResult.Opened -> Opening.Opened(place, id, result.contents, base.await())
+            when (val result = services.archives.open(place, book.path, book.documentId, id)) {
+                is ArchiveOpenResult.Failed -> {
+                    base.cancel()
+                    opening.value = Opening.Failed(result.reason)
+                }
+                // Until the archive is in opening, where onCleared finds it, leaving the screen closes it here.
+                is ArchiveOpenResult.Opened -> try {
+                    val opened = Opening.Opened(place, id, result.contents, base.await())
+                    ensureActive()
+                    opening.value = opened
+                } catch (e: CancellationException) {
+                    result.contents.close()
+                    throw e
+                }
             }
         }
     }
