@@ -1,5 +1,11 @@
 package io.github.yuubiz.hirari.feature.library
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -24,6 +30,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -32,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -45,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -63,6 +72,7 @@ import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
+import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
 import io.github.yuubiz.hirari.core.ui.chosen
@@ -92,6 +102,20 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     val resources = LocalResources.current
     val gate = rememberLocalNetworkGate()
     val scope = rememberCoroutineScope()
+    val saves by model.activeSaves.collectAsStateWithLifecycle()
+    var savePath by rememberSaveable { mutableStateOf<String?>(null) }
+    val askNotifications = rememberNotificationAsk()
+    val pickDestination = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        val row = (state.content as? FolderContent.Shown)?.rows?.firstOrNull { it.path == savePath }
+        savePath = null
+        if (tree != null && row != null) {
+            model.save(row, UriString(tree.toString()))
+            askNotifications()
+        }
+    }
+    LaunchedEffect(model) {
+        model.finishedSaves.collect { snackbar.showSnackbar(it.text(resources)) }
+    }
     LaunchedEffect(state.notice) {
         val notice = state.notice ?: return@LaunchedEffect
         snackbar.showSnackbar(resources.getString(notice.message()))
@@ -124,6 +148,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = { SaveBar(saves, model::cancelSave) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             val shown = state.content as? FolderContent.Shown
@@ -154,7 +179,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     }
     sheetFor?.let { row ->
         ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
-            RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty()) { action ->
+            RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty(), canSave = state.canSave) { action ->
                 sheetFor = null
                 when (action) {
                     SheetAction.Open -> open(row)
@@ -164,10 +189,56 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)
                     SheetAction.Pin -> model.pin(row)
                     SheetAction.Remake -> model.remake(row)
+                    SheetAction.Save -> scope.launch {
+                        savePath = row.path
+                        pickDestination.launch(model.lastSaveFolder()?.let { Uri.parse(it.value) })
+                    }
                     SheetAction.FolderCover -> model.chooseFolderCover(row, choose = (state.content as? FolderContent.Shown)?.folderCoverPath != row.path)
                     SheetAction.Shortcut -> model.shortcut(row)?.let { shortcut ->
                         scope.launch { if (!actions.pinShortcut(shortcut)) model.show(Notice.ShortcutUnsupported) }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Asks for the permission to show notifications, where the system has one (API 33), once a save has started; the save
+ * goes on whatever the answer is (docs/spec.md sections 4.5 and 7).
+ */
+@Composable
+private fun rememberNotificationAsk(): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    return {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+}
+
+/** The saves to the device under way, with 取り消す (docs/spec.md section 4.5). */
+@Composable
+private fun SaveBar(jobs: List<SaveJob>, onCancel: (Long) -> Unit) {
+    if (jobs.isEmpty()) return
+    Surface(tonalElevation = 3.dp) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            jobs.forEach { job ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.save_running, job.name), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val progress = job.progress
+                        if (progress == null) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
+                        } else {
+                            Text(progress.text(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            LinearProgressIndicator(progress = { progress.percent / 100f }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                        }
+                    }
+                    TextButton(onClick = { onCancel(job.id) }) { Text(stringResource(R.string.save_cancel)) }
                 }
             }
         }
@@ -271,11 +342,11 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-internal enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover }
+internal enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover, Save }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
-internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, onAction: (SheetAction) -> Unit) {
+internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, canSave: Boolean = false, onAction: (SheetAction) -> Unit) {
     val actions = buildList {
         add(SheetAction.Open to R.string.sheet_open)
         if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
@@ -290,6 +361,7 @@ internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boo
         }
         if (row.cover != null) add(SheetAction.Remake to R.string.sheet_remake)
         if (hasShortcut) add(SheetAction.Shortcut to R.string.sheet_shortcut)
+        if (canSave) add(SheetAction.Save to R.string.sheet_save)
     }
     SheetActions(row.item.entry.name) {
         actions.forEach { (action, label) ->

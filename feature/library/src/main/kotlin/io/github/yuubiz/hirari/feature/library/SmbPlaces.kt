@@ -10,6 +10,11 @@ import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.normalizePath
+import io.github.yuubiz.hirari.core.source.save.SaveFailure
+import io.github.yuubiz.hirari.core.source.save.SaveFolder
+import io.github.yuubiz.hirari.core.source.save.SaveOutcome
+import io.github.yuubiz.hirari.core.source.save.SaveProgress
+import io.github.yuubiz.hirari.core.source.save.saveTo
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import io.github.yuubiz.hirari.core.source.smb.PasswordUnreadableException
 import io.github.yuubiz.hirari.core.source.smb.SmbAddress
@@ -76,6 +81,13 @@ interface SmbPlaces {
      * @throws java.io.IOException as [SmbServer.open] does, and when the system blocks the local network.
      */
     suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource
+
+    /**
+     * 端末に保存 (docs/spec.md section 4.5): copies the file or folder at [path], counted from the place's folder, into
+     * [destination], through the place's shared server. [onProgress] is called from the I/O threads. Cancelling the
+     * caller stops the copy and deletes the file being written.
+     */
+    suspend fun save(place: LibraryLocation.SmbShare, path: String, directory: Boolean, destination: SaveFolder, onProgress: (SaveProgress) -> Unit): SaveOutcome
 
     /** Drops the connection of the place [id], so the next request logs on with what is stored now. */
     suspend fun forget(id: LocationId)
@@ -189,6 +201,16 @@ class SmbjPlaces(
         if (!localNetwork.granted()) throw SmbConnectException(SmbConnectFailure.Unreachable, "local network not granted")
         val server = shares.server(place)
         return openOwned(Dispatchers.IO) { server.open(normalizePath("${place.basePath}/$path")) }
+    }
+
+    override suspend fun save(place: LibraryLocation.SmbShare, path: String, directory: Boolean, destination: SaveFolder, onProgress: (SaveProgress) -> Unit): SaveOutcome {
+        if (!localNetwork.granted()) return SaveOutcome.Failed(SaveFailure.NoLocalNetwork)
+        val server = try {
+            shares.server(place)
+        } catch (_: PasswordUnreadableException) {
+            return SaveOutcome.Failed(SaveFailure.PasswordUnreadable)
+        }
+        return server.saveTo(normalizePath("${place.basePath}/$path"), directory, destination, onProgress)
     }
 
     override suspend fun forget(id: LocationId) = shares.forget(id)

@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -118,6 +121,17 @@ class AccessibilityTest {
         val buttons = rule.onAllNodes(SemanticsMatcher("a button") { it.config.getOrNull(SemanticsProperties.Role) == Role.Button })
         assertTrue(buttons.fetchSemanticsNodes().size >= 3)
         rule.onNode(SemanticsMatcher("heading") { it.config.getOrNull(SemanticsProperties.Heading) != null }).assert(hasText("a.zip"))
+    }
+
+    @Test
+    fun `the sheet offers 端末に保存 only where the place can save`() {
+        var canSave by mutableStateOf(false)
+        rule.setContent {
+            RowSheet(row("a.zip", mark = ReadMark.Unread), hasShortcut = false, folderCoverChosen = false, canChooseCover = false, canSave = canSave) {}
+        }
+        rule.onNodeWithText("端末に保存").assertDoesNotExist()
+        canSave = true
+        rule.onNodeWithText("端末に保存").assertExists()
     }
 
     @Test

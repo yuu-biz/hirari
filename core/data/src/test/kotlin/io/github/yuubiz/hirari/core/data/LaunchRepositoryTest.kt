@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.data
 
 import androidx.datastore.core.DataStore
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -49,6 +50,22 @@ class LaunchRepositoryTest {
         assertEquals(last, launch.beginStart().lastFolder)
         launch.setLastFolder(null)
         assertEquals(null, launch.beginStart().lastFolder)
+    }
+
+    @Test
+    fun `the folder last saved into survives a restart and leaves the start record alone`() = runBlocking {
+        val store = MemoryStore()
+        val folder = UriString("content://com.android.externalstorage.documents/tree/primary%3ABooks")
+        assertEquals(null, DataStoreLaunchRepository(store).lastSaveFolder())
+        DataStoreLaunchRepository(store).setLastSaveFolder(folder)
+        val launch = DataStoreLaunchRepository(store.restarted())
+        assertEquals(folder, launch.lastSaveFolder())
+        assertEquals(LaunchRecord(), launch.beginStart())
+        launch.finishStart()
+        launch.setLastFolder(null)
+        assertEquals(folder, launch.lastSaveFolder())
+        launch.setLastSaveFolder(null)
+        assertEquals(null, launch.lastSaveFolder())
     }
 
     @Test

@@ -171,4 +171,5 @@ fun Notice.message(): Int = when (this) {
     Notice.ShortcutMissing -> R.string.notice_shortcut_missing
     Notice.ShortcutUnsupported -> R.string.notice_shortcut_unsupported
     Notice.IncomingUnreadable -> R.string.notice_incoming_unreadable
+    Notice.SaveStarted -> R.string.notice_save_started
 }

@@ -49,6 +49,10 @@ import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.source.ByteSource
+import io.github.yuubiz.hirari.core.source.save.SaveFile
+import io.github.yuubiz.hirari.core.source.save.SaveFolder
+import io.github.yuubiz.hirari.core.source.save.SaveOutcome
+import io.github.yuubiz.hirari.core.source.save.SaveProgress
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -295,6 +299,17 @@ internal class FakeGrants : TreeGrants {
 
     var heldFails = false
 
+    val writeHeld = mutableSetOf<UriString>()
+    val writeReleased = mutableListOf<UriString>()
+    var refuseWrite = false
+
+    override suspend fun takeWrite(tree: UriString): Boolean = !refuseWrite && writeHeld.add(tree).let { true }
+
+    override suspend fun releaseWrite(tree: UriString) {
+        writeHeld.remove(tree)
+        writeReleased += tree
+    }
+
     override suspend fun held(): Set<UriString> = if (heldFails) throw IllegalStateException("the system did not answer") else held.toSet()
 
     override suspend fun name(tree: UriString): String = names[tree] ?: tree.value.substringAfterLast('/')
@@ -350,6 +365,18 @@ internal class FakeSmb : SmbPlaces {
     }
 
     override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource = throw java.io.FileNotFoundException(path)
+
+    class Save(val place: LibraryLocation.SmbShare, val path: String, val directory: Boolean, val destination: SaveFolder)
+
+    val saved = mutableListOf<Save>()
+
+    /** What a save does after it is recorded; the default finishes at once as saved. */
+    var saving: suspend (onProgress: (SaveProgress) -> Unit) -> SaveOutcome = { SaveOutcome.Saved("saved", 1, 1) }
+
+    override suspend fun save(place: LibraryLocation.SmbShare, path: String, directory: Boolean, destination: SaveFolder, onProgress: (SaveProgress) -> Unit): SaveOutcome {
+        saved += Save(place, path, directory, destination)
+        return saving(onProgress)
+    }
 
     override suspend fun forget(id: LocationId) {
         forgotten += id
@@ -414,6 +441,30 @@ internal class FakeLaunch : LaunchRepository {
     override suspend fun markReaderGuideSeen() {
         guideSeen = true
     }
+
+    var saveFolder: UriString? = null
+
+    override suspend fun lastSaveFolder(): UriString? = saveFolder
+
+    override suspend fun setLastSaveFolder(folder: UriString?) {
+        saveFolder = folder
+    }
+}
+
+/** Hands out one empty folder per tree, which the fake SMB never writes into. */
+internal class FakeSaveFolders : SaveFolders {
+    val opened = mutableListOf<UriString>()
+    val folder = object : SaveFolder {
+        override fun names(): Set<String> = emptySet()
+
+        override fun createFolder(name: String): SaveFolder = this
+
+        override fun create(name: String): SaveFile = error("the fake SMB writes nothing")
+
+        override fun delete(name: String) = Unit
+    }
+
+    override fun open(tree: UriString): SaveFolder = folder.also { opened += tree }
 }
 
 internal class Fixture {
@@ -434,9 +485,13 @@ internal class Fixture {
 
     /** What the process's scope was left to handle: the app has no handler of its own, so each of these would end it. */
     val uncaught = ArrayList<Throwable>()
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, e -> uncaught += e })
+    val saveFolders = FakeSaveFolders()
+    val saves = DeviceSaves(smb, saveFolders, appScope)
     val services = LibraryServices(
         locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, coverIndex, covers,
-        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, e -> uncaught += e }),
+        saves = saves,
+        appScope = appScope,
         clock = { T0 },
     )
 }

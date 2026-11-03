@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.reader
 import io.github.yuubiz.hirari.core.data.LastFolder
 import io.github.yuubiz.hirari.core.data.LaunchRecord
 import io.github.yuubiz.hirari.core.data.LaunchRepository
+import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,6 +31,10 @@ class GuideRecordTest {
             failure?.let { throw it }
             marks++
         }
+
+        override suspend fun lastSaveFolder(): UriString? = null
+
+        override suspend fun setLastSaveFolder(folder: UriString?) = Unit
     }
 
     private val uncaught = ArrayList<Throwable>()

@@ -7,6 +7,7 @@ import androidx.datastore.core.Serializer
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,6 +41,11 @@ interface LaunchRepository {
     suspend fun readerGuideSeen(): Boolean
 
     suspend fun markReaderGuideSeen()
+
+    /** The folder the user last chose to save a book into, the picker's starting point (docs/spec.md section 4.5). */
+    suspend fun lastSaveFolder(): UriString?
+
+    suspend fun setLastSaveFolder(folder: UriString?)
 }
 
 @Serializable
@@ -49,6 +55,7 @@ internal data class StoredLaunch(
     val lastFolderPath: String? = null,
     val lastFolderDocumentId: String? = null,
     val readerGuideSeen: Boolean = false,
+    val lastSaveFolder: String? = null,
 ) {
     fun toRecord() = LaunchRecord(
         unfinishedStarts = unfinishedStarts.coerceAtLeast(0),
@@ -84,6 +91,12 @@ internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaun
 
     override suspend fun markReaderGuideSeen() {
         store.updateData { it.copy(readerGuideSeen = true) }
+    }
+
+    override suspend fun lastSaveFolder(): UriString? = store.data.first().lastSaveFolder?.let(::UriString)
+
+    override suspend fun setLastSaveFolder(folder: UriString?) {
+        store.updateData { it.copy(lastSaveFolder = folder?.value) }
     }
 }
 

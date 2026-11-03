@@ -135,7 +135,7 @@ class ArchiveViewModelTest {
             }
         }
         val services = with(fixture) {
-            LibraryServices(locations, books, history, bookmarks, progress, settings, grants, lister, smb, archives, launch, coverIndex, covers, appScope = fixture.services.appScope)
+            LibraryServices(locations, books, history, bookmarks, progress, settings, grants, lister, smb, archives, launch, coverIndex, covers, saves = saves, appScope = fixture.services.appScope)
         }
         fixture.locations.rows.value = listOf(place)
         fixture.archives.result = ArchiveOpenResult.Opened(contents)

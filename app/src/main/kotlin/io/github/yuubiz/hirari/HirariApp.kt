@@ -19,6 +19,8 @@ import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
 import io.github.yuubiz.hirari.feature.library.Covers
 import io.github.yuubiz.hirari.feature.library.DeviceArchives
 import io.github.yuubiz.hirari.feature.library.DeviceCoverBooks
+import io.github.yuubiz.hirari.feature.library.DeviceSaves
+import io.github.yuubiz.hirari.feature.library.SafSaveFolders
 import io.github.yuubiz.hirari.feature.library.ThumbnailsSource
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
@@ -107,6 +109,7 @@ class HirariApp : Application() {
                 launch = storage.launch,
                 coverIndex = storage.covers,
                 covers = covers,
+                saves = DeviceSaves(smb, SafSaveFolders(contentResolver), appScope),
                 appScope = appScope,
             )
         }

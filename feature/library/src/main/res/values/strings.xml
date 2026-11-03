@@ -152,4 +152,21 @@
     <string name="cover_range_down">枠を下へ動かす</string>
     <string name="cover_range_larger">枠を大きくする</string>
     <string name="cover_range_smaller">枠を小さくする</string>
+    <string name="sheet_save">端末に保存</string>
+    <string name="notice_save_started">保存を始めました</string>
+    <string name="save_running">「%1$s」を保存しています</string>
+    <string name="save_cancel">取り消す</string>
+    <string name="save_done">「%1$s」を保存しました</string>
+    <string name="save_failed">「%1$s」を保存できませんでした。%2$s</string>
+    <string name="save_failed_names_taken">保存先に同じ名前がすでに 10 個あります</string>
+    <string name="save_failed_no_room">保存先の空き容量が足りません</string>
+    <string name="save_failed_connection_lost">サーバーとの接続が切れました</string>
+    <string name="save_failed_unreachable">サーバーに接続できません</string>
+    <string name="save_failed_auth">ユーザー名かパスワードを受け付けません</string>
+    <string name="save_failed_not_found">サーバーにファイルかフォルダが見つかりません</string>
+    <string name="save_failed_refused">サーバーが要求を受け付けませんでした</string>
+    <string name="save_failed_permission">保存先に書き込めません。許可がないか、名前を変えられないフォルダです</string>
+    <string name="save_failed_write">保存先への書き込みに失敗しました</string>
+    <string name="save_failed_password_unreadable">保存したパスワードを読めません。サーバーの設定でパスワードを入れ直してください</string>
+    <string name="save_failed_local_network">ローカルネットワークへの接続が許可されていません</string>
 </resources>

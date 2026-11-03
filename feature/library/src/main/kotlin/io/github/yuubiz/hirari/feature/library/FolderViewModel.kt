@@ -66,7 +66,8 @@ sealed interface FolderContent {
 /** The covers a list shows and the size of their thumbnails (docs/spec.md section 4.4). */
 data class CoverLayout(val covers: Covers, val sizePx: Int)
 
-data class FolderUi(val placeName: String, val path: String, val content: FolderContent, val notice: Notice? = null)
+/** [canSave] is whether the place is an SMB server, whose items 端末に保存 copies (docs/spec.md section 4.5). */
+data class FolderUi(val placeName: String, val path: String, val content: FolderContent, val notice: Notice? = null, val canSave: Boolean = false)
 
 /** What a tap on a row opens. */
 sealed interface FileTarget {
@@ -144,9 +145,17 @@ class FolderViewModel(
                     }
                 }
             }
-            combine(place, content, notice) { place, content, notice -> FolderUi(place?.displayName.orEmpty(), folder.path, content, notice) }
+            combine(place, content, notice) { place, content, notice -> FolderUi(place?.displayName.orEmpty(), folder.path, content, notice, canSave = place is LibraryLocation.SmbShare) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), FolderUi("", folder.path, FolderContent.Loading))
+
+    /** The saves to the device under way, from any folder (docs/spec.md section 4.5). */
+    val activeSaves: StateFlow<List<SaveJob>> = flow { emit(services.await()) }
+        .flatMapLatest { it.saves.jobs }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    /** How each save ended, while the screen is shown. */
+    val finishedSaves: Flow<SaveFinished> = flow { emit(services.await()) }.flatMapLatest { it.saves.finished }
 
     init {
         list(reconnect = false)
@@ -276,6 +285,30 @@ class FolderViewModel(
     }
 
     fun pin(row: FileRow) = write { locations.pin(folder.location, row.path, clock()) }
+
+    /** Where the picker for 端末に保存 starts: the folder chosen last time. */
+    suspend fun lastSaveFolder(): UriString? = services.await().launch.lastSaveFolder()
+
+    /**
+     * 端末に保存 of the long-press sheet (docs/spec.md section 4.5): saves [row] into the tree [destination] the user
+     * picked. Takes the write grant and remembers the folder; the write grant of the folder before it is given back
+     * unless a save still writes there.
+     */
+    fun save(row: FileRow, destination: UriString) {
+        val place = place.value as? LibraryLocation.SmbShare ?: return
+        write {
+            val before = launch.lastSaveFolder()
+            grants.takeWrite(destination)
+            launch.setLastSaveFolder(destination)
+            if (before != null && before != destination && saves.jobs.value.none { it.destination == before }) grants.releaseWrite(before)
+            saves.start(SaveRequest(place, row.path, row.item.entry.name, row.item is FileItem.Folder, destination))
+        }
+        notice.value = Notice.SaveStarted
+    }
+
+    fun cancelSave(id: Long) {
+        viewModelScope.launch { services.await().saves.cancel(id) }
+    }
 
     /** サムネイルを作り直す of the long-press sheet (docs/spec.md section 4.4). */
     fun remake(row: FileRow) {

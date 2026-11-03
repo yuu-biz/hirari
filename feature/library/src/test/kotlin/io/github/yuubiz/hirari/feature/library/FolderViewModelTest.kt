@@ -12,6 +12,7 @@ import io.github.yuubiz.hirari.core.model.locationBookId
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -24,6 +25,7 @@ import org.junit.Before
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FolderViewModelTest {
@@ -157,6 +159,56 @@ class FolderViewModelTest {
         assertEquals(FileTarget.Text(TextAddress.InLocation(server.id, "作品/後書き.txt")), list.open(rows.getValue("作品/後書き.txt")))
         assertEquals(null, list.state.value.notice)
         assertEquals(0, fixture.lister.calls)
+    }
+
+    @Test
+    fun `an SMB item is saved to the picked folder, which is remembered and keeps its write grant until another is picked`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "漫画", null, null, null)
+        fixture.locations.rows.value = listOf(server)
+        fixture.smb.folders["作品"] = listOf(
+            FolderEntry("外伝", null, directory = true, size = null, modified = null),
+            FolderEntry("1巻.zip", null, directory = false, size = 1, modified = null),
+        )
+        fixture.smb.saving = { awaitCancellation() }
+        val list = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(server.id, "作品"), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+            .also { watch(it.activeSaves) }
+        val rows = list.shown().rows.associateBy { it.path }
+        assertTrue(list.state.value.canSave)
+        assertEquals(null, list.lastSaveFolder())
+
+        val first = UriString("content://tree/saves")
+        list.save(rows.getValue("作品/1巻.zip"), first)
+        assertEquals(first, list.lastSaveFolder())
+        assertEquals(setOf(first), fixture.grants.writeHeld)
+        assertEquals(Notice.SaveStarted, list.state.value.notice)
+        val book = fixture.smb.saved.single()
+        assertEquals(Triple("作品/1巻.zip", false, first), Triple(book.path, book.directory, fixture.saveFolders.opened.single()))
+        assertEquals(listOf("1巻.zip"), list.activeSaves.value.map { it.name })
+
+        val second = UriString("content://tree/elsewhere")
+        list.save(rows.getValue("作品/外伝"), second)
+        assertEquals(second, list.lastSaveFolder())
+        assertTrue(fixture.smb.saved.last().directory)
+        assertEquals(emptyList(), fixture.grants.writeReleased)
+        assertEquals(setOf(first, second), fixture.grants.writeHeld)
+
+        fixture.saves.cancelAll()
+        val third = UriString("content://tree/third")
+        list.save(rows.getValue("作品/1巻.zip"), third)
+        assertEquals(listOf(second), fixture.grants.writeReleased)
+        fixture.saves.cancelAll()
+    }
+
+    @Test
+    fun `a SAF place offers no save and saves nothing`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(file("1巻.zip"))
+        val list = viewModel()
+        assertEquals(false, list.state.value.canSave)
+        list.save(list.shown().rows.single(), UriString("content://tree/saves"))
+        assertTrue(fixture.smb.saved.isEmpty())
+        assertEquals(null, list.lastSaveFolder())
     }
 
     @Test

@@ -71,7 +71,7 @@ private class CoverEnv(val layout: CoverLayout, val directions: Map<BookId, Read
 data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 
 /** A one-time message for a snackbar. */
-enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, ShortcutMissing, ShortcutUnsupported, IncomingUnreadable }
+enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, ShortcutMissing, ShortcutUnsupported, IncomingUnreadable, SaveStarted }
 
 /** What a tap on a book of the home screen opens: the image reader, or the text reader for a text. */
 sealed interface HomeTarget {

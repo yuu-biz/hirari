@@ -20,6 +20,12 @@ interface TreeGrants {
 
     suspend fun release(tree: UriString)
 
+    /** Takes the persistable read and write grant of [tree], a destination of 端末に保存 (docs/spec.md section 4.5); false when the provider offers none. */
+    suspend fun takeWrite(tree: UriString): Boolean
+
+    /** Gives back the write grant of [tree] and leaves its read grant, which a place may hold. */
+    suspend fun releaseWrite(tree: UriString)
+
     suspend fun held(): Set<UriString>
 
     /** The folder's own display name, or the last name in its URI when the provider gives none. */
@@ -75,6 +81,7 @@ class LibraryServices(
     val launch: LaunchRepository,
     val coverIndex: CoverIndex,
     val covers: Covers,
+    val saves: DeviceSaves,
     val appScope: CoroutineScope,
     val clock: () -> Instant = Instant::now,
 ) {
