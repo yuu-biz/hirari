@@ -45,10 +45,18 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.TextAutoSize
+import io.github.yuubiz.hirari.core.ui.decorative
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -142,11 +150,11 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
 
     val adjust = state.config.adjust
     val colorFilter = remember(adjust) { adjust.colorMatrix()?.let { ColorFilter.colorMatrix(ColorMatrix(it)) } }
-    val label = pageLabel(state.current, state.pagination.shapes.size)
+    val control = { control: ReaderControl -> control.effectIn(latest).applyTo(viewModel, ui) }
     Canvas(
         Modifier
             .fillMaxSize()
-            .semantics { contentDescription = label }
+            .pageAccessibility(state, control)
             .pointerInput(input) { with(input) { handle() } },
     ) {
         viewModel.prepared
@@ -175,6 +183,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
     }
 
     Box(Modifier.fillMaxSize()) {
+        BarAccessibility(state.config.barHeightDp, control)
         val ready = viewModel.prepared.let { viewModel.preparedView(state.current) != null }
         if (!ready) {
             key(state.current) {
@@ -212,7 +221,12 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
                     .alpha(if (drag.cancelled) 0.4f else 1f),
             )
         }
-        if (ui.commandBar.panelVisible) CommandPanelView(state.commandPanel(), ui.commandBar)
+        if (ui.commandBar.panelVisible) {
+            CommandPanelView(state.commandPanel(), ui.commandBar) { item ->
+                ui.commandBar = CommandBarState.Closed
+                runPanelItem(item, viewModel, ui, close)
+            }
+        }
     }
 }
 
@@ -377,6 +391,7 @@ private fun OutlinedText(text: String, modifier: Modifier, size: Int) {
     Box(modifier) {
         Text(
             text,
+            Modifier.decorative(),
             color = Color.Black,
             fontSize = size.sp,
             fontWeight = FontWeight.Bold,
@@ -389,14 +404,20 @@ private fun OutlinedText(text: String, modifier: Modifier, size: Int) {
 }
 
 @Composable
-private fun CommandPanelView(panel: CommandPanel, state: CommandBarState) {
+private fun CommandPanelView(panel: CommandPanel, state: CommandBarState, onItem: (PanelItem) -> Unit) {
     val highlight = (state as? CommandBarState.Sliding)?.highlight
     val bounds = panel.bounds
+    val title = stringResource(R.string.guide_command_bar)
     Box(
         Modifier
             .offset(bounds.left.dp, bounds.top.dp)
             .size(bounds.width.dp, bounds.height.dp)
-            .background(PanelBackground),
+            .background(PanelBackground)
+            .semantics {
+                paneTitle = title
+                isTraversalGroup = true
+                traversalIndex = -1f
+            },
     ) {
         val cellWidth = bounds.width / panel.columns
         val cellHeight = bounds.height / panel.rows
@@ -405,15 +426,34 @@ private fun CommandPanelView(panel: CommandPanel, state: CommandBarState) {
             add(Triple(0, panel.columns - 1, PanelItem.Menu))
             panel.commands.forEachIndexed { i, command -> add(Triple(1 + i / panel.columns, i % panel.columns, PanelItem.Command(command))) }
         }
-        for ((row, column, item) in items) {
+        for ((index, cell) in items.withIndex()) {
+            val (row, column, item) = cell
             Box(
                 Modifier
                     .offset((column * cellWidth).dp, (row * cellHeight).dp)
                     .size(cellWidth.dp, cellHeight.dp)
-                    .background(if (item == highlight) Color(0x66FFFFFF) else Color.Transparent),
+                    .background(if (item == highlight) Color(0x66FFFFFF) else Color.Transparent)
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        traversalIndex = index.toFloat()
+                        onClick {
+                            onItem(item)
+                            true
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(item.label(), color = Color.White, textAlign = TextAlign.Center, fontSize = 13.sp)
+                // A 4 dp margin keeps a long name inside the cell; at a large font it shrinks to fit instead of clipping.
+                Text(
+                    item.label(),
+                    Modifier.padding(horizontal = 4.dp),
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    fontSize = 13.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 13.sp),
+                )
             }
         }
     }

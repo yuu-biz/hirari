@@ -121,4 +121,21 @@
     <string name="cover_range_unavailable">この本の表紙の範囲は選べません</string>
     <string name="share_page_number">p. %1$d</string>
     <string name="share_failed">このページを共有できませんでした</string>
+
+    <string name="a11y_next_page">次のページ</string>
+    <string name="a11y_previous_page">前のページ</string>
+    <string name="a11y_first_page">最初のページ</string>
+    <string name="a11y_last_page">最後のページ</string>
+    <string name="a11y_open_pages">ページパネルを開く</string>
+    <string name="a11y_open_commands">コマンドバーを開く</string>
+    <string name="a11y_open_menu">メニューを開く</string>
+    <string name="a11y_page_of">%1$d ページ目、全 %2$d ページ</string>
+    <string name="a11y_pages_of">%1$d から %2$d ページ目、全 %3$d ページ</string>
+    <string name="a11y_page_number">%1$d ページ</string>
+    <string name="a11y_step_back">%1$d ページ戻る</string>
+    <string name="a11y_step_forward">%1$d ページ進む</string>
+    <string name="a11y_loading">読み込んでいます</string>
+    <string name="a11y_page_slider">ページ</string>
+    <string name="page_panel_title">ページパネル</string>
+    <string name="neighbor_title">前後の本</string>
 </resources>

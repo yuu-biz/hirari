@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -52,8 +54,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -74,24 +84,41 @@ import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.opening
+import io.github.yuubiz.hirari.core.ui.blockTouches
+import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.minTouchTarget
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private val SheetBackground = Color(0xF0202028)
-private val SheetText = Color.White
-private val SheetDisabled = Color(0xFF8A8A90)
+internal val SheetBackground = Color(0xF0202028)
+internal val SheetText = Color.White
+internal val SheetDisabled = Color(0xFF9C9CA4)
 internal val ThumbnailWidth = 60.dp
 internal val ThumbnailHeight = 85.dp
 
-/** A tap outside the sheet closes it, and the reader under it gets no touch. */
+/**
+ * A tap outside the sheet closes it, and the reader under it gets no touch. For a screen reader the sheet is a pane
+ * named [title], and the scrim is the last stop in it, a button named 閉じる; the sheet's own area takes no tap.
+ */
 @Composable
-private fun Scrim(onClose: () -> Unit, content: @Composable BoxScope.() -> Unit) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0x33000000))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
-    ) { content() }
+internal fun Scrim(title: String, onClose: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+    val close = stringResource(R.string.panel_close)
+    Box(Modifier.fillMaxSize().semantics {
+        paneTitle = title
+        isTraversalGroup = true
+    }) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0x33000000))
+                .clickable(onClickLabel = close, role = Role.Button, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)
+                .semantics {
+                    contentDescription = close
+                    traversalIndex = 1f
+                },
+        )
+        content()
+    }
 }
 
 /** [page] fitted into the thumbnail size, decoded small the first time it is asked for. */
@@ -128,13 +155,14 @@ internal fun PagePanelSheet(
         onDispose { viewModel.showStrip(false) }
     }
 
-    Scrim(onClose) {
+    Scrim(stringResource(R.string.page_panel_title), onClose) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(SheetBackground)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .blockTouches()
+                .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
         ) {
             ReadingOrder(state.config.direction) {
@@ -175,15 +203,19 @@ private fun ThumbnailStrip(viewModel: ReaderViewModel, state: ReaderState, head:
     LazyRow(state = list, contentPadding = PaddingValues(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         itemsIndexed(pages, key = { _, page -> page }) { _, page ->
             val current = page in state.current.pages
+            val spoken = stringResource(R.string.a11y_page_number, page + 1)
             Column(
                 Modifier
-                    .clickable { goTo(page) }
-                    .semantics { contentDescription = "p. ${page + 1}" }
+                    .clickable(role = Role.Button) { goTo(page) }
+                    .semantics {
+                        contentDescription = spoken
+                        selected = current
+                    }
                     .padding(2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Thumbnail(viewModel, page, if (current) Modifier.border(2.dp, Color.White) else Modifier)
-                Text("${page + 1}", color = if (current) SheetText else SheetDisabled, fontSize = 12.sp)
+                Text("${page + 1}", Modifier.decorative(), color = if (current) SheetText else SheetDisabled, fontSize = 12.sp)
             }
         }
     }
@@ -194,6 +226,8 @@ private fun ThumbnailStrip(viewModel: ReaderViewModel, state: ReaderState, head:
 private fun PageSlider(head: Int, pageCount: Int, goTo: (Int) -> Unit) {
     var dragged by remember { mutableStateOf<Float?>(null) }
     val dragging = dragged != null
+    val pageLabel = stringResource(R.string.a11y_page_slider)
+    val shownPage = stringResource(R.string.a11y_page_of, (dragged?.let { PagePanel.atSlider(it, pageCount) } ?: head) + 1, pageCount)
     LaunchedEffect(dragging) {
         var shown = head
         while (true) {
@@ -214,7 +248,10 @@ private fun PageSlider(head: Int, pageCount: Int, goTo: (Int) -> Unit) {
         },
         valueRange = 0f..(pageCount - 1).coerceAtLeast(1).toFloat(),
         enabled = pageCount > 1,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).semantics {
+            contentDescription = pageLabel
+            stateDescription = shownPage
+        },
     )
 }
 
@@ -224,36 +261,61 @@ private fun PageNumberRow(head: Int, pageCount: Int, goTo: (Int) -> Unit) {
     val numberLabel = stringResource(R.string.page_panel_number)
     val field = remember { PageNumberField(head) }
     LaunchedEffect(head) { field.show(head) }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-        for (step in PagePanel.STEPS.take(3)) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
-        OutlinedTextField(
-            value = field.text,
-            onValueChange = field::edit,
-            singleLine = true,
-            suffix = { Text("/ $pageCount", color = SheetDisabled) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
-            keyboardActions = KeyboardActions(onGo = {
-                field.confirm(pageCount, head)?.let(goTo)
-                focus.clearFocus()
-            }),
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = SheetText, textAlign = TextAlign.End),
-            modifier = Modifier.weight(2.2f).semantics { contentDescription = numberLabel },
-        )
-        for (step in PagePanel.STEPS.drop(3)) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
+    @Composable
+    fun RowScope.Field(modifier: Modifier) = OutlinedTextField(
+        value = field.text,
+        onValueChange = field::edit,
+        singleLine = true,
+        suffix = { Text("/ $pageCount", color = SheetDisabled) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
+        keyboardActions = KeyboardActions(onGo = {
+            field.confirm(pageCount, head)?.let(goTo)
+            focus.clearFocus()
+        }),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = SheetText, textAlign = TextAlign.End),
+        modifier = modifier.semantics { contentDescription = numberLabel },
+    )
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+        // Six buttons of the touch-target size and the field need 480 dp; a narrower screen puts the field above them.
+        if (maxWidth >= WIDE_PAGE_ROW) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                for (step in PagePanel.STEPS.take(3)) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
+                Field(Modifier.weight(2.2f))
+                for (step in PagePanel.STEPS.drop(3)) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
+            }
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row { Field(Modifier.weight(1f).padding(horizontal = 24.dp)) }
+                Row(Modifier.fillMaxWidth()) {
+                    for (step in PagePanel.STEPS) StepButton(step, Modifier.weight(1f)) { goTo(PagePanel.stepped(head, step, pageCount)) }
+                }
+            }
+        }
     }
 }
+
+private val WIDE_PAGE_ROW = 480.dp
 
 @Composable
 private fun StepButton(step: Int, modifier: Modifier, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(horizontal = 2.dp)) {
-        Text(if (step < 0) "−${-step}" else "+$step", color = SheetText, fontSize = 13.sp)
+    val spoken = stringResource(if (step < 0) R.string.a11y_step_back else R.string.a11y_step_forward, kotlin.math.abs(step))
+    TextButton(onClick = onClick, modifier = modifier.semantics { contentDescription = spoken }, contentPadding = PaddingValues(horizontal = 2.dp)) {
+        Text(
+            if (step < 0) "−${-step}" else "+$step",
+            Modifier.decorative(),
+            color = SheetText,
+            fontSize = 13.sp,
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 13.sp),
+        )
     }
 }
 
+/** [description] is what a screen reader says in place of the label, for a label such as `p. 12` that it would spell out. */
 @Composable
-private fun SheetButton(label: Int, enabled: Boolean = true, args: Array<Any> = emptyArray(), onClick: () -> Unit) {
-    TextButton(onClick = onClick, enabled = enabled) {
-        Text(stringResource(label, *args), color = if (enabled) SheetText else SheetDisabled)
+private fun SheetButton(label: Int, enabled: Boolean = true, args: Array<Any> = emptyArray(), description: String? = null, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = enabled, modifier = if (description == null) Modifier else Modifier.semantics { contentDescription = description }) {
+        Text(stringResource(label, *args), Modifier.then(if (description == null) Modifier else Modifier.decorative()), color = if (enabled) SheetText else SheetDisabled)
     }
 }
 
@@ -277,13 +339,14 @@ internal fun BookEndSheet(
         atEnd -> listOf(NeighborStart.Saved, NeighborStart.First)
         else -> listOf(NeighborStart.Saved, NeighborStart.Last)
     }
-    Scrim(onClose) {
+    Scrim(stringResource(R.string.neighbor_title), onClose) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .blockTouches()
+                .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -367,7 +430,7 @@ internal fun MenuSheet(
         onEffect(effect)
     }
 
-    Scrim(onCloseMenu) {
+    Scrim(stringResource(R.string.panel_menu), onCloseMenu) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val width: Dp = menuWidthDp(maxWidth.value, maxHeight.value).dp
             Column(
@@ -375,7 +438,7 @@ internal fun MenuSheet(
                     .align(Alignment.BottomCenter)
                     .width(width)
                     .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .blockTouches()
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = 8.dp),
             ) {
@@ -393,7 +456,8 @@ private fun MenuRow(item: MenuItem, value: String?, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(enabled = item.available, onClick = onClick)
+            .clickable(enabled = item.available, role = Role.Button, onClick = onClick)
+            .minTouchTarget()
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -443,20 +507,22 @@ internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose
     val adjust = state.config.adjust
     fun set(next: ImageAdjust) = viewModel.dispatch(ReaderEvent.ConfigChanged(state.config.copy(adjust = next)))
 
-    Scrim(onClose) {
+    val levelLabel = stringResource(R.string.adjust_level)
+    val levelText = if (adjust.level > 0) "+${adjust.level}" else "${adjust.level}"
+    Scrim(stringResource(R.string.command_image_adjust), onClose) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .width(menuWidthDp(maxWidth.value, maxHeight.value).dp)
                     .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .blockTouches()
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = 8.dp),
             ) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.adjust_level), color = SheetText, modifier = Modifier.weight(1f))
-                    Text(if (adjust.level > 0) "+${adjust.level}" else "${adjust.level}", color = SheetDisabled)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp).decorative(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(levelLabel, color = SheetText, modifier = Modifier.weight(1f))
+                    Text(levelText, color = SheetDisabled)
                 }
                 Slider(
                     value = adjust.level.toFloat(),
@@ -466,7 +532,10 @@ internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose
                     },
                     valueRange = ADJUST_LEVELS.first.toFloat()..ADJUST_LEVELS.last.toFloat(),
                     steps = ADJUST_LEVELS.last - ADJUST_LEVELS.first - 1,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).semantics {
+                        contentDescription = levelLabel
+                        stateDescription = levelText
+                    },
                 )
                 SwitchRow(R.string.adjust_sharpen, adjust.sharpen) { set(adjust.copy(sharpen = it)) }
                 SwitchRow(R.string.adjust_mono, adjust.mono) { set(adjust.copy(mono = it)) }
@@ -486,20 +555,23 @@ private val ADJUST_LEVELS = -5..5
 @Composable
 internal fun SharePickSheet(view: PageView.Two, direction: ReadingDirection, title: Int, onPick: (Int) -> Unit, onClose: () -> Unit) {
     val onScreen = if (direction == ReadingDirection.RightToLeft) listOf(view.later, view.earlier) else listOf(view.earlier, view.later)
-    Scrim(onClose) {
+    Scrim(stringResource(title), onClose) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .width(menuWidthDp(maxWidth.value, maxHeight.value).dp)
                     .background(SheetBackground, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .blockTouches()
+                    .verticalScroll(rememberScrollState())
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(stringResource(title), color = SheetText, modifier = Modifier.padding(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    for (page in onScreen) SheetButton(R.string.share_page_number, args = arrayOf(page + 1)) { onPick(page) }
+                Text(stringResource(title), color = SheetText, modifier = Modifier.padding(12.dp).semantics { heading() })
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    for (page in onScreen) {
+                        SheetButton(R.string.share_page_number, args = arrayOf(page + 1), description = stringResource(R.string.a11y_page_number, page + 1)) { onPick(page) }
+                    }
                 }
                 SheetButton(R.string.panel_close, onClick = onClose)
             }
@@ -512,7 +584,8 @@ private fun SwitchRow(label: Int, checked: Boolean, onChange: (Boolean) -> Unit)
     Row(
         Modifier
             .fillMaxWidth()
-            .toggleable(value = checked, onValueChange = onChange)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .minTouchTarget()
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

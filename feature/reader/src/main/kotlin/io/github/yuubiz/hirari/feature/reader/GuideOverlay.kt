@@ -23,8 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -50,11 +49,12 @@ private val Outline = BorderStroke(1.dp, Color(0x99FFFFFF))
  */
 @Composable
 internal fun GuideOverlay(config: ReaderConfig, onDismiss: () -> Unit) {
+    val close = stringResource(R.string.panel_close)
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(GuideScrim)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
+            .clickable(onClickLabel = close, role = Role.Button, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
     ) {
         val regions = ReaderRegions(Size(maxWidth.value, maxHeight.value), config.barHeightDp, systemBarsHidden = true)
         val content = guideContent(regions, config)
@@ -87,8 +87,7 @@ private fun Zone(rect: Rect, tint: Color, name: String, hint: String? = null) {
             .offset(rect.left.dp, rect.top.dp)
             .size(rect.width.dp, rect.height.dp)
             .background(tint)
-            .border(Outline)
-            .semantics { contentDescription = name },
+            .border(Outline),
         contentAlignment = Alignment.TopCenter,
     ) {
         Column(Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {

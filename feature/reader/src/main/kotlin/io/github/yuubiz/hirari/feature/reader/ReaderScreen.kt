@@ -36,6 +36,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
@@ -54,6 +58,7 @@ import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.Sibling
+import io.github.yuubiz.hirari.core.ui.announced
 import kotlinx.coroutines.delay
 
 /** The default `readerBackground` (docs/spec.md section 4.10). */
@@ -140,7 +145,11 @@ fun ReaderScreen(
             ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), onClose)
             ReaderPhase.Reading -> viewModel.state?.let { state ->
                 AutoPlayClock(viewModel, state.autoPlay)
-                ReaderSurface(viewModel, state, ui, onClose)
+                // Behind a sheet or the guide the page is out of reach of a screen reader, as it is of a finger.
+                val behindPanel = ui.sheet != null || ui.guideShown
+                Box(Modifier.fillMaxSize().then(if (behindPanel) Modifier.clearAndSetSemantics {} else Modifier.semantics { isTraversalGroup = true })) {
+                    ReaderSurface(viewModel, state, ui, onClose)
+                }
                 when (val sheet = ui.sheet) {
                     is ReaderSheet.Pages -> PagePanelSheet(
                         viewModel,
@@ -191,6 +200,7 @@ fun ReaderScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 96.dp)
+                    .announced()
                     .background(Color(0xCC000000), MaterialTheme.shapes.small)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -262,7 +272,8 @@ internal fun DelayedProgress(modifier: Modifier = Modifier) {
         delay(PROGRESS_DELAY_MS)
         shown = true
     }
-    if (shown) CircularProgressIndicator(modifier)
+    val loading = stringResource(R.string.a11y_loading)
+    if (shown) CircularProgressIndicator(modifier.semantics { contentDescription = loading })
 }
 
 /** docs/spec.md section 4.8, 重ねて表示する情報. */

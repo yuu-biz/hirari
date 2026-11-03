@@ -121,14 +121,7 @@ internal class ReaderInput(
         }
     }
 
-    private fun execute(item: PanelItem) {
-        val now = SystemClock.uptimeMillis()
-        when (item) {
-            PanelItem.Close -> onClose()
-            PanelItem.Menu -> ui.toggleMenu()
-            is PanelItem.Command -> ui.follow(viewModel.command(item.command, now))
-        }
-    }
+    private fun execute(item: PanelItem) = runPanelItem(item, viewModel, ui, onClose)
 
     private suspend fun AwaitPointerEventScope.pageBar(down: PointerInputChange, current: ReaderState, regions: ReaderRegions, slop: Float) {
         val density = current.viewport.density
