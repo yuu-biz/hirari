@@ -30,9 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.HistoryItem
@@ -77,6 +77,7 @@ private fun HistoryRow(item: HistoryItem, covers: CoverLayout, cover: CoverSpec.
     val swipe = rememberSwipeToDismissBoxState()
     var menu by remember { mutableStateOf(false) }
     val remove = stringResource(R.string.history_remove)
+    val reading = item.progress?.let { stringResource(R.string.mark_reading_percent, it.percent()) }
     SwipeToDismissBox(
         state = swipe,
         backgroundContent = { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer)) },
@@ -90,11 +91,7 @@ private fun HistoryRow(item: HistoryItem, covers: CoverLayout, cover: CoverSpec.
                 },
                 supportingContent = {
                     val percent = item.progress?.let { "${it.percent()}%" }
-                    val spoken = item.progress?.let { stringResource(R.string.mark_reading_percent, it.percent()) }
-                    Text(
-                        listOfNotNull(item.location?.displayName, percent).joinToString(" · "),
-                        Modifier.semantics { contentDescription = listOfNotNull(item.location?.displayName, spoken).joinToString("、") },
-                    )
+                    Text(listOfNotNull(item.location?.displayName, percent).joinToString(" · "))
                 },
                 modifier = Modifier
                     .combinedClickable(
@@ -103,6 +100,7 @@ private fun HistoryRow(item: HistoryItem, covers: CoverLayout, cover: CoverSpec.
                         onLongClick = { menu = true },
                     )
                     .semantics {
+                        reading?.let { stateDescription = it }
                         customActions = listOf(
                             CustomAccessibilityAction(remove) {
                                 home.removeFromHistory(item.entry.book)

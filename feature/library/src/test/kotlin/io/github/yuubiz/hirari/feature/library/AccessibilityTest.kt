@@ -72,6 +72,16 @@ class AccessibilityTest {
     }
 
     @Test
+    fun `a row with a state keeps its own text, so the screen reader reads the title`() {
+        rule.setContent {
+            Box(Modifier.rowPress({}, {}).rowState(row("a.zip", mark = ReadMark.Reading(35))).size(80.dp)) { Text("title") }
+        }
+        val config = rule.onNode(hasClickAction()).fetchSemanticsNode().config
+        assertEquals(listOf("title"), config.getOrNull(SemanticsProperties.Text)?.map { it.text })
+        assertEquals(null, config.getOrNull(SemanticsProperties.ContentDescription))
+    }
+
+    @Test
     fun `a row lists its long press as an action named for a screen reader`() {
         rule.setContent { Box(Modifier.rowPress({}, {}).size(80.dp)) { Text("x") } }
         val label = rule.onNodeWithText("x").fetchSemanticsNode().config.getOrNull(SemanticsActions.OnLongClick)?.label
