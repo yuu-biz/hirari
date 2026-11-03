@@ -33,10 +33,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.ui.decorative
 
 @Composable
 internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
@@ -63,7 +68,7 @@ internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
                 ListItem(
                     headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = { Text(listOfNotNull(item.place?.displayName, item.pin.path.ifEmpty { null }).joinToString(" / ")) },
-                    modifier = Modifier.clickable { home.folderOf(item)?.let(actions.openFolder) },
+                    modifier = Modifier.clickable(role = Role.Button) { home.folderOf(item)?.let(actions.openFolder) },
                 )
             }
         }
@@ -106,7 +111,7 @@ internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
 private fun SectionHeader(text: Int) {
     Text(
         stringResource(text),
-        Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+        Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp).semantics { heading() },
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
     )
@@ -123,15 +128,16 @@ private fun EmptyPlaces() {
 
 @Composable
 private fun ContinueCard(item: ContinueItem, covers: CoverLayout, onOpen: () -> Unit) {
-    Column(Modifier.width(96.dp).clickable(onClick = onOpen)) {
-        Box(Modifier.size(96.dp, 136.dp)) {
+    val reading = stringResource(R.string.mark_reading_percent, item.percent)
+    Column(Modifier.width(96.dp).clickable(role = Role.Button, onClick = onOpen).semantics { stateDescription = reading }) {
+        Box(Modifier.size(96.dp, 136.dp).decorative()) {
             CoverBox(item.cover?.let { CoverRef(it, covers.sizePx) }, covers.covers, item.book.book.kindLabel(), Modifier.fillMaxSize())
             LinearProgressIndicator(
                 progress = { item.percent / 100f },
                 modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.BottomCenter),
             )
         }
-        Text("${item.percent}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${item.percent}%", Modifier.decorative(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(item.book.book.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -143,7 +149,7 @@ private fun AddPlace(onFolder: () -> Unit, onServer: () -> Unit) {
     Box {
         ListItem(
             headlineContent = { Text(stringResource(R.string.place_add), color = MaterialTheme.colorScheme.primary) },
-            modifier = Modifier.clickable { menu = true },
+            modifier = Modifier.clickable(role = Role.Button) { menu = true },
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.place_add_folder)) }, onClick = {
@@ -184,7 +190,12 @@ private fun PlaceRow(
         ListItem(
             headlineContent = { Text(place.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingContent = detail?.let { { Text(it) } },
-            modifier = Modifier.combinedClickable(enabled = true, onClick = onTap, onLongClick = { menu = true }),
+            modifier = Modifier.combinedClickable(
+                role = Role.Button,
+                onLongClickLabel = stringResource(R.string.row_menu),
+                onClick = onTap,
+                onLongClick = { menu = true },
+            ),
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             if (place is LibraryLocation.SafTree && !place.permissionHeld) {

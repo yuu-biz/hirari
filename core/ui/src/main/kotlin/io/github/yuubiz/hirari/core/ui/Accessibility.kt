@@ -8,7 +8,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
@@ -23,6 +26,12 @@ fun Modifier.decorative(): Modifier = clearAndSetSemantics {}
 
 /** Has a screen reader read the node again whenever its text or description changes. */
 fun Modifier.announced(): Modifier = semantics { liveRegion = LiveRegionMode.Polite }
+
+/** A choice among several, as a screen reader says it: "selected" or not, read as a radio button. */
+fun Modifier.chosen(selected: Boolean): Modifier = semantics {
+    this.selected = selected
+    role = Role.RadioButton
+}
 
 /**
  * A button that shows a [glyph] and is read as [label]: the arrow of 戻る, the dots of a menu. A glyph read aloud would

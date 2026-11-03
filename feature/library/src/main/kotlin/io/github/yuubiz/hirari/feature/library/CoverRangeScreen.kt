@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,12 +44,17 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.yuubiz.hirari.core.ui.GlyphButton
+import io.github.yuubiz.hirari.core.ui.announced
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -63,7 +71,7 @@ fun CoverRangeScreen(model: CoverRangeViewModel, onClose: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.cover_range_title), maxLines = 1) },
-                navigationIcon = { TextButton(onClick = onClose) { Text("←") } },
+                navigationIcon = { GlyphButton("←", stringResource(R.string.nav_back), onClose) },
             )
         },
     ) { padding ->
@@ -115,6 +123,8 @@ private fun RangeEditor(ready: CoverRangeUi.Ready, save: CoverSave, onChoose: (C
     val density = LocalDensity.current
     val grabPx = with(density) { GRAB_DP.dp.toPx() }
     val frameDescription = stringResource(R.string.cover_range_frame)
+    val sizeText = stringResource(R.string.cover_range_size, (frame.width * ready.shape.width).roundToInt(), (frame.height * ready.shape.height).roundToInt())
+    val stepLabels = FrameStep.entries.associateWith { stringResource(it.label()) }
     Column(Modifier.fillMaxSize().background(Color(0xFF101014))) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
             val boxWidth = constraints.maxWidth.toFloat()
@@ -125,7 +135,16 @@ private fun RangeEditor(ready: CoverRangeUi.Ready, save: CoverSave, onChoose: (C
             Canvas(
                 Modifier
                     .fillMaxSize()
-                    .semantics { contentDescription = frameDescription }
+                    .semantics {
+                        contentDescription = frameDescription
+                        stateDescription = sizeText
+                        customActions = FrameStep.entries.map { step ->
+                            CustomAccessibilityAction(stepLabels.getValue(step)) {
+                                frame = frame.stepped(step)
+                                true
+                            }
+                        }
+                    }
                     .pointerInput(shown, origin) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -154,9 +173,10 @@ private fun RangeEditor(ready: CoverRangeUi.Ready, save: CoverSave, onChoose: (C
                 drawFrame(frame, origin, shown)
             }
         }
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = CONTROLS_MAX_HEIGHT).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(
-                stringResource(R.string.cover_range_size, (frame.width * ready.shape.width).roundToInt(), (frame.height * ready.shape.height).roundToInt()),
+                sizeText,
+                Modifier.announced(),
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -197,6 +217,18 @@ private fun DrawScope.drawFrame(frame: CropFrame, origin: Offset, shown: Size) {
         drawCircle(HandleLine, radius, point, style = Stroke(1.dp.toPx()))
     }
 }
+
+private fun FrameStep.label(): Int = when (this) {
+    FrameStep.Left -> R.string.cover_range_left
+    FrameStep.Right -> R.string.cover_range_right
+    FrameStep.Up -> R.string.cover_range_up
+    FrameStep.Down -> R.string.cover_range_down
+    FrameStep.Larger -> R.string.cover_range_larger
+    FrameStep.Smaller -> R.string.cover_range_smaller
+}
+
+/** The hint and the buttons scroll past this, so the page keeps its room at a large font. */
+private val CONTROLS_MAX_HEIGHT = 240.dp
 
 /** How far from an edge a finger still takes it. */
 private const val GRAB_DP = 28

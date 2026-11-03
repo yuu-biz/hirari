@@ -4,10 +4,16 @@ plugins {
 
 android {
     testOptions {
-        unitTests.all { test ->
-            // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
-            // without it.
-            test.systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
+        unitTests {
+            // The semantics tests of the Compose screens run on Robolectric against the merged resources.
+            isIncludeAndroidResources = true
+            all { test ->
+                // Robolectric reads FileDescriptor internals through jdk.internal.access.
+                test.jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+                // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
+                // without it.
+                test.systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
+            }
         }
     }
 }
@@ -22,5 +28,14 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(kotlin("test-junit"))
+    testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    // ui-test brings Espresso 3.5.0, which calls an InputManager method that API 37 no longer has.
+    testImplementation(libs.androidx.test.espresso.core)
+    debugImplementation(platform(libs.compose.bom))
+    debugImplementation(libs.compose.ui.test.manifest)
 }

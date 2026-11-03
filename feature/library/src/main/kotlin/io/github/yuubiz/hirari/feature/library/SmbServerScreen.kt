@@ -8,11 +8,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
@@ -39,9 +42,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.yuubiz.hirari.core.ui.GlyphButton
+import io.github.yuubiz.hirari.core.ui.announced
+import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.minTouchTarget
 
 /**
  * Runs an action once the app may open connections in the local network, asking for `ACCESS_LOCAL_NETWORK` first
@@ -90,7 +100,7 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(if ((state as? SmbFormUi.Editing)?.editing == true) R.string.smb_edit_title else R.string.smb_add_title)) },
-                navigationIcon = { TextButton(onClick = onClose) { Text("←") } },
+                navigationIcon = { GlyphButton("←", stringResource(R.string.nav_back), onClose) },
             )
         },
     ) { padding ->
@@ -110,6 +120,7 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SmbForm(
     form: SmbFormUi.Editing,
@@ -139,13 +150,16 @@ private fun SmbForm(
             supportingText = if (form.storedPassword) ({ Text(stringResource(R.string.smb_password_kept)) }) else null,
         )
         if (form.storedPassword) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = form.removePassword, onCheckedChange = onRemovePassword)
+            Row(
+                Modifier.fillMaxWidth().toggleable(form.removePassword, role = Role.Checkbox, onValueChange = onRemovePassword).minTouchTarget(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = form.removePassword, onCheckedChange = null)
                 Text(stringResource(R.string.smb_password_remove))
             }
         }
         TestLine(form.test)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = onTest, enabled = form.test != ConnectionTest.Running && !form.saving) { Text(stringResource(R.string.smb_test)) }
             Button(onClick = onSave, enabled = !form.saving) { Text(stringResource(R.string.smb_save)) }
         }
@@ -161,17 +175,21 @@ private fun Field(
     type: KeyboardType = KeyboardType.Text,
     onChange: (String) -> Unit,
 ) {
+    val message = when (error) {
+        SmbFieldError.Required -> stringResource(R.string.smb_error_required)
+        SmbFieldError.Invalid -> stringResource(R.string.smb_error_invalid)
+        null -> null
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().semantics { message?.let { error(it) } },
         label = { Text(stringResource(label)) },
         singleLine = true,
         isError = error != null,
         keyboardOptions = KeyboardOptions(keyboardType = type),
         supportingText = when {
-            error == SmbFieldError.Required -> ({ Text(stringResource(R.string.smb_error_required)) })
-            error == SmbFieldError.Invalid -> ({ Text(stringResource(R.string.smb_error_invalid)) })
+            message != null -> ({ Text(message) })
             hint != null -> ({ Text(stringResource(hint)) })
             else -> null
         },
@@ -182,12 +200,16 @@ private fun Field(
 private fun TestLine(test: ConnectionTest) {
     when (test) {
         ConnectionTest.Idle -> Unit
-        ConnectionTest.Running -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CircularProgressIndicator(Modifier.padding(4.dp))
+        ConnectionTest.Running -> Row(
+            Modifier.announced(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CircularProgressIndicator(Modifier.padding(4.dp).decorative())
             Text(stringResource(R.string.smb_testing))
         }
-        ConnectionTest.Passed -> Text(stringResource(R.string.smb_test_passed), color = MaterialTheme.colorScheme.primary)
-        is ConnectionTest.Failed -> Text(stringResource(test.reason.message()), color = MaterialTheme.colorScheme.error)
+        ConnectionTest.Passed -> Text(stringResource(R.string.smb_test_passed), Modifier.announced(), color = MaterialTheme.colorScheme.primary)
+        is ConnectionTest.Failed -> Text(stringResource(test.reason.message()), Modifier.announced(), color = MaterialTheme.colorScheme.error)
     }
 }
 

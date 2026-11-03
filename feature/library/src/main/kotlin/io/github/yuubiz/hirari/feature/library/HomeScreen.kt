@@ -26,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yuubiz.hirari.core.model.LocationId
@@ -88,7 +90,10 @@ fun HomeScreen(home: HomeViewModel, actions: HomeActions) {
 @Composable
 private fun <T> Loaded(value: Loadable<T>, content: @Composable (T) -> Unit) {
     when (value) {
-        Loadable.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        Loadable.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            val loading = stringResource(R.string.loading)
+            CircularProgressIndicator(Modifier.semantics { contentDescription = loading })
+        }
         is Loadable.Ready -> content(value.value)
     }
 }

@@ -21,6 +21,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +35,8 @@ import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LibraryView
+import io.github.yuubiz.hirari.core.ui.chosen
+import io.github.yuubiz.hirari.core.ui.decorative
 
 /**
  * Where a cover goes (docs/spec.md section 4.4): a plain square with the kind label in its corner, or in its
@@ -53,7 +58,7 @@ fun CoverSlot(
         if (label != null) {
             Text(
                 label,
-                Modifier.align(if (centered) Alignment.Center else Alignment.BottomEnd).padding(2.dp).background(scheme.inverseSurface, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
+                Modifier.align(if (centered) Alignment.Center else Alignment.BottomEnd).decorative().padding(2.dp).background(scheme.inverseSurface, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
                 color = scheme.inverseOnSurface,
                 fontSize = if (centered) 12.sp else 9.sp,
                 fontWeight = FontWeight.Bold,
@@ -113,16 +118,24 @@ fun BookmarkSort.label(): Int = when (this) {
     BookmarkSort.NameDescending -> R.string.sort_name_descending
 }
 
-/** A button that shows [selected] and drops down every choice. */
+/**
+ * A button that shows [selected] and drops down every choice. A screen reader says [name] and, as its state, the
+ * current choice.
+ */
 @Composable
-fun <T> ChoiceMenu(selected: T, choices: List<T>, label: @Composable (T) -> String, onSelect: (T) -> Unit) {
+fun <T> ChoiceMenu(name: String, selected: T, choices: List<T>, label: @Composable (T) -> String, onSelect: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
+    val current = label(selected)
     Box {
-        TextButton(onClick = { open = true }) { Text(label(selected)) }
+        TextButton(onClick = { open = true }, modifier = Modifier.semantics {
+            contentDescription = name
+            stateDescription = current
+        }) { Text(current, Modifier.decorative()) }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             choices.forEach { choice ->
                 DropdownMenuItem(
                     text = { Text(label(choice), fontWeight = if (choice == selected) FontWeight.Bold else null) },
+                    modifier = Modifier.chosen(choice == selected),
                     onClick = {
                         open = false
                         onSelect(choice)
@@ -140,7 +153,7 @@ fun RenameDialog(@StringRes title: Int, initial: String, onDismiss: () -> Unit, 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(title)) },
-        text = { OutlinedTextField(text, { text = it }, singleLine = true) },
+        text = { OutlinedTextField(text, { text = it }, label = { Text(stringResource(title)) }, singleLine = true) },
         confirmButton = {
             TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank()) { Text(stringResource(R.string.ok)) }
         },

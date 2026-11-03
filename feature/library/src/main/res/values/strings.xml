@@ -137,4 +137,19 @@
     <string name="notice_incoming_unreadable">渡されたものを開けません</string>
     <string name="ok">OK</string>
     <string name="cancel">キャンセル</string>
+    <string name="kind_text">テキスト</string>
+    <string name="nav_back">戻る</string>
+    <string name="list_menu">表示と並べ替え</string>
+    <string name="row_menu">メニューを開く</string>
+    <string name="loading">読み込んでいます</string>
+    <string name="mark_reading_percent">読みかけ %1$d%%</string>
+    <string name="archive_page">%1$d ページ</string>
+    <string name="archive_view_as">表示形式を%1$sにする</string>
+    <string name="sort_label">並べ替え</string>
+    <string name="cover_range_left">枠を左へ動かす</string>
+    <string name="cover_range_right">枠を右へ動かす</string>
+    <string name="cover_range_up">枠を上へ動かす</string>
+    <string name="cover_range_down">枠を下へ動かす</string>
+    <string name="cover_range_larger">枠を大きくする</string>
+    <string name="cover_range_smaller">枠を小さくする</string>
 </resources>

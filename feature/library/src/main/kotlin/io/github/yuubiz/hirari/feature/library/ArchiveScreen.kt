@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,13 +35,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
+import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
+import io.github.yuubiz.hirari.core.ui.chosen
+import io.github.yuubiz.hirari.core.ui.decorative
 
 /** What the archive list asks of the app. */
 class ArchiveActions(
@@ -77,9 +85,13 @@ fun ArchiveScreen(model: ArchiveViewModel, actions: ArchiveActions) {
         topBar = {
             TopAppBar(
                 title = { Text(shown?.title ?: model.book.path.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { TextButton(onClick = actions.close) { Text("←") } },
+                navigationIcon = { GlyphButton("←", stringResource(R.string.nav_back), actions.close) },
                 actions = {
-                    TextButton(onClick = { list = !list }) { Text(stringResource(if (list) R.string.view_grid else R.string.view_list)) }
+                    val target = stringResource(if (list) R.string.view_grid else R.string.view_list)
+                    val viewAs = stringResource(R.string.archive_view_as, target)
+                    TextButton(onClick = { list = !list }, modifier = Modifier.semantics { contentDescription = viewAs }) {
+                        Text(target, Modifier.decorative())
+                    }
                     shown?.let { CharsetMenu(it, model::chooseCharset) }
                 },
             )
@@ -105,36 +117,35 @@ fun ArchiveScreen(model: ArchiveViewModel, actions: ArchiveActions) {
     }
     held?.let { item ->
         ModalBottomSheet(onDismissRequest = { held = null }) {
-            Column(Modifier.padding(bottom = 24.dp)) {
-                fun action(label: Int, run: () -> Unit) = label to run
-                val (name, choices) = when (item) {
-                    is Held.Page -> item.page.name to listOfNotNull(
-                        action(R.string.archive_read_up_to) { model.readUpTo(item.page) },
-                        if (shown?.indexed == true) action(R.string.archive_set_cover) { model.setCover(item.page) } else null,
-                        if (shown?.indexed == true) action(R.string.archive_set_cover_range) { model.rangeKey(item.page)?.let(actions.chooseRange) } else null,
-                        if (shown?.inFolder == true) {
-                            val chosen = shown.folderCoverPage == item.page.entryIndex
-                            action(if (chosen) R.string.archive_folder_cover_off else R.string.archive_folder_cover) { model.chooseFolderCover(item.page, choose = !chosen) }
-                        } else {
-                            null
-                        },
-                    )
-                    is Held.Text -> item.row.text.name to listOf(
-                        if (item.row.mark == ReadMark.Read) {
-                            action(R.string.sheet_mark_unread) { model.mark(item.row.text, ReadState.Unread) }
-                        } else {
-                            action(R.string.sheet_mark_read) { model.mark(item.row.text, ReadState.Read) }
-                        },
-                    )
-                }
-                Text(name, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            fun action(label: Int, run: () -> Unit) = label to run
+            val (name, choices) = when (item) {
+                is Held.Page -> item.page.name to listOfNotNull(
+                    action(R.string.archive_read_up_to) { model.readUpTo(item.page) },
+                    if (shown?.indexed == true) action(R.string.archive_set_cover) { model.setCover(item.page) } else null,
+                    if (shown?.indexed == true) action(R.string.archive_set_cover_range) { model.rangeKey(item.page)?.let(actions.chooseRange) } else null,
+                    if (shown?.inFolder == true) {
+                        val chosen = shown.folderCoverPage == item.page.entryIndex
+                        action(if (chosen) R.string.archive_folder_cover_off else R.string.archive_folder_cover) { model.chooseFolderCover(item.page, choose = !chosen) }
+                    } else {
+                        null
+                    },
+                )
+                is Held.Text -> item.row.text.name to listOf(
+                    if (item.row.mark == ReadMark.Read) {
+                        action(R.string.sheet_mark_unread) { model.mark(item.row.text, ReadState.Unread) }
+                    } else {
+                        action(R.string.sheet_mark_read) { model.mark(item.row.text, ReadState.Read) }
+                    },
+                )
+            }
+            SheetActions(name) {
                 choices.forEach { (label, run) ->
                     ListItem(
                         headlineContent = { Text(stringResource(label)) },
-                        modifier = Modifier.rowPress(onClick = {
+                        modifier = Modifier.clickable(role = Role.Button) {
                             held = null
                             run()
-                        }, onLongClick = {}),
+                        },
                     )
                 }
             }
@@ -186,17 +197,30 @@ private fun Entries(content: ArchiveUi.Shown, list: Boolean, onPage: (ArchivePag
                     modifier = Modifier.rowPress(onClick = { onPage(page) }, onLongClick = { onHold(Held.Page(page)) }),
                 )
             } else {
-                Column(Modifier.padding(4.dp).rowPress(onClick = { onPage(page) }, onLongClick = { onHold(Held.Page(page)) })) {
+                val spokenPage = stringResource(R.string.archive_page, index + 1)
+                val spokenState = spokenList(
+                    stringResource(if (row.read) R.string.mark_read else R.string.mark_unread),
+                    if (page.unreadable) stringResource(R.string.archive_unreadable) else null,
+                )
+                Column(
+                    Modifier
+                        .padding(4.dp)
+                        .rowPress(onClick = { onPage(page) }, onLongClick = { onHold(Held.Page(page)) })
+                        .semantics {
+                            contentDescription = spokenPage
+                            spokenState?.let { stateDescription = it }
+                        },
+                ) {
                     val label = if (page.unreadable) "!" else null
                     val pageCovers = content.covers
                     if (pageCovers == null) {
                         CoverSlot(label, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), faded = row.read)
                     } else {
-                        CoverBox(pageCovers.ref(page), pageCovers.layout.covers, label, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), faded = row.read)
+                        CoverBox(pageCovers.ref(page), pageCovers.layout.covers, label, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO).decorative(), faded = row.read)
                     }
                     Text(
                         number,
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth().decorative(),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (row.read) colors.stateRead else colors.stateUnread,
                         maxLines = 1,
@@ -215,6 +239,7 @@ private fun CharsetMenu(shown: ArchiveUi.Shown, onChoose: (java.nio.charset.Char
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.archive_charset_auto), fontWeight = if (shown.chosen == null) FontWeight.Bold else null) },
+                modifier = Modifier.chosen(shown.chosen == null),
                 onClick = {
                     open = false
                     onChoose(null)
@@ -223,7 +248,8 @@ private fun CharsetMenu(shown: ArchiveUi.Shown, onChoose: (java.nio.charset.Char
             NAME_CHARSETS.forEach { (charset, label) ->
                 DropdownMenuItem(
                     text = { Text(label, fontWeight = if (shown.chosen == charset) FontWeight.Bold else null) },
-                    leadingIcon = { Text(if (shown.charset == charset) "✓" else " ") },
+                    leadingIcon = { Text(if (shown.charset == charset) "✓" else " ", Modifier.decorative()) },
+                    modifier = Modifier.chosen(shown.charset == charset),
                     onClick = {
                         open = false
                         onChoose(charset)

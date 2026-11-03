@@ -46,8 +46,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -56,6 +54,8 @@ import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.ThumbSize
 import io.github.yuubiz.hirari.core.ui.LibraryColors
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
+import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.minTouchTarget
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -113,7 +113,7 @@ private val ThumbSize.listCoverWidth get() = when (this) {
 
 @Composable
 private fun GridCell(row: FileRow, covers: CoverLayout, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
-    Column(Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).padding(6.dp)) {
+    Column(Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).padding(6.dp)) {
         Cover(row, covers, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
         Text(
             row.item.entry.name,
@@ -129,11 +129,14 @@ private fun GridCell(row: FileRow, covers: CoverLayout, onOpen: (FileRow) -> Uni
 @Composable
 private fun ListRow(row: FileRow, covers: CoverLayout?, size: ThumbSize, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
-    Row(Modifier.fillMaxWidth().rowPress({ onOpen(row) }, { onLongPress(row) }).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).minTouchTarget().padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (covers != null) {
             Cover(row, covers, Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO))
         } else {
-            Box(Modifier.width(32.dp), contentAlignment = Alignment.Center) { MarkGlyph(row.mark) }
+            Box(Modifier.width(32.dp).decorative(), contentAlignment = Alignment.Center) { MarkGlyph(row.mark) }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -149,7 +152,7 @@ private fun ListRow(row: FileRow, covers: CoverLayout?, size: ThumbSize, onOpen:
 @Composable
 private fun Cover(row: FileRow, covers: CoverLayout, modifier: Modifier) {
     val mark = row.mark
-    Box(modifier) {
+    Box(modifier.decorative()) {
         val ref = remember(row.cover, covers.sizePx) { row.cover?.let { CoverRef(it, covers.sizePx) } }
         CoverBox(ref, covers.covers, row.kindLabel(), Modifier.fillMaxSize(), faded = mark == ReadMark.Read)
         Box(Modifier.align(Alignment.TopStart).padding(4.dp)) { MarkGlyph(mark) }
@@ -177,20 +180,14 @@ private fun MarkGlyph(mark: ReadMark?) {
     val colors = LocalLibraryColors.current
     when (mark) {
         null -> Unit
-        ReadMark.Unread -> {
-            val label = stringResource(R.string.mark_unread)
-            Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape).semantics { contentDescription = label })
-        }
+        ReadMark.Unread -> Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
         is ReadMark.Reading -> Text(
             "${mark.percent}%",
             Modifier.background(MaterialTheme.colorScheme.inverseSurface, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
             color = MaterialTheme.colorScheme.inverseOnSurface,
             fontSize = 10.sp,
         )
-        ReadMark.Read -> {
-            val label = stringResource(R.string.mark_read)
-            Text("✓", Modifier.semantics { contentDescription = label }, color = colors.stateRead, fontSize = 14.sp)
-        }
+        ReadMark.Read -> Text("✓", color = colors.stateRead, fontSize = 14.sp)
     }
 }
 
@@ -223,7 +220,8 @@ private val THUMB_HEIGHT = 48.dp
 @Composable
 private fun FastScroller(rows: Int, first: () -> Int, scrollTo: (Int) -> Unit, modifier: Modifier) {
     if (rows < FAST_SCROLL_MIN_ROWS) return
-    BoxWithConstraints(modifier.width(FAST_SCROLL_WIDTH).fillMaxHeight()) {
+    // A pointer shortcut. A screen reader scrolls the list itself, so the strip stays out of its way.
+    BoxWithConstraints(modifier.width(FAST_SCROLL_WIDTH).fillMaxHeight().decorative()) {
         val density = LocalDensity.current
         val trackPx = constraints.maxHeight.toFloat()
         val thumbPx = with(density) { THUMB_HEIGHT.toPx() }

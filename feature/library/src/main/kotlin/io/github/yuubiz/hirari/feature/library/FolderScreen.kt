@@ -3,7 +3,9 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.annotation.StringRes
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -45,6 +47,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,7 +63,10 @@ import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
+import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
+import io.github.yuubiz.hirari.core.ui.chosen
+import io.github.yuubiz.hirari.core.ui.decorative
 import kotlinx.coroutines.launch
 
 /** What the file list asks of the app. [openAncestor] goes up to the folder at that path of the same place. */
@@ -101,7 +113,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
         topBar = {
             TopAppBar(
                 title = { Breadcrumbs(state.placeName, state.path, actions.openAncestor) },
-                navigationIcon = { TextButton(onClick = actions.close) { Text("←") } },
+                navigationIcon = { GlyphButton("←", stringResource(R.string.nav_back), actions.close) },
                 actions = {
                     TextButton(onClick = {
                         filtering = !filtering
@@ -120,6 +132,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     value = shown.filter,
                     onValueChange = model::setFilter,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    label = { Text(stringResource(R.string.folder_filter)) },
                     placeholder = { Text(stringResource(R.string.folder_filter_hint)) },
                     singleLine = true,
                 )
@@ -168,7 +181,7 @@ private fun Breadcrumbs(placeName: String, path: String, onPick: (String) -> Uni
     Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
         val steps = listOf(placeName to "") + names.mapIndexed { i, name -> name to names.take(i + 1).joinToString("/") }
         steps.forEachIndexed { i, (name, at) ->
-            if (i > 0) Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (i > 0) Text("/", Modifier.decorative(), color = MaterialTheme.colorScheme.onSurfaceVariant)
             val last = i == steps.lastIndex
             TextButton(onClick = { onPick(at) }, enabled = !last) {
                 Text(name, maxLines = 1, fontWeight = if (last) FontWeight.Bold else null)
@@ -181,7 +194,7 @@ private fun Breadcrumbs(placeName: String, path: String, onPick: (String) -> Uni
 private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel) {
     var open by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { open = true }) { Text("⋮") }
+        GlyphButton("⋮", stringResource(R.string.list_menu), { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuHeader(R.string.folder_sort)
             LibrarySort.entries.forEach { sort ->
@@ -192,7 +205,11 @@ private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel) {
             }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.folder_folders_first)) },
-                leadingIcon = { Checkbox(checked = shown.foldersFirst, onCheckedChange = null) },
+                leadingIcon = { Checkbox(checked = shown.foldersFirst, onCheckedChange = null, modifier = Modifier.decorative()) },
+                modifier = Modifier.semantics {
+                    role = Role.Checkbox
+                    toggleableState = ToggleableState(shown.foldersFirst)
+                },
                 onClick = { model.setFoldersFirst(!shown.foldersFirst) },
             )
             HorizontalDivider()
@@ -209,14 +226,20 @@ private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel) {
 
 @Composable
 private fun MenuHeader(@StringRes text: Int) {
-    Text(stringResource(text), Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+    Text(
+        stringResource(text),
+        Modifier.padding(horizontal = 12.dp, vertical = 4.dp).semantics { heading() },
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
 }
 
 @Composable
 private fun Choice(@StringRes label: Int, selected: Boolean, onClick: () -> Unit) {
     DropdownMenuItem(
         text = { Text(stringResource(label), fontWeight = if (selected) FontWeight.Bold else null) },
-        leadingIcon = { Text(if (selected) "✓" else " ") },
+        leadingIcon = { Text(if (selected) "✓" else " ", Modifier.decorative()) },
+        modifier = Modifier.chosen(selected),
         onClick = onClick,
     )
 }
@@ -224,7 +247,8 @@ private fun Choice(@StringRes label: Int, selected: Boolean, onClick: () -> Unit
 @Composable
 private fun SlowLoading(onCancel: () -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        CircularProgressIndicator()
+        val loading = stringResource(R.string.loading)
+        CircularProgressIndicator(Modifier.semantics { contentDescription = loading })
         OutlinedButton(onClick = onCancel, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.cancel)) }
     }
 }
@@ -247,11 +271,11 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-private enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover }
+internal enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
-private fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, onAction: (SheetAction) -> Unit) {
+internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, onAction: (SheetAction) -> Unit) {
     val actions = buildList {
         add(SheetAction.Open to R.string.sheet_open)
         if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
@@ -267,18 +291,38 @@ private fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Bool
         if (row.cover != null) add(SheetAction.Remake to R.string.sheet_remake)
         if (hasShortcut) add(SheetAction.Shortcut to R.string.sheet_shortcut)
     }
-    Column(Modifier.padding(bottom = 24.dp)) {
-        Text(row.item.entry.name, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    SheetActions(row.item.entry.name) {
         actions.forEach { (action, label) ->
             ListItem(
                 headlineContent = { Text(stringResource(label)) },
-                modifier = Modifier.combinedClickable(onClick = { onAction(action) }),
+                modifier = Modifier.clickable(role = Role.Button) { onAction(action) },
             )
         }
     }
 }
 
-/** The pressed background of docs/spec.md section 4.3; focus and Enter come with the click (方向キー). */
+/**
+ * What a long press opens: a title, then the actions. The column scrolls, so the actions stay reachable at a large
+ * font and in a short window (docs/spec.md section 6.7).
+ */
+@Composable
+internal fun SheetActions(title: String, actions: @Composable () -> Unit) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        Text(
+            title,
+            Modifier.padding(horizontal = 24.dp, vertical = 8.dp).semantics { heading() },
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        actions()
+    }
+}
+
+/**
+ * The pressed background of docs/spec.md section 4.3; focus and Enter come with the click (方向キー). A screen reader
+ * lists the long press as an action named メニューを開く.
+ */
 @Composable
 internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: () -> Unit): Modifier {
     val interaction = remember { MutableInteractionSource() }
@@ -286,5 +330,11 @@ internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: () -> Unit): Mo
     val colors = LocalLibraryColors.current
     return this
         .then(if (pressed) Modifier.background(colors.itemPressed) else Modifier)
-        .combinedClickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick, onLongClick = onLongClick)
+        .combinedClickable(
+            interactionSource = interaction,
+            indication = LocalIndication.current,
+            onLongClickLabel = stringResource(R.string.row_menu),
+            onClick = onClick,
+            onLongClick = onLongClick,
+        )
 }

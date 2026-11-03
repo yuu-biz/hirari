@@ -19,6 +19,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.BookmarkGroup
@@ -30,7 +34,7 @@ internal fun BookmarksTabContent(tab: BookmarksTab, home: HomeViewModel, actions
     var renaming by remember { mutableStateOf<Bookmark?>(null) }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.padding(horizontal = 8.dp)) {
-            ChoiceMenu(tab.sort, BookmarkSort.entries, { stringResource(it.label()) }, home::setBookmarkSort)
+            ChoiceMenu(stringResource(R.string.sort_label), tab.sort, BookmarkSort.entries, { stringResource(it.label()) }, home::setBookmarkSort)
         }
         if (tab.groups.isEmpty()) {
             EmptyNote(R.string.home_empty_bookmarks)
@@ -55,7 +59,7 @@ internal fun BookmarksTabContent(tab: BookmarksTab, home: HomeViewModel, actions
 
 @Composable
 private fun GroupHeader(group: BookmarkGroup) {
-    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)) {
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp).semantics(mergeDescendants = true) { heading() }) {
         Text(
             group.info?.title ?: stringResource(R.string.book_not_indexed),
             style = MaterialTheme.typography.titleSmall,
@@ -70,13 +74,29 @@ private fun GroupHeader(group: BookmarkGroup) {
 @Composable
 private fun BookmarkRow(group: BookmarkGroup, mark: Bookmark, home: HomeViewModel, actions: HomeActions, onRename: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
+    val rename = stringResource(R.string.bookmark_rename)
+    val delete = stringResource(R.string.bookmark_delete)
     Box {
         ListItem(
             headlineContent = { Text(mark.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            modifier = Modifier.combinedClickable(
-                onClick = { home.request(group, mark.position)?.let(actions::open) },
-                onLongClick = { menu = true },
-            ),
+            modifier = Modifier
+                .combinedClickable(
+                    onLongClickLabel = stringResource(R.string.row_menu),
+                    onClick = { home.request(group, mark.position)?.let(actions::open) },
+                    onLongClick = { menu = true },
+                )
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction(rename) {
+                            onRename()
+                            true
+                        },
+                        CustomAccessibilityAction(delete) {
+                            home.deleteBookmark(mark.id)
+                            true
+                        },
+                    )
+                },
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.bookmark_rename)) }, onClick = {

@@ -29,6 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.HistoryItem
@@ -39,7 +43,7 @@ internal fun HistoryTabContent(tab: HistoryTab, home: HomeViewModel, actions: Ho
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            ChoiceMenu(tab.sort, HistorySort.entries, { stringResource(it.label()) }, home::setHistorySort)
+            ChoiceMenu(stringResource(R.string.sort_label), tab.sort, HistorySort.entries, { stringResource(it.label()) }, home::setHistorySort)
             TextButton(onClick = { confirmClear = true }, enabled = tab.items.isNotEmpty()) { Text(stringResource(R.string.history_clear)) }
         }
         if (tab.items.isEmpty()) {
@@ -72,6 +76,7 @@ internal fun HistoryTabContent(tab: HistoryTab, home: HomeViewModel, actions: Ho
 private fun HistoryRow(item: HistoryItem, covers: CoverLayout, cover: CoverSpec.Book?, home: HomeViewModel, actions: HomeActions) {
     val swipe = rememberSwipeToDismissBoxState()
     var menu by remember { mutableStateOf(false) }
+    val remove = stringResource(R.string.history_remove)
     SwipeToDismissBox(
         state = swipe,
         backgroundContent = { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer)) },
@@ -85,12 +90,26 @@ private fun HistoryRow(item: HistoryItem, covers: CoverLayout, cover: CoverSpec.
                 },
                 supportingContent = {
                     val percent = item.progress?.let { "${it.percent()}%" }
-                    Text(listOfNotNull(item.location?.displayName, percent).joinToString(" · "))
+                    val spoken = item.progress?.let { stringResource(R.string.mark_reading_percent, it.percent()) }
+                    Text(
+                        listOfNotNull(item.location?.displayName, percent).joinToString(" · "),
+                        Modifier.semantics { contentDescription = listOfNotNull(item.location?.displayName, spoken).joinToString("、") },
+                    )
                 },
-                modifier = Modifier.combinedClickable(
-                    onClick = { home.request(item.book)?.let(actions::open) },
-                    onLongClick = { menu = true },
-                ),
+                modifier = Modifier
+                    .combinedClickable(
+                        onLongClickLabel = stringResource(R.string.row_menu),
+                        onClick = { home.request(item.book)?.let(actions::open) },
+                        onLongClick = { menu = true },
+                    )
+                    .semantics {
+                        customActions = listOf(
+                            CustomAccessibilityAction(remove) {
+                                home.removeFromHistory(item.entry.book)
+                                true
+                            },
+                        )
+                    },
             )
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text(stringResource(R.string.open_folder)) }, onClick = {

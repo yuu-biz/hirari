@@ -19,6 +19,9 @@ enum class Grip(val left: Boolean = false, val right: Boolean = false, val top: 
     BottomRight(right = true, bottom = true),
 }
 
+/** What a screen reader's action does to the frame in place of a drag. */
+enum class FrameStep { Left, Right, Up, Down, Larger, Smaller }
+
 /**
  * The frame on the page while a range is chosen, as fractions of the page's width and height. A drag works on the
  * frame the finger took hold of and the whole distance since, so the frame follows the finger however it is
@@ -72,10 +75,23 @@ data class CropFrame(val left: Float, val top: Float, val right: Float, val bott
         }
     }
 
+    /** The frame after [step], for a user who cannot drag it (docs/spec.md section 6.7). A step stops at the page and at [MIN]. */
+    fun stepped(step: FrameStep): CropFrame = when (step) {
+        FrameStep.Left -> moved(-STEP, 0f)
+        FrameStep.Right -> moved(STEP, 0f)
+        FrameStep.Up -> moved(0f, -STEP)
+        FrameStep.Down -> moved(0f, STEP)
+        FrameStep.Larger -> resized(Grip.TopLeft, -STEP, -STEP).resized(Grip.BottomRight, STEP, STEP)
+        FrameStep.Smaller -> resized(Grip.TopLeft, STEP, STEP).resized(Grip.BottomRight, -STEP, -STEP)
+    }
+
     fun toCrop(): CoverCrop = CoverCrop.ofFractions(left, top, right, bottom)
 
     companion object {
         const val MIN = CoverCrop.MIN_SIDE.toFloat() / CoverCrop.SCALE
+
+        /** How far a [FrameStep] moves an edge, as a fraction of the page. */
+        const val STEP = 0.05f
 
         val Whole = CropFrame(0f, 0f, 1f, 1f)
 
