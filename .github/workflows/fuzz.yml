@@ -77,6 +77,12 @@ jobs:
       - name: Build the APKs and the corpus
         id: build
         run: ./gradlew :core:image:assembleDebugAndroidTest :app:assembleDebug :tools:corpus:generateCorpus -Pandroid.injected.build.abi=x86_64
+      # The runner image leaves about 5.6 GB free, less than the emulator's default 7.4 GB data partition. These
+      # toolchains are not used by this job.
+      - name: Free disk space for the emulator
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /usr/local/lib/node_modules /opt/hostedtoolcache/CodeQL
+          df -h /
       # The emulator needs KVM, which the runner allows to every user only after this rule.
       - name: Enable KVM
         run: |
@@ -92,6 +98,7 @@ jobs:
           target: default
           cores: 4
           ram-size: 3072M
+          disk-size: 4096M
           disable-animations: true
           script: bash tools/fuzz/ci-device.sh
       # Runs after a failure of the device step, which does not prevent the host fuzz, but not after a failure of the
