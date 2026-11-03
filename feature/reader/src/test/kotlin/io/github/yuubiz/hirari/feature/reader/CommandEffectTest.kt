@@ -6,7 +6,9 @@ import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.StopOrder
 import kotlin.test.Test
@@ -38,6 +40,20 @@ class CommandEffectTest {
         assertEquals(ScaleMode.FitWidth, config.scaleMode)
         assertEquals(settings.layoutMode, config.layout.mode)
         assertEquals(listOf(ReaderCommand.Gutter), config.commandBarItems)
+    }
+
+    @Test
+    fun theLayoutScaleAndDirectionChosenInTheReaderAreKeptForTheBook() {
+        val global = ReaderConfig()
+        val changed = global.configured(ReaderCommand.Direction).configured(ReaderCommand.Layout).configured(ReaderCommand.ScaleMode)
+        val kept = BookOverrides(rotation = Rotation.Quarter).changedBy(global, changed, global)
+        assertEquals(
+            BookOverrides(direction = ReadingDirection.LeftToRight, layoutMode = changed.layout.mode, scaleMode = changed.scaleMode, rotation = Rotation.Quarter),
+            kept,
+        )
+        val back = changed.copy(layout = changed.layout.copy(direction = global.direction))
+        assertEquals(kept.copy(direction = null), kept.changedBy(changed, back, global))
+        assertEquals(kept, kept.changedBy(changed, changed.copy(orientation = ReaderOrientation.Landscape), global))
     }
 
     @Test

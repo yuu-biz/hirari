@@ -98,15 +98,22 @@ data class ReaderConfig(
 }
 
 /**
- * These overrides with what the reader changed from [before] to [after] that 2.9 of docs/spec.md keeps for the
- * book: the rotation, 画像補正, and 余白トリミング. A value changed back to what [global] has is stored as no
- * override, so the book follows the global setting again.
+ * These overrides with what the reader changed from [before] to [after], which 2.9 of docs/spec.md keeps for the
+ * book: 綴じ方向, 組み方, 表紙の単独表示, 拡大モード, 余白トリミング, the rotation, and 画像補正. A value changed back
+ * to what [global] has is stored as no override, so the book follows the global setting again. A value the change
+ * left alone keeps its override.
  */
 fun BookOverrides.changedBy(before: ReaderConfig, after: ReaderConfig, global: ReaderConfig): BookOverrides = copy(
-    rotation = if (after.rotation == before.rotation) rotation else after.rotation.takeUnless { it == global.rotation },
-    adjust = if (after.adjust == before.adjust) adjust else after.adjust.takeUnless { it == global.adjust },
-    trim = if (after.trim == before.trim) trim else after.trim.takeUnless { it == global.trim },
+    direction = direction.changed(before.direction, after.direction, global.direction),
+    layoutMode = layoutMode.changed(before.layout.mode, after.layout.mode, global.layout.mode),
+    coverAlone = coverAlone.changed(before.layout.coverAlone, after.layout.coverAlone, global.layout.coverAlone),
+    scaleMode = scaleMode.changed(before.scaleMode, after.scaleMode, global.scaleMode),
+    rotation = rotation.changed(before.rotation, after.rotation, global.rotation),
+    adjust = adjust.changed(before.adjust, after.adjust, global.adjust),
+    trim = trim.changed(before.trim, after.trim, global.trim),
 )
+
+private fun <T : Any> T?.changed(before: T, after: T, global: T): T? = if (after == before) this else after.takeUnless { it == global }
 
 /** The global `adjust*` settings as one value. */
 val GlobalSettings.adjust: ImageAdjust
