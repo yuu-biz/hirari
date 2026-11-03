@@ -690,11 +690,10 @@ class ReaderViewModel(
     private fun followSettings(settings: GlobalSettings) {
         val book = opened ?: return
         if (settings == book.settings) return
-        val before = book.global
         book.settings = settings
         book.global = ReaderConfig.of(settings)
-        val current = state ?: return run { book.config = book.config.following(before, settings, book.overrides.current) }
-        dispatch(ReaderEvent.ConfigChanged(current.config.following(before, settings, book.overrides.current)))
+        val current = state ?: return run { book.config = book.config.following(settings, book.overrides.current) }
+        dispatch(ReaderEvent.ConfigChanged(current.config.following(settings, book.overrides.current)))
     }
 
     /**

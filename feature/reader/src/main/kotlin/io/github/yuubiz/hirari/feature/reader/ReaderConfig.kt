@@ -58,6 +58,11 @@ data class ReaderConfig(
     val turnHaptics: Boolean = false,
     /** 画面の明るさ in percent, or `null` to follow the device. */
     val brightness: Int? = null,
+    /**
+     * What the command bar switched in this session, which a change of the global settings leaves as it is.
+     * [SessionSwitch.MirrorControls] is in it while 操作の反転 is flipped from the global setting.
+     */
+    val switched: Set<SessionSwitch> = emptySet(),
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -102,16 +107,20 @@ data class ReaderConfig(
 
 /**
  * This reader's setup once the global settings became [settings] while it is open, for a book with [overrides]
- * (docs/spec.md section 4.8, メニュー). What the session switched for itself, 画面の向き, 操作の反転, and 綴じ目の表示,
- * stays switched; every other value is what [settings] and [overrides] give. [global] is what the global settings
- * gave before the change.
+ * (docs/spec.md section 4.8, メニュー). What the session switched for itself, 画面の向き, 操作の反転, 綴じ目の表示, and
+ * 停止点の順序 ([ReaderConfig.switched]), stays switched, even when the global setting now holds the same value. 操作の
+ * 反転 stays flipped from the global setting, whatever that becomes. Every other value is what [settings] and
+ * [overrides] give.
  */
-fun ReaderConfig.following(global: ReaderConfig, settings: GlobalSettings, overrides: BookOverrides): ReaderConfig {
+fun ReaderConfig.following(settings: GlobalSettings, overrides: BookOverrides): ReaderConfig {
     val next = ReaderConfig.of(settings, overrides)
+    fun <T> kept(switch: SessionSwitch, session: T, global: T): T = if (switch in switched) session else global
     return next.copy(
-        orientation = if (orientation != global.orientation) orientation else next.orientation,
-        tapZones = next.tapZones.copy(mirrored = next.mirrored != (mirrored != global.mirrored)),
-        gutter = if (gutter != global.gutter) gutter else next.gutter,
+        orientation = kept(SessionSwitch.Orientation, orientation, next.orientation),
+        tapZones = next.tapZones.copy(mirrored = next.mirrored != (SessionSwitch.MirrorControls in switched)),
+        gutter = kept(SessionSwitch.Gutter, gutter, next.gutter),
+        stopOrder = kept(SessionSwitch.StopOrder, stopOrder, next.stopOrder),
+        switched = switched,
     )
 }
 
@@ -136,6 +145,9 @@ private fun <T : Any> T?.changed(before: T, after: T, global: T): T? = if (after
 /** The global `adjust*` settings as one value. */
 val GlobalSettings.adjust: ImageAdjust
     get() = ImageAdjust(adjustLevel.coerceIn(GlobalSettings.ADJUST_LEVEL), adjustSharpen, adjustMono, adjustNegative)
+
+/** A value the command bar switches for this book's reading session only (docs/spec.md section 2.9), and never stores. */
+enum class SessionSwitch { Orientation, MirrorControls, Gutter, StopOrder }
 
 /** 綴じ目の表示 (docs/spec.md section 4.8, 見開き). [Shadow] darkens the bound edge of each page of a pair. */
 enum class Gutter { None, Gap, Shadow }

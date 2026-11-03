@@ -80,11 +80,13 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.Direction -> CommandEffect.Configure(
         copy(layout = layout.copy(direction = if (direction == ReadingDirection.RightToLeft) ReadingDirection.LeftToRight else ReadingDirection.RightToLeft)),
     )
-    ReaderCommand.MirrorControls -> CommandEffect.Configure(copy(tapZones = tapZones.copy(mirrored = !mirrored)))
-    ReaderCommand.StopOrder -> CommandEffect.Configure(copy(stopOrder = if (stopOrder == StopOrder.RowsFirst) StopOrder.ColumnsFirst else StopOrder.RowsFirst))
-    ReaderCommand.Gutter -> CommandEffect.Configure(copy(gutter = gutter.next()))
+    ReaderCommand.MirrorControls -> CommandEffect.Configure(copy(tapZones = tapZones.copy(mirrored = !mirrored), switched = switched.flipped(SessionSwitch.MirrorControls)))
+    ReaderCommand.StopOrder -> CommandEffect.Configure(
+        copy(stopOrder = if (stopOrder == StopOrder.RowsFirst) StopOrder.ColumnsFirst else StopOrder.RowsFirst, switched = switched + SessionSwitch.StopOrder),
+    )
+    ReaderCommand.Gutter -> CommandEffect.Configure(copy(gutter = gutter.next(), switched = switched + SessionSwitch.Gutter))
     ReaderCommand.ShiftPairing -> CommandEffect.ShiftForward
-    ReaderCommand.Orientation -> CommandEffect.Configure(copy(orientation = orientation.next()))
+    ReaderCommand.Orientation -> CommandEffect.Configure(copy(orientation = orientation.next(), switched = switched + SessionSwitch.Orientation))
     ReaderCommand.Rotate -> CommandEffect.Configure(copy(rotation = rotation.next()))
     ReaderCommand.Trim -> CommandEffect.Configure(copy(trim = trim.next()))
     ReaderCommand.ImageAdjust -> CommandEffect.Show(ReaderSheet.Adjust)
@@ -99,6 +101,8 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.Settings -> CommandEffect.OpenSettings(SettingsTarget.Settings)
     ReaderCommand.EditCommandBar -> CommandEffect.OpenSettings(SettingsTarget.CommandBar)
 }
+
+private fun Set<SessionSwitch>.flipped(switch: SessionSwitch): Set<SessionSwitch> = if (switch in this) this - switch else this + switch
 
 private inline fun <reified E : Enum<E>> E.next(): E = enumValues<E>().let { it[(ordinal + 1) % it.size] }
 

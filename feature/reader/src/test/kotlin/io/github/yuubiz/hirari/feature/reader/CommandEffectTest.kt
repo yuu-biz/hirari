@@ -84,14 +84,55 @@ class CommandEffectTest {
         val overrides = BookOverrides(scaleMode = ScaleMode.FitWidth)
         val session = ReaderConfig.of(before, overrides).configured(ReaderCommand.MirrorControls).configured(ReaderCommand.Orientation)
         val after = before.copy(commandBarItems = listOf(ReaderCommand.Gutter), scaleMode = ScaleMode.Original, layoutMode = LayoutMode.Single, mirrorControls = true)
-        val followed = session.following(global, after, overrides)
+        val followed = session.following(after, overrides)
         assertEquals(listOf(ReaderCommand.Gutter), followed.commandBarItems)
         assertEquals(LayoutMode.Single, followed.layout.mode)
         assertEquals(ScaleMode.FitWidth, followed.scaleMode)
         assertEquals(session.orientation, followed.orientation)
         assertEquals(false, followed.mirrored)
-        val untouched = ReaderConfig.of(before, overrides).following(global, after, overrides)
+        val untouched = ReaderConfig.of(before, overrides).following(after, overrides)
         assertEquals(ReaderConfig.of(after, overrides), untouched)
+    }
+
+    @Test
+    fun aSwitchOfTheSessionSurvivesAChangeOfTheSettingsThatMadeTheGlobalValueTheSame() {
+        val start = GlobalSettings()
+        val session = ReaderConfig.of(start).configured(ReaderCommand.Orientation).configured(ReaderCommand.StopOrder).configured(ReaderCommand.Gutter)
+        assertEquals(ReaderOrientation.Portrait, session.orientation)
+        val same = start.copy(readerOrientation = ReaderOrientation.Portrait, stopOrder = StopOrder.ColumnsFirst)
+        val matching = session.following(same, BookOverrides())
+        assertEquals(ReaderOrientation.Portrait, matching.orientation)
+        val other = same.copy(readerOrientation = ReaderOrientation.Landscape, stopOrder = StopOrder.RowsFirst)
+        val followed = matching.following(other, BookOverrides())
+        assertEquals(ReaderOrientation.Portrait, followed.orientation)
+        assertEquals(StopOrder.ColumnsFirst, followed.stopOrder)
+        assertEquals(Gutter.Shadow, followed.gutter)
+    }
+
+    @Test
+    fun theMirrorFlippedInTheSessionStaysFlippedFromTheGlobalSettingAndFlippingAgainUndoesIt() {
+        val start = GlobalSettings()
+        val flipped = ReaderConfig.of(start).configured(ReaderCommand.MirrorControls)
+        assertEquals(true, flipped.mirrored)
+        val globalOn = flipped.following(start.copy(mirrorControls = true), BookOverrides())
+        assertEquals(false, globalOn.mirrored)
+        val globalOff = globalOn.following(start, BookOverrides())
+        assertEquals(true, globalOff.mirrored)
+        val flippedBack = globalOff.configured(ReaderCommand.MirrorControls)
+        assertEquals(false, flippedBack.mirrored)
+        assertEquals(true, flippedBack.following(start.copy(mirrorControls = true), BookOverrides()).mirrored)
+    }
+
+    @Test
+    fun theStopOrderSwitchedInTheSessionStaysAcrossAChangeOfTheSettings() {
+        val before = GlobalSettings()
+        val global = ReaderConfig.of(before)
+        val session = global.configured(ReaderCommand.StopOrder)
+        val followed = session.following(before.copy(stopMaxStepPercent = 20), BookOverrides())
+        assertEquals(StopOrder.ColumnsFirst, followed.stopOrder)
+        assertEquals(0.2f, followed.stopMaxStep)
+        val untouched = global.following(before.copy(stopOrder = StopOrder.ColumnsFirst), BookOverrides())
+        assertEquals(StopOrder.ColumnsFirst, untouched.stopOrder)
     }
 
     @Test
