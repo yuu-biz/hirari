@@ -35,7 +35,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -153,13 +152,12 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
         Column(Modifier.padding(padding).fillMaxSize()) {
             val shown = state.content as? FolderContent.Shown
             if (filtering && shown != null) {
-                OutlinedTextField(
+                FilterField(
                     value = shown.filter,
                     onValueChange = model::setFilter,
+                    label = stringResource(R.string.folder_filter),
+                    placeholder = stringResource(R.string.folder_filter_hint),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    label = { Text(stringResource(R.string.folder_filter)) },
-                    placeholder = { Text(stringResource(R.string.folder_filter_hint)) },
-                    singleLine = true,
                 )
             }
             when (val content = state.content) {
