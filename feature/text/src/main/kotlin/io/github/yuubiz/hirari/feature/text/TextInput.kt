@@ -80,6 +80,28 @@ internal fun pageBarJump(page: Int, atEdge: Boolean, run: PageRun): PageBarJump 
     else -> PageBarJump.Page(run.start(page))
 }
 
+/**
+ * The jump a release at [up] makes on the page bar, from [before] the release and the [effect] the shared rules gave
+ * it. Those rules make nothing of a slide that ends on the page it began on, which at an edge of the bar can still be
+ * the first or last page of the text when [run] has not reached it.
+ */
+internal fun PageBar.releaseJump(before: PageBarState, up: PageBarEvent.Up, effect: PageBarEffect?, run: PageRun): PageBarJump? {
+    val dragging = before as? PageBarState.Dragging ?: return null
+    val atEdge = pickedEdge(up.point.x, dragging.armedEdges) != null
+    return when (effect) {
+        is PageBarEffect.GoTo -> pageBarJump(effect.page, atEdge, run)
+        PageBarEffect.OpenPagePanel -> null
+        null -> {
+            val last = reduce(before, PageBarEvent.Move(up.point)).state as? PageBarState.Dragging
+            if (last == null || !last.moved || last.cancelled || !atEdge) {
+                null
+            } else {
+                pageBarJump(last.preview, atEdge = true, run).takeUnless { it is PageBarJump.Page }
+            }
+        }
+    }
+}
+
 /** The index in [later] of [page] of [pressed], the run the page bar was pressed on: the pages are told apart by where they start. */
 internal fun pageInLaterRun(pressed: PageRun, page: Int, later: PageRun): Int =
     later.indexOf(pressed.start(page.coerceIn(0, pressed.lastIndex)))
@@ -178,18 +200,16 @@ internal class TextInput(
             direction = TEXT_DIRECTION,
             touchSlop = slop,
         )
-        fun step(event: PageBarEvent, atEdge: Boolean = false) {
-            val step = bar.reduce(touch.pageBar, event)
+        fun step(event: PageBarEvent) {
+            val before = touch.pageBar
+            val step = bar.reduce(before, event)
             touch.pageBar = step.state
-            when (val effect = step.effect) {
-                is PageBarEffect.GoTo -> {
-                    when (val jump = pageBarJump(effect.page, atEdge, run)) {
-                        is PageBarJump.Page -> viewModel.jumpTo(jump.offset)
-                        PageBarJump.First -> viewModel.first()
-                        PageBarJump.Last -> viewModel.last()
-                    }
-                }
-                PageBarEffect.OpenPagePanel -> onPanel(TextPanel.PageJump)
+            if (step.effect == PageBarEffect.OpenPagePanel) onPanel(TextPanel.PageJump)
+            val jump = (event as? PageBarEvent.Up)?.let { bar.releaseJump(before, it, step.effect, run) }
+            when (jump) {
+                is PageBarJump.Page -> viewModel.jumpTo(jump.offset)
+                PageBarJump.First -> viewModel.first()
+                PageBarJump.Last -> viewModel.last()
                 null -> Unit
             }
         }
@@ -209,9 +229,7 @@ internal class TextInput(
             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
             change.consume()
             if (!change.pressed) {
-                val at = change.position.dp(density)
-                val armed = (touch.pageBar as? PageBarState.Dragging)?.armedEdges.orEmpty()
-                step(PageBarEvent.Up(at), atEdge = bar.pickedEdge(at.x, armed) != null)
+                step(PageBarEvent.Up(change.position.dp(density)))
                 return
             }
             step(PageBarEvent.Move(change.position.dp(density)))
