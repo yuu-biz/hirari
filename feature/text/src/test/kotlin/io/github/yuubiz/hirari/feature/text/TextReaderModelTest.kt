@@ -464,6 +464,27 @@ class TextReaderModelTest {
         assertEquals(emptyList(), edges)
         assertEquals(laidOut.lastIndex + 1, model.reading.current)
     }
+
+    @Test
+    fun `a turn asked for before the first layout lands runs when it does`() = runTest {
+        settings.value = settings.value.copy(textSizeSp = 28)
+        val pump = HandPump()
+        val model = model(text = sampleText(chapters = 1, sentencesPerChapter = 60), work = pump)
+        assertEquals(TurnResult.Waiting, model.turn(1))
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        assertEquals(1, model.reading.current)
+    }
+
+    @Test
+    fun `of the turns asked for before the first layout lands only the latest runs`() = runTest {
+        settings.value = settings.value.copy(textSizeSp = 28)
+        val pump = HandPump()
+        val model = model(text = sampleText(chapters = 1, sentencesPerChapter = 60), work = pump)
+        assertEquals(TurnResult.Waiting, model.turn(1))
+        assertEquals(TurnResult.Waiting, model.turn(2))
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        assertEquals(2, model.reading.current)
+    }
 }
 
 /** A dispatcher that runs what it is given only when the test says, one piece at a time, so a test can act between the layout's steps. */

@@ -260,7 +260,7 @@ internal class TextReaderModel(
      * turn past either end of the text moves nothing and says which end it ran into.
      */
     fun turn(views: Int): TurnResult {
-        val run = run ?: return TurnResult.Waiting
+        val run = run ?: return TurnResult.Waiting.also { pendingTurn = views }
         val perView = frame?.pagesPerView ?: 1
         val index = run.indexOf(anchor)
         val target = index + views * perView
