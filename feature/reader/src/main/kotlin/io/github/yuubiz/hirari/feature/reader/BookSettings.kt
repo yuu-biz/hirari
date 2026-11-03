@@ -11,6 +11,12 @@ import io.github.yuubiz.hirari.core.model.BookOverrides
 fun ReaderConfig.withBookValues(from: ReaderConfig): ReaderConfig =
     copy(layout = from.layout, scaleMode = from.scaleMode, trim = from.trim, rotation = from.rotation, adjust = from.adjust)
 
+/**
+ * Whether 表紙の単独表示, 拡大モード, and 余白トリミング change what this reader shows. 縦に連続 ignores them (docs/spec.md
+ * section 4.8), so 本ごとの設定 shows them disabled and keeps their values for the other layouts.
+ */
+val ReaderConfig.pageFitApplies: Boolean get() = !vertical
+
 /** 既定にする: these settings with the values of [config] that have a global setting. The rotation has none, so it stays the book's. */
 fun GlobalSettings.adopting(config: ReaderConfig): GlobalSettings = copy(
     readingDirection = config.direction,

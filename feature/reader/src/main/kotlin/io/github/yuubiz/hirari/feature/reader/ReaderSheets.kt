@@ -599,16 +599,16 @@ internal fun SharePickSheet(view: PageView.Two, direction: ReadingDirection, tit
 }
 
 @Composable
-internal fun SwitchRow(label: Int, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(label: Int, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
             .minTouchTarget()
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(stringResource(label), color = SheetText, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = null)
+        Text(stringResource(label), color = if (enabled) SheetText else SheetDisabled, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }

@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
+import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
@@ -72,5 +73,13 @@ class BookSettingsTest {
         assertEquals(0.01f, windowBrightness(0))
         assertEquals(1f, windowBrightness(100))
         assertEquals(30, ReaderConfig.of(settings.copy(readerBrightness = 30)).brightness)
+    }
+
+    @Test
+    fun theStripTakesNoCoverAloneScaleModeOrTrimSoTheSheetOffersThemOnlyForTheOtherLayouts() {
+        for (mode in LayoutMode.entries) {
+            val config = ReaderConfig(layout = LayoutSettings(mode, ReadingDirection.RightToLeft, coverAlone = true))
+            assertEquals(mode != LayoutMode.Vertical, config.pageFitApplies, "$mode")
+        }
     }
 }

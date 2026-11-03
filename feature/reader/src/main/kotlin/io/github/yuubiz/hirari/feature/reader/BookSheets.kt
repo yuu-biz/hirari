@@ -161,9 +161,10 @@ internal fun BookSettingsSheet(
     BottomPanel(stringResource(R.string.command_book_settings), onClose) {
         OptionRow(R.string.command_direction, ReadingDirection.entries, config.direction, { it.label }) { set(config.copy(layout = config.layout.copy(direction = it))) }
         OptionRow(R.string.command_layout, LayoutMode.entries, config.layout.mode, { it.label }) { set(config.copy(layout = config.layout.copy(mode = it))) }
-        SwitchRow(R.string.book_cover_alone, config.layout.coverAlone) { set(config.copy(layout = config.layout.copy(coverAlone = it))) }
-        OptionRow(R.string.command_scale_mode, ScaleMode.entries, config.scaleMode, { it.label }) { set(config.copy(scaleMode = it)) }
-        OptionRow(R.string.command_trim, TrimStrength.entries, config.trim, { it.label }) { set(config.copy(trim = it)) }
+        val fit = config.pageFitApplies
+        SwitchRow(R.string.book_cover_alone, config.layout.coverAlone, enabled = fit) { set(config.copy(layout = config.layout.copy(coverAlone = it))) }
+        OptionRow(R.string.command_scale_mode, ScaleMode.entries, config.scaleMode, { it.label }, enabled = fit) { set(config.copy(scaleMode = it)) }
+        OptionRow(R.string.command_trim, TrimStrength.entries, config.trim, { it.label }, enabled = fit) { set(config.copy(trim = it)) }
         OptionRow(R.string.command_rotate, Rotation.entries, config.rotation, { R.string.rotation_degrees }, { arrayOf(it.degrees) }) { set(config.copy(rotation = it)) }
         SwitchRow(R.string.command_reverse_order, viewModel.reversed) { reversed -> onEffect(viewModel.reorder { it.reversedTo(reversed) }) }
         if (viewModel.namesHaveCharset) {
@@ -211,23 +212,34 @@ private fun SectionTitle(label: Int) {
 /** One choice among [options], each a chip a screen reader reads as a radio button. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun <T> OptionRow(label: Int, options: List<T>, selected: T, name: (T) -> Int, args: (T) -> Array<Any> = { emptyArray() }, onSelect: (T) -> Unit) {
+private fun <T> OptionRow(
+    label: Int,
+    options: List<T>,
+    selected: T,
+    name: (T) -> Int,
+    args: (T) -> Array<Any> = { emptyArray() },
+    enabled: Boolean = true,
+    onSelect: (T) -> Unit,
+) {
     SectionTitle(label)
     FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for (option in options) {
-            Chip(stringResource(name(option), *args(option)), on = option == selected) { onSelect(option) }
+            Chip(stringResource(name(option), *args(option)), on = option == selected, enabled = enabled) { onSelect(option) }
         }
     }
 }
 
 /** A choice read by a screen reader as a radio button, with a touch target of 48 dp. */
 @Composable
-private fun Chip(text: String, on: Boolean, onSelect: () -> Unit) {
+private fun Chip(text: String, on: Boolean, enabled: Boolean = true, onSelect: () -> Unit) {
     val shape = RoundedCornerShape(8.dp)
-    Box(Modifier.selectable(selected = on, role = Role.RadioButton, onClick = onSelect).sizeIn(minWidth = 48.dp, minHeight = 48.dp), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.selectable(selected = on, enabled = enabled, role = Role.RadioButton, onClick = onSelect).sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
             text,
-            color = SheetText,
+            color = if (enabled) SheetText else SheetDisabled,
             modifier = Modifier
                 .background(if (on) SelectedChip else Color.Transparent, shape)
                 .border(1.dp, if (on) SheetText else SheetDisabled, shape)
