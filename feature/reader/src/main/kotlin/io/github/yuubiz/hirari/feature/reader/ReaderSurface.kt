@@ -128,7 +128,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         for (tick in viewModel.turnHaptics) view.performTurnHaptic()
     }
 
-    LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move, state.edgeHit) {
+    LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move, state.edgeHit, state.scroll?.motion) {
         if (!state.animating) return@LaunchedEffect
         while (true) {
             val now = withFrameMillis { it }
@@ -159,8 +159,22 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
     ) {
         viewModel.prepared
         val now = if (state.animating) frameMs else Long.MAX_VALUE
-        for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
+        if (state.scroll != null) drawStrip(viewModel, state, colorFilter) else for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
         state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter) }
+    }
+
+    for ((page, rect) in state.stripPages()) {
+        val result = errorOf(viewModel, PageView.One(page), 0, page) ?: continue
+        key(page) {
+            ErrorCard(
+                result = result,
+                name = viewModel.pageNames.getOrNull(page).orEmpty(),
+                modifier = Modifier
+                    .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
+                    .requiredSize(with(LocalDensity.current) { rect.width.toDp() }, with(LocalDensity.current) { rect.height.toDp() }),
+                onRetry = { viewModel.retry(page) },
+            )
+        }
     }
 
     val rest = if (state.transition == null && state.pull == null) state.positionAt(Long.MAX_VALUE) else null
@@ -232,7 +246,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
 
 /** Whether a frame moves something, so the frames tick. */
 private val ReaderState.animating: Boolean
-    get() = transition != null || stopTravel != null || loupe?.move != null || edgeHit != null
+    get() = transition != null || stopTravel != null || loupe?.move != null || edgeHit != null || scroll?.motion != null
 
 /**
  * 取得の状況 under the progress indicator for a book on a server (docs/spec.md section 4.8): where the view's data
@@ -274,19 +288,20 @@ private fun errorOf(viewModel: ReaderViewModel, view: PageView, index: Int, page
  * at its own size in place of its prepared pixels once that has arrived.
  */
 private fun DrawScope.drawLoupe(viewModel: ReaderViewModel, state: ReaderState, view: LoupeView, nowMs: Long, colorFilter: ColorFilter?) {
-    val position = state.positionAt(nowMs) ?: return
+    val position = state.positionAt(nowMs)
+    if (position == null && state.scroll == null) return
     val rect = view.rect
     val topLeft = Offset(rect.left, rect.top)
     val size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
     val m = view.magnification
-    val detail = viewModel.loupeDetail?.takeIf { it.source.view == state.current }
+    val detail = viewModel.loupeDetail?.takeIf { it.source.view == state.current || state.scroll != null }
     drawRect(ReaderBackground, topLeft, size)
     clipRect(rect.left, rect.top, rect.right, rect.bottom) {
         withTransform({
             translate(view.center.x - view.finger.x * m, view.center.y - view.finger.y * m)
             scale(m, m, pivot = Offset.Zero)
         }) {
-            drawLayer(viewModel, state, Layer(state.current, position, 0f, 1f), colorFilter, detail)
+            if (position == null) drawStrip(viewModel, state, colorFilter, detail) else drawLayer(viewModel, state, Layer(state.current, position, 0f, 1f), colorFilter, detail)
         }
     }
     drawRect(LoupeEdge, topLeft, size, style = Stroke(width = LOUPE_EDGE_DP * density))
@@ -320,6 +335,25 @@ private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, 
         val dy = -layer.position.y
         drawSeamShadow(leftPage.right + dx, leftPage.right + dx - leftPage.width * SEAM_SHADOW_SHARE, leftPage.top + dy, leftPage.height, layer.alpha)
         drawSeamShadow(rightPage.left + dx, rightPage.left + dx + rightPage.width * SEAM_SHADOW_SHARE, rightPage.top + dy, rightPage.height, layer.alpha)
+    }
+}
+
+/**
+ * The pages of 縦に連続 on screen, each from its prepared view, with [detail] in place of the page the loupe read at
+ * the size of its own image. A page not prepared yet leaves the background, and a page that failed its card's.
+ */
+private fun DrawScope.drawStrip(viewModel: ReaderViewModel, state: ReaderState, colorFilter: ColorFilter?, detail: LoupeDetail? = null) {
+    for ((page, rect) in state.stripPages()) {
+        val view = PageView.One(page)
+        val prepared = viewModel.preparedView(view)
+        when (val shown = prepared?.pages?.single()) {
+            is PreparedPage.Image<*> -> {
+                val sharper = detail?.takeIf { it.source.view == view }
+                drawPage(sharper?.bitmap ?: shown.image as Bitmap, PagePart.Whole, prepared.target.steps.single().part, rect, 1f, colorFilter)
+            }
+            is PreparedPage.Error -> drawRect(CardBackground, Offset(rect.left, rect.top), androidx.compose.ui.geometry.Size(rect.width, rect.height))
+            null -> Unit
+        }
     }
 }
 

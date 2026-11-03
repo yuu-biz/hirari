@@ -22,6 +22,7 @@ import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderRegion
 import io.github.yuubiz.hirari.core.model.ReaderRegions
+import io.github.yuubiz.hirari.core.model.ScrollMotion
 import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.TouchEvent
 import io.github.yuubiz.hirari.core.model.TouchOutcome
@@ -177,7 +178,10 @@ internal class ReaderInput(
         val geometry = current.geometry()
         val position = current.positionAt(SystemClock.uptimeMillis())
         val (hiddenLeft, hiddenRight) = if (geometry != null && position != null) geometry.hidden(position) else Pair(0f, 0f)
-        var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(down.position.dp(density), down.uptimeMillis, pullableSides(hiddenLeft, hiddenRight))).state
+        val pullable = if (current.scroll != null) emptySet() else pullableSides(hiddenLeft, hiddenRight)
+        val caught = current.scroll?.motion is ScrollMotion.Glide
+        if (caught) viewModel.dispatch(ReaderEvent.Catch)
+        var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(down.position.dp(density), down.uptimeMillis, pullable)).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
         var last = down.position
         val hold = HoldTimer(down.uptimeMillis, config.loupeHoldMs)
@@ -194,7 +198,7 @@ internal class ReaderInput(
                     }
                 }
                 event ?: continue
-                if (followed(event, down, touch, touchState, regions, velocity, density, slop)) return
+                if (followed(event, down, touch, touchState, regions, velocity, density, slop, caught)) return
                 val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
                 touchState = touch.reduce(touchState, TouchEvent.Move(change.position.dp(density))).state
                 when (val now = touchState) {
@@ -212,7 +216,8 @@ internal class ReaderInput(
 
     /**
      * Feeds [event] to the touch in [state]; true once the touch is over, by a finger going up or a second one
-     * starting a pinch. While the loupe is up a second finger changes nothing.
+     * starting a pinch. While the loupe is up a second finger changes nothing. A touch that [caught] a glide of
+     * 縦に連続 does not tap, and a scroll of the strip let go while moving glides on.
      */
     private suspend fun AwaitPointerEventScope.followed(
         event: PointerEvent,
@@ -223,6 +228,7 @@ internal class ReaderInput(
         velocity: VelocityTracker,
         density: Float,
         slop: Float,
+        caught: Boolean,
     ): Boolean {
         if (state !is TouchState.Loupe && event.changes.count { it.pressed } >= 2) {
             if (state is TouchState.Pulling) viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
@@ -233,9 +239,11 @@ internal class ReaderInput(
         event.changes.forEach { it.consume() }
         velocity.addPosition(change.uptimeMillis, change.position)
         if (change.pressed) return false
-        val vx = velocity.calculateVelocity().x / density
+        val released = velocity.calculateVelocity()
+        val vx = released.x / density
+        if (state is TouchState.Scrolling) viewModel.dispatch(ReaderEvent.Fling(released.y, change.uptimeMillis))
         when (val outcome = touch.reduce(state, TouchEvent.Up(change.position.dp(density), change.uptimeMillis, vx)).outcome) {
-            is TouchOutcome.Tap -> tap(outcome.point, regions)
+            is TouchOutcome.Tap -> if (!caught) tap(outcome.point, regions)
             is TouchOutcome.Commit -> viewModel.dispatch(ReaderEvent.PullEnded(commit = true, SystemClock.uptimeMillis()))
             is TouchOutcome.Return -> viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
             TouchOutcome.HideLoupe -> viewModel.dispatch(ReaderEvent.LoupeHidden)

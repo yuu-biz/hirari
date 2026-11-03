@@ -16,6 +16,7 @@ import io.github.yuubiz.hirari.core.model.PaginationEvent
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.ScaleMode
+import io.github.yuubiz.hirari.core.model.ScrollMotion
 import io.github.yuubiz.hirari.core.model.Strip
 import io.github.yuubiz.hirari.core.model.StripScreen
 import io.github.yuubiz.hirari.core.model.StripScroll
@@ -219,6 +220,7 @@ data class ReaderState(
         ReaderEvent.LoupeHidden -> copy(loupe = null)
         is ReaderEvent.Pan -> byHand().panned(event.dx, event.dy)
         is ReaderEvent.Fling -> copy(scroll = scroll?.flung(event.velocityY, event.nowMs, viewport.density, strip, stripScreen)).following()
+        ReaderEvent.Catch -> if (scroll?.motion is ScrollMotion.Glide) settled() else this
         is ReaderEvent.Pulling -> byHand().copy(pull = Pull(event.turn, neighbor(event.turn), event.pulledDp))
         is ReaderEvent.PullEnded -> released(event.commit, event.nowMs)
         is ReaderEvent.Zoom -> byHand().zoomed(event.event, event.focus)
@@ -445,6 +447,9 @@ sealed interface ReaderEvent {
 
     /** A finger that scrolled went up at [velocityY] pixels per second, positive downward, which 縦に連続 glides on. */
     data class Fling(val velocityY: Float, val nowMs: Long) : ReaderEvent
+
+    /** A finger went down on the strip while it glided, which stops it where it is. */
+    data object Catch : ReaderEvent
 
     /** A finger pulls past the edge toward [turn], by [pulledDp] after resistance. */
     data class Pulling(val turn: Turn, val pulledDp: Float) : ReaderEvent

@@ -5,7 +5,9 @@ import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageSteps
+import io.github.yuubiz.hirari.core.model.Rect
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** The page of the strip under [screenY], in screen pixels from the top of the screen. */
 internal fun ReaderState.stripPageAt(screenY: Float): Int? {
@@ -49,3 +51,20 @@ fun ReaderState.stripPan(turn: Turn, distancePx: Float): ReaderEvent.Pan? {
 
 /** Positions closer than this, in pixels, count as the same. */
 private const val SAME_PX = 0.5
+
+/** A page of the strip on screen, at [rect] in screen pixels. */
+data class StripPage(val page: Int, val rect: Rect)
+
+/**
+ * The pages of 縦に連続 on screen, top to bottom. Each edge is rounded to a whole pixel from the strip's own position,
+ * so the bottom of a page is the top of the next one and no seam shows between them.
+ */
+fun ReaderState.stripPages(): List<StripPage> {
+    val scroll = scroll ?: return emptyList()
+    val screen = stripScreen
+    val top = scroll.top(strip, screen)
+    val left = -scroll.left(screen)
+    val right = left + screen.scale.toFloat()
+    fun y(at: Double) = (at * screen.scale - top).roundToInt().toFloat()
+    return scroll.visible(strip, screen).map { page -> StripPage(page, Rect(left, y(strip.top(page)), right, y(strip.bottom(page)))) }
+}

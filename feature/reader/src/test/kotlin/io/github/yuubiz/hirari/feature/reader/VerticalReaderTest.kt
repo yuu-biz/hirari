@@ -88,9 +88,11 @@ class VerticalReaderTest {
         val stopped = later.settle()
         assertNull(stopped.scroll!!.motion)
         assertTrue(stopped.top > later.top)
-        val caught = later.reduce(ReaderEvent.Pan(0f, 0f))
+        val caught = later.reduce(ReaderEvent.Catch)
         near(later.top, caught.top)
         assertNull(caught.scroll!!.motion)
+        val stepping = state.act(ReaderAction.TurnView(Turn.Forward))
+        assertEquals(stepping, stepping.reduce(ReaderEvent.Catch), "a finger does not cut a step short")
     }
 
     @Test
@@ -242,6 +244,17 @@ class VerticalReaderTest {
         assertNull(end.stripPan(Turn.Forward, 10f))
         assertNull(state.stripPan(Turn.Back, 10f))
         assertNull(readerOf(List(2) { TALL }).stripPan(Turn.Forward, 10f))
+    }
+
+    @Test
+    fun thePagesOnScreenMeetWithoutASeamAndCoverTheScreen() {
+        val state = readerOf(List(12) { PageShape.Known(777, 1001 + it * 37) }, VERTICAL, PORTRAIT).reduce(ReaderEvent.Pan(0f, -4321.7f))
+        val pages = state.stripPages()
+        assertEquals(state.scroll!!.visible(state.strip, state.stripScreen).toList(), pages.map { it.page })
+        pages.zipWithNext { above, below -> assertEquals(above.rect.bottom, below.rect.top) }
+        assertTrue(pages.first().rect.top <= 0f && pages.last().rect.bottom >= PORTRAIT.height)
+        assertTrue(pages.first().rect.left == 0f)
+        assertEquals(PORTRAIT.width, pages.first().rect.right)
     }
 
     @Test
