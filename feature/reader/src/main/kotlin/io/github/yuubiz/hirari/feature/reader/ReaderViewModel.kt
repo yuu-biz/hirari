@@ -491,8 +491,8 @@ class ReaderViewModel(
 
     /**
      * Moves the SMB prefetch layer to the current view once that view is prepared, so the reads it waits on go
-     * before those of the layer. It stops while the thumbnail strip is up, as the other layers do (docs/spec.md
-     * section 5.3).
+     * before those of the layer, and stops it until then. It stops while the thumbnail strip is up, as the other
+     * layers do (docs/spec.md section 5.3).
      */
     private fun prefetchToDisk() {
         val book = opened ?: return
@@ -500,8 +500,8 @@ class ReaderViewModel(
         val current = state ?: return
         if (stripShown) return disk.stop()
         val view = current.current
-        if (book.prefetcher.get(view) == null) return
-        disk.update(view.pages.min()..view.pages.max(), travelDirection(current.recentTurns))
+        val shown = (view.pages.min()..view.pages.max()).takeIf { book.prefetcher.get(view) != null }
+        disk.update(shown, travelDirection(current.recentTurns))
     }
 
     /**

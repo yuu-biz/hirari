@@ -29,7 +29,9 @@ class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageSta
     private var around: Pair<IntRange, Turn>? = null
     private var running: Job? = null
 
-    fun update(shown: IntRange, travel: Turn) {
+    /** Reads around the [shown] pages toward [travel]. Null [shown] stops the reads, as when the current view is not prepared. */
+    fun update(shown: IntRange?, travel: Turn) {
+        if (shown == null) return stop()
         if (around == shown to travel) return
         around = shown to travel
         running?.cancel()

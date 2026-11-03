@@ -96,4 +96,21 @@ class DiskPrefetchTest {
         runCurrent()
         assertEquals(listOf(11, 12, 12), stash.filled)
     }
+
+    @Test
+    fun aMoveToAViewNotPreparedYetStopsTheReadsAroundTheOldOneAtOnce() = runTest {
+        val stash = Stash()
+        val prefetch = DiskPrefetch(backgroundScope, stash, pageCount = 200)
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        prefetch.update(null, Turn.Forward)
+        letThrough(stash, 1)
+        assertEquals(emptyList<Int>(), stash.filled)
+
+        stash.next = CompletableDeferred()
+        prefetch.update(100..101, Turn.Back)
+        runCurrent()
+        letThrough(stash, 1)
+        assertEquals(listOf(99), stash.filled)
+    }
 }
