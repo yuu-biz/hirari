@@ -103,7 +103,7 @@ class OpenInLocationTest {
 
     @Test
     fun `leaving the reader cancels the lookup of a text opened from the history by its path`() = runBlocking {
-        val open = opener(TextBookRef.InLocation(place.id, "shelf/story.txt"), resolver, OnePlace(place), temp.newFolder())
+        val open = opener(TextBookRef.InLocation(place.id, "shelf/story.txt"), resolver, OnePlace(place), temp.newFolder()) { error("no archive") }
         val call = async(Dispatchers.IO) { open.open() }
         assertTrue(provider.queryStarted.await(10, TimeUnit.SECONDS))
         call.cancel()

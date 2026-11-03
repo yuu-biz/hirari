@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.os.SystemClock
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.yuubiz.hirari.core.archive.EntryNames
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.entryBookId
@@ -28,6 +29,7 @@ import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.nio.charset.Charset
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -56,7 +58,7 @@ class TextOnDeviceTest {
             }
         }
         val archiveId = BookId("archive")
-        val opened = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0)
+        val opened = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(null, CP932))
         val entry = (opened as TextOpenResult.Opened).text
         try {
             assertArrayEquals(text, opened.bytes)
@@ -67,6 +69,30 @@ class TextOnDeviceTest {
             assertArrayEquals(png, entry.pictures!!.read(path))
         } finally {
             entry.close()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun aTextEntryIsNamedInTheCharsetChosenForItsArchive() = runBlocking {
+        val name = "dir/本文.txt"
+        val file = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "text-entry-charset.zip")
+        ZipOutputStream(file.outputStream(), CP932).use { zip ->
+            zip.putNextEntry(ZipEntry(name))
+            zip.write("本文\n".toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
+        val eucJp = Charset.forName("EUC-JP")
+        val archiveId = BookId("archive")
+        val detected = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(null, CP932))
+        val chosen = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(eucJp, CP932))
+        val texts = listOf(detected, chosen).map { (it as TextOpenResult.Opened).text }
+        try {
+            assertEquals(name, texts[0].path)
+            assertEquals(EntryNames.decode(name.toByteArray(CP932), eucJp), texts[1].path)
+            assertEquals(texts[0].id, texts[1].id)
+        } finally {
+            texts.forEach { it.close() }
             file.delete()
         }
     }

@@ -11,6 +11,7 @@ import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.data.FontStore
 import io.github.yuubiz.hirari.core.data.HistoryRepository
 import io.github.yuubiz.hirari.core.data.LocationRepository
+import io.github.yuubiz.hirari.core.data.SettingsRepository
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookFormat
@@ -34,11 +35,13 @@ import io.github.yuubiz.hirari.core.text.PaintGlyphMetrics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
+import java.nio.charset.Charset
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -59,14 +62,35 @@ sealed interface TextBookRef {
     data class ArchiveEntry(val archive: Uri, val entryIndex: Int, val archiveId: BookId) : TextBookRef
 }
 
+/**
+ * How the names of an archive are decoded (docs/spec.md section 3.4): in [chosen] when the user chose a charset for
+ * the book, else in the detected one, else in [undetermined], the setting `fallbackCharset`. The archive list decodes
+ * them the same way, so a text entry has the name the list shows.
+ */
+internal data class EntryCharsets(val chosen: Charset?, val undetermined: Charset)
+
+/** The [EntryCharsets] of the archive [archiveId] from its overrides and the settings. */
+internal suspend fun entryCharsets(archiveId: BookId, books: BookRepository, settings: SettingsRepository) = EntryCharsets(
+    books.overrides(archiveId).first().nameCharset,
+    Charset.forName(settings.settings.first().fallbackCharset.charsetName),
+)
+
 /** The opener of [ref]. Every step blocks on Binder or the disk, so all of it runs on `Dispatchers.IO` (section 6.4). */
-internal fun opener(ref: TextBookRef, resolver: ContentResolver, locations: LocationRepository, copyDir: File): TextOpener = when (ref) {
+internal fun opener(
+    ref: TextBookRef,
+    resolver: ContentResolver,
+    locations: LocationRepository,
+    copyDir: File,
+    charsets: suspend (archiveId: BookId) -> EntryCharsets,
+): TextOpener = when (ref) {
     is TextBookRef.Document -> TextOpener {
         openOn(Dispatchers.IO) { guarded { openDocument(resolver, ref.uri, id = null, BookSource.External(UriString(ref.uri.toString()))) } }
     }
     is TextBookRef.InLocation -> TextOpener { openOn(Dispatchers.IO) { guarded { openInLocation(resolver, locations, ref) } } }
     is TextBookRef.ArchiveEntry -> TextOpener {
-        openOn(Dispatchers.IO) { guarded { openEntry(resolver.openByteSource(ref.archive, copyDir), ref.archiveId, ref.entryIndex) } }
+        openOn(Dispatchers.IO) {
+            guarded { openEntry(resolver.openByteSource(ref.archive, copyDir), ref.archiveId, ref.entryIndex, charsets(ref.archiveId)) }
+        }
     }
 }
 
@@ -111,10 +135,10 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId
 
 /**
  * The bytes of entry [entryIndex] of the archive in [source], which the text owns from here on, and a reader of its
- * 挿絵 from the same archive, which stays open with the text. The entry has no form in the library index
+ * 挿絵 from the same archive, which stays open with the text. The names are decoded in [charsets]. The entry has no form in the library index
  * (`BookSource` names no entry), so it gets none; its progress and bookmarks still keep.
  */
-internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int): TextOpenResult = guarded {
+internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int, charsets: EntryCharsets): TextOpenResult = guarded {
     val session = when (val opened = ArchiveSession.open(source)) {
         is OpenResult.Failed -> return@guarded TextOpenResult.Failed(TextFailure.ReadError)
         OpenResult.Encrypted -> return@guarded TextOpenResult.Failed(TextFailure.Encrypted)
@@ -130,7 +154,7 @@ internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex
             is EntryResult.Failed, is EntryResult.UnsupportedCompression ->
                 return@guarded TextOpenResult.Failed(TextFailure.ReadError).also { session.close() }
         }
-        val charset = session.nameCharset()
+        val charset = session.nameCharset(charsets.chosen, charsets.undetermined)
         val name = session.name(entry, charset)
         val byPath = session.entries.filterNot { it.isDirectory }.associateBy { normalizePath(session.name(it, charset)) }
         val pictures = PictureReader { path ->

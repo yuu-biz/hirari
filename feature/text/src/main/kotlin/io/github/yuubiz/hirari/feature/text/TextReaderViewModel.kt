@@ -69,7 +69,7 @@ class TextReaderViewModel(
             val model = TextReaderModel(
                 scope = viewModelScope,
                 work = Dispatchers.Default.limitedParallelism(1),
-                opener = opener(ref, application.contentResolver, services.storage.locations, copyDir),
+                opener = opener(ref, application.contentResolver, services.storage.locations, copyDir) { entryCharsets(it, services.storage.books, services.storage.settings) },
                 settings = services.storage.settings.settings,
                 progress = services.storage.progress,
                 writer = services.progress,
