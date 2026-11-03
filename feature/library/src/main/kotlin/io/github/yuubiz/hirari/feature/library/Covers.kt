@@ -18,6 +18,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.scan
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.time.Instant
 import kotlin.coroutines.CoroutineContext
@@ -92,6 +97,20 @@ class Covers(
     suspend fun chosen(place: LibraryLocation, cover: FolderCover): ChosenCover? =
         find(place, cover.imagePath)?.let { ChosenCover(cover.imagePath, cover.entry, it) }
 
+    /**
+     * Looks up in its folder the image or page chosen for each folder of [chosen], by the folder's path (docs/spec.md
+     * section 4.4). The first value has every folder pending, and each lookup that ends takes its folder out, found or
+     * not, so no folder waits for another. The lookups start in the order of [chosen], at most [CHOSEN_LOOKUPS] at once.
+     */
+    fun chosenCovers(place: LibraryLocation, chosen: Map<String, FolderCover>): Flow<ChosenCovers> {
+        val lookups = Semaphore(CHOSEN_LOOKUPS)
+        return channelFlow {
+            for ((path, cover) in chosen) launch { send(path to lookups.withPermit { chosen(place, cover) }) }
+        }.scan(ChosenCovers(emptyMap(), chosen.keys)) { covers, (path, found) ->
+            ChosenCovers(if (found == null) covers.found else covers.found + (path to found), covers.pending - path)
+        }
+    }
+
     /** The spec of the folder at [path], which its own entry in the parent folder dates, or `null` when that cannot be found. */
     suspend fun folderSpec(place: LibraryLocation, path: String, direction: ReadingDirection, chosen: ChosenCover?): CoverSpec.Folder? {
         val entry = find(place, path) ?: return null
@@ -139,8 +158,14 @@ class Covers(
     private companion object {
         const val DECODE_PARALLELISM = 2
         const val BYTES_PER_PIXEL = 4
+
+        /** docs/spec.md section 4.4: the images chosen for folders looked up at once. */
+        const val CHOSEN_LOOKUPS = 4
     }
 }
+
+/** The images chosen for the folders of a list, by folder path: those found, and those still being looked up. */
+data class ChosenCovers(val found: Map<String, ChosenCover>, val pending: Set<String>)
 
 /** Reads the WebP of a thumbnail. Called off the main thread. */
 internal fun decodeCover(file: File): ImageBitmap? = BitmapFactory.decodeFile(file.path)?.asImageBitmap()

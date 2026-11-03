@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -153,7 +154,7 @@ class FolderViewModel(
 
     private fun shown(services: LibraryServices, entries: List<FolderEntry>, layout: Flow<Layout>): Flow<FolderContent> {
         val sorted = layout.map { it.ordering }.distinctUntilChanged().map { entries.toRows(folder.path, it) }.flowOn(compute)
-        val context = place.value?.let { coverContext(services, it, entries) } ?: flowOf(null)
+        val context = place.value?.let { coverContext(services, it, entries, sorted) } ?: flowOf(null)
         val marked = combine(sorted, services.books.inFolder(folder.location, folder.path), progressOf(services, sorted), context) { rows, indexed, progress, covers ->
             val marked = rows.withMarks(indexed, progress)
             if (covers == null) marked else marked.withCovers(indexed, covers)
@@ -167,23 +168,22 @@ class FolderViewModel(
 
     /**
      * What the covers of this listing need: the directions of the books that have one, the global one, and the image
-     * chosen for each folder in it, whose file is looked up once off the main thread. The rows are shown before the
-     * lookup ends, but a folder with a chosen image shows no cover until it is found, so its cover is never made
-     * without the image.
+     * chosen for each folder in it, whose file is looked up once off the main thread, in the order of [rows]. A hidden
+     * folder the rows leave out comes last and is looked up too, since showing hidden files does not look again. The
+     * rows are shown before the lookups end, but a folder with a chosen image shows no cover until it is found, so its
+     * cover is never made without the image.
      */
-    private fun coverContext(services: LibraryServices, place: LibraryLocation, entries: List<FolderEntry>): Flow<CoverContext> {
+    private fun coverContext(services: LibraryServices, place: LibraryLocation, entries: List<FolderEntry>, rows: Flow<List<FileRow>>): Flow<CoverContext> {
         val folders = entries.filter { it.directory }.mapTo(HashSet()) { normalizePath("${folder.path}/${it.name}") }
         val chosen = services.coverIndex.folderCovers(folder.location)
             .map { all -> all.filterKeys { it in folders } }
             .distinctUntilChanged()
             .flatMapLatest { all ->
-                flow {
-                    if (all.isNotEmpty()) emit(emptyMap<String, ChosenCover>() to all.keys)
-                    emit(all.mapNotNull { (path, cover) -> services.covers.chosen(place, cover)?.let { path to it } }.toMap() to emptySet())
-                }
+                val shownFirst = if (all.isEmpty()) emptyList() else rows.first().map { it.path }.filter { it in all }
+                services.covers.chosenCovers(place, (shownFirst + all.keys).distinct().associateWith(all::getValue))
             }
         val direction = services.settings.settings.map { it.readingDirection }.distinctUntilChanged()
-        return combine(services.coverIndex.directions(), direction, chosen) { directions, default, (chosen, pending) -> CoverContext(place, default, directions, chosen, pending) }
+        return combine(services.coverIndex.directions(), direction, chosen) { directions, default, chosen -> CoverContext(place, default, directions, chosen.found, chosen.pending) }
     }
 
     /** The progress of the books and texts of the [rows] by path, which a book marked before it was ever opened has too. */

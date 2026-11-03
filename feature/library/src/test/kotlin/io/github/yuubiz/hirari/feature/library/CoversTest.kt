@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.data.FolderCover
 import io.github.yuubiz.hirari.core.image.thumbnail.FolderEntry as ThumbEntry
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbLane
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority
@@ -10,7 +11,10 @@ import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ThumbSize
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import java.time.Instant
 import kotlin.test.Test
@@ -122,6 +126,25 @@ class CoversTest {
         assertEquals("が.jpg", found?.name)
         assertNull(covers.find(saf, "g/x.jpg"))
         assertNull(covers.find(saf, "f/other.jpg"))
+    }
+
+    @Test
+    fun `chosen images are looked up a few at once in the order given, and each folder leaves pending as its own lookup ends`() = runTest {
+        val paths = (1..6).map { "f$it" }
+        val slow = paths.associateWith { CompletableDeferred<Unit>() }
+        for (path in paths) fixture.coverBooks.folders[path] = listOf(entry("c.jpg"))
+        fixture.coverBooks.stalls.putAll(slow)
+        val seen = mutableListOf<ChosenCovers>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            covers.chosenCovers(saf, paths.associateWith { FolderCover("$it/c.jpg") }).collect { seen += it }
+        }
+        assertEquals(ChosenCovers(emptyMap(), paths.toSet()), seen.single())
+        assertEquals(listOf("f1", "f2", "f3", "f4"), fixture.coverBooks.listCalls)
+
+        slow.getValue("f3").complete(Unit)
+        assertEquals(setOf("f3"), seen.last().found.keys)
+        assertEquals(paths.toSet() - "f3", seen.last().pending)
+        assertEquals(listOf("f1", "f2", "f3", "f4", "f5"), fixture.coverBooks.listCalls)
     }
 
     @Test

@@ -149,6 +149,24 @@ class FolderCoversTest {
     }
 
     @Test
+    fun `a folder shows its chosen cover once it is found, while another folder is still looked up`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(entry("外伝", directory = true), entry("番外", directory = true))
+        fixture.coverBooks.folders["作品/外伝"] = listOf(entry("a.jpg"))
+        fixture.coverBooks.folders["作品/番外"] = listOf(entry("b.jpg"))
+        fixture.coverIndex.folderCovers.value = mapOf("作品/番外" to FolderCover("作品/番外/b.jpg"), "作品/外伝" to FolderCover("作品/外伝/a.jpg"))
+        val slow = CompletableDeferred<Unit>()
+        fixture.coverBooks.stalls["作品/番外"] = slow
+        val list = viewModel()
+        fun cover(name: String) = list.shown().rows.single { it.item.entry.name == name }.cover as CoverSpec.Folder?
+
+        assertEquals(locationBookId(place, "作品/外伝/a.jpg"), cover("外伝")?.chosen?.id)
+        assertNull(cover("番外"))
+        slow.complete(Unit)
+        assertEquals(locationBookId(place, "作品/番外/b.jpg"), cover("番外")?.chosen?.id)
+    }
+
+    @Test
     fun `a chosen image that cannot be found leaves the folder searched`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(entry("外伝", directory = true))
