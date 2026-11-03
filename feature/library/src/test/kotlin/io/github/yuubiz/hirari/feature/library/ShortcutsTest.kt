@@ -64,6 +64,27 @@ class ShortcutsTest {
     }
 
     @Test
+    fun `an SMB book or text opens its folder when the folder does not list, so the list says why`() = runTest {
+        fixture.locations.rows.value = listOf(server)
+        for (reason in listOf(ListFailure.Unreachable, ListFailure.AuthenticationFailed, ListFailure.PasswordUnreadable, ListFailure.NoLocalNetwork, ListFailure.ReadError)) {
+            fixture.smb.failure = reason
+            assertEquals(ShortcutTarget.Folder(FolderKey(server.id, "作品")), resolve(server.id, "作品/1巻.zip", folder = false), "$reason")
+            assertEquals(ShortcutTarget.Folder(FolderKey(server.id, "作品")), resolve(server.id, "作品/後書き.txt", folder = false), "$reason")
+        }
+        fixture.smb.failure = ListFailure.Unreachable
+        assertEquals(ShortcutTarget.Folder(FolderKey(server.id, "")), resolve(server.id, "1巻.zip", folder = false))
+    }
+
+    @Test
+    fun `a book whose folder is gone or refused finds nothing`() = runTest {
+        fixture.locations.rows.value = listOf(server, place)
+        fixture.smb.failure = ListFailure.NotFound
+        assertEquals(ShortcutTarget.Missing, resolve(server.id, "作品/1巻.zip", folder = false))
+        fixture.lister.failure = ListFailure.NoPermission
+        assertEquals(ShortcutTarget.Missing, resolve(place.id, "作品/1巻.zip", folder = false))
+    }
+
+    @Test
     fun `an SMB shortcut opens its book or text by place and path`() = runTest {
         fixture.locations.rows.value = listOf(server)
         fixture.smb.folders["作品"] = listOf(serverFile("1巻.zip"), serverFile("後書き.txt"))

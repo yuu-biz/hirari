@@ -27,8 +27,8 @@ sealed interface ShortcutTarget {
 /**
  * Looks up the place and the path of [shortcut]. A book is looked for in the listing of its folder, which also
  * gives a SAF book its document. A SAF folder the provider refuses counts as gone, since the grant can be lost
- * while the place still says it holds it. A folder that does not list for another reason still opens, so its file
- * list shows why.
+ * while the place still says it holds it. A folder, or the folder of a book, that does not list for another reason
+ * still opens, so its file list shows why.
  */
 suspend fun LibraryServices.resolve(shortcut: PlaceShortcut): ShortcutTarget {
     val place = locations.get(shortcut.location)?.takeIf { it.usable() } ?: return ShortcutTarget.Missing
@@ -36,21 +36,27 @@ suspend fun LibraryServices.resolve(shortcut: PlaceShortcut): ShortcutTarget {
     if (shortcut.folder) {
         return when (val listed = list(place, path)) {
             is Listing.Listed -> ShortcutTarget.Folder(FolderKey(shortcut.location, path, listed.folderDocumentId))
-            is Listing.Failed -> when (listed.reason) {
-                ListFailure.NotFound, ListFailure.NoPermission -> ShortcutTarget.Missing
-                else -> ShortcutTarget.Folder(FolderKey(shortcut.location, path))
-            }
+            is Listing.Failed -> listed.reason.target(shortcut.location, path)
         }
     }
     val parent = path.substringBeforeLast('/', "")
     val name = path.substringAfterLast('/')
-    val entry = (list(place, parent) as? Listing.Listed)?.entries?.firstOrNull { !it.directory && normalizePath(it.name) == name }
+    val listed = when (val parentListing = list(place, parent)) {
+        is Listing.Listed -> parentListing
+        is Listing.Failed -> return parentListing.reason.target(shortcut.location, parent)
+    }
+    val entry = listed.entries.firstOrNull { !it.directory && normalizePath(it.name) == name }
     val item = entry?.toItem(showDotFiles = true) ?: return ShortcutTarget.Missing
     return when {
         item is FileItem.Text -> ShortcutTarget.Text(TextAddress.InLocation(shortcut.location, path, entry.documentId))
         item is FileItem.Archive -> ShortcutTarget.Book(OpenBookRequest(BookAddress.InLocation(shortcut.location, path, folder = false, entry.documentId)))
         else -> ShortcutTarget.Missing
     }
+}
+
+private fun ListFailure.target(location: LocationId, folder: String): ShortcutTarget = when (this) {
+    ListFailure.NotFound, ListFailure.NoPermission -> ShortcutTarget.Missing
+    else -> ShortcutTarget.Folder(FolderKey(location, folder))
 }
 
 private suspend fun LibraryServices.list(place: LibraryLocation, path: String): Listing = when (place) {
