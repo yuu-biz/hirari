@@ -72,7 +72,7 @@ class ThumbnailsDeviceTest {
     }
 
     private fun assertWebp(file: File) {
-        val head = file.inputStream().use { it.readNBytes(12) }
+        val head = file.readBytes()
         assertEquals("RIFF", String(head, 0, 4, Charsets.US_ASCII))
         assertEquals("WEBP", String(head, 8, 4, Charsets.US_ASCII))
     }
