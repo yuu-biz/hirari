@@ -21,7 +21,7 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 
 残りの確認を動かすコマンドと手順は次のとおりです。
 
-- P1〜P4: `b2d4d06` には、実際のリーダーで計るトレース区間とベンチマークがありません。計る仕組みを足してから、下の表の起動の計測のコマンドの形（`-Pandroid.testInstrumentationRunnerArguments.class=` でクラスを選ぶ）で流します。測定は 5.1 節の中位の基準端末で、当面は 検証用の端末 A です。
+- P1〜P4: 実際のリーダーにトレース区間とベンチマークがあります（`ReaderBenchmark`）。下の表の P1 から P4 のコマンドで流します。測定は 5.1 節の中位の基準端末で、当面は 検証用の端末 A です。
 - P6（`coldStart`）: `./gradlew :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=macrobenchmark -Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.benchmark.StartupBenchmark` を実機で流します。
 - Q1 と Q2 の計り直し: 同じコマンドの `class=` を `io.github.yuubiz.hirari.benchmark.RenderSurfaceBenchmark` に替えて、実機で流します。
 - P7: 1000 件のフォルダを選び、Perfetto で `Hirari.listFolder` のトレース区間を見ます。
