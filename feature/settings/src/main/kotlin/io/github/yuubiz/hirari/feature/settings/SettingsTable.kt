@@ -95,7 +95,8 @@ val SettingsTable: List<Setting> = buildList {
     add(choice(GlobalSettings::readingDirection, reading, "綴じ方向", { s, v -> s.copy(readingDirection = v) },
         ReadingDirection.RightToLeft to "右綴じ", ReadingDirection.LeftToRight to "左綴じ"))
     add(choice(GlobalSettings::layoutMode, reading, "ページの組み方", { s, v -> s.copy(layoutMode = v) },
-        LayoutMode.Single to "1 ページ", LayoutMode.Spread to "見開き", LayoutMode.SplitWide to "横長を分割", LayoutMode.Auto to "自動"))
+        LayoutMode.Single to "1 ページ", LayoutMode.Spread to "見開き", LayoutMode.SplitWide to "横長を分割", LayoutMode.Auto to "自動",
+        LayoutMode.Vertical to "縦に連続"))
     add(toggle(GlobalSettings::coverAlone, reading, "表紙を単独にする") { s, v -> s.copy(coverAlone = v) })
     add(choice(GlobalSettings::entryOrder, reading, "書庫内の並び", { s, v -> s.copy(entryOrder = v) },
         EntryOrder.Natural to "名前の自然順", EntryOrder.Stored to "格納順"))
