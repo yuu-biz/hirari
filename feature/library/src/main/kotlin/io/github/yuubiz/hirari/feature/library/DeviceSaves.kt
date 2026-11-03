@@ -135,8 +135,11 @@ class DeviceSaves(
     }
 }
 
+fun SaveProgress.text(): String = progressText(percent, bytesDone, bytesTotal)
+
 /** `45% 12.3 MB / 27.0 MB`, or just the first part before the total is known (docs/spec.md section 4.5). */
-fun SaveProgress.text(): String = if (bytesTotal > 0) "$percent% ${sizeText(bytesDone)} / ${sizeText(bytesTotal)}" else "$percent%"
+fun progressText(percent: Int, bytesDone: Long, bytesTotal: Long): String =
+    if (bytesTotal > 0) "$percent% ${sizeText(bytesDone)} / ${sizeText(bytesTotal)}" else "$percent%"
 
 /** The string naming why a save failed. */
 @androidx.annotation.StringRes

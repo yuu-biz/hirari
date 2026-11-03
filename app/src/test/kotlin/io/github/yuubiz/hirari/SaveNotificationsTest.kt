@@ -28,7 +28,7 @@ class SaveNotificationsTest {
     }
 
     @Test
-    fun `several saves show their count and the progress of all together`() {
+    fun `several saves show their count and the bytes and percent of all together`() {
         val summary = summarize(
             listOf(
                 job(1, "a.cbz", SaveProgress(1000, 1000, "a.cbz", 0, 1)),
@@ -36,6 +36,11 @@ class SaveNotificationsTest {
                 job(3, "c.cbz", null),
             ),
         )
-        assertEquals(SavingSummary(null, 3, null, 25), summary)
+        assertEquals(SavingSummary(null, 3, "25% 1000 B / 3.9 KB", 25), summary)
+    }
+
+    @Test
+    fun `several saves that have read nothing are indeterminate`() {
+        assertEquals(SavingSummary(null, 2, null, null), summarize(listOf(job(1, "a.cbz", null), job(2, "b.cbz", null))))
     }
 }

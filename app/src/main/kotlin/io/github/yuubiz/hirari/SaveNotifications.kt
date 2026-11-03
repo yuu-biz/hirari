@@ -10,13 +10,14 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import io.github.yuubiz.hirari.feature.library.SaveFinished
 import io.github.yuubiz.hirari.feature.library.SaveJob
+import io.github.yuubiz.hirari.feature.library.progressText
 import io.github.yuubiz.hirari.feature.library.text
 import io.github.yuubiz.hirari.feature.library.R as Library
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * What the ongoing notification of the saves to the device says (docs/spec.md section 4.5): one save shows its name and
- * `45% 12.3 MB / 27.0 MB`; several show their count and the progress of all of them together. [percent] is null while
+ * `45% 12.3 MB / 27.0 MB`; several show their count and the bytes and percent of all of them together. [percent] is null while
  * no save has read a block yet.
  */
 data class SavingSummary(val name: String?, val count: Int, val progressText: String?, val percent: Int?)
@@ -26,7 +27,7 @@ fun summarize(jobs: List<SaveJob>): SavingSummary {
     val done = known.sumOf { it.bytesDone }
     val total = known.sumOf { it.bytesTotal }
     val percent = if (known.isEmpty()) null else if (total > 0) (done * 100 / total).coerceIn(0, 100).toInt() else 0
-    val text = jobs.singleOrNull()?.progress?.text()
+    val text = jobs.singleOrNull()?.progress?.text() ?: percent?.let { progressText(it, done, total) }
     return SavingSummary(jobs.singleOrNull()?.name, jobs.size, text, percent)
 }
 
