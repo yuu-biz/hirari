@@ -110,13 +110,19 @@ class DeviceSaves(
         return id
     }
 
-    /** 取り消す: stops the save at its next block and deletes the file it was writing. */
+    /**
+     * 取り消す: leaves [jobs] at once, and the save stops at its next block and deletes the file it was writing. A
+     * request to the server that does not answer ends when it times out (docs/spec.md section 6.5), so the stop can
+     * come after the save has left the list.
+     */
     fun cancel(id: Long) {
         synchronized(runs) { runs[id] }?.cancel()
+        running.update { jobs -> jobs.filter { it.id != id } }
     }
 
     fun cancelAll() {
         synchronized(runs) { runs.values.toList() }.forEach(Job::cancel)
+        running.value = emptyList()
     }
 
     private suspend fun save(request: SaveRequest, id: Long): SaveOutcome =
