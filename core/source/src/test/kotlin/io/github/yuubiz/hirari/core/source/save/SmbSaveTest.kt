@@ -74,7 +74,7 @@ private class TreeShare(private val files: Map<String, ByteArray>, private val o
     }
 }
 
-/** A folder in memory. [log] gets every file created, so a test sees the `.part` names. */
+/** A folder in memory, safe to share between saves. [log] gets every file created, so a test sees the `.part` names. */
 private class MemoryFolder(
     val files: MutableMap<String, ByteArray> = linkedMapOf(),
     val folders: MutableMap<String, MemoryFolder> = linkedMapOf(),
@@ -86,18 +86,20 @@ private class MemoryFolder(
     var failCreate: Throwable? = null
     var failCommit: Throwable? = null
 
-    override fun names(): Set<String> = files.keys + folders.keys
+    override fun names(): Set<String> = synchronized(log) { files.keys + folders.keys }
 
-    override fun createFolder(name: String): SaveFolder = MemoryFolder(log = log).also {
+    override fun createFolder(name: String): SaveFolder = synchronized(log) {
+        MemoryFolder(log = log)
+    }.also {
         it.free = free
         it.fullAfter = fullAfter
         it.onWrite = onWrite
         it.failCreate = failCreate
         it.failCommit = failCommit
-        folders[name] = it
+        synchronized(log) { folders[name] = it }
     }
 
-    override fun create(name: String): SaveFile {
+    override fun create(name: String): SaveFile = synchronized(log) {
         failCreate?.let { throw it }
         log += name
         files[name] = ByteArray(0)
@@ -110,25 +112,27 @@ private class MemoryFolder(
             override fun write(buffer: ByteArray, length: Int) {
                 onWrite()
                 if (written + length > fullAfter) throw NoRoomException()
-                files[part] = files.getValue(part) + buffer.copyOf(length)
+                synchronized(log) { files[part] = files.getValue(part) + buffer.copyOf(length) }
                 written += length
             }
 
-            override fun commit(name: String) {
+            override fun commit(name: String) = synchronized(log) {
                 failCommit?.let { throw it }
                 done = true
-                files[name] = files.remove(part)!!
+                files[name] = files.remove(part) ?: throw SaveDestinationException("the part is gone")
             }
 
             override fun discard() {
-                if (!done) files.remove(part)
+                synchronized(log) { if (!done) files.remove(part) }
             }
         }
     }
 
     override fun delete(name: String) {
-        files.remove(name)
-        folders.remove(name)
+        synchronized(log) {
+            files.remove(name)
+            folders.remove(name)
+        }
     }
 
     fun leftovers(): List<String> = files.keys.filter { it.endsWith(SAVE_PART_SUFFIX) } + folders.values.flatMap { it.leftovers() }
@@ -363,6 +367,30 @@ class SmbSaveTest {
         val unrenamable = MemoryFolder().apply { failCommit = SaveDestinationException("cannot rename") }
         assertEquals(SaveOutcome.Failed(SaveFailure.WriteFailed), save(server(files), "vol1.cbz", false, unrenamable))
         assertTrue(unrenamable.files.isEmpty())
+    }
+
+    @Test
+    fun `two saves of one name into one folder take two names and keep each other's part`() {
+        val into = MemoryFolder()
+        val bothWriting = CountDownLatch(2)
+        into.onWrite = {
+            if (bothWriting.count > 0) {
+                bothWriting.countDown()
+                bothWriting.await(10, TimeUnit.SECONDS)
+            }
+        }
+        val server = server(mapOf("vol1.cbz" to pattern))
+        val outcomes = runBlocking {
+            val first = async(Dispatchers.Default) { server.saveTo("vol1.cbz", false, into) }
+            val second = async(Dispatchers.Default) { server.saveTo("vol1.cbz", false, into) }
+            listOf(first.await(), second.await())
+        }
+        val size = pattern.size.toLong()
+        assertEquals(setOf(SaveOutcome.Saved("vol1.cbz", 1, size), SaveOutcome.Saved("vol1 (1).cbz", 1, size)), outcomes.toSet())
+        assertEquals(setOf("vol1.cbz.part", "vol1 (1).cbz.part"), into.log.toSet())
+        assertArrayEquals(pattern, into.files.getValue("vol1.cbz"))
+        assertArrayEquals(pattern, into.files.getValue("vol1 (1).cbz"))
+        assertTrue(into.leftovers().isEmpty())
     }
 
     @Test

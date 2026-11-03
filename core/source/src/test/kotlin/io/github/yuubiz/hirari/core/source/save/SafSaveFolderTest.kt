@@ -35,6 +35,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
@@ -156,6 +157,16 @@ class SafSaveFolderTest {
         root.delete("never-there")
         assertEquals(emptySet(), root.names())
         assertEquals(setOf("root"), provider.docs.keys)
+    }
+
+    @Test
+    fun `two folders of the same document are equal, so saves through each see the other's names`() {
+        val root = SafSaveFolder(resolver, tree)
+        val series = root.createFolder("series")
+        assertEquals<SaveFolder>(root, SafSaveFolder(resolver, tree))
+        assertEquals(root.hashCode(), SafSaveFolder(resolver, tree).hashCode())
+        assertEquals<SaveFolder>(series, SafSaveFolder(resolver, tree, provider.named("series")!!.id))
+        assertNotEquals<SaveFolder>(root, series)
     }
 
     @Test

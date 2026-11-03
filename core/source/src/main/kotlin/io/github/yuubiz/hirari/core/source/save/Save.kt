@@ -58,7 +58,8 @@ data class SaveProgress(
 /**
  * A folder the saved files are written into. The SAF folder implements it in [SafSaveFolder]; the JVM tests use a
  * fake. Every method blocks. A failure of the destination is thrown as [SaveDestinationException], [NoRoomException],
- * [CannotRenameException] or [SecurityException].
+ * [CannotRenameException] or [SecurityException]. Two folders are equal when they are the same folder of the
+ * destination, so that saves through separate instances see the names the others hold ([HeldNames]).
  */
 interface SaveFolder {
     /** The names of the children. */
@@ -116,6 +117,37 @@ fun freeName(wanted: String, taken: Set<String>): String {
     val extension = if (dot > 0) wanted.substring(dot) else ""
     val candidates = sequenceOf(wanted) + (1..SAVE_NAME_TRIES).asSequence().map { "$stem ($it)$extension" }
     return candidates.firstOrNull { it.comparable() !in used } ?: throw NamesTakenException()
+}
+
+/**
+ * The names the saves of this process hold in their destination folders (docs/spec.md section 4.5). A save holds the
+ * name of its item from the moment it picks it until its file is renamed or deleted, so a second save of the same name
+ * into the same folder picks another and never deletes the `.part` of the first.
+ */
+internal object HeldNames {
+    private val held = HashMap<SaveFolder, MutableList<String>>()
+
+    /**
+     * Holds and returns the first free name of [wanted] in [folder], one that neither a child of [folder] nor the hold of
+     * another save takes. [own] is a name this save already holds, which does not count as taken. Lists [folder] under
+     * the lock, so a save that renames its file and lets go of the name in between is seen.
+     *
+     * @throws NamesTakenException when all ten are taken.
+     */
+    fun hold(folder: SaveFolder, wanted: String, own: String? = null): String = synchronized(held) {
+        val others = held[folder].orEmpty().let { if (own == null) it else it - own }
+        val name = freeName(wanted, folder.names() + others)
+        held.getOrPut(folder, ::mutableListOf) += name
+        name
+    }
+
+    fun release(folder: SaveFolder, name: String) {
+        synchronized(held) {
+            val names = held[folder] ?: return
+            names.remove(name)
+            if (names.isEmpty()) held.remove(folder)
+        }
+    }
 }
 
 private fun String.comparable(): String = Normalizer.normalize(this, Normalizer.Form.NFC).lowercase(Locale.ROOT)

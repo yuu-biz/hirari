@@ -37,7 +37,8 @@ const val SAVE_MAX_DEPTH = 64
  * at the next block or before renaming the last, after deleting the file it was writing.
  *
  * Each file is written as `名前.part` and renamed when whole. The item itself takes the first free name of `名前` and
- * `名前 (1)` to `名前 (9)`. A folder is copied with everything in it. [onProgress] gets a value after each block.
+ * `名前 (1)` to `名前 (9)` that no other save of this process holds ([HeldNames]). A folder is copied with everything
+ * in it. [onProgress] gets a value after each block.
  */
 suspend fun SmbServer.saveTo(
     path: String,
@@ -127,8 +128,12 @@ private class SmbSaveRun(
     private fun report() = onProgress(SaveProgress(bytesDone, bytesTotal, current, filesDone, filesTotal))
 
     private suspend fun copyFolder(into: SaveFolder, node: DirNode, resolve: Boolean): String {
-        val name = if (resolve) freeName(node.name, onDestination { into.names() }) else node.name
-        val folder = onDestination { into.createFolder(name) }
+        val name = if (resolve) onDestination { HeldNames.hold(into, node.name) } else node.name
+        val folder = try {
+            onDestination { into.createFolder(name) }
+        } finally {
+            if (resolve) HeldNames.release(into, name)
+        }
         for (child in node.children) {
             when (child) {
                 is FileNode -> copyFile(folder, child, resolve = false)
@@ -141,12 +146,11 @@ private class SmbSaveRun(
     private suspend fun copyFile(into: SaveFolder, node: FileNode, resolve: Boolean): String {
         current = node.name
         val source = server.open(node.path)
+        val held = mutableListOf<String>()
         try {
             bytesTotal += source.size - node.size
-            val part = onDestination {
-                val wanted = if (resolve) freeName(node.name, into.names()) else node.name
-                (wanted + SAVE_PART_SUFFIX).also { into.delete(it) }
-            }
+            val wanted = if (resolve) onDestination { HeldNames.hold(into, node.name) }.also(held::add) else node.name
+            val part = (wanted + SAVE_PART_SUFFIX).also { onDestination { into.delete(it) } }
             val file = onDestination { into.create(part) }
             try {
                 onDestination { file.freeBytes }?.let { if (it < source.size) throw NoRoomException() }
@@ -163,7 +167,7 @@ private class SmbSaveRun(
                     report()
                 }
                 currentCoroutineContext().ensureActive()
-                val final = onDestination { if (resolve) freeName(node.name, into.names()) else node.name }
+                val final = if (resolve) onDestination { HeldNames.hold(into, node.name, own = wanted) }.also(held::add) else node.name
                 onDestination { file.commit(final) }
                 filesDone++
                 report()
@@ -173,6 +177,7 @@ private class SmbSaveRun(
                 throw t
             }
         } finally {
+            held.forEach { HeldNames.release(into, it) }
             source.close()
         }
     }

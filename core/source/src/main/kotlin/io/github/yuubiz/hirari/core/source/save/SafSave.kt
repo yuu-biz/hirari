@@ -55,6 +55,12 @@ class SafSaveFolder(
         DocumentsContract.deleteDocument(resolver, child.uri)
     }
 
+    /** The same document of the same provider, whichever tree reaches it: a document id is unique to its provider. */
+    override fun equals(other: Any?): Boolean =
+        other is SafSaveFolder && other.treeUri.authority == treeUri.authority && other.documentId == documentId
+
+    override fun hashCode(): Int = 31 * treeUri.authority.hashCode() + documentId.hashCode()
+
     private fun createDocument(mimeType: String, name: String): Uri =
         DocumentsContract.createDocument(resolver, folderUri, mimeType, name) ?: throw SaveDestinationException("the provider created no document")
 
