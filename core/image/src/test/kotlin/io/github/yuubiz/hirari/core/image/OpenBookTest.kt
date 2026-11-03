@@ -192,6 +192,27 @@ class OpenBookTest {
     }
 
     @Test
+    fun aFolderWhoseFileCannotBeToldForTheBrokenConnectionDoesNotOpenWithoutIt() = runTest {
+        val files = listOf(
+            FolderFile("001.jpg", size = null) { MemorySource(ByteArray(10)) },
+            FolderFile("002", size = null) { throw ConnectionLostException("SMB is reconnecting") },
+        )
+        assertEquals(BookResult.Failed(BookFailure.ReadError), Books.openFolder(files, decoding))
+    }
+
+    @Test
+    fun aFileWithoutAnExtensionWhoseBytesShowNoImageIsLeftOut() = runTest {
+        val files = listOf(
+            FolderFile("001.jpg", size = null) { MemorySource(ByteArray(10)) },
+            FolderFile("002", size = null) { MemorySource("not an image".toByteArray()) },
+            FolderFile("003", size = null) { throw IOException("unreadable") },
+        )
+        val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
+        assertEquals(listOf("001.jpg"), book.pages.map { it.name })
+        book.close()
+    }
+
+    @Test
     fun aFileOnABrokenConnectionIsAPageToRetryOnceItComesBack() = runTest {
         val files = listOf(FolderFile("001.jpg", size = null) { throw ConnectionLostException("SMB is reconnecting") })
         val book = (Books.openFolder(files, decoding) as BookResult.Opened).book

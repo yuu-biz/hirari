@@ -107,17 +107,24 @@ object Books {
         }
     }
 
-    /** Opens the image files of a folder (docs/spec.md section 3.10). [files] are the files directly inside it. */
+    /**
+     * Opens the image files of a folder (docs/spec.md section 3.10). [files] are the files directly inside it. A file
+     * that cannot be told for a broken connection fails the open (section 6.5), since leaving it out would drop a page.
+     */
     suspend fun openFolder(files: List<FolderFile>, decoding: ImageDecoding): BookResult {
-        val pages = withContext(Dispatchers.IO) {
-            files.mapIndexedNotNull { i, file ->
-                val page = PageEntry(-1, i, file.name.toByteArray(Charsets.UTF_8), file.name, file.size, sniffed = null)
-                when (pageCandidate(file.name, isDirectory = false)) {
-                    PageCandidate.Image -> page
-                    PageCandidate.Excluded -> null
-                    PageCandidate.Sniff -> sniffPrefix(file)?.let { page.copy(sniffed = it) }
+        val pages = try {
+            withContext(Dispatchers.IO) {
+                files.mapIndexedNotNull { i, file ->
+                    val page = PageEntry(-1, i, file.name.toByteArray(Charsets.UTF_8), file.name, file.size, sniffed = null)
+                    when (pageCandidate(file.name, isDirectory = false)) {
+                        PageCandidate.Image -> page
+                        PageCandidate.Excluded -> null
+                        PageCandidate.Sniff -> sniffPrefix(file)?.let { page.copy(sniffed = it) }
+                    }
                 }
             }
+        } catch (_: ConnectionLostException) {
+            return BookResult.Failed(BookFailure.ReadError)
         }
         return BookResult.Opened(OpenBook(BookContent.Images(FolderPages(files)), Container.Folder, sortedPages(pages), indexError = null, decoding))
     }
@@ -241,8 +248,11 @@ object Books {
         return openFolder(files, decoding)
     }
 
+    /** The image type the first bytes of [file] show, or null when they show none or [file] cannot be opened. */
     private fun sniffPrefix(file: FolderFile) = try {
         file.open().use { source -> sniffImage(readPrefix(source, SNIFF_BYTES)) }
+    } catch (e: ConnectionLostException) {
+        throw e
     } catch (_: Exception) {
         null
     }
