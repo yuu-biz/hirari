@@ -177,9 +177,13 @@ class HirariApp : Application() {
                 .detectDiskWrites()
                 .detectNetwork()
                 .penaltyLog()
-                .penaltyListener(Runnable::run) { violation ->
-                    if (blame(violation.stackTrace.asList(), ::isAppClass) == IoCulprit.App) {
-                        Handler(Looper.getMainLooper()).post { throw IllegalStateException("main-thread I/O", violation) }
+                .apply {
+                    if (stopsOnAppIo(Build.HARDWARE)) {
+                        penaltyListener(Runnable::run) { violation ->
+                            if (blame(violation.stackTrace.asList(), ::isAppClass) == IoCulprit.App) {
+                                Handler(Looper.getMainLooper()).post { throw IllegalStateException("main-thread I/O", violation) }
+                            }
+                        }
                     }
                 }
                 .build(),

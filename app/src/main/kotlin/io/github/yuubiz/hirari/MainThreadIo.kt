@@ -23,3 +23,12 @@ fun blame(frames: List<StackTraceElement>, isAppClass: (String) -> Boolean): IoC
     }
     return IoCulprit.Platform
 }
+
+private val emulatorHardware = setOf("ranchu", "goldfish")
+
+/**
+ * Whether an app violation stops the process on a device of [hardware] (`Build.HARDWARE`): only on the emulator,
+ * where the device tests, the fuzz and the monkey run. A maker patches classes inside `android.` too, so on a
+ * person's phone [blame] can take the maker's I/O for the app's; there the debug build only logs.
+ */
+fun stopsOnAppIo(hardware: String): Boolean = hardware in emulatorHardware

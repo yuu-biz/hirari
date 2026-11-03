@@ -38,4 +38,10 @@ class MainThreadIoTest {
         val frames = stack("libcore.io.BlockGuardOs", "android.app.ActivityThread", "com.android.internal.os.ZygoteInit")
         assertEquals(IoCulprit.Platform, blame(frames, isApp))
     }
+
+    @Test
+    fun onlyTheEmulatorStopsTheProcess() {
+        assertEquals(true, stopsOnAppIo("ranchu"))
+        assertEquals(false, stopsOnAppIo("qcom"))
+    }
 }
