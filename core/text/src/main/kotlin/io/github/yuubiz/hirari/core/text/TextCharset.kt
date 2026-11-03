@@ -32,12 +32,12 @@ private fun bomOf(bytes: ByteArray): Bom? = Bom.entries.firstOrNull { bom ->
  * A strict reading of a sample: its malformed or unmappable sequences, and the characters a wrong guess tends to
  * produce, half-width katakana and private use.
  */
-private data class Reading(val errors: Int, val oddities: Int)
+internal data class Reading(val errors: Int, val oddities: Int)
 
 private fun isOdd(c: Char): Boolean = c in '｡'..'ﾟ' || c in ''..''
 
 /** When the sample is a prefix of a longer file, a sequence cut at its end is not an error: the cut is ours. */
-private fun read(sample: ByteArray, charset: Charset, isWholeFile: Boolean): Reading {
+internal fun read(sample: ByteArray, charset: Charset, isWholeFile: Boolean): Reading {
     val decoder = charset.newDecoder()
         .onMalformedInput(CodingErrorAction.REPORT)
         .onUnmappableCharacter(CodingErrorAction.REPORT)
@@ -55,7 +55,8 @@ private fun read(sample: ByteArray, charset: Charset, isWholeFile: Boolean): Rea
         when {
             result.isError -> {
                 errors++
-                input.position(input.position() + result.length())
+                // A decoder may count a sequence past the end of a cut sample (ICU on Android does); the rest is gone.
+                input.position(minOf(input.limit(), input.position() + result.length()))
             }
             result.isOverflow -> drain()
             else -> break

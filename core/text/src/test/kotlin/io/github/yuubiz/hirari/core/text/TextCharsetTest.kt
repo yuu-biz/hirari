@@ -1,6 +1,11 @@
 package io.github.yuubiz.hirari.core.text
 
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
 import java.nio.charset.Charset
+import java.nio.charset.CharsetDecoder
+import java.nio.charset.CharsetEncoder
+import java.nio.charset.CoderResult
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,5 +87,41 @@ class TextCharsetTest {
         for (charset in listOf(Charsets.UTF_8, Charsets.UTF_16LE, Charsets.UTF_16BE)) {
             assertEquals(wide.replace("\r\n", "\n"), decodeText(wide.toByteArray(charset), charset), charset.name())
         }
+    }
+
+    @Test
+    fun aLongUtf8TextIsDetectedWhereverTheSampleCutsASequence() {
+        val line = "吾輩《わがはい》は猫である。名前はまだ無い。\n"
+        for (shift in 0..3) {
+            val text = "a".repeat(shift) + line.repeat(70_000 / line.toByteArray().size + 2)
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            assertEquals(Charsets.UTF_8, detectCharset(bytes, Charset.forName("windows-31j")).charset, "shift $shift")
+        }
+    }
+}
+
+/** A charset whose decoder, like ICU's on Android, can report a malformed sequence longer than the bytes left. */
+private object OverlongCharset : Charset("x-overlong-test", null) {
+    override fun contains(cs: Charset) = false
+
+    override fun newEncoder(): CharsetEncoder = throw UnsupportedOperationException()
+
+    override fun newDecoder(): CharsetDecoder = object : CharsetDecoder(this, 1f, 1f) {
+        override fun decodeLoop(input: ByteBuffer, out: CharBuffer): CoderResult {
+            while (input.hasRemaining()) {
+                if (input.remaining() <= 2 && input.get(input.position()) < 0) return CoderResult.malformedForLength(4)
+                if (!out.hasRemaining()) return CoderResult.OVERFLOW
+                out.put(Char(input.get().toInt() and 0x7F))
+            }
+            return CoderResult.UNDERFLOW
+        }
+    }
+}
+
+class TextCharsetCutTest {
+    @Test
+    fun aMalformedSequenceLongerThanTheRestOfTheSampleEndsTheReading() {
+        val sample = ByteArray(100) { 'a'.code.toByte() }.also { it[99] = 0xE5.toByte() }
+        assertEquals(1, read(sample, OverlongCharset, isWholeFile = false).errors)
     }
 }
