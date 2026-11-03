@@ -82,6 +82,17 @@ class ReaderSheetsTest {
         ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
     }
 
+    /**
+     * The reader times a turn from `SystemClock.uptimeMillis` and ends it on the frame clock's time, which are one
+     * clock on a device. The rule's frame clock counts from zero, so without this a turn never ends and Compose
+     * is never idle. Later frames then read a time past the end of any turn that starts within the next minute.
+     */
+    private fun alignFrameClockWithUptime() {
+        compose.mainClock.autoAdvance = false
+        compose.mainClock.advanceTimeBy(android.os.SystemClock.uptimeMillis() + 60_000, ignoreFrameDuration = true)
+        compose.mainClock.autoAdvance = true
+    }
+
     private fun tapPageBar() = compose.onRoot().performTouchInput { click(Offset(width / 2f, height - 30.dp.toPx())) }
 
     @Test
@@ -116,6 +127,7 @@ class ReaderSheetsTest {
         val services = app.services.await()
         ActivityScenario.launch<MainActivity>(intent).use {
             awaitPage(1)
+            alignFrameClockWithUptime()
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT)
             compose.waitUntil(5_000) { pageLabel()?.startsWith("1 ") == false }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU)
