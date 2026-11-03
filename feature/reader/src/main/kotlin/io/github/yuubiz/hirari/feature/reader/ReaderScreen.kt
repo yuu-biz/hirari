@@ -9,7 +9,6 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import android.view.KeyEvent
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -59,6 +58,7 @@ import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.Sibling
+import io.github.yuubiz.hirari.core.ui.ScreenBrightness
 import io.github.yuubiz.hirari.core.ui.announced
 import kotlinx.coroutines.delay
 
@@ -465,16 +465,6 @@ private fun HideSystemBars() {
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
-    }
-}
-
-/** 画面の明るさ (docs/spec.md section 4.10): the window's brightness while the reader is up, else the device's. */
-@Composable
-private fun ScreenBrightness(percent: Int?) {
-    val window = LocalView.current.context.findActivity()?.window
-    DisposableEffect(window, percent) {
-        window?.attributes = window.attributes.apply { screenBrightness = windowBrightness(percent) ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE }
-        onDispose { window?.attributes = window.attributes.apply { screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE } }
     }
 }
 

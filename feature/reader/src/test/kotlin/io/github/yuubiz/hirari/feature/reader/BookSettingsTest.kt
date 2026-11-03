@@ -14,7 +14,6 @@ import io.github.yuubiz.hirari.core.model.TrimStrength
 import java.nio.charset.Charset
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 class BookSettingsTest {
     private val settings = GlobalSettings()
@@ -67,11 +66,7 @@ class BookSettingsTest {
     }
 
     @Test
-    fun theBrightnessFollowsTheDeviceUnlessSetAndNeverGoesBlack() {
-        assertNull(windowBrightness(null))
-        assertEquals(0.5f, windowBrightness(50))
-        assertEquals(0.01f, windowBrightness(0))
-        assertEquals(1f, windowBrightness(100))
+    fun theBrightnessIsTheGlobalSetting() {
         assertEquals(30, ReaderConfig.of(settings.copy(readerBrightness = 30)).brightness)
     }
 

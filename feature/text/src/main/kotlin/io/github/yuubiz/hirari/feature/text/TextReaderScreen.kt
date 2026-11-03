@@ -87,6 +87,7 @@ import io.github.yuubiz.hirari.core.text.PageContent
 import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.ui.BarSemantics
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
+import io.github.yuubiz.hirari.core.ui.ScreenBrightness
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
 import io.github.yuubiz.hirari.core.ui.performTurnHaptic
 import kotlin.math.roundToInt
@@ -153,6 +154,7 @@ fun TextReaderScreen(
     val settings = (state as? TextReaderUiState.Reading)?.settings
     if (settings?.hideSystemBars != false) HideSystemBars()
     OrientationLock(orientation ?: settings?.readerOrientation ?: ReaderOrientation.System)
+    ScreenBrightness(settings?.readerBrightness)
     KeepAwake(settings?.keepAwake ?: KeepAwake.System, touched)
 
     fun dismiss() = if (bookEndEdge != null) bookEndEdge = null else if (panel != null) panel = null else back()
