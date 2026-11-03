@@ -9,6 +9,7 @@ import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.data.SettingsRepository
 import io.github.yuubiz.hirari.core.model.UriString
+import kotlinx.coroutines.CoroutineScope
 import java.time.Instant
 
 /** The persisted grants of SAF trees (docs/spec.md sections 4.2, 4.5 and 7). Each call is a Binder call off the main thread. */
@@ -55,7 +56,10 @@ interface FolderLister {
     suspend fun list(tree: UriString, path: String, documentId: String?): Listing
 }
 
-/** What the library screens read and write. */
+/**
+ * What the library screens read and write. [appScope] lives as long as the process, for work that must end even
+ * when the screen that asked for it is left.
+ */
 class LibraryServices(
     val locations: LocationRepository,
     val books: BookRepository,
@@ -70,5 +74,6 @@ class LibraryServices(
     val launch: LaunchRepository,
     val coverIndex: CoverIndex,
     val covers: Covers,
+    val appScope: CoroutineScope,
     val clock: () -> Instant = Instant::now,
 )

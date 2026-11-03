@@ -47,6 +47,8 @@ import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -394,7 +396,8 @@ internal class Fixture {
     val coverBooks = FakeCoverBooks()
     val covers = Covers(thumbnails, coverBooks, memoryBytes = 1 shl 20, density = { 2f }, decodeContext = Dispatchers.Unconfined, decode = { null })
     val services = LibraryServices(
-        locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, coverIndex, covers, clock = { T0 },
+        locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, coverIndex, covers,
+        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), clock = { T0 },
     )
 }
 

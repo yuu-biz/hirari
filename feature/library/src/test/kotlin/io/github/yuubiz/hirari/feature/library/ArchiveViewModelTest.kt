@@ -211,6 +211,26 @@ class ArchiveViewModelTest {
     }
 
     @Test
+    fun `a page chosen as the cover of the folder just before leaving the screen is still remade`() = runTest {
+        fixture.coverBooks.folders[""] = listOf(FolderEntry("作品", "doc:作品", directory = true, size = null, modified = at))
+        fixture.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", directory = false, size = 500, modified = at))
+        fixture.locations.rows.value = listOf(place)
+        fixture.archives.result = ArchiveOpenResult.Opened(contents)
+        val screen = ViewModelStore()
+        val list = screen.own { ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip"), UnconfinedTestDispatcher(testScheduler)) }
+        watch(list.state)
+        val page = list.shown().pages[1].page
+        val slow = CompletableDeferred<Unit>()
+        fixture.coverBooks.gate = slow
+
+        list.chooseFolderCover(page, choose = true)
+        screen.clear()
+        slow.complete(Unit)
+        assertEquals(3, fixture.thumbnails.regenerated.size)
+        assertEquals(setOf(page.entryIndex), fixture.thumbnails.regenerated.map { (it.subject as io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject.Folder).chosen?.coverEntry }.toSet())
+    }
+
+    @Test
     fun `choosing a page as the cover of the folder saves it and remakes the folder`() = runTest {
         fixture.coverBooks.folders[""] = listOf(FolderEntry("作品", "doc:作品", directory = true, size = null, modified = at))
         fixture.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", directory = false, size = 500, modified = at))

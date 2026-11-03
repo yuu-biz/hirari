@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
+import androidx.lifecycle.ViewModelStore
 import io.github.yuubiz.hirari.core.data.FolderCover
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -193,6 +194,30 @@ class FolderCoversTest {
         assertEquals(locationBookId(place, "作品"), folder.id)
         assertEquals(locationBookId(place, "作品/p.png"), folder.chosen?.id)
         assertEquals(at, folder.modified)
+    }
+
+    @Test
+    fun `a folder cover chosen just before leaving the screen is still remade, and the rows showing the folder look again`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(entry("p.png"))
+        fixture.coverBooks.folders[""] = listOf(entry("作品", directory = true))
+        fixture.coverBooks.folders["作品"] = listOf(entry("p.png"))
+        val screen = ViewModelStore()
+        val list = screen.own { FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, "作品", "doc:作品"), UnconfinedTestDispatcher(testScheduler)) }
+        watch(list.state)
+        val folder = checkNotNull(fixture.covers.folderSpec(place, "作品", fixture.settings.value.value.readingDirection, null))
+        watch(fixture.covers.show(CoverRef(folder, 320)))
+        fun folderLooks() = fixture.thumbnails.watches.count { it.request.subject.id == folder.id }
+        assertEquals(1, folderLooks())
+        val slow = CompletableDeferred<Unit>()
+        fixture.coverBooks.gate = slow
+
+        list.chooseFolderCover(list.shown().rows.single(), choose = true)
+        screen.clear()
+        slow.complete(Unit)
+        assertEquals(listOf(320, 252, 412), fixture.thumbnails.regenerated.map { it.sizePx })
+        assertEquals(setOf(locationBookId(place, "作品/p.png")), fixture.thumbnails.regenerated.map { (it.subject as ThumbSubject.Folder).chosen?.id }.toSet())
+        assertEquals(2, folderLooks())
     }
 
     @Test

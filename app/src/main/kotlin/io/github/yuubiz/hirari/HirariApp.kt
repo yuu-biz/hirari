@@ -107,6 +107,7 @@ class HirariApp : Application() {
                 launch = storage.launch,
                 coverIndex = storage.covers,
                 covers = covers,
+                appScope = appScope,
             )
         }
         text = appScope.async {
