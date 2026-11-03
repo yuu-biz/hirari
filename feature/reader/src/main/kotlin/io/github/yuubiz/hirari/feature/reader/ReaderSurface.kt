@@ -43,6 +43,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -67,6 +68,7 @@ import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
+import io.github.yuubiz.hirari.core.ui.performTurnHaptic
 import io.github.yuubiz.hirari.feature.reader.prefetch.PreparedPage
 import kotlin.math.roundToInt
 
@@ -113,6 +115,10 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
     var frameMs by remember { mutableLongStateOf(android.os.SystemClock.uptimeMillis()) }
     val latest by rememberUpdatedState(state)
     val close by rememberUpdatedState(onClose)
+    val view = LocalView.current
+    LaunchedEffect(viewModel, view) {
+        for (tick in viewModel.turnHaptics) view.performTurnHaptic()
+    }
 
     LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move, state.edgeHit) {
         if (!state.animating) return@LaunchedEffect

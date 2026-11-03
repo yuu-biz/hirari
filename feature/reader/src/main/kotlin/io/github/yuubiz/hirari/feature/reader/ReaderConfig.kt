@@ -54,6 +54,8 @@ data class ReaderConfig(
     val atBookEnd: BookEndAction = BookEndAction.Ask,
     /** 余白トリミング. */
     val trim: TrimStrength = TrimStrength.Off,
+    /** `turnHaptics`: a short tick when a turn changes the view. */
+    val turnHaptics: Boolean = false,
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
@@ -87,6 +89,7 @@ data class ReaderConfig(
             loupeHoldMs = settings.loupeHoldMs.toLong(),
             atBookEnd = settings.atBookEnd,
             trim = overrides.trim ?: settings.trimStrength,
+            turnHaptics = settings.turnHaptics,
         )
     }
 }

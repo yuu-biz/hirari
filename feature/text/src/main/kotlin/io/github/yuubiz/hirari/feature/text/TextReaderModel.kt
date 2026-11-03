@@ -22,6 +22,7 @@ import io.github.yuubiz.hirari.core.text.detectCharset
 import io.github.yuubiz.hirari.core.text.parseAozora
 import io.github.yuubiz.hirari.core.text.resolvePicturePath
 import io.github.yuubiz.hirari.core.text.tableOfContents
+import io.github.yuubiz.hirari.core.ui.TurnHaptics
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -111,6 +112,8 @@ internal class TextReaderModel(
     private val startAt: TextStart = TextStart.Saved,
     /** A turn that waited for the layout and then ran into an end of the text (docs/spec.md section 4.9). */
     private val onEdge: (BookEdge) -> Unit = {},
+    /** The view changed by a turn, a jump or a step, and 「めくりで振動」 is on (docs/spec.md section 4.10). */
+    private val onTurned: () -> Unit = {},
 ) {
     private val _state = MutableStateFlow<TextReaderUiState>(TextReaderUiState.Opening)
     val state: StateFlow<TextReaderUiState> = _state.asStateFlow()
@@ -270,10 +273,10 @@ internal class TextReaderModel(
         }
     }
 
-    /** The page at [index] of the current run, as the continuous layout scrolls onto it. */
+    /** The page at [index] of the current run, as the continuous layout scrolls onto it. A scroll is not a turn. */
     fun showPage(index: Int) {
         val run = run?.takeIf { index in 0 until it.size } ?: return
-        if (run.indexOf(anchor) != index) moveTo(run.start(index))
+        if (run.indexOf(anchor) != index) moveTo(run.start(index), scrolled = true)
     }
 
     fun first() = goTo(0)
@@ -382,16 +385,24 @@ internal class TextReaderModel(
         if (run != null && run.covers(offset)) {
             moveTo(offset, keepHighlight = true)
         } else {
+            // A page the run does not reach is another view than the one shown.
+            if (run != null && current?.turnHaptics == true) onTurned()
             anchor = offset
             pendingTurn = null
             relayout()
         }
     }
 
-    private fun moveTo(offset: Int, keepHighlight: Boolean = false) {
+    /** The source offset of the first page of the view shown, which names the view. */
+    private fun viewStart(): Int? = run?.let { it.start(it.indexOf(anchor)) }
+
+    private fun moveTo(offset: Int, keepHighlight: Boolean = false, scrolled: Boolean = false) {
         if (!keepHighlight) highlight = null
+        val from = viewStart()
         anchor = offset
         pendingTurn = null
+        val to = viewStart()
+        if (!scrolled && from != null && to != null && TurnHaptics.due(current?.turnHaptics == true, from, to)) onTurned()
         fill()
         render()
         record()

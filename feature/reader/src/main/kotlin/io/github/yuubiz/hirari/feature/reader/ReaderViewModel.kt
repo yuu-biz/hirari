@@ -70,6 +70,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -329,11 +330,15 @@ class ReaderViewModel(
         if (current != null) dispatch(ReaderEvent.ViewportChanged(next)) else start()
     }
 
+    /** A tick of 「めくりで振動」 for the screen to feel, one for each turn that changed the view. */
+    val turnHaptics = Channel<Unit>(Channel.CONFLATED)
+
     fun dispatch(event: ReaderEvent) {
         val before = state ?: return
         val after = before.reduce(event)
         if (after == before) return
         state = after
+        if (turnTicks(event, before, after)) turnHaptics.trySend(Unit)
         changed(before, after)
     }
 

@@ -25,6 +25,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -71,6 +72,9 @@ class TextReaderViewModel(
 
     val state: StateFlow<TextReaderUiState> = pending.asStateFlow()
 
+    /** A tick of 「めくりで振動」 for the screen to feel, one for each change of the view that a turn or a jump made. */
+    val turnHaptics = Channel<Unit>(Channel.CONFLATED)
+
     init {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Trace.beginAsyncSection(OPEN_SECTION, 0)
         viewModelScope.launch {
@@ -94,6 +98,7 @@ class TextReaderViewModel(
                 history = RepositoryTextHistory(services.storage.books, services.storage.history, services.appScope),
                 startAt = startAt,
                 onEdge = ::edgeReached,
+                onTurned = { turnHaptics.trySend(Unit) },
             )
             this@TextReaderViewModel.model = model
             launch { model.state.collect { pending.value = it } }

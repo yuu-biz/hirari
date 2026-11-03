@@ -78,6 +78,7 @@ import io.github.yuubiz.hirari.core.text.PageContent
 import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
+import io.github.yuubiz.hirari.core.ui.performTurnHaptic
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.delay
@@ -135,6 +136,10 @@ fun TextReaderScreen(
     var touched by remember { mutableIntStateOf(0) }
     val touch = remember { TextTouch() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
+    val view = LocalView.current
+    LaunchedEffect(viewModel, view) {
+        for (tick in viewModel.turnHaptics) view.performTurnHaptic()
+    }
     val settings = (state as? TextReaderUiState.Reading)?.settings
     if (settings?.hideSystemBars != false) HideSystemBars()
     OrientationLock(orientation ?: settings?.readerOrientation ?: ReaderOrientation.System)

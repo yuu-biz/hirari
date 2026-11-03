@@ -46,6 +46,7 @@ class TextReaderModelTest {
         startAt: TextStart = TextStart.Saved,
         work: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
         onEdge: (BookEdge) -> Unit = {},
+        onTurned: () -> Unit = {},
     ): TextReaderModel {
         val opened = OpenedText(id, "file.txt", "dir/file.txt", book = null, pictures = null) { closed++ }
         return TextReaderModel(
@@ -62,6 +63,7 @@ class TextReaderModelTest {
             heapBudget = heapBudget,
             startAt = startAt,
             onEdge = onEdge,
+            onTurned = onTurned,
         ).also {
             it.start()
             it.onViewport(screen)
@@ -390,6 +392,61 @@ class TextReaderModelTest {
         settings.value = settings.value.copy(textSizeSp = 6)
         pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run?.let { it.complete && it.size == 1 } == true }
         assertEquals(listOf(BookEdge.End), edges)
+    }
+
+    @Test
+    fun `with 「めくりで振動」 on each change of the view by a turn or a jump ticks once, and a scroll or a new layout does not`() = runTest {
+        settings.value = settings.value.copy(turnHaptics = true, textLayout = TextLayout.Single)
+        var ticks = 0
+        val model = model(onTurned = { ticks++ })
+        settle()
+        assertEquals(0, ticks, "opening")
+        model.turn(1)
+        assertEquals(1, ticks)
+        model.turn(-1)
+        assertEquals(2, ticks)
+        assertEquals(TurnResult.Edge(BookEdge.Start), model.turn(-1))
+        model.first()
+        assertEquals(2, ticks, "an end and a jump to the view shown")
+        model.last()
+        assertEquals(3, ticks)
+        model.first()
+        assertEquals(4, ticks)
+        model.showPage(2)
+        assertEquals(4, ticks, "scrolling the continuous layout")
+        settings.value = settings.value.copy(textSizeSp = 30)
+        settle()
+        assertEquals(4, ticks, "a new text size lays the pages out again under the same sentence")
+        model.goToFraction(0.5f)
+        settle()
+        assertEquals(5, ticks, "the page bar")
+    }
+
+    @Test
+    fun `with 「めくりで振動」 off no turn ticks`() = runTest {
+        var ticks = 0
+        val model = model(onTurned = { ticks++ })
+        settle()
+        model.turn(1)
+        model.last()
+        model.first()
+        assertEquals(0, ticks)
+    }
+
+    @Test
+    fun `a turn that waited for the layout ticks when it lands`() = runTest {
+        settings.value = settings.value.copy(textSizeSp = 28, turnHaptics = true)
+        val pump = HandPump()
+        var ticks = 0
+        val model = model(text = sampleText(chapters = 1, sentencesPerChapter = 60), work = pump, onTurned = { ticks++ })
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        val laidOut = model.reading.run!!
+        repeat(laidOut.lastIndex) { model.turn(1) }
+        assertEquals(laidOut.lastIndex, ticks)
+        assertEquals(TurnResult.Waiting, model.turn(1))
+        assertEquals(laidOut.lastIndex, ticks)
+        pump.until(this) { model.reading.run!!.size > laidOut.size }
+        assertEquals(laidOut.lastIndex + 1, ticks)
     }
 
     @Test
