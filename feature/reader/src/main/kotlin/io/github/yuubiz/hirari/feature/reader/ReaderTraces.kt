@@ -26,10 +26,10 @@ internal class ReaderTraces {
     }
 
     fun moved(event: ReaderEvent, before: ReaderState, after: ReaderState, targetPrepared: () -> Boolean) {
-        if (before.current == after.current) return
-        if (event !is ReaderEvent.Act && event !is ReaderEvent.GoTo && event !is ReaderEvent.PullEnded && event !is ReaderEvent.AutoPlayDue) return
         val lagUs = lagMicros()
         inputMs = 0L
+        if (before.current == after.current) return
+        if (event !is ReaderEvent.Act && event !is ReaderEvent.GoTo && event !is ReaderEvent.PullEnded && event !is ReaderEvent.AutoPlayDue) return
         pending?.section?.end()
         val name = if (targetPrepared()) "hirari.turn" else "hirari.jump"
         pending = Pending(after.current, TraceSection.begin("$name lagUs=$lagUs"))

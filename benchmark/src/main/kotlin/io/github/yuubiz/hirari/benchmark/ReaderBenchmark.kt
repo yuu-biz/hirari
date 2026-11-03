@@ -96,7 +96,7 @@ class ReaderBenchmark {
         prepare = { driver.openPlace(READER_PLACE, book) },
     ) {
         driver.open(book)
-        Thread.sleep(SETTLE_MS)
+        Thread.sleep(FIRST_PAGE_SETTLE_MS)
     }
 
     /** P10: the memory while reading the whole book, with `dumpsys meminfo` sampled every 10 turns into the log. */
@@ -175,3 +175,6 @@ class ReaderBenchmark {
 }
 
 private const val SETTLE_MS = 1_500L
+
+/** The first page has to be drawn before the measured block ends, or the section is not counted at all. */
+private const val FIRST_PAGE_SETTLE_MS = 5_000L

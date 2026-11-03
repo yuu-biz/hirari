@@ -1908,6 +1908,7 @@ M0 の時点で手元にある実機は、検証用の端末 A と 検証用の�
 | P9 | `hirari.textFirstPage`（`TextReaderViewModel`） | テキストリーダーを作った時点 | 最初のページの組版ができた時点（描画は含まない） | `TextBenchmark.p9TextFirstPage`。約 1 MB のテキスト。全体の組版（3 s）は計っていない |
 | P10 | | | | `ReaderBenchmark.p10Memory`。標準コーパスを最後まで進め、10 ページごとに `dumpsys meminfo` の Java Heap と Native Heap の合計を logcat のタグ `HirariBench` に出す。`MemoryUsageMetric` の最大値も出す。メモリ予算はこの試験からは見えないので、比べるのは人が行う |
 
+- 完了していない区間は数えられない。`hirari.firstPage` と `hirari.textFirstPage` の `Count` が 1 回の試行で 1 でなければ、計る区間の終わりまでにページが出なかったので、結果を使わず、試験の待ち時間を伸ばして流し直す。`turnCount` は `turns` に近いはずで（エミュレータで 40 回のうち 39、100 回のうち 98 だった。最後の区間が計る区間の終わりに間に合わなかったと見ている）、大きく外れたら調べる。
 - P4 の SMB の試験は、`tools/smb-fixture` の Samba に対して、エミュレータからホストの `10.0.2.2:14455` へ繋いで流れることを確かめた（`smbHost=10.0.2.2`、`smbPort=14455`、`smbShare=books`、`smbUser=bookworm7`、`smbBook` は置いた書庫）。初めて繋ぐときのローカルネットワークの許可の問い合わせは、試験が許可する。基準 NAS では流していない (要検証)。
 - P9 の試験の本文は、約 1 MB の UTF-8 の文章の先頭に 1 行（`a`）を足してある。足さない本文では、64 KB の見本で文字コードを調べるときに `IllegalArgumentException: newPosition > limit` でアプリが落ちた（`TextCharset.kt` の `read` の、エラーの長さだけ入力の位置を進める行。位置が見本の長さ 65536 を超える）。本文の並びで起きるかどうかが変わる。原因は確かめておらず、直していない (要検証)。
 - ページバーのタップ計測の試験が adb の短いタップでページバーを押してもページパネルが開かなかったので、試験は 400 ms を超える長押しで開く。タップで開かない原因は調べていない (要検証)。
