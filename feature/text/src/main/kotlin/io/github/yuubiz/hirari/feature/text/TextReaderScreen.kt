@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +43,7 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -280,7 +282,7 @@ private fun Reading(
         val frame = state.frame
         val run = state.run
         if (frame != null && run != null) {
-            if (frame.continuous) ContinuousPages(state, viewModel) else ShownPages(state, viewModel, touch)
+            if (frame.continuous) ContinuousPages(state, viewModel, touch) else ShownPages(state, viewModel, touch)
         } else {
             Box(Modifier.fillMaxSize().background(Color(argb(state.colors.paper))), contentAlignment = Alignment.Center) { DelayedProgress() }
         }
@@ -304,6 +306,22 @@ private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarState.
     }
 }
 
+/** The frame time that a motion in [touch] is drawn at; the motion ends when it is done, unless a finger is pulling it. */
+@Composable
+private fun rememberMotionClock(touch: TextTouch): State<Long> {
+    val motion = touch.motion
+    val frameMs = remember { mutableLongStateOf(SystemClock.uptimeMillis()) }
+    LaunchedEffect(motion) {
+        if (motion == null || motion is TextMotion.Pulling) return@LaunchedEffect
+        while (true) {
+            frameMs.longValue = withFrameMillis { it }
+            if (motion.isDoneAt(frameMs.longValue)) break
+        }
+        if (touch.motion == motion) touch.motion = null
+    }
+    return frameMs
+}
+
 /**
  * The shown pages of a single or spread layout, the first on the right, with the views of a turn effect, a pull or a
  * bounce in [touch]. A page still being laid out is bare paper.
@@ -313,15 +331,7 @@ private fun ShownPages(state: TextReaderUiState.Reading, viewModel: TextReaderVi
     val frame = state.frame ?: return
     val run = state.run ?: return
     val motion = touch.motion
-    var frameMs by remember { mutableLongStateOf(SystemClock.uptimeMillis()) }
-    LaunchedEffect(motion) {
-        if (motion == null || motion is TextMotion.Pulling) return@LaunchedEffect
-        while (true) {
-            frameMs = withFrameMillis { it }
-            if (motion.isDoneAt(frameMs)) break
-        }
-        if (touch.motion == motion) touch.motion = null
-    }
+    val frameMs by rememberMotionClock(touch)
     val viewWidth = frame.pageWidth * frame.pagesPerView + frame.gutter * (frame.pagesPerView - 1)
     val density = LocalDensity.current.density
     val layers = textLayers(motion, state.current, frame.pagesPerView, run, state.settings.turnEffect, viewWidth, density, frameMs)
@@ -357,7 +367,7 @@ private fun ShownPages(state: TextReaderUiState.Reading, viewModel: TextReaderVi
 
 /** The 連続 layout: every laid-out page in one row, right to left, scrolled by the finger; pages far from the view are bare paper. */
 @Composable
-private fun ContinuousPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel) {
+private fun ContinuousPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel, touch: TextTouch) {
     val frame = state.frame ?: return
     val run = state.run ?: return
     val list = rememberLazyListState(state.current)
@@ -371,7 +381,9 @@ private fun ContinuousPages(state: TextReaderUiState.Reading, viewModel: TextRea
         snapshotFlow { list.firstVisibleItemIndex }.collect { if (it != latest.current) viewModel.scrolledTo(it) }
     }
     val gutter = with(LocalDensity.current) { frame.gutter.toDp() }
-    LazyRow(Modifier.fillMaxSize(), state = list, reverseLayout = true, horizontalArrangement = Arrangement.spacedBy(gutter)) {
+    val clock = rememberMotionClock(touch)
+    val density = LocalDensity.current.density
+    LazyRow(Modifier.fillMaxSize().graphicsLayer { translationX = bounceShift(touch.motion, density, clock.value) }, state = list, reverseLayout = true, horizontalArrangement = Arrangement.spacedBy(gutter)) {
         items(run.size) { index ->
             val page = state.page(index)
             val pictures = rememberPictures(listOfNotNull(page), frame, viewModel)

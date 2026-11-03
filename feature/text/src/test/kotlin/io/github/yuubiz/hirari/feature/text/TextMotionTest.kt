@@ -49,6 +49,16 @@ class TextMotionTest {
         assertEquals(EdgeHit.BOUNCE_DP * 2, layers(bounce, nowMs = EdgeHit.BOUNCE_MS / 2).single().shift, 0.01f)
     }
 
+    @Test
+    fun `the 連続 row bounces at an end by the same shift, and moves under nothing else`() {
+        val bounce = TextMotion.Bouncing(EdgeHit(BookEdge.End, 0))
+        assertEquals(0f, bounceShift(bounce, density = 2f, nowMs = 0), 0.01f)
+        assertEquals(EdgeHit.BOUNCE_DP * 2, bounceShift(bounce, density = 2f, nowMs = EdgeHit.BOUNCE_MS / 2), 0.01f)
+        assertEquals(layers(bounce, nowMs = EdgeHit.BOUNCE_MS / 2).single().shift, bounceShift(bounce, density = 2f, nowMs = EdgeHit.BOUNCE_MS / 2))
+        assertEquals(0f, bounceShift(null, density = 2f, nowMs = EdgeHit.BOUNCE_MS / 2))
+        assertEquals(0f, bounceShift(TextMotion.Pulling(Turn.Forward, 50f), density = 2f, nowMs = EdgeHit.BOUNCE_MS / 2))
+    }
+
     private val settings = GlobalSettings(turnEffect = TurnEffect.Slide, turnDurationMs = 150)
 
     @Test

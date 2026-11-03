@@ -62,7 +62,7 @@ internal fun textLayers(
     val rest = listOf(TextLayer(current, 0f, 1f))
     val (frame, outgoing, incoming) = when (motion) {
         null -> return rest
-        is TextMotion.Bouncing -> return listOf(TextLayer(current, motion.hit.bounceDpAt(nowMs, TEXT_DIRECTION) * density, 1f))
+        is TextMotion.Bouncing -> return listOf(TextLayer(current, bounceShift(motion, density, nowMs), 1f))
         is TextMotion.Pulling -> {
             val next = neighbor(motion.turn) ?: return rest
             Triple(pullFrame(effect, turnMovement(motion.turn, TEXT_DIRECTION), pulledShare(motion.pulledDp, width, density)), current, next)
@@ -77,6 +77,10 @@ internal fun textLayers(
     val into = TextLayer(incoming, frame.incomingShift * width, frame.incomingAlpha)
     return if (frame.incomingOnTop) listOf(out, into) else listOf(into, out)
 }
+
+/** How far the bounce of 止まる has moved what is on screen at [nowMs], in pixels; the 連続 row moves by it as a whole. */
+internal fun bounceShift(motion: TextMotion?, density: Float, nowMs: Long): Float =
+    (motion as? TextMotion.Bouncing)?.let { it.hit.bounceDpAt(nowMs, TEXT_DIRECTION) * density } ?: 0f
 
 /** The share of a view [width] pixels wide that a pull of [pulledDp] has brought in. */
 internal fun pulledShare(pulledDp: Float, width: Float, density: Float): Float = pulledDp * density / width
