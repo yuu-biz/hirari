@@ -38,6 +38,8 @@
     <string name="text_orientation_portrait">縦に固定</string>
     <string name="text_orientation_landscape">横に固定</string>
     <string name="text_orientation_system">端末に従う</string>
+    <string name="text_book_end_title_end">本の終わり</string>
+    <string name="text_book_end_title_start">本の始め</string>
     <string name="text_book_end_next">次の本（%1$s）</string>
     <string name="text_book_end_previous">前の本（%1$s）</string>
     <string name="text_neighbor_saved">続きから</string>
@@ -52,4 +54,16 @@
     <string name="text_last">末尾</string>
     <string name="text_page_number">%1$s / %2$s</string>
     <string name="text_about">約 %1$d</string>
+    <string name="a11y_next_page">次のページ</string>
+    <string name="a11y_previous_page">前のページ</string>
+    <string name="a11y_first_page">最初のページ</string>
+    <string name="a11y_last_page">最後のページ</string>
+    <string name="a11y_open_pages">ページ移動を開く</string>
+    <string name="a11y_open_commands">コマンドバーを開く</string>
+    <string name="a11y_command_bar">コマンドバー</string>
+    <string name="a11y_page_bar">ページバー</string>
+    <string name="a11y_loading">読み込んでいます</string>
+    <string name="a11y_bookmark_delete">%1$s のしおりを削除</string>
+    <string name="a11y_size_slider">文字の大きさ</string>
+    <string name="a11y_page_slider">ページ</string>
 </resources>

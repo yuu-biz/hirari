@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -38,6 +40,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +71,10 @@ import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.model.opening
+import io.github.yuubiz.hirari.core.ui.announced
+import io.github.yuubiz.hirari.core.ui.blockTouches
+import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.minTouchTarget
 
 /** The text commands of docs/spec.md section 4.9, in the order of the spec. */
 internal enum class TextCommand(val label: Int) {
@@ -156,41 +169,46 @@ internal fun TextPanels(
         TextPanel.Commands -> Commands(
             commandBounds, highlight, state.settings.barHeightDp, onDismiss = { onPanel(null) }, onClose = onClose, onCommand = onCommand,
         )
-        TextPanel.Contents -> Sheet(onDismiss = { onPanel(null) }) {
+        TextPanel.Contents -> Sheet(stringResource(R.string.text_command_contents), onDismiss = { onPanel(null) }) {
             if (state.contents.isEmpty()) Message(R.string.text_contents_empty)
             LazyColumn {
                 items(state.contents) { heading ->
                     Row(
-                        Modifier.fillMaxWidth().clickable {
+                        Modifier.fillMaxWidth().clickable(role = Role.Button) {
                             viewModel.goTo(heading)
                             onPanel(null)
-                        }.padding(horizontal = 24.dp, vertical = 12.dp),
+                        }.minTouchTarget().padding(horizontal = 24.dp, vertical = 12.dp),
                     ) {
                         Text(heading.text, modifier = Modifier.padding(start = (heading.level.ordinal * 16).dp))
                     }
                 }
             }
         }
-        TextPanel.Search -> Sheet(onDismiss = { onPanel(null) }) { SearchPanel(state.search, viewModel) { onPanel(null) } }
-        TextPanel.Bookmarks -> Sheet(onDismiss = { onPanel(null) }) {
+        TextPanel.Search -> Sheet(stringResource(R.string.text_command_search), onDismiss = { onPanel(null) }) {
+            SearchPanel(state.search, viewModel) { onPanel(null) }
+        }
+        TextPanel.Bookmarks -> Sheet(stringResource(R.string.text_command_bookmarks), onDismiss = { onPanel(null) }) {
             if (state.bookmarks.isEmpty()) Message(R.string.text_bookmarks_empty)
             LazyColumn {
                 items(state.bookmarks, key = { it.id }) { mark ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             mark.label,
-                            Modifier.weight(1f).clickable {
+                            Modifier.weight(1f).clickable(role = Role.Button) {
                                 viewModel.goTo(mark)
                                 onPanel(null)
-                            }.padding(vertical = 12.dp),
+                            }.minTouchTarget().padding(vertical = 12.dp),
                         )
-                        TextButton(onClick = { viewModel.deleteBookmark(mark) }) { Text(stringResource(R.string.text_bookmark_delete)) }
+                        val delete = stringResource(R.string.a11y_bookmark_delete, mark.label)
+                        TextButton(onClick = { viewModel.deleteBookmark(mark) }, modifier = Modifier.semantics { contentDescription = delete }) {
+                            Text(stringResource(R.string.text_bookmark_delete), Modifier.decorative())
+                        }
                     }
                 }
             }
         }
-        TextPanel.Size -> Sheet(onDismiss = { onPanel(null) }) { SizePanel(state.settings, viewModel) }
-        TextPanel.PageJump -> Sheet(onDismiss = { onPanel(null) }) { PageJumpPanel(state, viewModel) }
+        TextPanel.Size -> Sheet(stringResource(R.string.text_command_size), onDismiss = { onPanel(null) }) { SizePanel(state.settings, viewModel) }
+        TextPanel.PageJump -> Sheet(stringResource(R.string.a11y_page_slider), onDismiss = { onPanel(null) }) { PageJumpPanel(state, viewModel) }
     }
 }
 
@@ -207,10 +225,11 @@ private fun Commands(
     DisposableEffect(bounds) { onDispose { bounds.clear() } }
     fun Modifier.item(item: TextPanelItem) =
         onGloballyPositioned { bounds.items[item] = it.boundsInRoot() }.background(if (item == highlight) HIGHLIGHT else Color.Transparent)
-    Box(Modifier.fillMaxSize().clickable(onClick = onDismiss)) {
+    val title = stringResource(R.string.a11y_command_bar)
+    Scrim(title, onDismiss) {
         Column(
             Modifier.padding(top = barHeightDp.dp).fillMaxWidth().onGloballyPositioned { bounds.panel = it.boundsInRoot() }
-                .background(PANEL_BACKGROUND).clickable(enabled = false) {}.padding(8.dp),
+                .background(PANEL_BACKGROUND).blockTouches().padding(8.dp),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 PanelButton(R.string.text_close, Modifier.item(TextPanelItem.Close), onClose)
@@ -222,7 +241,7 @@ private fun Commands(
                 Row(Modifier.fillMaxWidth()) {
                     row.forEach { command ->
                         Box(
-                            Modifier.weight(1f).heightIn(min = 56.dp).item(TextPanelItem.Command(command)).clickable { onCommand(command) },
+                            Modifier.weight(1f).heightIn(min = 56.dp).item(TextPanelItem.Command(command)).clickable(role = Role.Button) { onCommand(command) },
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(stringResource(command.label), color = Color.White)
@@ -243,11 +262,33 @@ private fun PanelButton(label: Int, modifier: Modifier, onClick: () -> Unit) {
     TextButton(onClick = onClick, modifier = modifier) { Text(stringResource(label), color = Color.White) }
 }
 
+/**
+ * A pane over the reader named [title] for a screen reader. A tap on the dimmed area closes it, and so does the scrim's
+ * button 閉じる, which a screen reader reaches after the pane's own controls.
+ */
+@Composable
+private fun Scrim(title: String, onDismiss: () -> Unit, contentAlignment: Alignment = Alignment.TopStart, content: @Composable BoxScope.() -> Unit) {
+    val close = stringResource(R.string.text_close)
+    Box(Modifier.fillMaxSize().semantics { paneTitle = title; isTraversalGroup = true }, contentAlignment = contentAlignment) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0x66000000))
+                .clickable(onClickLabel = close, role = Role.Button, onClick = onDismiss)
+                .semantics {
+                    contentDescription = close
+                    traversalIndex = 1f
+                },
+        )
+        content()
+    }
+}
+
 /** A sheet from the bottom; a tap above it closes it. */
 @Composable
-private fun Sheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0x66000000)).clickable(onClick = onDismiss), contentAlignment = Alignment.BottomCenter) {
-        Surface(Modifier.fillMaxWidth().heightIn(max = 480.dp).clickable(enabled = false) {}, tonalElevation = 2.dp) {
+private fun Sheet(title: String, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    Scrim(title, onDismiss, Alignment.BottomCenter) {
+        Surface(Modifier.fillMaxWidth().heightIn(max = 480.dp).blockTouches(), tonalElevation = 2.dp) {
             Column(Modifier.padding(vertical = 8.dp)) { content() }
         }
     }
@@ -255,7 +296,7 @@ private fun Sheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 
 @Composable
 private fun Message(text: Int) {
-    Text(stringResource(text), Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
+    Text(stringResource(text), Modifier.padding(24.dp).announced(), style = MaterialTheme.typography.bodyLarge)
 }
 
 /**
@@ -274,7 +315,7 @@ internal fun TextBookEndSheet(
     LaunchedEffect(edge) { sibling = viewModel.sibling(edge) }
     val atEnd = edge == BookEdge.End
     val starts = if (atEnd) listOf(NeighborStart.Saved, NeighborStart.First) else listOf(NeighborStart.Saved, NeighborStart.Last)
-    Sheet(onDismiss) {
+    Sheet(stringResource(if (atEnd) R.string.text_book_end_title_end else R.string.text_book_end_title_start), onDismiss) {
         when (val found = sibling) {
             Sibling.Last -> Message(if (atEnd) R.string.text_book_end_last_in_folder else R.string.text_book_end_first_in_folder)
             Sibling.NoFolder -> Unit
@@ -315,6 +356,7 @@ private fun SearchPanel(search: SearchState, viewModel: TextReaderViewModel, onS
             viewModel.search(it)
         },
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        label = { Text(stringResource(R.string.text_command_search)) },
         placeholder = { Text(stringResource(R.string.text_search_hint)) },
         singleLine = true,
     )
@@ -328,10 +370,10 @@ private fun SearchPanel(search: SearchState, viewModel: TextReaderViewModel, onS
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(hit.context.substring(hit.matchStart, hit.matchEnd)) }
                     append(hit.context.substring(hit.matchEnd))
                 },
-                Modifier.fillMaxWidth().clickable {
+                Modifier.fillMaxWidth().clickable(role = Role.Button) {
                     viewModel.show(hit)
                     onShown()
-                }.padding(horizontal = 24.dp, vertical = 10.dp),
+                }.minTouchTarget().padding(horizontal = 24.dp, vertical = 10.dp),
                 maxLines = 2,
             )
             HorizontalDivider()
@@ -344,14 +386,19 @@ private fun SearchPanel(search: SearchState, viewModel: TextReaderViewModel, onS
 @Composable
 private fun SizePanel(settings: GlobalSettings, viewModel: TextReaderViewModel) {
     var size by remember(settings.textSizeSp) { mutableFloatStateOf(settings.textSizeSp.toFloat()) }
-    Text(stringResource(R.string.text_size_value, size.toInt()), Modifier.padding(horizontal = 24.dp))
+    val sizeText = stringResource(R.string.text_size_value, size.toInt())
+    val sizeLabel = stringResource(R.string.a11y_size_slider)
+    Text(sizeText, Modifier.padding(horizontal = 24.dp).decorative())
     Slider(
         value = size,
         onValueChange = { size = it },
         onValueChangeFinished = { viewModel.updateSettings { it.copy(textSizeSp = size.toInt()) } },
         valueRange = 6f..62f,
         steps = 62 - 6 - 1,
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier.padding(horizontal = 16.dp).semantics {
+            contentDescription = sizeLabel
+            stateDescription = sizeText
+        },
     )
     Text(stringResource(R.string.text_typeface), Modifier.padding(horizontal = 24.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall)
     var refresh by remember { mutableIntStateOf(0) }
@@ -364,7 +411,13 @@ private fun SizePanel(settings: GlobalSettings, viewModel: TextReaderViewModel) 
     LazyColumn {
         items(choices) { typeface ->
             Row(
-                Modifier.fillMaxWidth().clickable { viewModel.updateSettings { it.copy(textTypeface = typeface) } }.padding(horizontal = 16.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .selectable(selected = settings.textTypeface == typeface, role = Role.RadioButton) {
+                        viewModel.updateSettings { it.copy(textTypeface = typeface) }
+                    }
+                    .minTouchTarget()
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(selected = settings.textTypeface == typeface, onClick = null)
@@ -412,13 +465,18 @@ private fun PageJumpPanel(state: TextReaderUiState.Reading, viewModel: TextReade
     val run = state.run ?: return
     val number = run.number(state.current)
     var fraction by remember(number) { mutableFloatStateOf(if (number.total > 1) (number.current - 1f) / (number.total - 1) else 0f) }
-    Text(pageNumberText(number), Modifier.padding(horizontal = 24.dp), style = MaterialTheme.typography.titleMedium)
+    val numberText = pageNumberText(number)
+    val pageLabel = stringResource(R.string.a11y_page_slider)
+    Text(numberText, Modifier.padding(horizontal = 24.dp).decorative(), style = MaterialTheme.typography.titleMedium)
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Slider(
             value = fraction,
             onValueChange = { fraction = it },
             onValueChangeFinished = { viewModel.goToFraction(fraction) },
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp).semantics {
+                contentDescription = pageLabel
+                stateDescription = numberText
+            },
         )
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {

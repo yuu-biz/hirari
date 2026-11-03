@@ -55,6 +55,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -82,6 +85,7 @@ import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.text.GlyphContent
 import io.github.yuubiz.hirari.core.text.PageContent
 import io.github.yuubiz.hirari.core.text.TextPage
+import io.github.yuubiz.hirari.core.ui.BarSemantics
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
 import io.github.yuubiz.hirari.core.ui.performTurnHaptic
@@ -215,6 +219,17 @@ fun TextReaderScreen(
                         }
                     },
                     turn = ::turn,
+                    accessible = panel == null,
+                    onControl = { control ->
+                        when (control) {
+                            TextControl.NextPage -> act(ReaderAction.TurnView(Turn.Forward))
+                            TextControl.PreviousPage -> act(ReaderAction.TurnView(Turn.Back))
+                            TextControl.FirstPage -> act(ReaderAction.First)
+                            TextControl.LastPage -> act(ReaderAction.Last)
+                            TextControl.OpenPages -> panel = TextPanel.PageJump
+                            TextControl.OpenCommands -> panel = TextPanel.Commands
+                        }
+                    },
                 )
                 TextPanels(panel, s, viewModel, bounds, touch.highlight, onPanel = { panel = it }, onClose = back, onCommand = run)
                 BookEndEffects(viewModel, onAsk = { edge ->
@@ -265,6 +280,8 @@ private fun Reading(
     onPanel: (TextPanel?) -> Unit,
     onItem: (TextPanelItem) -> Unit,
     turn: (Turn, Float?) -> Unit,
+    accessible: Boolean,
+    onControl: (TextControl) -> Unit,
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -277,8 +294,20 @@ private fun Reading(
             .fillMaxSize()
             .background(readerBackground(state.settings.readerBackground))
             .onSizeChanged { viewModel.onViewport(Viewport(it.width, it.height, density.density, density.fontScale)) }
-            .pointerInput(input) { with(input) { handle() } },
+            .pointerInput(input) { with(input) { handle() } }
+            .then(if (accessible) Modifier.textAccessibility(state, onControl) else Modifier.clearAndSetSemantics {}),
     ) {
+        if (accessible) {
+            BarSemantics(
+                state.settings.barHeightDp.toFloat(),
+                commandBar = stringResource(R.string.a11y_command_bar),
+                pageBar = stringResource(R.string.a11y_page_bar),
+                openCommands = stringResource(R.string.a11y_open_commands),
+                openPages = stringResource(R.string.a11y_open_pages),
+                onCommands = { onControl(TextControl.OpenCommands) },
+                onPages = { onControl(TextControl.OpenPages) },
+            )
+        }
         val frame = state.frame
         val run = state.run
         if (frame != null && run != null) {
@@ -467,7 +496,8 @@ private fun DelayedProgress() {
         delay(PROGRESS_DELAY_MS)
         shown = true
     }
-    if (shown) CircularProgressIndicator()
+    val loading = stringResource(R.string.a11y_loading)
+    if (shown) CircularProgressIndicator(Modifier.semantics { contentDescription = loading })
 }
 
 private const val PROGRESS_DELAY_MS = 300L
