@@ -50,6 +50,7 @@ import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
@@ -193,8 +194,16 @@ internal class FakeBooks : BookRepository {
 
     val coverSets = mutableListOf<Triple<BookId, Int?, CoverCrop?>>()
 
+    /** Held at the start of every [setCover] until it completes, as a busy database holds a write. */
+    var coverGate: CompletableDeferred<Unit>? = null
+
+    /** What [setCover] throws, as a full disk makes a write fail. */
+    var coverFailure: Throwable? = null
+
     override suspend fun setCover(id: BookId, entry: Int?, crop: CoverCrop?) {
-        coverSets += Triple(id, entry, crop)
+        coverGate?.await()
+        coverFailure?.let { throw it }
+        coverSets +=Triple(id, entry, crop)
         chosenPages.update { if (entry == null) it - id else it + (id to entry) }
         chosenCrops.update { if (entry == null || crop == null) it - id else it + (id to crop) }
     }
@@ -264,7 +273,8 @@ internal class FakeBookmarks : BookmarkRepository {
 
 internal class FakeSettings : SettingsRepository {
     val value = MutableStateFlow(GlobalSettings())
-    override val settings: Flow<GlobalSettings> = value
+    var failure: Throwable? = null
+    override val settings: Flow<GlobalSettings> = value.map { settings -> failure?.let { throw it }; settings }
 
     override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = value.update(transform)
 }
@@ -418,9 +428,13 @@ internal class Fixture {
     val thumbnails = FakeThumbnails()
     val coverBooks = FakeCoverBooks()
     val covers = Covers(thumbnails, coverBooks, memoryBytes = 1 shl 20, density = { 2f }, decodeContext = Dispatchers.Unconfined, decode = { null })
+
+    /** What the process's scope was left to handle: the app has no handler of its own, so each of these would end it. */
+    val uncaught = ArrayList<Throwable>()
     val services = LibraryServices(
         locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, coverIndex, covers,
-        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), clock = { T0 },
+        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, e -> uncaught += e }),
+        clock = { T0 },
     )
 }
 

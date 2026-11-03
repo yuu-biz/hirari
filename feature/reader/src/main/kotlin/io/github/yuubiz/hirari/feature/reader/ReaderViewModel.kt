@@ -310,7 +310,7 @@ class ReaderViewModel(
     fun markGuideSeen() {
         viewModelScope.launch {
             val shared = services.await()
-            shared.appScope.launch { shared.storage.launch.markReaderGuideSeen() }
+            shared.appScope.rememberGuideSeen(shared.storage.launch)
         }
     }
 

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 /** The page whose range is chosen: the indexed book, and the `entryIndex` of the page in it. */
 data class CoverRangeKey(val book: BookId, val entry: Int)
@@ -33,6 +34,9 @@ enum class CoverRangeFailure {
     /** Reading failed for a reason that may pass; opening the screen again tries again. */
     Unavailable,
 }
+
+/** Where the choice of 決定 or 範囲をやめる is: not made, being stored, or not stored for a reason that may pass. */
+enum class CoverSave { Idle, Saving, Failed }
 
 sealed interface CoverRangeUi {
     data object Loading : CoverRangeUi
@@ -57,6 +61,9 @@ class CoverRangeViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow<CoverRangeUi>(CoverRangeUi.Loading)
     val state: StateFlow<CoverRangeUi> = mutableState
+
+    private val mutableSave = MutableStateFlow(CoverSave.Idle)
+    val save: StateFlow<CoverSave> = mutableSave
 
     private var spec: CoverSpec.Book? = null
     private var loaded: LibraryServices? = null
@@ -107,10 +114,25 @@ class CoverRangeViewModel(
     private fun store(crop: CoverCrop?) {
         val book = spec ?: return
         val services = loaded ?: return
+        if (!mutableSave.compareAndSet(CoverSave.Idle, CoverSave.Saving) && !mutableSave.compareAndSet(CoverSave.Failed, CoverSave.Saving)) return
         services.appScope.launch {
-            services.books.setCover(key.book, key.entry, crop)
-            val thumbSize = services.settings.settings.first().thumbSize
-            services.covers.regenerate(book.copy(coverEntry = key.entry, coverCrop = crop), services.covers.sizesFrom(thumbSize))
+            try {
+                services.books.setCover(key.book, key.entry, crop)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                mutableSave.value = CoverSave.Failed
+                return@launch
+            }
+            mutableSave.value = CoverSave.Idle
+            try {
+                val thumbSize = services.settings.settings.first().thumbSize
+                services.covers.regenerate(book.copy(coverEntry = key.entry, coverCrop = crop), services.covers.sizesFrom(thumbSize))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // The choice is stored; the lists make the thumbnail when they show the book.
+            }
         }
     }
 

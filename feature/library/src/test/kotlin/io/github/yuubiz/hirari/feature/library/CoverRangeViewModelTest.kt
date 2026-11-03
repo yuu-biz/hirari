@@ -109,6 +109,36 @@ class CoverRangeViewModelTest {
     }
 
     @Test
+    fun `a write that fails is shown as a failed save and does not end the process, and choosing again stores it`() = runTest {
+        val model = viewModel(entry = 3)
+        fixture.books.coverFailure = java.io.IOException("no space left")
+
+        model.choose(CropFrame(0.1f, 0.2f, 0.6f, 0.9f))
+
+        assertEquals(emptyList<Throwable>(), fixture.uncaught)
+        assertEquals(CoverSave.Failed, model.save.value)
+        assertEquals(emptyList(), fixture.books.coverSets)
+        assertEquals(emptyList(), fixture.thumbnails.regenerated)
+
+        fixture.books.coverFailure = null
+        model.choose(CropFrame(0.1f, 0.2f, 0.6f, 0.9f))
+
+        assertEquals(1, fixture.books.coverSets.size)
+        assertEquals(ThumbSize.entries.size, fixture.thumbnails.regenerated.size)
+    }
+
+    @Test
+    fun `a thumbnail that cannot be made again after the choice is stored does not end the process`() = runTest {
+        val model = viewModel(entry = 3)
+        fixture.settings.failure = java.io.IOException("unreadable")
+
+        model.choose(CropFrame(0.1f, 0.2f, 0.6f, 0.9f))
+
+        assertEquals(emptyList<Throwable>(), fixture.uncaught)
+        assertEquals(1, fixture.books.coverSets.size)
+    }
+
+    @Test
     fun `dropping the range keeps the page as the cover and remakes it whole`() = runTest {
         val model = viewModel(entry = 3)
         model.choose(CropFrame(0.1f, 0.2f, 0.6f, 0.9f))
