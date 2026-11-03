@@ -70,6 +70,7 @@ import io.github.yuubiz.hirari.core.model.turnMovement
 import kotlinx.coroutines.delay
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageResult
+import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
@@ -158,6 +159,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
             .pointerInput(input) { with(input) { handle() } },
     ) {
         viewModel.prepared
+        viewModel.tilesDrawn
         val now = if (state.animating) frameMs else Long.MAX_VALUE
         if (state.scroll != null) drawStrip(viewModel, state, colorFilter) else for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
         state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter) }
@@ -354,6 +356,29 @@ private fun DrawScope.drawStrip(viewModel: ReaderViewModel, state: ReaderState, 
             is PreparedPage.Error -> drawRect(CardBackground, Offset(rect.left, rect.top), androidx.compose.ui.geometry.Size(rect.width, rect.height))
             null -> Unit
         }
+        val shape = state.pagination.shapes[page] as? PageShape.Known ?: continue
+        if (detail?.source?.view != view) drawTiles(viewModel.drawnTiles(page), rect, rect.width / shape.width, colorFilter)
+    }
+}
+
+/**
+ * [tiles] of a page drawn at [rect] with [scale] screen pixels for each pixel of its image. Each edge is rounded from
+ * the image's own position, so neighboring tiles meet without a seam.
+ */
+private fun DrawScope.drawTiles(tiles: List<DrawnTile>, rect: Rect, scale: Float, colorFilter: ColorFilter?) {
+    fun x(at: Int) = (rect.left + at * scale).roundToInt()
+    fun y(at: Int) = (rect.top + at * scale).roundToInt()
+    for (tile in tiles) {
+        if (tile.bitmap.isRecycled) continue
+        val left = x(tile.rect.left)
+        val top = y(tile.rect.top)
+        drawImage(
+            tile.bitmap.asImageBitmap(),
+            dstOffset = IntOffset(left, top),
+            dstSize = IntSize((x(tile.rect.right) - left).coerceAtLeast(1), (y(tile.rect.bottom) - top).coerceAtLeast(1)),
+            colorFilter = colorFilter,
+            filterQuality = FilterQuality.Low,
+        )
     }
 }
 

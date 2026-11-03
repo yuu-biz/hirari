@@ -30,6 +30,8 @@ import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.image.RawPage
+import io.github.yuubiz.hirari.core.image.TileSource
+import io.github.yuubiz.hirari.core.image.Tiling
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookAddress
@@ -186,6 +188,33 @@ class ReaderViewModel(
     /** Changes whenever a view is prepared or dropped, or a page fails. */
     var prepared: Int by mutableIntStateOf(0)
         private set
+
+    /** Changes whenever a tile of 縦に連続 arrives or goes. */
+    var tilesDrawn: Int by mutableIntStateOf(0)
+        private set
+
+    private val stripTiles = StripTiles(
+        viewModelScope,
+        open = ::openTiles,
+        close = { source -> services.getCompleted().appScope.launch { source.close() } },
+        changed = { tilesDrawn++ },
+    )
+
+    /** The tiles of [page] read so far, which draw over its prepared page in 縦に連続. */
+    fun drawnTiles(page: Int): List<DrawnTile> = stripTiles.drawn(page)
+
+    /** The tiles of [page], from its data the raw-data layer holds when it has it; `null` for a page that is not tiled. */
+    private suspend fun openTiles(page: Int): TileSource? {
+        val book = opened ?: return null
+        val current = state ?: return null
+        val shape = current.pagination.shapes[page] as? PageShape.Known ?: return null
+        val result = book.book.page(page, shape.atWidth(current.viewport.width), book.prefetcher.raw(page), Tiling.AsPlanned)
+        return when (val image = (result as? PageResult.Ready)?.image) {
+            is PreparedImage.Tiled -> image.source
+            is PreparedImage.Whole -> null.also { image.bitmap.recycle() }
+            null -> null
+        }
+    }
 
     private var opened: Opened? = null
 
@@ -469,6 +498,7 @@ class ReaderViewModel(
     override fun onCleared() {
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
+        stripTiles.clear()
         opened?.let {
             it.disk?.stop()
             it.prefetcher.close()
@@ -591,6 +621,7 @@ class ReaderViewModel(
             book.overrides.update { it.changedBy(before.config, after.config, book.global) }
         }
         readForLoupe(book.loader, after.loupeSource())
+        stripTiles.update(after.tileWindows())
         prefetchToDisk()
         if (reconnected(before?.connection, after.connection)) {
             book.prefetcher.retryLost()
