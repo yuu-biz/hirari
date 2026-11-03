@@ -32,6 +32,21 @@ class SmbPrefetchCacheTest {
     }
 
     @Test
+    fun `asking whether an entry is held does not count as a use`() {
+        val cache = cache()
+        val (a, b, c, d) = List(4) { Key("book", it) }
+        cache.put(a, bytes(100, 0))
+        cache.put(b, bytes(100, 1))
+        cache.put(c, bytes(100, 2))
+        assertTrue(cache.has(a))
+        assertFalse(cache.has(d))
+
+        cache.put(d, bytes(100, 3))
+        assertFalse(cache.has(a))
+        assertEquals(listOf(b, c, d), listOf(a, b, c, d).filter(cache::has))
+    }
+
+    @Test
     fun `beyond the bound the least recently used entries go first`() {
         val cache = cache()
         val (a, b, c, d) = List(4) { Key("book", it) }

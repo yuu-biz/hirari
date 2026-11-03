@@ -19,6 +19,7 @@ import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.Books
+import io.github.yuubiz.hirari.core.image.DiskStash
 import io.github.yuubiz.hirari.core.image.EntryNaming
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.MarginScan
@@ -54,11 +55,14 @@ import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
 import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
+import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
+import io.github.yuubiz.hirari.feature.reader.prefetch.DiskPrefetch
 import io.github.yuubiz.hirari.feature.reader.prefetch.Prefetcher
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchDepths
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchInput
 import io.github.yuubiz.hirari.feature.reader.prefetch.shownViews
+import io.github.yuubiz.hirari.feature.reader.prefetch.travelDirection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -84,6 +88,8 @@ class ReaderServices(
     val appScope: CoroutineScope,
     val siblings: SiblingBooks = SiblingBooks.None,
     val smb: SmbServers = SmbServers.None,
+    /** The SMB prefetch layer on disk, `cacheDir/smb/` (docs/spec.md section 5.3). */
+    val smbCache: SmbPrefetchCache? = null,
 ) {
     val overrides = BookOverridesStore(storage.books, appScope)
 }
@@ -187,6 +193,8 @@ class ReaderViewModel(
         val shareDir: File,
         val loader: BookPageLoader,
         val remote: Remote?,
+        /** The SMB prefetch layer, for an archive on a server that is not extracted (docs/spec.md section 5.3). */
+        val disk: DiskPrefetch?,
     )
 
     private val trimCallbacks = object : ComponentCallbacks2 {
@@ -216,6 +224,7 @@ class ReaderViewModel(
         stripShown = shown
         val current = state ?: return
         opened?.prefetcher?.update(current.prefetchInput(paused = shown))
+        prefetchToDisk()
     }
 
     fun cachedThumbnail(page: Int): Bitmap? = thumbnails[page]
@@ -314,10 +323,15 @@ class ReaderViewModel(
     /** What the book has fetched from its server, for 取得の状況; `null` for a book not on a server. */
     val fetchedBytes: Long? get() = opened?.remote?.meter?.bytes
 
-    /** What the pages of [view] still need from the server: the sizes declared for those whose data is not held. */
-    fun fetchExpected(view: PageView): Long {
-        val book = opened ?: return 0
-        return view.pages.filter { book.prefetcher.raw(it) == null }.sumOf { book.loader.rawEstimate(it) }
+    /**
+     * What the pages of [view] still need: those whose data is neither in memory nor in the SMB prefetch layer come
+     * from the server, at the sizes the book declares.
+     */
+    suspend fun fetchNeed(view: PageView): FetchNeed {
+        val book = opened ?: return FetchNeed(0, fromDisk = false)
+        val missing = view.pages.filter { book.prefetcher.raw(it) == null }
+        val onDisk = missing.filter { book.book.stash?.holds(it) == true }
+        return FetchNeed((missing - onDisk.toSet()).sumOf { book.loader.rawEstimate(it) }, fromDisk = onDisk.isNotEmpty())
     }
 
     /**
@@ -349,6 +363,7 @@ class ReaderViewModel(
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
         opened?.let {
+            it.disk?.stop()
             it.prefetcher.close()
             it.services.progress.flush()
             it.services.appScope.launch { SharedPageFiles.clear(it.shareDir) }
@@ -398,6 +413,7 @@ class ReaderViewModel(
 
             override fun onChanged() {
                 prepared++
+                prefetchToDisk()
             }
 
             override fun onMargins(page: Int, scan: MarginScan) = dispatch(ReaderEvent.MarginsLearned(page, scan))
@@ -406,7 +422,8 @@ class ReaderViewModel(
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val remote = located.remote
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader, remote)
+        val disk = book.stash?.let { DiskPrefetch(viewModelScope, it, book.pages.size) }
+        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader, remote, disk)
         remote?.server?.state?.let { connection -> viewModelScope.launch { connection.collect { dispatch(ReaderEvent.ConnectionChanged(it)) } } }
         stops.attach(session)
         phase = ReaderPhase.Reading
@@ -464,11 +481,27 @@ class ReaderViewModel(
             book.overrides.update { it.changedBy(before.config, after.config, book.global) }
         }
         readForLoupe(book.loader, after.loupeSource())
+        prefetchToDisk()
         if (reconnected(before?.connection, after.connection)) book.prefetcher.retryLost()
         val hit = after.edgeHit
         if (hit != null && hit != before?.edgeHit) {
             viewModelScope.launch { bookEnd = bookEndEffect(hit.edge, after.config.atBookEnd, ::sibling) }
         }
+    }
+
+    /**
+     * Moves the SMB prefetch layer to the current view once that view is prepared, so the reads it waits on go
+     * before those of the layer. It stops while the thumbnail strip is up, as the other layers do (docs/spec.md
+     * section 5.3).
+     */
+    private fun prefetchToDisk() {
+        val book = opened ?: return
+        val disk = book.disk ?: return
+        val current = state ?: return
+        if (stripShown) return disk.stop()
+        val view = current.current
+        if (book.prefetcher.get(view) == null) return
+        disk.update(view.pages.min()..view.pages.max(), travelDirection(current.recentTurns))
     }
 
     /**
@@ -575,7 +608,9 @@ class ReaderViewModel(
         } catch (e: Exception) {
             return failed(e.openFailure())
         }
-        val result = Books.openBook(meter.counted(file), opening.services.decoding, File(application.cacheDir, "extract/${id.value}"), naming)
+        // The size tells a file replaced at the same path apart, so its entries are not taken from the old one's.
+        val stash = opening.services.smbCache?.let { DiskStash(it, "${id.value}/${file.size}") }
+        val result = Books.openBook(meter.counted(file), opening.services.decoding, File(application.cacheDir, "extract/${id.value}"), naming, stash)
         return Located(id, source, Uri.EMPTY, folder = false, result, remote, overrides, fileSize = file.size)
     }
 

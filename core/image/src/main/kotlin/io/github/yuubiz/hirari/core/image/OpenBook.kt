@@ -57,6 +57,15 @@ class OpenBook internal constructor(
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob())
 
+    /** The SMB prefetch layer of an archive on a server (docs/spec.md section 5.3), or `null` for a book without one. */
+    val stash: PageStash? = ((content as? BookContent.Images)?.bytes as? StashedPages)?.let { stashed ->
+        object : PageStash {
+            override suspend fun holds(index: Int): Boolean = stashed.holds(pages[index])
+
+            override suspend fun fill(index: Int): Boolean = stashed.fill(pages[index])
+        }
+    }
+
     /**
      * The encoded bytes of the page at [index], for the raw-data prefetch layer to hold (docs/spec.md section
      * 5.3). [page] and [shape] decode from them without reading the book again. A PDF page has none to hold.

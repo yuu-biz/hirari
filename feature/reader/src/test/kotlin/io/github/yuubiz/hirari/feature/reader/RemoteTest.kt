@@ -59,17 +59,22 @@ class RemoteTest {
 
     @Test
     fun progressIsTheShareOfWhatTheViewNeedsAndTheRateSinceTheLastSample() {
-        val progress = fetchProgress(FetchSample(0, 1000), FetchSample(500, 1000 + 400_000), FetchSample(1000, 1000 + 900_000), expected = 2_000_000)
+        val progress = fetchProgress(FetchSample(0, 1000), FetchSample(500, 1000 + 400_000), FetchSample(1000, 1000 + 900_000), FetchNeed(2_000_000, fromDisk = true))
         assertEquals(FetchProgress(FetchSource.Server, 45, 1_000_000), progress)
     }
 
     @Test
     fun progressStopsShortOfDoneSinceTheDeclaredSizeIsNotTheCompressedOne() {
-        assertEquals(99, fetchProgress(FetchSample(0, 0), FetchSample(0, 0), FetchSample(10, 5_000), expected = 1_000).percent)
+        assertEquals(99, fetchProgress(FetchSample(0, 0), FetchSample(0, 0), FetchSample(10, 5_000), FetchNeed(1_000, fromDisk = false)).percent)
     }
 
     @Test
     fun aViewWhoseDataIsInMemoryIsOnlyDecoding() {
-        assertEquals(FetchSource.Memory, fetchProgress(FetchSample(0, 0), FetchSample(0, 0), FetchSample(10, 0), expected = 0).source)
+        assertEquals(FetchSource.Memory, fetchProgress(FetchSample(0, 0), FetchSample(0, 0), FetchSample(10, 0), FetchNeed(0, fromDisk = false)).source)
+    }
+
+    @Test
+    fun aViewThatNeedsNothingFromTheServerButSomethingFromDiskComesFromTheCache() {
+        assertEquals(FetchProgress(FetchSource.Cache, 99, 0), fetchProgress(FetchSample(0, 0), FetchSample(0, 0), FetchSample(10, 0), FetchNeed(0, fromDisk = true)))
     }
 }

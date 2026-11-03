@@ -217,11 +217,11 @@ private fun FetchStatus(viewModel: ReaderViewModel, view: PageView, modifier: Mo
     LaunchedEffect(view) {
         delay(PROGRESS_DELAY_MS)
         val start = FetchSample(android.os.SystemClock.uptimeMillis(), viewModel.fetchedBytes ?: return@LaunchedEffect)
-        val expected = viewModel.fetchExpected(view)
+        val need = viewModel.fetchNeed(view)
         var previous = start
         while (true) {
             val now = FetchSample(android.os.SystemClock.uptimeMillis(), viewModel.fetchedBytes ?: return@LaunchedEffect)
-            progress = fetchProgress(start, previous, now, expected)
+            progress = fetchProgress(start, previous, now, need)
             previous = now
             delay(FETCH_SAMPLE_MS)
         }
@@ -229,6 +229,7 @@ private fun FetchStatus(viewModel: ReaderViewModel, view: PageView, modifier: Mo
     val shown = progress ?: return
     val text = when (shown.source) {
         FetchSource.Memory -> stringResource(R.string.fetch_memory)
+        FetchSource.Cache -> stringResource(R.string.fetch_cache)
         FetchSource.Server -> stringResource(R.string.fetch_server, shown.percent, shown.bytesPerSecond / 1024)
     }
     OutlinedText(text, modifier, size = 16)

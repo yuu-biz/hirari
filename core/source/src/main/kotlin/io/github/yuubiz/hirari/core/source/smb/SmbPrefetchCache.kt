@@ -51,6 +51,13 @@ class SmbPrefetchCache(
         }
     }
 
+    /** Whether the cache holds the bytes of [key], without reading them or counting a use. */
+    @Synchronized
+    fun has(key: Key): Boolean {
+        load()
+        return sizes.containsKey(key.fileName())
+    }
+
     /** Stores [bytes] for [key]. Returns false when they do not fit under the bound or the free space. */
     @Synchronized
     fun put(key: Key, bytes: ByteArray): Boolean {

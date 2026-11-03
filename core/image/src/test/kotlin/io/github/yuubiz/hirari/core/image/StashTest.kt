@@ -1,0 +1,107 @@
+package io.github.yuubiz.hirari.core.image
+
+import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.PageEntry
+import io.github.yuubiz.hirari.core.model.PageResult
+import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
+
+class StashTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    private val decoding = ImageDecoding(budgetBytes = 64L shl 20, parallelism = 1)
+    private val cache by lazy { SmbPrefetchCache(temp.root.resolve("smb"), reserveBytes = 0) }
+
+    /** Entries `10 + i` hold `i + 1` bytes of `i`, and fail while [failing]. */
+    private class Server : PageBytes {
+        val reads = AtomicInteger()
+        var failing = false
+        var gate: CompletableDeferred<Unit>? = null
+
+        override suspend fun read(page: PageEntry): PageResult<ByteArray> {
+            reads.incrementAndGet()
+            gate?.await()
+            if (failing) throw IOException("gone")
+            val i = page.entryIndex - 10
+            return PageResult.Ready(ByteArray(i + 1) { i.toByte() })
+        }
+
+        override fun close() = Unit
+    }
+
+    private val pages = List(3) { PageEntry(it, 10 + it, byteArrayOf(it.toByte()), "$it.jpg", declaredSize = null, sniffed = null) }
+
+    private fun book(server: PageBytes, name: String = "book") =
+        OpenBook(BookContent.Images(StashedPages(server, DiskStash(cache, name))), Container.Zip, pages, indexError = null, decoding)
+
+    private fun RawResult.bytes(): List<Byte> = ByteArrayOutputStream().also { ((this as PageResult.Ready).image as RawPage.Encoded).writeTo(it) }.toByteArray().toList()
+
+    @Test
+    fun aPageReadFromTheServerIsReadFromDiskTheNextTimeTheBookOpens() = runBlocking {
+        val first = Server()
+        val opened = book(first)
+        val stash = opened.stash!!
+        assertFalse(stash.holds(2))
+        assertEquals(listOf<Byte>(2, 2, 2), opened.raw(2).bytes())
+        assertTrue(stash.holds(2))
+        opened.close()
+
+        val again = Server()
+        val reopened = book(again)
+        assertEquals(listOf<Byte>(2, 2, 2), reopened.raw(2).bytes())
+        assertEquals(0, again.reads.get())
+        assertFalse(book(again, name = "another book").stash!!.holds(2))
+    }
+
+    @Test
+    fun aPagePrefetchedOntoDiskIsNotReadFromTheServerAgain() = runBlocking {
+        val server = Server()
+        val opened = book(server)
+        assertTrue(opened.stash!!.fill(1))
+        assertTrue(opened.stash!!.fill(1))
+        assertEquals(listOf<Byte>(1, 1), opened.raw(1).bytes())
+        assertEquals(1, server.reads.get())
+    }
+
+    @Test
+    fun aViewWaitingOnThePrefetchOfItsPageGetsItWithoutASecondRead() = runBlocking {
+        val server = Server().apply { gate = CompletableDeferred() }
+        val opened = book(server)
+        val filling = async { opened.stash!!.fill(0) }
+        while (server.reads.get() == 0) kotlinx.coroutines.yield()
+        val reading = async { opened.raw(0) }
+        server.gate!!.complete(Unit)
+        assertTrue(filling.await())
+        assertEquals(listOf<Byte>(0), reading.await().bytes())
+        assertEquals(1, server.reads.get())
+    }
+
+    @Test
+    fun aPageThatFailsToReadIsNotKept() = runBlocking {
+        val server = Server().apply { failing = true }
+        val opened = book(server)
+        assertFalse(opened.stash!!.fill(0))
+        assertEquals(readError, opened.raw(0))
+        assertFalse(opened.stash!!.holds(0))
+        assertNull(cache.get(SmbPrefetchCache.Key("book", 10)))
+    }
+
+    @Test
+    fun aBookWithoutAStashHasNoDiskLayer() = runBlocking {
+        val opened = (Books.openFolder(emptyList(), decoding) as BookResult.Opened).book
+        assertNull(opened.stash)
+    }
+}

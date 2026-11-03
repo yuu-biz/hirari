@@ -68,12 +68,14 @@ object Books {
     /**
      * Opens the archive in [source], which the book owns from here on. A solid archive is extracted into
      * [extractDir], the book's directory under `cacheDir/extract/` (docs/spec.md section 3.3), when it is given.
+     * The entries of any other archive go into [stash] once read, when it is given (section 5.3).
      */
     suspend fun openArchive(
         source: ByteSource,
         decoding: ImageDecoding,
         extractDir: File? = null,
         naming: EntryNaming = EntryNaming(),
+        stash: DiskStash? = null,
     ): BookResult {
         val session = when (val opened = ArchiveSession.open(source, extractDir)) {
             is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
@@ -93,7 +95,9 @@ object Books {
                         ?.let { page.copy(sniffed = it) }
                 }
             }
-            BookResult.Opened(OpenBook(BookContent.Images(ArchivePages(session)), session.format.container(), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
+            val extracted = session.solid && extractDir != null
+            val bytes = ArchivePages(session).let { if (stash != null && !extracted) StashedPages(it, stash) else it }
+            BookResult.Opened(OpenBook(BookContent.Images(bytes), session.format.container(), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
         } catch (_: OutOfMemoryError) {
             session.close()
             BookResult.Failed(BookFailure.ReadError)
@@ -130,13 +134,14 @@ object Books {
     /**
      * Opens the book in [source], which the book owns from here on: a single image when its first bytes show an
      * image, a PDF when `%PDF-` starts within its first 1024 bytes (docs/spec.md section 3.2), and otherwise an
-     * archive, extracted into [extractDir] when solid.
+     * archive, extracted into [extractDir] when solid, and its entries kept in [stash] otherwise.
      */
     suspend fun openBook(
         source: ByteSource,
         decoding: ImageDecoding,
         extractDir: File? = null,
         naming: EntryNaming = EntryNaming(),
+        stash: DiskStash? = null,
     ): BookResult {
         val read = try {
             safely { readPrefix(source, PDF_SNIFF_BYTES) }
@@ -152,7 +157,7 @@ object Books {
             }
         }
         sniffImage(prefix)?.let { return openImage(source, it, decoding) }
-        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding, extractDir, naming)
+        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding, extractDir, naming, stash)
     }
 
     /** Opens the PDF in [source], which the book owns from here on (docs/spec.md section 3.9). */

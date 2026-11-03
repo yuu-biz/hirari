@@ -50,20 +50,29 @@ class FetchMeter {
 /** The meter's count at [atMs]. */
 data class FetchSample(val atMs: Long, val bytes: Long)
 
-/** Where the page being waited for comes from (docs/spec.md section 4.8, 取得の状況). */
-enum class FetchSource { Memory, Server }
+/**
+ * Where the page being waited for comes from (docs/spec.md section 4.8, 取得の状況): the raw data in memory, the SMB
+ * prefetch layer on disk (`cacheDir/smb/`), or the server.
+ */
+enum class FetchSource { Memory, Cache, Server }
+
+/**
+ * What the pages of a view still need: [fromServer] bytes, from the sizes the book declares for the pages neither in
+ * memory nor on disk, and whether [fromDisk] some of them are read from the SMB prefetch layer.
+ */
+data class FetchNeed(val fromServer: Long, val fromDisk: Boolean)
 
 /** `45% 820 KB/s`: [percent] of what the view still needs, and the rate since the last sample. */
 data class FetchProgress(val source: FetchSource, val percent: Int, val bytesPerSecond: Long)
 
 /**
  * The progress of the view being waited for, from the samples taken since it started waiting ([start]) and the
- * previous one. [expected] is what its pages still need, from the sizes the book declares: an entry's compressed
- * size is not known, so the share stops at 99% until the view is ready. A view whose data is all in memory is only
- * decoding.
+ * previous one. An entry's compressed size is not known, so the share of [need] stops at 99% until the view is ready.
+ * A view that needs nothing from the server is read from disk, or, with its data all in memory, only decoding.
  */
-fun fetchProgress(start: FetchSample, previous: FetchSample, now: FetchSample, expected: Long): FetchProgress {
-    if (expected <= 0) return FetchProgress(FetchSource.Memory, 99, 0)
+fun fetchProgress(start: FetchSample, previous: FetchSample, now: FetchSample, need: FetchNeed): FetchProgress {
+    val expected = need.fromServer
+    if (expected <= 0) return FetchProgress(if (need.fromDisk) FetchSource.Cache else FetchSource.Memory, 99, 0)
     val percent = ((now.bytes - start.bytes) * 100 / expected).coerceIn(0, 99).toInt()
     val elapsed = now.atMs - previous.atMs
     val rate = if (elapsed > 0) (now.bytes - previous.bytes) * 1000 / elapsed else 0

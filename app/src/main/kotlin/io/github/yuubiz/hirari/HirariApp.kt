@@ -13,6 +13,7 @@ import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.thumbnail.Thumbnails
 import io.github.yuubiz.hirari.feature.library.LibraryServices
+import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
 import io.github.yuubiz.hirari.feature.library.Covers
@@ -30,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "HirariApp"
@@ -69,7 +71,15 @@ class HirariApp : Application() {
             val storage = storage.await()
             appScope.launch { reconcile(storage) }
             val siblings = FolderSiblings(storage.locations, SafFolderLister(contentResolver), smbPlaces.await(), storage.settings)
-            ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope, siblings, smbPool.await())
+            ReaderServices(
+                storage,
+                ProgressWriter(storage.progress, appScope),
+                ImageDecoding.forDevice(this@HirariApp),
+                appScope,
+                siblings,
+                smbPool.await(),
+                SmbPrefetchCache(File(cacheDir, "smb")),
+            )
         }
         library = appScope.async {
             val storage = services.await().storage
