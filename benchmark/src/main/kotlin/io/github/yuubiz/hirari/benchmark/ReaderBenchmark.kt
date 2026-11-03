@@ -135,8 +135,11 @@ class ReaderBenchmark {
         repeat(turns - forward) { tap(device.displayWidth * BACK_BAND_PERCENT / 100, y) }
     }
 
+    /** Every trial starts from cleared data, so the book is a first read and the operation guide takes the first tap. */
     private fun openBook() {
         driver.openFromFileList(READER_PLACE, book)
+        Thread.sleep(SETTLE_MS)
+        device.click(device.displayWidth / 2, device.displayHeight / 2)
         Thread.sleep(SETTLE_MS)
     }
 
