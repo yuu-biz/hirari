@@ -249,6 +249,26 @@ class SmbSaveTest {
     }
 
     @Test
+    fun `cancelling while the last block is read deletes the part and commits nothing`() {
+        val into = MemoryFolder()
+        val reading = CountDownLatch(3)
+        val release = CountDownLatch(1)
+        val server = server(mapOf("vol1.cbz" to pattern), onRead = {
+            reading.countDown()
+            if (reading.count == 0L) release.await(10, TimeUnit.SECONDS)
+        })
+        runBlocking {
+            val job = async(Dispatchers.Default) { server.saveTo("vol1.cbz", false, into) }
+            assertTrue(reading.await(10, TimeUnit.SECONDS))
+            job.cancel()
+            release.countDown()
+            assertThrows(CancellationException::class.java) { runBlocking { job.await() } }
+        }
+        assertEquals(listOf("vol1.cbz.part"), into.log)
+        assertTrue("the part and the file are gone: ${into.files.keys}", into.files.isEmpty())
+    }
+
+    @Test
     fun `cancelling a folder keeps the files that are whole and deletes the one being written`() {
         val files = mapOf("series/a.zip" to byteArrayOf(1, 2), "series/b.zip" to pattern)
         val into = MemoryFolder()

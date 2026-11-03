@@ -33,8 +33,8 @@ const val SAVE_MAX_DEPTH = 64
 /**
  * Copies the file or folder at [path] of the share to [destination] (docs/spec.md section 4.5, 端末に保存). [path] is
  * counted from the share root. Reads through this server, so the copy shares the connection and the request permits
- * with the listings and the readers (section 8.3). Runs on the I/O dispatcher and stops at the next block when the
- * caller is cancelled, after deleting the file it was writing.
+ * with the listings and the readers (section 8.3). Runs on the I/O dispatcher and, when the caller is cancelled, stops
+ * at the next block or before renaming the last, after deleting the file it was writing.
  *
  * Each file is written as `名前.part` and renamed when whole. The item itself takes the first free name of `名前` and
  * `名前 (1)` to `名前 (9)`. A folder is copied with everything in it. [onProgress] gets a value after each block.
@@ -162,6 +162,7 @@ private class SmbSaveRun(
                     written += count
                     report()
                 }
+                currentCoroutineContext().ensureActive()
                 val final = onDestination { if (resolve) freeName(node.name, into.names()) else node.name }
                 onDestination { file.commit(final) }
                 filesDone++
