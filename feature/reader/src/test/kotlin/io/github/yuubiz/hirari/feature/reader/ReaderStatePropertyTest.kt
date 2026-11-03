@@ -23,7 +23,10 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** docs/spec.md section 9, M1: going forward and then back returns to the same view, and to the same stop. */
+/**
+ * docs/spec.md section 9, M1: going forward and then back returns to the same view, and to the same stop. 縦に連続
+ * has neither views to turn nor stops; its steps are checked in `StripTest`.
+ */
 class ReaderStatePropertyTest {
     private class Reading(val truth: List<PageShape.Known>, val state: ReaderState) {
         override fun toString() = "Reading(truth=${truth.joinToString("") { if (it.isWide) "W" else "T" }}, " +
@@ -43,7 +46,7 @@ class ReaderStatePropertyTest {
 
     private val arbConfig: Arb<ReaderConfig> = arbitrary {
         ReaderConfig(
-            layout = LayoutSettings(Arb.enum<LayoutMode>().bind(), Arb.enum<ReadingDirection>().bind(), Arb.boolean().bind()),
+            layout = LayoutSettings(Arb.element(LayoutMode.entries - LayoutMode.Vertical).bind(), Arb.enum<ReadingDirection>().bind(), Arb.boolean().bind()),
             scaleMode = Arb.enum<ScaleMode>().bind(),
             stopOrder = Arb.enum<StopOrder>().bind(),
             stopMaxStep = Arb.int(1..20).bind() * 0.05f,

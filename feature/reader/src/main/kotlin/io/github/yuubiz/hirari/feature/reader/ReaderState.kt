@@ -15,6 +15,10 @@ import io.github.yuubiz.hirari.core.model.Pagination
 import io.github.yuubiz.hirari.core.model.PaginationEvent
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.model.ScaleMode
+import io.github.yuubiz.hirari.core.model.Strip
+import io.github.yuubiz.hirari.core.model.StripScreen
+import io.github.yuubiz.hirari.core.model.StripScroll
 import io.github.yuubiz.hirari.core.model.rotated
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
 
@@ -73,20 +77,37 @@ data class ReaderState(
     val connection: SmbConnectionState? = null,
     /** What 余白トリミング read from each page, in the shown orientation, for every strength at once. */
     val margins: Map<Int, MarginScan> = emptyMap(),
+    /** Where the screen is over the [strip] in 縦に連続, and `null` in the other layouts (docs/spec.md section 2.5). */
+    val scroll: StripScroll? = null,
 ) {
     val current: PageView get() = pagination.current
+
+    /** The pages one under another, as 縦に連続 lays them out. */
+    val strip: Strip by lazy { Strip.of(pagination.shapes) }
+
+    /** The screen over the [strip], with the pinch zoom. */
+    val stripScreen: StripScreen get() = StripScreen(viewport.width, viewport.height, zoom.factor)
+
     /**
      * The last view is on screen and the shapes of its pages are known, so no layout to come makes it another
      * view. Before that, a lone wide page still shows as one view that later splits in two halves.
      */
     val showsLastView: Boolean
-        get() = pagination.currentIndex == pagination.views.lastIndex && current.pages.all { pagination.shapes[it] is PageShape.Known }
+        get() = scroll?.let { it.endInView(strip, stripScreen) && pagination.shapes.last() is PageShape.Known }
+            ?: (pagination.currentIndex == pagination.views.lastIndex && current.pages.all { pagination.shapes[it] is PageShape.Known })
 
+    /** The geometry of [view] on screen; `null` in 縦に連続, which places its pages by the [strip]. */
     fun geometry(view: PageView = current): ViewGeometry? =
-        ViewGeometry.of(view, pagination.shapes, keptParts(view), config, viewport, zoom.factor)
+        if (scroll != null) null else ViewGeometry.of(view, pagination.shapes, keptParts(view), config, viewport, zoom.factor)
 
-    /** The geometry of [view] at the zoom of its scale mode, which sets the size of its prepared pages. */
-    fun preparedGeometry(view: PageView): ViewGeometry? = ViewGeometry.of(view, pagination.shapes, keptParts(view), config, viewport, 1f)
+    /**
+     * The geometry of [view] at the zoom of its scale mode, which sets the size of its prepared pages. In 縦に連続
+     * every page fits the width of the screen.
+     */
+    fun preparedGeometry(view: PageView): ViewGeometry? {
+        val shown = if (scroll != null) config.copy(scaleMode = ScaleMode.FitWidth, capAtOriginal = false) else config
+        return ViewGeometry.of(view, pagination.shapes, keptParts(view), shown, viewport, 1f)
+    }
 
     /** The stop index the screen rests on, or `null` while the geometry is unknown or the view was panned. */
     fun stopIndex(): Int? {
@@ -120,6 +141,7 @@ data class ReaderState(
      */
     fun loupePage(nowMs: Long): Int? {
         val finger = loupe?.finger ?: return null
+        if (scroll != null) return null
         val geometry = geometry() ?: return null
         val x = finger.x + (positionAt(nowMs) ?: return null).x
         return geometry.pages.indices.minBy { i ->
@@ -137,6 +159,7 @@ data class ReaderState(
     /** What the loupe shows at [nowMs] (docs/spec.md section 4.8, ルーペ), or `null` without one. */
     fun loupeView(nowMs: Long): LoupeView? {
         val loupe = loupe ?: return null
+        if (scroll != null) return stripLoupeView(loupe, nowMs)
         val index = loupePage(nowMs) ?: return null
         val scale = displayScale(geometry() ?: return null, index)
         return LoupeView(loupe.rectAt(nowMs, viewport.size, config.loupeFrame), loupe.finger, config.loupeZoom.magnification(scale))
@@ -149,6 +172,7 @@ data class ReaderState(
      */
     fun loupeSource(): LoupeSource? {
         if (!config.loupeZoom.readsSource) return null
+        if (scroll != null) return stripLoupeSource()
         val index = loupePage(Long.MAX_VALUE) ?: return null
         val geometry = preparedGeometry(current) ?: return null
         if (displayScale(geometry, index) >= 1f) return null
@@ -164,7 +188,7 @@ data class ReaderState(
     fun reduce(event: ReaderEvent): ReaderState = when (event) {
         is ReaderEvent.Act -> byHand().act(event.action, event.nowMs)
         is ReaderEvent.GoTo -> byHand().moved(PaginationEvent.GoTo(event.page))
-        is ReaderEvent.ShapeLearned -> relaid(pagination.reduce(PaginationEvent.ShapeLearned(event.page, event.shape.rotated(config.rotation))))
+        is ReaderEvent.ShapeLearned -> relaid(pagination.reduce(PaginationEvent.ShapeLearned(event.page, event.shape.rotated(config.rotation)))).following()
         is ReaderEvent.MarginsLearned -> copy(margins = margins.learned(event.page, event.scan, current.pages.first()))
         is ReaderEvent.ViewportChanged ->
             if (event.viewport == viewport) {
@@ -179,7 +203,8 @@ data class ReaderState(
                     transition = null,
                     pull = null,
                     loupe = null,
-                )
+                    scroll = scroll?.copy(x = 0f, motion = null),
+                ).following()
             }
         is ReaderEvent.ConfigChanged -> configured(event.config)
         is ReaderEvent.Tick -> copy(
@@ -187,11 +212,13 @@ data class ReaderState(
             stopTravel = stopTravel?.takeUnless { it.move.motion.isDoneAt(event.nowMs) },
             loupe = loupe?.at(event.nowMs),
             edgeHit = edgeHit?.takeUnless { it.isDoneAt(event.nowMs) },
-        )
+            scroll = scroll?.ticked(event.nowMs, strip, stripScreen),
+        ).following()
         is ReaderEvent.LoupeShown -> byHand().copy(loupe = Loupe.at(event.finger, viewport.size))
         is ReaderEvent.LoupeMoved -> copy(loupe = loupe?.moved(event.finger, viewport.size, viewport.density, event.nowMs))
         ReaderEvent.LoupeHidden -> copy(loupe = null)
         is ReaderEvent.Pan -> byHand().panned(event.dx, event.dy)
+        is ReaderEvent.Fling -> copy(scroll = scroll?.flung(event.velocityY, event.nowMs, viewport.density, strip, stripScreen)).following()
         is ReaderEvent.Pulling -> byHand().copy(pull = Pull(event.turn, neighbor(event.turn), event.pulledDp))
         is ReaderEvent.PullEnded -> released(event.commit, event.nowMs)
         is ReaderEvent.Zoom -> byHand().zoomed(event.event, event.focus)
@@ -203,8 +230,19 @@ data class ReaderState(
 
     /** The state with every running animation at its end, as the next input finds it. */
     private fun settled(): ReaderState {
+        if (scroll != null) return copy(transition = null, pull = null, scroll = scroll.settled(strip, stripScreen)).following()
         val travel = stopTravel ?: return copy(transition = null, pull = null)
         return copy(transition = null, pull = null, stopTravel = null, place = Place.AtStop(travel.index))
+    }
+
+    /** In 縦に連続 the current view is the page the screen is on, and a move to another page counts as a turn. */
+    private fun following(): ReaderState {
+        val scroll = scroll ?: return this
+        val page = scroll.page(strip, stripScreen)
+        val on = current.pages.first()
+        if (page == on) return this
+        val turn = if (page > on) Turn.Forward else Turn.Back
+        return copy(pagination = pagination.reduce(PaginationEvent.GoTo(page)), recentTurns = (recentTurns + turn).takeLast(2))
     }
 
     /** A move of the reader's own ends 自動再生 (docs/spec.md section 4.8). */
@@ -223,7 +261,7 @@ data class ReaderState(
     }
 
     private fun act(action: ReaderAction, nowMs: Long): ReaderState = when (action) {
-        is ReaderAction.TurnView -> ranInto(turned(action.turn, nowMs), action.turn, nowMs)
+        is ReaderAction.TurnView -> ranInto(if (scroll != null) stepped(action.turn, nowMs) else turned(action.turn, nowMs), action.turn, nowMs)
         is ReaderAction.StepStops -> ranInto(stepped(action.turn, nowMs), action.turn, nowMs)
         is ReaderAction.Shift -> moved(PaginationEvent.Shift(action.forward))
         ReaderAction.First -> moved(PaginationEvent.GoTo(0))
@@ -233,10 +271,13 @@ data class ReaderState(
 
     /**
      * [moved], or this state run into the edge toward [turn] when it could not move. A view whose shapes are not
-     * known yet may still split, so it is not an edge until they are.
+     * known yet may still split, so it is not an edge until they are; in 縦に連続, the same goes for the pages on
+     * screen, which may still grow.
      */
     private fun ranInto(moved: ReaderState, turn: Turn, nowMs: Long): ReaderState {
-        if (moved !== this || neighbor(turn) != null || current.pages.any { pagination.shapes[it] !is PageShape.Known }) return moved
+        if (moved !== this || scroll == null && neighbor(turn) != null) return moved
+        val shown = scroll?.visible(strip, stripScreen)?.toList() ?: current.pages
+        if (shown.any { pagination.shapes[it] !is PageShape.Known }) return moved
         return copy(edgeHit = EdgeHit(edgeOf(turn), nowMs))
     }
 
@@ -254,6 +295,7 @@ data class ReaderState(
     }
 
     private fun stepped(turn: Turn, nowMs: Long): ReaderState {
+        if (scroll != null) return scroll.stepped(turn, nowMs, viewport.density, strip, stripScreen)?.let { copy(scroll = it) } ?: this
         val geometry = geometry() ?: return turned(turn, nowMs)
         val path = geometry.stops(config)
         val from = positionOf(geometry, place)
@@ -280,6 +322,7 @@ data class ReaderState(
     /** A move that does not animate: a jump to a page, a shift of the pairing. */
     private fun moved(event: PaginationEvent): ReaderState {
         val next = pagination.reduce(event)
+        if (scroll != null && event is PaginationEvent.GoTo) return copy(pagination = next, scroll = StripScroll.at(next.current.pages.first())).following()
         if (next.current == current && next.currentIndex == pagination.currentIndex) return copy(pagination = next)
         return copy(pagination = next, place = Place.Entered(Turn.Forward))
     }
@@ -299,20 +342,29 @@ data class ReaderState(
     private fun configured(next: ReaderConfig): ReaderState {
         if (next == config) return this
         val turned = next.rotation != config.rotation
-        val modeChanged = turned || next.scaleMode != config.scaleMode || next.capAtOriginal != config.capAtOriginal
+        val modeChanged = turned || next.scaleMode != config.scaleMode || next.capAtOriginal != config.capAtOriginal || next.vertical != config.vertical
         val shapes = if (next.rotation.swapsSides == config.rotation.swapsSides) pagination else pagination.reduce(PaginationEvent.ShapesChanged(swapped(pagination.shapes)))
         val layout = shapes.reduce(PaginationEvent.SettingsChanged(next.layout))
         val viewChanged = layout.current != current
-        return settled().copy(
+        val settled = settled()
+        val scroll = when {
+            !next.vertical -> null
+            settled.scroll == null -> StripScroll.at(layout.current.pages.first())
+            modeChanged -> settled.scroll.copy(x = 0f)
+            else -> settled.scroll
+        }
+        return settled.copy(
             pagination = layout,
             config = next,
             margins = if (turned) emptyMap() else margins,
             zoom = if (modeChanged) zoom.reduce(ZoomEvent.ModeChanged, ZoomLimits(Scale(1f, 1f), 1f, false)) else zoom,
             place = if (modeChanged || viewChanged || next.direction != config.direction) Place.Entered(Turn.Forward) else place,
-        )
+            scroll = scroll,
+        ).following()
     }
 
     private fun panned(dx: Float, dy: Float): ReaderState {
+        if (scroll != null) return copy(scroll = scroll.panned(dx, dy, strip, stripScreen)).following()
         val geometry = geometry() ?: return this
         if (!geometry.overflows) return this
         val from = positionOf(geometry, place)
@@ -334,6 +386,7 @@ data class ReaderState(
 
     /** A pinch scales about [focus], in screen pixels, so the point under the fingers stays under them. */
     private fun zoomed(event: ZoomEvent, focus: Point?): ReaderState {
+        if (scroll != null) return stripZoomed(scroll, event, focus)
         val before = geometry() ?: return copy(zoom = zoom.reduce(event, ZoomLimits(Scale(1f, 1f), 1f, false)))
         val nextZoom = zoom.reduce(event, before.limits)
         if (nextZoom.factor == zoom.factor) return copy(zoom = nextZoom)
@@ -346,12 +399,28 @@ data class ReaderState(
         return copy(zoom = nextZoom, place = Place.Panned(after.clamp(position)))
     }
 
+    /**
+     * A pinch in 縦に連続 zooms the strip about [focus] from the width of the screen, between half of it and eight
+     * times it, and a release below the width of the screen goes back to it (docs/spec.md section 4.8).
+     */
+    private fun stripZoomed(scroll: StripScroll, event: ZoomEvent, focus: Point?): ReaderState {
+        val next = zoom.reduce(event, ZoomLimits(Scale(1f, 1f), 1f, capAtOriginal = false))
+        if (next.factor == zoom.factor) return copy(zoom = next)
+        val before = stripScreen
+        val anchor = focus ?: Point(viewport.width / 2f, viewport.height / 2f)
+        return copy(zoom = next, scroll = scroll.zoomed(before, before.copy(zoom = next.factor), anchor, strip)).following()
+    }
+
     private fun swapped(shapes: List<PageShape>): List<PageShape> =
         shapes.map { if (it is PageShape.Known) it.rotated(Rotation.Quarter) else it }
 
     companion object {
-        fun open(pageCount: Int, start: Int, config: ReaderConfig, viewport: Viewport): ReaderState =
-            ReaderState(Pagination.open(pageCount, config.layout, viewport.orientation, start), config, viewport)
+        /** In 縦に連続, [offset] is how far down page [start] the top of the screen is, as a fraction of its height. */
+        fun open(pageCount: Int, start: Int, config: ReaderConfig, viewport: Viewport, offset: Float = 0f): ReaderState {
+            val pagination = Pagination.open(pageCount, config.layout, viewport.orientation, start)
+            val scroll = if (config.vertical) StripScroll.at(pagination.current.pages.first(), offset.coerceIn(0f, 1f)) else null
+            return ReaderState(pagination, config, viewport, scroll = scroll)
+        }
     }
 }
 
@@ -371,8 +440,11 @@ sealed interface ReaderEvent {
     /** A frame at [nowMs], which ends the animations that are done. */
     data class Tick(val nowMs: Long) : ReaderEvent
 
-    /** A finger moved the zoomed view by [dx] and [dy] screen pixels. */
+    /** A finger moved the zoomed view, or the strip of 縦に連続, by [dx] and [dy] screen pixels. */
     data class Pan(val dx: Float, val dy: Float) : ReaderEvent
+
+    /** A finger that scrolled went up at [velocityY] pixels per second, positive downward, which 縦に連続 glides on. */
+    data class Fling(val velocityY: Float, val nowMs: Long) : ReaderEvent
 
     /** A finger pulls past the edge toward [turn], by [pulledDp] after resistance. */
     data class Pulling(val turn: Turn, val pulledDp: Float) : ReaderEvent

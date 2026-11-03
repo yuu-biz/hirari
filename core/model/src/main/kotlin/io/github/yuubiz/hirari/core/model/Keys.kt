@@ -50,9 +50,10 @@ sealed interface KeyResult {
 
 /**
  * The key bindings of docs/spec.md section 4.8 (キー操作), which the text reader shares (section 4.9). A repeat of a
- * held key comes as another press and turns again. [mirrored] is the `mirrorControls` setting.
+ * held key comes as another press and turns again. [mirrored] is the `mirrorControls` setting. In 縦に連続
+ * ([vertical]) the up and down keys scroll, since there is no pairing to shift.
  */
-data class KeyBindings(val direction: ReadingDirection, val mirrored: Boolean, val volumeKeys: VolumeKeys) {
+data class KeyBindings(val direction: ReadingDirection, val mirrored: Boolean, val volumeKeys: VolumeKeys, val vertical: Boolean = false) {
     fun onKey(code: Int, pressed: Boolean, shift: Boolean = false): KeyResult {
         val action = actionFor(code, shift) ?: return KeyResult.NotHandled
         return if (pressed) KeyResult.Act(action) else KeyResult.Consumed
@@ -61,8 +62,8 @@ data class KeyBindings(val direction: ReadingDirection, val mirrored: Boolean, v
     private fun actionFor(code: Int, shift: Boolean): ReaderAction? = when (code) {
         KeyCodes.DPAD_LEFT -> ReaderAction.TurnView(if (leftGoesForward) Turn.Forward else Turn.Back)
         KeyCodes.DPAD_RIGHT -> ReaderAction.TurnView(if (leftGoesForward) Turn.Back else Turn.Forward)
-        KeyCodes.DPAD_UP -> ReaderAction.Shift(forward = false)
-        KeyCodes.DPAD_DOWN -> ReaderAction.Shift(forward = true)
+        KeyCodes.DPAD_UP -> if (vertical) ReaderAction.StepStops(Turn.Back) else ReaderAction.Shift(forward = false)
+        KeyCodes.DPAD_DOWN -> if (vertical) ReaderAction.StepStops(Turn.Forward) else ReaderAction.Shift(forward = true)
         KeyCodes.PAGE_DOWN, KeyCodes.ENTER, KeyCodes.NUMPAD_ENTER, KeyCodes.BUTTON_R1 -> ReaderAction.TurnView(Turn.Forward)
         KeyCodes.PAGE_UP, KeyCodes.BUTTON_L1 -> ReaderAction.TurnView(Turn.Back)
         KeyCodes.SPACE -> ReaderAction.TurnView(if (shift) Turn.Back else Turn.Forward)

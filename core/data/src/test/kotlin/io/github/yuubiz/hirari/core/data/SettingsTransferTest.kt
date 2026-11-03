@@ -77,7 +77,7 @@ class SettingsTransferTest {
         val id = locations.addSmbShare(server, password.toCharArray())
         val book = locationBookId(locations.get(id)!!, "series/vol1.zip")
         books.updateOverrides(book) { overrides }
-        progress.save(listOf(BookProgress(book, ReadState.Reading, ReadingPosition.Image(40, 180), at(1))))
+        progress.save(listOf(BookProgress(book, ReadState.Reading, ReadingPosition.Image(40, 180, offset = 0.25f), at(1))))
         bookmarks.add(book, ReadingPosition.Image(12, 180), "fight", at(2))
         history.record(book, at(3), limit = 100)
         return book
@@ -117,7 +117,7 @@ class SettingsTransferTest {
 
             assertEquals(book, locationBookId(restored, "series/vol1.zip"))
             assertEquals(overrides, storage.books.overrides(book).first())
-            assertEquals(BookProgress(book, ReadState.Reading, ReadingPosition.Image(40, 180), at(1)), storage.progress.get(book))
+            assertEquals(BookProgress(book, ReadState.Reading, ReadingPosition.Image(40, 180, offset = 0.25f), at(1)), storage.progress.get(book))
             assertEquals(listOf("fight"), storage.bookmarks.inBook(book).first().map { it.label })
             assertEquals(listOf(book), storage.history.observe(HistorySort.Newest).first().map { it.entry.book })
         }

@@ -23,8 +23,10 @@ data class BreathScroll(val pan: ReaderEvent.Pan, val leg: BreathLeg?)
  * The pan that moves the screen [distancePx] along the stops of the current view toward [turn]: to the next stop past
  * the screen, then on to the one after it. It stops at the last stop of the view, the first going back, and does not
  * turn. `null` when the screen cannot move, as on a view that fits the screen. [leg] is what the frame before left.
+ * 縦に連続 has no stops, so there it moves the strip by [stripPan].
  */
 fun ReaderState.breathPan(turn: Turn, distancePx: Float, leg: BreathLeg? = null): BreathScroll? {
+    scroll?.let { return stripPan(turn, distancePx)?.let { BreathScroll(it, leg = null) } }
     val geometry = geometry() ?: return null
     if (!geometry.overflows) return null
     val path = geometry.stops(config)

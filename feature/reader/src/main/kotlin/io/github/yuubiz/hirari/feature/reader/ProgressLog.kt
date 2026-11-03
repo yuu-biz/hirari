@@ -19,7 +19,8 @@ class ProgressLog(private val book: BookId, private val pageCount: Int, private 
     fun next(state: ReaderState, now: Instant): BookProgress? {
         if (restoring) return null
         if (state.showsLastView) read = true
-        val position = ReadingPosition.Image(state.current.pages.first(), pageCount)
+        val position = state.scroll?.anchor?.let { ReadingPosition.Image(it.page, pageCount, it.fraction) }
+            ?: ReadingPosition.Image(state.current.pages.first(), pageCount)
         val readState = if (read) ReadState.Read else ReadState.Reading
         val last = stored
         if (last != null && last.position == position && last.state == readState) return null

@@ -210,6 +210,8 @@ class ReaderViewModel(
         val book: OpenBook,
         val id: BookId,
         val start: Int,
+        /** How far down [start] the saved position of 縦に連続 is, as a fraction of the page's height. */
+        val startOffset: Float,
         val config: ReaderConfig,
         val prefetcher: Prefetcher<RawPage, Bitmap>,
         val services: ReaderServices,
@@ -507,11 +509,13 @@ class ReaderViewModel(
         val writer = checkNotNull(located.overrides)
         val config = ReaderConfig.of(settings, writer.current)
         val indexed = withContext(Dispatchers.IO) { describe(located, book) }
+        val savedAt = saved?.position as? ReadingPosition.Image
         val start = when (val at = request.start) {
-            StartAt.Saved -> (saved?.position as? ReadingPosition.Image)?.viewStart
+            StartAt.Saved -> savedAt?.viewStart
             is StartAt.Page -> at.index
             is StartAt.Image -> book.pages.indexOfFirst { it.name.substringAfterLast('/') == at.name }.takeIf { it >= 0 }
         }?.coerceIn(book.pages.indices) ?: 0
+        val startOffset = savedAt?.takeIf { request.start == StartAt.Saved && it.viewStart == start }?.offset ?: 0f
         val lowRam = application.getSystemService(ActivityManager::class.java).isLowRamDevice
         val listener = object : Prefetcher.Listener {
             override fun onShape(page: Int, shape: PageShape.Known) = dispatch(ReaderEvent.ShapeLearned(page, shape))
@@ -528,7 +532,7 @@ class ReaderViewModel(
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val remote = located.remote
         val disk = book.stash?.let { DiskPrefetch(viewModelScope, it, book.pages.size) }
-        opened = Opened(book, id, start, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader, remote, disk)
+        opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader, remote, disk)
         remote?.server?.state?.let { connection -> viewModelScope.launch { connection.collect { dispatch(ReaderEvent.ConnectionChanged(it)) } } }
         stops.attach(session)
         phase = ReaderPhase.Reading
@@ -569,7 +573,7 @@ class ReaderViewModel(
         val book = opened ?: return
         val viewport = viewport ?: return
         if (state != null) return
-        val first = ReaderState.open(book.book.pages.size, book.start, book.config, viewport).copy(connection = book.remote?.server?.state?.value)
+        val first = ReaderState.open(book.book.pages.size, book.start, book.config, viewport, book.startOffset).copy(connection = book.remote?.server?.state?.value)
         state = first
         changed(null, first)
     }

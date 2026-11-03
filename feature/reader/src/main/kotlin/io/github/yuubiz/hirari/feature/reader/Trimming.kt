@@ -64,11 +64,12 @@ private fun PageShape.Known.sizeOf(part: PagePart): PixelSize = part.sizeOf(Pixe
 /**
  * What 余白トリミング keeps of each page of [view], in reading order (docs/spec.md section 4.8). A half keeps its
  * half of what the whole page keeps. Every page is whole while the strength is off and until the margins of every
- * page of the view are known, so the two pages of a pair are trimmed together or not at all.
+ * page of the view are known, so the two pages of a pair are trimmed together or not at all. 縦に連続 keeps every
+ * page whole, so the strip runs on from one page into the next.
  */
 fun ReaderState.keptParts(view: PageView): List<PagePart> {
     val whole = view.pages.map { PagePart.Whole }
-    if (config.trim == TrimStrength.Off) return whole
+    if (config.trim == TrimStrength.Off || config.vertical) return whole
     val trims = view.pages.map { margins[it]?.trim(config.trim) ?: return whole }
     val settled = if (view is PageView.Two) trimPair(trims[0], trims[1]).toList() else trims
     return settled.map(PagePart::of)

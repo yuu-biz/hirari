@@ -40,7 +40,7 @@ internal data class ServerJson(
 internal sealed interface PositionJson {
     @Serializable
     @SerialName("image")
-    data class Image(val viewStart: Int, val pageCount: Int) : PositionJson
+    data class Image(val viewStart: Int, val pageCount: Int, val offset: Float = 0f) : PositionJson
 
     @Serializable
     @SerialName("text")
@@ -225,13 +225,14 @@ private fun ServerJson.toServer(): SmbServer? {
 private val BookmarkRow.identity get() = listOf(bookId, positionKind.name, positionAt.toString(), positionTotal.toString(), label)
 
 private fun ReadingPosition.toJson(): PositionJson = when (this) {
-    is ReadingPosition.Image -> PositionJson.Image(viewStart, pageCount)
+    is ReadingPosition.Image -> PositionJson.Image(viewStart, pageCount, offset)
     is ReadingPosition.Text -> PositionJson.Text(charOffset, totalChars)
 }
 
 /** `null` for a position that cannot be in its book. */
 private fun PositionJson.toModel(): ReadingPosition? = when (this) {
-    is PositionJson.Image -> if (pageCount > 0 && viewStart in 0..<pageCount) ReadingPosition.Image(viewStart, pageCount) else null
+    is PositionJson.Image ->
+        if (pageCount > 0 && viewStart in 0..<pageCount && offset in 0f..1f) ReadingPosition.Image(viewStart, pageCount, offset) else null
     is PositionJson.Text -> if (totalChars >= 0 && charOffset in 0..totalChars) ReadingPosition.Text(charOffset, totalChars) else null
 }
 

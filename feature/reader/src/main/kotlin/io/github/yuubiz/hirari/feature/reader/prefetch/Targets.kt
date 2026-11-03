@@ -17,10 +17,14 @@ fun ReaderState.prefetchTarget(view: PageView): ViewTarget? {
     return ViewTarget(view, sizes, shownParts(view).map { PageSteps(it, config.rotation, config.adjust.sharpen) })
 }
 
-/** Every view on screen: the current one, both views of a turn or a return, and the neighbor a finger pulls in. */
+/**
+ * Every view on screen: the current one, both views of a turn or a return, and the neighbor a finger pulls in. In
+ * 縦に連続, every page on screen.
+ */
 val ReaderState.shownViews: Set<PageView>
     get() = buildSet {
         add(current)
+        scroll?.visible(strip, stripScreen)?.forEach { add(PageView.One(it)) }
         transition?.let {
             add(it.outgoing)
             add(it.incoming)
@@ -29,7 +33,7 @@ val ReaderState.shownViews: Set<PageView>
     }
 
 fun ReaderState.prefetchInput(paused: Boolean = false): PrefetchInput {
-    val trimmed = config.trim != TrimStrength.Off
+    val trimmed = config.trim != TrimStrength.Off && !config.vertical
     val margins = margins
     return PrefetchInput(
         views = pagination.views,

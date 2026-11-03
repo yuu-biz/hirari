@@ -61,7 +61,10 @@ data class ReaderConfig(
     val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
     val direction: ReadingDirection get() = layout.direction
     val mirrored: Boolean get() = tapZones.mirrored
-    val keys: KeyBindings get() = KeyBindings(direction, mirrored, volumeKeys)
+    val keys: KeyBindings get() = KeyBindings(direction, mirrored, volumeKeys, vertical)
+
+    /** 縦に連続, which scrolls the pages as one strip (docs/spec.md section 2.5). */
+    val vertical: Boolean get() = layout.mode == LayoutMode.Vertical
 
     companion object {
         fun of(settings: GlobalSettings, overrides: BookOverrides = BookOverrides()): ReaderConfig = ReaderConfig(

@@ -46,6 +46,7 @@ class RoomProgressRepositoryTest {
     fun `each kind of position reads back unchanged`() = runTest {
         val saved = listOf(
             progress("image", ReadState.Reading, ReadingPosition.Image(viewStart = 12, pageCount = 200)),
+            progress("strip", ReadState.Reading, ReadingPosition.Image(viewStart = 12, pageCount = 200, offset = 0.375f)),
             progress("text", ReadState.Read, ReadingPosition.Text(charOffset = 5_000_000_000, totalChars = 6_000_000_000)),
             progress("unread", ReadState.Unread, null),
         )

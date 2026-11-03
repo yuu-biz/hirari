@@ -16,7 +16,10 @@ import java.time.Instant
 
 internal enum class PositionKind { Image, Text }
 
-/** [positionAt] and [positionTotal] are 0 when [positionKind] is `null`. */
+/**
+ * [positionAt] and [positionTotal] are 0 when [positionKind] is `null`. [positionOffset] is how far down its page an
+ * image position in 縦に連続 is, as a fraction of the page's height, and 0 otherwise (docs/spec.md section 2.7).
+ */
 @Entity(tableName = "book_progress")
 internal data class BookProgressRow(
     @PrimaryKey @ColumnInfo(name = "book_id") val bookId: String,
@@ -25,6 +28,7 @@ internal data class BookProgressRow(
     @ColumnInfo(name = "position_at") val positionAt: Long,
     @ColumnInfo(name = "position_total") val positionTotal: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "position_offset", defaultValue = "0") val positionOffset: Float = 0f,
 )
 
 @Dao
@@ -69,12 +73,13 @@ internal fun positionOf(kind: PositionKind?, at: Long, total: Long): ReadingPosi
 
 internal fun BookProgress.toRow(): BookProgressRow {
     val (kind, at, total) = position.columns()
-    return BookProgressRow(book.value, state, kind, at, total, updatedAt.toEpochMilli())
+    val offset = (position as? ReadingPosition.Image)?.offset ?: 0f
+    return BookProgressRow(book.value, state, kind, at, total, updatedAt.toEpochMilli(), offset)
 }
 
 internal fun BookProgressRow.toModel(): BookProgress = BookProgress(
     book = BookId(bookId),
     state = state,
-    position = positionOf(positionKind, positionAt, positionTotal),
+    position = positionOf(positionKind, positionAt, positionTotal).let { if (it is ReadingPosition.Image) it.copy(offset = positionOffset.coerceIn(0f, 1f)) else it },
     updatedAt = Instant.ofEpochMilli(updatedAt),
 )

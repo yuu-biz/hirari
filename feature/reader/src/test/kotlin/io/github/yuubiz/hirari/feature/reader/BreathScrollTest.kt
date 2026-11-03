@@ -1,9 +1,12 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.LayoutMode
+import io.github.yuubiz.hirari.core.model.LayoutSettings
+import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderAction
+import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.Turn
 import kotlin.math.hypot
@@ -105,6 +108,21 @@ class BreathScrollTest {
         val fresh = byHand.breathPan(Turn.Forward, 10f, first.leg)!!
         assertEquals(byHand.breathPan(Turn.Forward, 10f)!!.pan, fresh.pan)
         assertEquals(stops[0].point, moved.breathPan(Turn.Back, 1_000_000f, first.leg)!!.let { moved.reduce(it.pan) }.position())
+    }
+
+    @Test
+    fun aLongSoundScrollsTheVerticalStripUpToItsEnd() {
+        val vertical = config.copy(layout = LayoutSettings(LayoutMode.Vertical, ReadingDirection.RightToLeft, coverAlone = true))
+        val strip = readerOf(List(3) { PageShape.Known(800, 1600) }, vertical, PORTRAIT)
+        val top = { state: ReaderState -> state.scroll!!.top(state.strip, state.stripScreen) }
+        val scrolled = strip.scrolled(Turn.Forward, 300f)
+        assertEquals(300.0, top(scrolled), 0.01)
+        assertNull(strip.breathPan(Turn.Forward, 300f)!!.leg)
+        assertEquals(100.0, top(scrolled.scrolled(Turn.Back, 200f)), 0.01)
+        val end = strip.scrolled(Turn.Forward, 1e7f)
+        assertTrue(end.scroll!!.endInView(end.strip, end.stripScreen))
+        assertNull(end.breathPan(Turn.Forward, 10f))
+        assertNull(strip.breathPan(Turn.Back, 10f))
     }
 
     private fun ReaderState.act(action: ReaderAction) = reduce(ReaderEvent.Act(action, 0)).reduce(ReaderEvent.Tick(Long.MAX_VALUE))
