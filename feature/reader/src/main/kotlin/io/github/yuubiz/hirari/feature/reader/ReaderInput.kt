@@ -12,6 +12,9 @@ import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import io.github.yuubiz.hirari.core.model.CommandBarEffect
+import io.github.yuubiz.hirari.core.model.CommandBarEvent
+import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.PageBar
 import io.github.yuubiz.hirari.core.model.PageBarEffect
 import io.github.yuubiz.hirari.core.model.PageBarEvent
@@ -25,6 +28,7 @@ import io.github.yuubiz.hirari.core.model.TouchOutcome
 import io.github.yuubiz.hirari.core.model.TouchState
 import io.github.yuubiz.hirari.core.model.TurnAreaTouch
 import io.github.yuubiz.hirari.core.model.pullableSides
+import io.github.yuubiz.hirari.core.model.reduce
 import io.github.yuubiz.hirari.core.model.tapAction
 import io.github.yuubiz.hirari.core.ui.HoldTimer
 import io.github.yuubiz.hirari.core.ui.awaitOrHold
@@ -89,7 +93,7 @@ internal class ReaderInput(
             ui.commandBar = step.state
             when (val effect = step.effect) {
                 CommandBarEffect.Haptic -> haptic()
-                is CommandBarEffect.Execute -> execute(effect.item)
+                is CommandBarEffect.Execute -> (effect.item as? PanelItem)?.let(::execute)
                 null -> Unit
             }
         }

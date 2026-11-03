@@ -1,14 +1,19 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.CommandBarEffect
+import io.github.yuubiz.hirari.core.model.CommandBarEvent
+import io.github.yuubiz.hirari.core.model.CommandBarState
+import io.github.yuubiz.hirari.core.model.CommandBarStep
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.ScreenOrientation.Landscape
 import io.github.yuubiz.hirari.core.model.ScreenOrientation.Portrait
-import io.github.yuubiz.hirari.feature.reader.CommandBarEvent.Down
-import io.github.yuubiz.hirari.feature.reader.CommandBarEvent.Hold
-import io.github.yuubiz.hirari.feature.reader.CommandBarEvent.Move
-import io.github.yuubiz.hirari.feature.reader.CommandBarEvent.Up
+import io.github.yuubiz.hirari.core.model.CommandBarEvent.Down
+import io.github.yuubiz.hirari.core.model.CommandBarEvent.Hold
+import io.github.yuubiz.hirari.core.model.CommandBarEvent.Move
+import io.github.yuubiz.hirari.core.model.CommandBarEvent.Up
+import io.github.yuubiz.hirari.core.model.reduce
 import io.github.yuubiz.hirari.feature.reader.PanelItem.Command
 import io.github.yuubiz.hirari.core.model.ReaderCommand.AddBookmark
 import io.github.yuubiz.hirari.core.model.ReaderCommand.AutoPlay

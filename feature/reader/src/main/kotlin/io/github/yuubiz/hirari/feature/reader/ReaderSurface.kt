@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.model.BookEndOutcome
+import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.bookEndOutcome
 import io.github.yuubiz.hirari.core.model.pullFrame
