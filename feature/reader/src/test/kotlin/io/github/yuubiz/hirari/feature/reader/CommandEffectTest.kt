@@ -80,7 +80,6 @@ class CommandEffectTest {
     @Test
     fun aChangeOfTheSettingsReachesTheOpenReaderButNotWhatTheSessionSwitched() {
         val before = GlobalSettings()
-        val global = ReaderConfig.of(before)
         val overrides = BookOverrides(scaleMode = ScaleMode.FitWidth)
         val session = ReaderConfig.of(before, overrides).configured(ReaderCommand.MirrorControls).configured(ReaderCommand.Orientation)
         val after = before.copy(commandBarItems = listOf(ReaderCommand.Gutter), scaleMode = ScaleMode.Original, layoutMode = LayoutMode.Single, mirrorControls = true)
