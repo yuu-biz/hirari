@@ -16,6 +16,7 @@ enum class SettingGroup(val title: String) {
     Text("テキスト"),
     Library("ライブラリ"),
     Appearance("外観と文字コード"),
+    Breath("息での操作"),
 }
 
 data class Option<T>(val value: T, val label: String)
@@ -43,6 +44,8 @@ class ToggleSetting(
     minSdk: Int = 0,
     val read: (GlobalSettings) -> Boolean,
     val write: (GlobalSettings, Boolean) -> GlobalSettings,
+    /** Turning it on asks for the microphone first, and stays off without it (docs/spec.md section 4.11). */
+    val asksMicrophone: Boolean = false,
 ) : Setting(key, group, label, note, minSdk)
 
 /** One of a few listed values. [describe] names the current value, including one that [options] does not offer. */

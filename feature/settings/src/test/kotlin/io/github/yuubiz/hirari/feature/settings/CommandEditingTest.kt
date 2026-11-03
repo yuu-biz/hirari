@@ -40,6 +40,6 @@ class CommandEditingTest {
         val commands = row.choices.map { it.value }
         assertEquals(commands.size, commands.toSet().size)
         assertEquals(ReaderCommand.MAX_ITEMS, row.max)
-        assertEquals(ReaderCommand.entries.toSet() - ReaderCommand.Breath, commands.toSet())
+        assertEquals(ReaderCommand.entries.toSet(), commands.toSet())
     }
 }

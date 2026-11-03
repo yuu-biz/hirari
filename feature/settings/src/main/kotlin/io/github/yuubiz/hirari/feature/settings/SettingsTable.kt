@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
+import io.github.yuubiz.hirari.core.model.BreathSensitivity
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.GutterStyle
@@ -43,7 +44,7 @@ private val spotOptions: Array<Pair<ScreenSpot, String>> = arrayOf(
     ScreenSpot.BottomLeft to "左下", ScreenSpot.BottomCenter to "下中央", ScreenSpot.BottomRight to "右下",
 )
 
-/** The commands of docs/spec.md section 4.8 that exist; 息で操作 follows the breath control in milestone M6. */
+/** The commands of docs/spec.md section 4.8. */
 private val commandChoices: List<Option<ReaderCommand>> = listOf(
     ReaderCommand.Layout to "組み方",
     ReaderCommand.ShiftPairing to "組ずらし",
@@ -61,6 +62,7 @@ private val commandChoices: List<Option<ReaderCommand>> = listOf(
     ReaderCommand.StopOrder to "停止点の順序",
     ReaderCommand.Gutter to "綴じ目の表示",
     ReaderCommand.EditCommandBar to "コマンドバーの編集",
+    ReaderCommand.Breath to "息で操作",
     ReaderCommand.BookSettings to "本ごとの設定",
     ReaderCommand.SetCover to "表紙にする",
     ReaderCommand.SharePage to "ページを共有",
@@ -87,10 +89,7 @@ internal val TypefaceSetting: ChoiceSetting<TextTypeface> = ChoiceSetting(
     },
 )
 
-/**
- * Every setting of docs/spec.md section 4.10 that has an effect to choose, in the order and under the groups of the
- * spec. The breath control settings are not here until the feature exists (milestone M6).
- */
+/** Every setting of docs/spec.md section 4.10 that has an effect to choose, in the order and under the groups of the spec. */
 val SettingsTable: List<Setting> = buildList {
     val reading = SettingGroup.Reading
     add(choice(GlobalSettings::readingDirection, reading, "綴じ方向", { s, v -> s.copy(readingDirection = v) },
@@ -276,6 +275,15 @@ val SettingsTable: List<Setting> = buildList {
             FallbackCharset.Gbk to "GBK", FallbackCharset.Big5 to "Big5", FallbackCharset.EucKr to "EUC-KR",
         ),
     )
+
+    val breath = SettingGroup.Breath
+    add(
+        toggle(GlobalSettings::breathControl, breath, "息でめくる", note = "マイクに息を吹きかけてめくります。", asksMicrophone = true) { s, v ->
+            s.copy(breathControl = v)
+        },
+    )
+    add(choice(GlobalSettings::breathSensitivity, breath, "息の感度", { s, v -> s.copy(breathSensitivity = v) },
+        BreathSensitivity.Low to "低", BreathSensitivity.Medium to "中", BreathSensitivity.High to "高"))
 }
 
 /** The rows to show on a device with API level [sdk], grouped in the order of [SettingGroup]. */
@@ -298,8 +306,9 @@ private fun toggle(
     label: String,
     note: String? = null,
     minSdk: Int = 0,
+    asksMicrophone: Boolean = false,
     write: (GlobalSettings, Boolean) -> GlobalSettings,
-) = ToggleSetting(property.name, group, label, note, minSdk, property, write)
+) = ToggleSetting(property.name, group, label, note, minSdk, property, write, asksMicrophone)
 
 private fun <T> choice(
     property: KProperty1<GlobalSettings, T>,

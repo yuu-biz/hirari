@@ -50,6 +50,7 @@ import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.decorative
 import io.github.yuubiz.hirari.core.ui.minTouchTarget
+import io.github.yuubiz.hirari.core.ui.rememberBreathPermission
 
 /**
  * Draws the row of [setting]. Rows that need a choice open their dialog through [onOpen]; the others edit in place.
@@ -94,11 +95,14 @@ internal fun SettingDialog(
 @Composable
 private fun ToggleRow(setting: ToggleSetting, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit) {
     val checked = setting.read(settings)
+    val microphone = if (setting.asksMicrophone) rememberBreathPermission { onChange { setting.write(it, true) } } else null
     ListItem(
         headlineContent = { Text(setting.label) },
         supportingContent = setting.note?.let { { Text(it) } },
         trailingContent = { Switch(checked = checked, onCheckedChange = null) },
-        modifier = Modifier.toggleable(value = checked, role = Role.Switch) { value -> onChange { setting.write(it, value) } },
+        modifier = Modifier.toggleable(value = checked, role = Role.Switch) { value ->
+            if (value && microphone != null) microphone.launch() else onChange { setting.write(it, value) }
+        },
     )
 }
 

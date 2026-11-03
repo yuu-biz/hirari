@@ -21,9 +21,6 @@ class SettingsTableTest {
     private fun fields(settings: GlobalSettings): JsonObject =
         json.encodeToJsonElement(GlobalSettings.serializer(), settings) as JsonObject
 
-    /** The settings of 4.10 that the table leaves out until their milestone: the breath control (M6). */
-    private val notYet = setOf("breathControl", "breathSensitivity")
-
     @Suppress("UNCHECKED_CAST")
     private fun candidates(setting: Setting, base: GlobalSettings): List<Any?> = when (setting) {
         is ToggleSetting -> listOf(false, true)
@@ -56,23 +53,27 @@ class SettingsTableTest {
     }
 
     @Test
-    fun `every field of GlobalSettings has a row, except the ones of a later milestone`() {
+    fun `every field of GlobalSettings has a row`() {
         val fields = GlobalSettings.serializer().descriptor.elementNames.toSet()
         val keys = SettingsTable.map { it.key }
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
-        assertEquals(fields - notYet, keys.toSet())
+        assertEquals(fields, keys.toSet())
+        assertEquals(63, keys.size)
     }
 
     @Test
     fun `the table lists the settings of docs spec 4-10 under the groups and in the order of the spec`() {
         val spec = specSettings()
         assertTrue(spec.size > 60, "the spec tables were not read: $spec")
-        val expected = spec.filter { it.second !in notYet }
-        assertEquals(expected.map { it.second }, SettingsTable.map { it.key })
-        for ((setting, listed) in SettingsTable.zip(expected)) {
+        assertEquals(spec.map { it.second }, SettingsTable.map { it.key })
+        for ((setting, listed) in SettingsTable.zip(spec)) {
             assertEquals(listed.first, setting.group.title, setting.key)
         }
-        assertEquals(notYet, spec.map { it.second }.toSet() - SettingsTable.map { it.key }.toSet())
+    }
+
+    @Test
+    fun `only turning on breath control asks for the microphone`() {
+        assertEquals(listOf("breathControl"), SettingsTable.filterIsInstance<ToggleSetting>().filter { it.asksMicrophone }.map { it.key })
     }
 
     @Test
