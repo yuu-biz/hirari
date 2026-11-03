@@ -1637,6 +1637,12 @@ M1 には項目を選ぶ設定画面がないので、パネルには M1 で動�
 
 一覧の読書状態の色はテーマから決める。読書状態は印でも区別するので、色を個別に選ぶ設定は置かない。
 
+テーマは `appTheme` と `dynamicColor` に従い、変えたらアプリを再起動せずに全画面へ反映する。
+- 暗いかどうかは、`appTheme` が「端末に従う」なら端末の夜間モード、「ライト」なら明るい、「ダーク」なら暗い、とする。画像のリーダーとテキストリーダーを含む全画面が同じ結果を使う。テキストリーダーの紙の色（プリセットと上書き）は暗いかどうかに依存せず、背景色（`readerBackground`）を「テーマに従う」にしたときだけ、その背景色がテーマの背景色に従う。一覧の読書状態の色（上の表）も、暗いかどうかに従ってダークとライトを切り替える。
+- 色の体系は、`dynamicColor` がオンで Android 12 以上なら壁紙の色、そうでなければ Material 3 の標準の配色とする。
+- ウィンドウの背景とステータスバー、ナビゲーションバーのアイコンの色も、システムの夜間モードではなく、この結果に従う。起動時の窓（最初のフレームの前）の背景は、端末の夜間モードに合わせたライトかダークの Material テーマで描く（`values` と `values-night` の `Theme.Hirari`）。
+- 設定を読み終えるまでの最初の数フレームは「端末に従う」で描く。起動の計測（P6）が最初の描画をずらさないよう、読み終えるまで描画を待たない。そのため、端末の夜間モードと違う選択をしているときは、起動の直後に配色が 1 度切り替わることがある。
+
 #### 息での操作（M6）
 
 | 設定 | 内部名 | 型 | 既定 | 範囲 |
@@ -2312,7 +2318,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Macrobenchmark（benchmark-macro-junit4、benchmark-traceprocessor）、UiAutomator | `:benchmark` の計測。benchmark-traceprocessor は、トレースを SQL で読む独自の計測（`TurnMetric`）のために直接使う | Apache-2.0。benchmark-traceprocessor は Wire の実行時ライブラリと Okio（どちらも Apache-2.0）を伴う | 計測時だけ。`:benchmark` の APK に入り、アプリの配布物に入らない |
 | Baseline Profile の Gradle プラグイン `androidx.baselineprofile` 1.5.0 | `:benchmark` の生成と `:app` への取り込み（8.6 節） | Apache-2.0。androidx.benchmark の benchmark-baseline-profile-gradle-plugin、benchmark-gradle-plugin など（Apache-2.0）、com.google.testing.platform の core-proto（Apache-2.0）、protobuf-java（BSD-3-Clause）、kotlin-stdlib（Apache-2.0）を伴う。1.5.0 のプラグインマーカーと各 POM で確かめた | ビルド時だけ。Gradle のプラグインの classpath に入り、アプリの配布物に入らない |
 | profileinstaller 1.4.1 | 初回起動のときに、APK の `baseline.prof` を ART に渡す | Apache-2.0。annotation、concurrent-futures、startup-runtime、listenablefuture（どれも Apache-2.0）を伴う。1.4.1 の POM で確かめた | Maven。`:app` が直接依存する。Activity などがすでに 1.4.0 を推移的に持ち込んでいたので、直接の依存で 1.4.1 に上げる。新しい推移的依存はない（`releaseRuntimeClasspath` の `dependencyInsight` で確かめた）。release の APK に入る |
-| Robolectric 4.17 | `:core:data` の DB、`:core:image` のタイル、`:feature:reader` の画面と状態の JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
+| Robolectric 4.17 | `:core:data` の DB、`:core:image` のタイル、`:feature:reader` の画面と状態、`:core:ui` のテーマの JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | XZ for Java 1.12（`org.tukaani:xz`） | `tools/corpus` で 7z と tar のコーパスを LZMA、LZMA2、x86 の分岐フィルタ、xz で圧縮する | 0BSD。推移的な依存はない（1.12 の POM で確かめた） | コーパスの生成時だけ。配布物に入らない |
 | Apache Commons Compress 1.28.0 | `tools/corpus` で BZip2 に圧縮する。JVM の試験で、コーパスの 7z と tar を独立に読んで確かめる | Apache-2.0。commons-codec、commons-io、commons-lang3（どれも Apache-2.0）を伴う。zstd-jni、brotli の dec、XZ for Java、asm は任意の依存で、XZ for Java だけを上の行のとおり直接使う（1.28.0 の POM で確かめた） | コーパスの生成時と試験時だけ。配布物に入らない |
 

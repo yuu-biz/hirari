@@ -96,7 +96,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            HirariTheme {
+            val theme by themeChoice(app)
+            HirariTheme(theme) { dark ->
+                FollowTheme(dark)
                 val nav = rememberNavController()
                 val scope = rememberCoroutineScope()
                 var homeNotice by remember {
