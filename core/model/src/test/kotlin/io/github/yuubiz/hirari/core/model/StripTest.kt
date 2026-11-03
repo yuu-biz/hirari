@@ -129,6 +129,30 @@ class StripTest {
     }
 
     @Test
+    fun learningAShapeDuringAMotionMovesTheScreenOnlyAsTheMotionDoes(): Unit = runBlocking {
+        val cases = arbitrary {
+            val shapes = arbStripShapes.bind() + List(10) { PageShape.Known(800, 1_280) }
+            val before = Strip.of(shapes)
+            val start = StripScroll().panned(0f, -between(0f, 40_000f).bind(), before, PHONE)
+            val moving = when (Arb.int(0..1).bind()) {
+                0 -> start.stepped(Arb.enum<Turn>().bind(), 0, DENSITY, before, PHONE)
+                else -> start.flung(between(-24_000f, 24_000f).bind(), 0, DENSITY, before, PHONE)
+            }?.ticked(200, before, PHONE)
+            val page = Arb.int(0 until shapes.size).bind()
+            val after = Strip.of(shapes.mapIndexed { i, shape -> if (i == page) STRIP_SHAPE.bind() else shape })
+            Triple(before, after, moving)
+        }
+        checkAll(cases) { (before, after, moving) ->
+            val motion = moving?.motion ?: return@checkAll
+            val relaid = moving.relaid(before, after, PHONE)
+            val from = after.offsetOf(relaid.anchor) * PHONE.scale
+            val to = from + motion.topAt(216) - motion.topAt(200)
+            val room = 0.0..after.length * PHONE.scale - PHONE.height
+            if (from in room && to in room) close(to, after.offsetOf(relaid.ticked(216, after, PHONE).anchor) * PHONE.scale, 0.01)
+        }
+    }
+
+    @Test
     fun learningTheShapeOfTheTopPageKeepsTheShareOfItAboveTheScreen() {
         val unknown = Strip.of(List(4) { PageShape.Unknown })
         val scroll = StripScroll().panned(0f, -2_000f, unknown, PHONE)

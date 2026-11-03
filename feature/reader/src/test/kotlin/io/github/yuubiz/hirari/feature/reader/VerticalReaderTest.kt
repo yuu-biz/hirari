@@ -190,6 +190,23 @@ class VerticalReaderTest {
     }
 
     @Test
+    fun learningAShapeAboveDuringAStepOrAGlideGoesOnFromWhatTheScreenShows() {
+        val starts = mapOf<String, (ReaderState) -> ReaderState>(
+            "step" to { it.act(ReaderAction.TurnView(Turn.Forward), nowMs = 0) },
+            "glide" to { it.reduce(ReaderEvent.Fling(-6000f, nowMs = 0)) },
+        )
+        for ((name, start) in starts) {
+            val moving = start(ReaderState.open(20, 5, VERTICAL, PORTRAIT, offset = 0.5f)).reduce(ReaderEvent.Tick(50))
+            assertNotNull(moving.scroll!!.motion, name)
+            val learned = moving.reduce(ReaderEvent.ShapeLearned(1, PageShape.Known(800, 12_000)))
+            val next = learned.reduce(ReaderEvent.Tick(66))
+            val moved = (next.strip.offsetOf(next.scroll!!.anchor) - learned.strip.offsetOf(learned.scroll!!.anchor)) * next.stripScreen.scale
+            assertTrue(moved > 0 && moved < 200, "a $name moved the strip by $moved pixels in a frame")
+            assertEquals(PageView.One(5), next.current, name)
+        }
+    }
+
+    @Test
     fun theSavedPositionIsThePageAtTheTopAndHowFarDownItIs() {
         val log = ProgressLog(BookId("b"), 10, opened = null)
         val state = strip(10).reduce(ReaderEvent.Pan(0f, -(SEGMENT_PX * 2.5).toFloat()))

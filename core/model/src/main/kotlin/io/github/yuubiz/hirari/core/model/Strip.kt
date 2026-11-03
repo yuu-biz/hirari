@@ -117,11 +117,16 @@ sealed interface ScrollMotion {
 
     fun isDoneAt(nowMs: Long): Boolean
 
+    /** The same motion [by] pixels further down the strip. */
+    fun shifted(by: Double): ScrollMotion
+
     /** A step from [from] to [to] at [STOP_SPEED_DP_PER_MS]. */
     data class Move(val from: Double, val to: Double, val motion: Motion) : ScrollMotion {
         override fun topAt(nowMs: Long): Double = from + (to - from) * motion.valueAt(nowMs)
 
         override fun isDoneAt(nowMs: Long): Boolean = motion.isDoneAt(nowMs)
+
+        override fun shifted(by: Double): Move = copy(from = from + by, to = to + by)
     }
 
     /** A glide from [from] at [velocity] pixels per millisecond, slowing by [GLIDE_FRICTION_PER_S] for [durationMs]. */
@@ -132,6 +137,8 @@ sealed interface ScrollMotion {
         }
 
         override fun isDoneAt(nowMs: Long): Boolean = nowMs - startMs >= durationMs
+
+        override fun shifted(by: Double): Glide = copy(from = from + by)
     }
 }
 
@@ -206,6 +213,15 @@ data class StripScroll(val anchor: StripPosition = StripPosition(0, 0f), val x: 
         null -> this
         is ScrollMotion.Move -> placed(motion.to, strip, screen).copy(motion = null)
         is ScrollMotion.Glide -> copy(motion = null)
+    }
+
+    /**
+     * The screen over [after], the strip once the shape of a page is known, from over [before]. The anchor stays, and
+     * a running motion moves as far as the anchor did, so it goes on from what the screen shows.
+     */
+    fun relaid(before: Strip, after: Strip, screen: StripScreen): StripScroll {
+        val motion = motion ?: return this
+        return copy(motion = motion.shifted((after.offsetOf(anchor) - before.offsetOf(anchor)) * screen.scale))
     }
 
     /** The zoom changed from [before] to [after] about [focus], in screen pixels, which stays over the same point. */

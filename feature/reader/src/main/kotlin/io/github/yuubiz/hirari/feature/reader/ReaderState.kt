@@ -330,16 +330,20 @@ data class ReaderState(
         return copy(pagination = next, place = Place.Entered(Turn.Forward))
     }
 
-    /** The views laid out again after a shape became known: the current view stays where it was if it is still there. */
+    /**
+     * The views laid out again after a shape became known: the current view stays where it was if it is still there.
+     * In 縦に連続 a running motion goes on from what the screen shows.
+     */
     private fun relaid(next: Pagination): ReaderState {
         if (next === pagination) return this
+        val scroll = scroll?.let { if (it.motion == null) it else it.relaid(strip, Strip.of(next.shapes), stripScreen) }
         if (next.current == current) {
             val keepTransition = transition?.takeIf { it.incoming in next.views && it.outgoing in next.views }
             val keepPull = pull?.takeIf { it.neighbor == null || it.neighbor in next.views }
-            return copy(pagination = next, transition = keepTransition, pull = keepPull)
+            return copy(pagination = next, transition = keepTransition, pull = keepPull, scroll = scroll)
         }
         val entered = place as? Place.Entered ?: Place.Entered(Turn.Forward)
-        return copy(pagination = next, place = entered, stopTravel = null, transition = null, pull = null)
+        return copy(pagination = next, place = entered, stopTravel = null, transition = null, pull = null, scroll = scroll)
     }
 
     private fun configured(next: ReaderConfig): ReaderState {
