@@ -174,6 +174,7 @@ class ReaderViewModel(
 
     /** A panel or the guide is up, so what the microphone hears neither turns nor scrolls. */
     var breathHeld = false
+    private var breathLeg: BreathLeg? = null
 
     var state: ReaderState? by mutableStateOf(null)
         private set
@@ -439,7 +440,9 @@ class ReaderViewModel(
     fun breathScrolled(turn: Turn, elapsedMs: Float) {
         if (breathHeld) return
         val current = state ?: return
-        current.breathPan(turn, elapsedMs * BREATH_SCROLL_DP_PER_MS * current.viewport.density)?.let(::dispatch)
+        val scroll = current.breathPan(turn, elapsedMs * BREATH_SCROLL_DP_PER_MS * current.viewport.density, breathLeg)
+        breathLeg = scroll?.leg
+        scroll?.let { dispatch(it.pan) }
     }
 
     private fun followBreathSetting(services: ReaderServices) {

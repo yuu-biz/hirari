@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.Turn
+import kotlin.math.hypot
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -17,7 +18,7 @@ class BreathScrollTest {
     /** One tall page across a landscape screen: its stops run down the page. */
     private val tall = readerOf(List(2) { TALL }, config.copy(layout = config.layout.copy(mode = LayoutMode.Single)), LANDSCAPE)
 
-    private fun ReaderState.scrolled(turn: Turn, px: Float): ReaderState = breathPan(turn, px)?.let(::reduce) ?: this
+    private fun ReaderState.scrolled(turn: Turn, px: Float): ReaderState = breathPan(turn, px)?.let { reduce(it.pan) } ?: this
 
     private fun ReaderState.position(): Point = positionAt(0)!!
 
@@ -59,6 +60,51 @@ class BreathScrollTest {
     @Test
     fun aViewThatFitsTheScreenDoesNotScroll() {
         assertNull(readerOf(List(2) { TALL }).breathPan(Turn.Forward, 50f))
+    }
+
+    /** A spread wider and taller than the screen: its stops run down the right page and on to the left page. */
+    private val spread = readerOf(List(2) { TALL }, spreadConfig().copy(scaleMode = ScaleMode.Original), LANDSCAPE)
+
+    private fun walk(start: ReaderState, turn: Turn, frameDistance: Float, frames: Int): List<ReaderState> {
+        val states = mutableListOf(start)
+        var leg: BreathLeg? = null
+        repeat(frames) {
+            val scroll = states.last().breathPan(turn, frameDistance, leg) ?: return states
+            leg = scroll.leg
+            states += states.last().reduce(scroll.pan)
+        }
+        return states
+    }
+
+    @Test
+    fun aScrollCrossesTheBoundaryOfASpreadWithoutGoingBack() {
+        val stops = spread.geometry()!!.stops(spread.config).stops
+        assertTrue(stops.map { it.page }.toSet().size == 2)
+        val path = stops.zipWithNext().sumOf { (a, b) -> hypot((b.point.x - a.point.x).toDouble(), (b.point.y - a.point.y).toDouble()) }
+        val walked = walk(spread, Turn.Forward, 8f, (path / 8).toInt() + stops.size + 2)
+        assertEquals(stops.last().point, walked.last().position())
+        assertEquals(walked.map { it.position() }.distinct().size, walked.size)
+    }
+
+    @Test
+    fun aScrollBackCrossesTheBoundaryOfASpreadWithoutGoingForward() {
+        val stops = spread.geometry()!!.stops(spread.config).stops
+        val path = stops.zipWithNext().sumOf { (a, b) -> hypot((b.point.x - a.point.x).toDouble(), (b.point.y - a.point.y).toDouble()) }
+        val atEnd = walk(spread, Turn.Forward, 1_000_000f, 1).last()
+        val walked = walk(atEnd, Turn.Back, 8f, (path / 8).toInt() + stops.size + 2)
+        assertEquals(stops.first().point, walked.last().position())
+        assertEquals(walked.map { it.position() }.distinct().size, walked.size)
+    }
+
+    @Test
+    fun aLegIsDroppedWhenTheScreenWasMovedByHandOrTurnsBack() {
+        val first = tall.breathPan(Turn.Forward, 30f)!!
+        val moved = tall.reduce(first.pan)
+        val byHand = moved.reduce(ReaderEvent.Pan(0f, -50f))
+        val stops = tall.geometry()!!.stops(tall.config).stops
+        val fresh = byHand.breathPan(Turn.Forward, 10f, first.leg)!!
+        assertEquals(byHand.breathPan(Turn.Forward, 10f)!!.pan, fresh.pan)
+        assertEquals(stops[0].point, moved.breathPan(Turn.Back, 1_000_000f, first.leg)!!.let { moved.reduce(it.pan) }.position())
     }
 
     private fun ReaderState.act(action: ReaderAction) = reduce(ReaderEvent.Act(action, 0)).reduce(ReaderEvent.Tick(Long.MAX_VALUE))
