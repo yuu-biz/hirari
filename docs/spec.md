@@ -2329,6 +2329,121 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - 6.7 節の点検が済み、実機の TalkBack で残るものが課題として登録されている。
 - この文書の (要検証) がすべて解消しているか、課題として登録されている。
 
+### 確認の状況
+
+2026-11-03 に、コミット `8984533` の上で、M0 から M6 の完了条件を 3 つに分けた。どのマイルストーンも「実機が要る」か「できていない」が残るので、終わっていない。
+
+- **確認した**。この作業ツリーで、試験かコマンドを流して確かめた。根拠の試験名かコマンドと結果を書く。
+- **実機が要る**。コードはあるが、基準端末、NAS、Wi-Fi の切り替え、折りたたみ端末、人の手が要り、エミュレータと JVM の試験では判定できない。
+- **できていない**。コードか記録が足りない。足りないものを書く。
+
+端末上の試験は、API 37 と API 28 のエミュレータ（x86_64、メモリ 2 GB。実機の値ではない）で、`connectedDebugAndroidTest` を流した。`FuzzTest` の 2 つは、秒数と再現用のディレクトリを渡さないと読み飛ばす作りで、ここでは読み飛ばした。API 31 の AVD は手元になく、6.2 節の「API 28、API 31、最新 API」のうち API 31 は流していない。
+
+| 試験 | API 37 | API 28 |
+|---|---|---|
+| `:core:archive` `ArchiveSessionTest` | 10 件が通った | 10 件が通った |
+| `:core:image` `CorpusBookTest`（コーパスの全ファイルを開き、全ページを読む） | 1 件が通った | 1 件が通った |
+| `:core:image` `JxlDecoderTest` | 13 件が通った | 13 件が通った |
+| `:core:image` `PdfPasswordTest` | 2 件が通った | 1 件が通った（もう 1 件は API 35 以上だけ） |
+| `:core:image` `SafBookTest` | 3 件が通った | 3 件が通った |
+| `:core:image` `TileScalingTest` | 4 件が通った | 4 件が通った |
+| `:core:image` `TrimBitmapTest` | 4 件が通った | 4 件が通った |
+| `:core:image` `ThumbnailsDeviceTest` | 7 件が通った | 7 件が通った |
+| `:feature:text` `TextOnDeviceTest` | 4 件が通った | 4 件が通った |
+| `:core:data` `KeystoreCipherTest` | 3 件が通った | 3 件が通った |
+| `:app` `CoversDeviceTest` | 2 件が通った | 2 件が通った |
+| `:app` `KeptScreenTest` | 2 件が通った | 2 件が通った |
+| `:app` `ReaderRestoreTest` | 1 件が通った | 1 件が通った |
+| `:app` `ReaderSheetsTest` | 2 件が通った | 2 件が通った |
+
+この実行で、端末上の試験の誤りを 2 つ直した。`ReaderSheetsTest` は、Compose の試験用ルールのフレーム時計が 0 から数えるのに、リーダーはめくりの開始を `SystemClock.uptimeMillis` で記録するので、キーでめくるとめくりが終わらず Compose が止まらなかった。試験の側で時計を合わせた（製品のコードでは、フレーム時計と `uptimeMillis` は端末の上で同じ時計である）。`ThumbnailsDeviceTest` は API 28 にない `readNBytes` を使っていたので、`readBytes` に替えた。
+
+#### M0
+
+- 確認した。
+  - 新しい作業ツリーで `./gradlew check` が通る（この作業ツリーは `8984533` から作り、最後の `check` で確かめた）。CI の `ci.yml` そのものは、ここでは動かしていない。
+  - 許可されないライセンスの依存で失敗する。`:app` に `org.mariadb.jdbc:mariadb-java-client:3.5.1` を足して `./gradlew :app:licenseeAndroidRelease` を流すと、`SPDX identifier 'LGPL-2.1-or-later' is NOT allowed` で失敗した（足した行は戻した）。
+  - コーパスの ZIP のエントリ名を JNI 経由で一覧にできる。`ArchiveSessionTest` が API 37 と API 28 で通った。
+  - API 28 と最新 API のエミュレータで、空のホームとライセンス画面（libarchive を含む）が表示される。自動の試験はなく、データを消したアプリを開き、メニューの「設定」から「ライセンス」を開いて確かめた。ホームは「場所がまだありません」と「場所を追加」を出し、ライセンス画面は `libarchive 3.8.11`（`third_party/libarchive`）と `libjxl 0.12.0` の行を出した。API 28（1080 × 2160）と API 37 の両方で同じだった。
+- 実機が要る。なし。
+- できていない。なし。GitHub の CI で `check` が通ることと、CI が許可外の依存で失敗することは、AGENTS.md の手順で手動実行して確かめる残りの作業である。
+
+#### M1
+
+- 確認した。
+  - 本を閉じて開き直すと同じビューから再開する。`ReaderRestoreTest` が API 37 と API 28 で通った。
+  - 進んでから戻ると同じビューに戻る。プロパティテスト（`ReaderStatePropertyTest` の `turnsForwardThenAsManyBackReturnToTheSameView` など 4 件、JVM）と `ReaderRestoreTest`（3 回進んで 3 回戻ると最初のビューに戻る）が通った。完了条件の「手動試験」は、下の G2 の試験と一緒に行う。
+  - コーパスのどのファイルを開いてもアプリが終了せず、壊れたページにはエラーカードの結果が付く。`CorpusBookTest`（全ファイルが目録 `pages.tsv` と一致する）が API 37 と API 28 で通り、エラーカードは `PageErrorCardTest`（JVM）で確かめた。
+  - Q1 の計測値と判断が `docs/q1-render-surface.md` に記録されている。ただし、数値はエミュレータのもので、実機での計り直しが残っている。
+- 実機が要る。
+  - P1、P2、P3、P4（ローカル）を中位の基準端末で満たすこと。
+  - G2 の片手の手動試験。
+  - Q1 と Q2 の実機での計り直し。
+- できていない。P1 から P4 を実際のリーダーで計る仕組み。トレース区間（`hirari.turn`、`hirari.prepare` など）とベンチマークは Q1 の試作（`prototype/`）にだけあり、実際のリーダーにはない。P3 と P4 の `TraceSectionMetric` を使うベンチマークもない。実機で計る前に作る。
+
+#### M2
+
+- 確認した。
+  - 本を読み終えて一覧に戻ると、再起動せずに読書状態の印が変わる。`FolderViewModelTest`（JVM）の `a book read in the reader changes its mark on the list without listing again` が通った。
+  - 書き出し、アプリのデータの消去、読み込みの順に行うと、設定が戻る。`SettingsTransferTest`（JVM。新しく入れた状態への読み込み）が通った。選んだときは読書位置も戻る。システムの「データを消去」を使う手順は、実機で 1 度行う残りがある。
+  - 書き出したファイルにパスワードとユーザー名が含まれない。`SettingsTransferTest` の `an export holds neither the password nor the user name of a server` が通った。
+  - 1000 件のフォルダの並べ替え、印付け、絞り込みの CPU の側は、`ListingTimingTest`（JVM）が P7 の予算の内で通った。JVM の値は P7 の判定には使えない。
+- 実機が要る。
+  - 1000 冊のフォルダで P7 と P8 を満たすこと。
+  - ファイル管理アプリから cbz を選ぶと本アプリで開けること。受け取る側の処理は `IncomingTest`（JVM）で確かめた。
+- できていない。画像リーダーのメニューで、しおりの追加としおり一覧が使えない（`MenuItem.AddBookmark`、`MenuItem.Bookmarks`、`ReaderCommand.AddBookmark`、`ReaderCommand.Bookmarks` が「この操作はまだ使えません」を出す）。しおりタブとデータは作ってあるが、リーダーからしおりを作れない。G2 の「しおり追加」もこれに当たる。
+
+#### M3
+
+- 確認した。
+  - 全コーパスで、各ファイルの結果が目録の期待と一致する。`CorpusBookTest` と `ArchiveSessionTest` が API 37 と API 28 で通った。
+  - コーパスの CP932 と UTF-8 の名前が正しく表示され、文字コードを変えると並びが変わる。`EntryNamesTest`（CP932 と UTF-8 などの判定）と、`ArchiveViewModelTest` の `choosing another charset sorts the pages anew, is kept for the book, and a tap opens the reader at the place the list shows`（JVM）が通り、`CorpusBookTest` が全ファイルの名前を目録と照らす。
+  - 幅 800、高さ 50,000 の画像（`tall.png`）が、目録どおりの大きさのページとして読める。`CorpusBookTest` が通った。タイルの縮小の正しさは `TileScalingTest` が通った。
+- 実機が要る。幅 800、高さ 50,000 の画像を最後までスクロールでき、メモリが P10 に収まること。
+- できていない。
+  - fuzz を延べ 24 時間回すこと。手元の実行は数分で、`fuzz.yml` を実際に回した合計の記録はまだない。
+  - 3.3 節の libarchive に関する (要検証) の解消。圧縮した RAR 5（solid を含む）の展開と、RAR 4 の PPMd は、実データがないので確かめていない。展開キャッシュの上限（空き容量の 10% と 2 GB の小さい方）も、確かめていない。
+
+#### M4
+
+- 確認した。
+  - 試験用のパスワードが logcat、DB の平文、書き出したファイルのどれにも現れない。`SmbLogHygieneTest`（ログと例外）、`CredentialStoreTest`（メインのデータベースのファイルに平文がない）、`SettingsTransferTest`（書き出し）が通った（JVM）。
+  - サーバーのパスワードを変えても、既読の情報が残る。`SmbServerViewModelTest` の `a new password leaves the books of the server where they were` が通った（JVM）。
+  - 接続が切れたときの回復の論理は、`SmbRecoveryTest`（JVM。中継器で止める）で確かめた。
+- 実機が要る。
+  - 基準 NAS で P4 の SMB の目標（1500 ms）を満たすこと。
+  - 読書中に Wi-Fi を切ると「再接続しています」が出て、アプリが終了せず、Wi-Fi を戻すと自動で再接続すること。
+- できていない。「端末に保存」（SMB の本を SAF で選んだフォルダへ保存する。4.5 節）。コードも文字列もない。
+
+#### M5
+
+- 確認した。
+  - 記法ごとの試験用テキストの組版の結果が、照合用ファイルと一致する。`LayoutGoldenTest`（JVM）が通った。端末の側は `TextOnDeviceTest` が API 37 と API 28 で通った（文字コードの読み、`vert` を含む字形の描画）。
+  - 文字の大きさを変えても、変える前と同じ文が画面にある。`ResumeTest`（JVM）が通った。
+  - 書庫の中のテキストと挿絵を開ける。端末上の `TextOnDeviceTest` の `aTextInAnArchiveOpensWithItsPictureFromTheSameArchive` が API 37 と API 28 で通った。JVM では `TextRouteTest`、`ArchiveViewModelTest`、`SmbTextTest` が通った。
+- 実機が要る。P9（1 MB の青空文庫テキストで最初のページまで 300 ms）。`TextOpenTimingTest` は JVM で固定幅の寸法を使うので、実機の値ではない。端末上の `TextOnDeviceTest` の `aMegabyteTextReachesItsFirstPageWithTheSystemFontAndDrawsInk` は、その端末の値を `P9 on this device` の行に出す。API 37 のエミュレータで、1,041,000 バイトが最初のページまで 736 ms（復号 354、解析 346、最初のページ 36）だった。ほかの作業で PC が忙しいときの、エミュレータの 1 回の値で、判定には使えない。
+- できていない。なし。Q12（明朝体のシステムフォント）は (要検証) のままである。
+
+#### M6
+
+- 確認した。
+  - 余白トリミングの試験画像で、切りすぎを防ぐ規則がすべて働く。`TrimTest`（JVM）と `TrimBitmapTest`（端末。API 37 と API 28）が通った。
+  - Baseline Profile が `app/src/main/generated/baselineProfiles/` にあり、release と `benchmark` の APK に `assets/dexopt/baseline.prof` が入る。`./gradlew :app:assembleRelease` と `:app:assembleBenchmark` で作り、APK を開いて確かめた（release は 23,232 バイト、`benchmark` は 12,127 バイト）。
+  - モンキー試験で、落ちる回数と ANR がともに 0 件である。`./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000 --seed 1"` を API 37 のエミュレータで流し、9 冊（画像のある ZIP とエラーコーパスの本）で合計 10,000 イベント、落ち 0 件、ネイティブの落ち 0 件、ANR 0 件だった（1 時間 22 分。ほかの作業で PC が忙しかった）。API 28 では流していない。
+- 実機が要る。
+  - `StartupBenchmark` の `coldStart` が 600 ms 以内に収まること。
+  - 息での操作の 10 回に 9 回（息での操作ができてからの話）。
+  - 低位の確認端末（API 28 か 29、RAM 3 GB）での点検と、折りたたみ端末での点検。
+- できていない。
+  - 息での操作。設定の 2 項目の型があるだけで、マイクの入力、判定、`RECORD_AUDIO` の許可の要求、リーダーが背面に回るときの停止がない。メニューの項目は使えない。
+  - 操作ガイド（メニューの項目は使えず、閉じる処理も `guideShown = false` のままである）。
+  - 範囲を選んで表紙にする画面。
+  - 縦の連続スクロール（Q15 は採用と決めたが、コードがない。設定の列挙の値だけがある）。
+  - アクセシビリティの点検（6.7 節）の記録。
+  - この文書の (要検証) の解消か課題としての登録。(要検証) は、この節を除いて 63 行残り、課題の登録先は決めていない。
+
+リーダーのメニューとコマンドバーで、使えない項目がある。画像リーダーは、しおりの追加、しおり一覧、本ごとの設定、表紙にする、範囲を選んで表紙にする、息で操作、操作ガイド、設定、コマンドバーの編集、ページの逆順、このアプリについてを、「この操作はまだ使えません」として出す。どのマイルストーンに入れるかは、4.8 節の表に合わせて決める。
+
 ## 10. 未決事項
 
 | ID | 問い | 選択肢 | 現在の推奨 |

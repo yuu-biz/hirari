@@ -4,7 +4,24 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 
 ## 状態
 
-`docs/spec.md` のマイルストーン M0（骨組みとライセンスの仕組み）が終わりました。次は M1（ローカルの ZIP と画像フォルダを読む）です。
+`docs/spec.md` の 9 章のマイルストーンは、どれも終わっていません。実機や NAS が要る確認が残っているか、コードが足りないためです。完了条件の分類と根拠は、9 章の「確認の状況」にあります。API 37 と API 28 のエミュレータでは、端末上の試験がすべて通りました。
+
+- M0（骨組みとライセンスの仕組み）: コード完了。GitHub の CI での確認が 1 件残ります（`check` が通ることと、許可外の依存で失敗することを、手動実行で見ます）。
+- M1（ローカルの ZIP と画像フォルダを読む）: 機能は動きます。ただし P1〜P4 を実際のリーダーで計るトレース区間とベンチマークが未作成です。実機での確認が 3 件残ります（P1〜P4、G2 の片手の手動試験、Q1 の計り直し）。
+- M2（ライブラリ、履歴、しおり、サムネイル）: コード未完です。画像リーダーのしおりの追加と一覧が使えません。実機での確認が 2 件残ります（1000 冊のフォルダの P7 と P8、ファイル管理アプリから cbz を開く）。
+- M3（RAR、7z、PDF とすべての画像形式）: コード完了、確認が 3 件残ります（fuzz を延べ 24 時間、幅 800 で高さ 50,000 の画像のスクロールと P10 を実機で、圧縮した RAR 5 と RAR 4 の PPMd の実データ）。
+- M4（SMB）: コード未完です。「端末に保存」がありません。実機と NAS での確認が 2 件残ります（基準 NAS の P4、読書中に Wi-Fi を切る）。
+- M5（テキストリーダー）: コード完了、実機での確認が 1 件残ります（P9）。
+- M6（残りのリーダー機能と仕上げ）: コード未完です。息での操作、操作ガイド、範囲を選んで表紙にする画面、縦の連続スクロール、アクセシビリティの点検、(要検証) の解消がありません。実機での確認が 2 件残ります（`coldStart` が 600 ms 以内、低位の確認端末と折りたたみ端末での点検）。
+
+残りの端末での確認を動かすコマンドは次のとおりです。端末は `ANDROID_SERIAL` で 1 台に絞ります。
+
+- 端末上の試験のすべて（API ごとに実行）: `./gradlew :core:archive:connectedDebugAndroidTest :core:image:connectedDebugAndroidTest :feature:text:connectedDebugAndroidTest :core:data:connectedDebugAndroidTest :app:connectedDebugAndroidTest`
+- P9: `./gradlew :feature:text:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.feature.text.TextOnDeviceTest#aMegabyteTextReachesItsFirstPageWithTheSystemFontAndDrawsInk"` を流し、`adb logcat -d -s TextOnDeviceTest` で `P9 on this device` の行を読みます。
+- P6（`coldStart`）と Q1 の計り直し: 下の表の起動の計測のコマンドに `-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.benchmark.StartupBenchmark` か `...RenderSurfaceBenchmark` を足します。
+- fuzz の延べ 24 時間: GitHub の Actions で `fuzz.yml` を手動実行します。
+- モンキー試験: 下の表のコマンドです。API 37 のエミュレータで 10,000 イベントが、落ち 0 件、ANR 0 件で終わっています。
+- P1〜P4、P7、P8、P10、G2、NAS、Wi-Fi、ファイル管理アプリ、折りたたみ端末は、計るコマンドがありません。P1〜P4 はトレース区間の追加から始めます。そのほかは `docs/spec.md` の 5.2 節の計測方法に沿って、手で行います。
 
 ## ビルドと試験
 
