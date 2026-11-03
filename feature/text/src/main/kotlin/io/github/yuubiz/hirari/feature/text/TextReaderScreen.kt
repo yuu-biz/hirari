@@ -1,10 +1,6 @@
 package io.github.yuubiz.hirari.feature.text
 
-import android.app.Activity
 import android.app.Application
-import android.content.Context
-import android.content.ContextWrapper
-import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.os.SystemClock
 import android.widget.Toast
@@ -59,9 +55,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +62,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookEndEffect
+import io.github.yuubiz.hirari.core.model.Claims
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.KeyCodes
@@ -87,7 +81,8 @@ import io.github.yuubiz.hirari.core.text.PageContent
 import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.ui.BarSemantics
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
-import io.github.yuubiz.hirari.core.ui.ScreenBrightness
+import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
+import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
 import io.github.yuubiz.hirari.core.ui.performTurnHaptic
 import kotlin.math.roundToInt
@@ -96,12 +91,13 @@ import kotlinx.coroutines.delay
 
 /**
  * Hands key events to the open text reader. The activity calls [dispatch] from `dispatchKeyEvent` before Compose
- * focus handling, which would take the arrow keys first, and passes on a key the reader does not take.
+ * focus handling, which would take the arrow keys first, and passes on a key the reader does not take. The newest
+ * reader takes them while the one it replaces is still going out.
  */
 class TextKeyRelay {
-    internal var handler: ((KeyEvent) -> Boolean)? = null
+    internal val handlers = Claims<(KeyEvent) -> Boolean>()
 
-    fun dispatch(event: KeyEvent): Boolean = handler?.invoke(event) == true
+    fun dispatch(event: KeyEvent): Boolean = handlers.current?.invoke(event) == true
 }
 
 /**
@@ -152,10 +148,14 @@ fun TextReaderScreen(
         for (tick in viewModel.turnHaptics) view.performTurnHaptic()
     }
     val settings = (state as? TextReaderUiState.Reading)?.settings
-    if (settings?.hideSystemBars != false) HideSystemBars()
-    OrientationLock(orientation ?: settings?.readerOrientation ?: ReaderOrientation.System)
-    ScreenBrightness(settings?.readerBrightness)
-    KeepAwake(settings?.keepAwake ?: KeepAwake.System, touched)
+    HoldReaderWindow(
+        ReaderWindow(
+            hideSystemBars = settings?.hideSystemBars != false,
+            orientation = orientation ?: settings?.readerOrientation ?: ReaderOrientation.System,
+            brightness = settings?.readerBrightness,
+            keepScreenOn = keepsAwake(settings?.keepAwake ?: KeepAwake.System, touched),
+        ),
+    )
 
     fun dismiss() = if (bookEndEdge != null) bookEndEdge = null else if (panel != null) panel = null else back()
 
@@ -180,7 +180,7 @@ fun TextReaderScreen(
 
     BackHandler { dismiss() }
     DisposableEffect(keys) {
-        keys.handler = handler@{ event ->
+        val claim = keys.handlers.claim handler@{ event ->
             val current = (viewModel.state.value as? TextReaderUiState.Reading)?.settings ?: return@handler false
             val covered = bookEndEdge != null || (panel != null && panel != TextPanel.Commands)
             if (covered && event.keyCode != KeyCodes.BACK) return@handler false
@@ -193,7 +193,7 @@ fun TextReaderScreen(
                 }
             }
         }
-        onDispose { keys.handler = null }
+        onDispose { claim.release() }
     }
 
     when (val s = state) {
@@ -517,56 +517,18 @@ private fun readerBackground(background: ReaderBackground): Color = when (backgr
 private val DEFAULT_BACKGROUND = Color(0xFF616161)
 internal val PANEL_BACKGROUND = Color(0x80000070)
 
+/** Whether 画面を消さない (docs/spec.md section 4.10) keeps the screen on. [touched] changes on every input, which restarts the ten minutes. */
 @Composable
-private fun HideSystemBars() {
-    val view = LocalView.current
-    DisposableEffect(view) {
-        val window = view.context.findActivity()?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller?.hide(WindowInsetsCompat.Type.systemBars())
-        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
-    }
-}
-
-@Composable
-private fun OrientationLock(orientation: ReaderOrientation) {
-    val activity = LocalView.current.context.findActivity()
-    DisposableEffect(activity, orientation) {
-        activity?.requestedOrientation = when (orientation) {
-            ReaderOrientation.System -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            ReaderOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            ReaderOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
-        onDispose { }
-    }
-    DisposableEffect(activity) {
-        onDispose { if (activity?.isChangingConfigurations == false) activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
-    }
-}
-
-/** 画面を消さない of docs/spec.md section 4.10. [touched] changes on every input, which restarts the ten minutes. */
-@Composable
-private fun KeepAwake(mode: KeepAwake, touched: Int) {
-    val view = LocalView.current
+private fun keepsAwake(mode: KeepAwake, touched: Int): Boolean {
+    var awake by remember { mutableStateOf(false) }
     LaunchedEffect(mode, touched) {
-        when (mode) {
-            KeepAwake.System -> view.keepScreenOn = false
-            KeepAwake.Always -> view.keepScreenOn = true
-            KeepAwake.TenMinutes -> {
-                view.keepScreenOn = true
-                delay(10 * 60 * 1000L)
-                view.keepScreenOn = false
-            }
+        awake = mode != KeepAwake.System
+        if (mode == KeepAwake.TenMinutes) {
+            delay(10 * 60 * 1000L)
+            awake = false
         }
     }
-    DisposableEffect(view) { onDispose { view.keepScreenOn = false } }
-}
-
-internal tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
+    return awake
 }
 
 /** 組み方 of the command bar: the next of 1 ページ, 見開き, 連続 and 自動. */

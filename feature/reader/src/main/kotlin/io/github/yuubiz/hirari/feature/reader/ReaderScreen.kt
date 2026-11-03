@@ -1,12 +1,8 @@
 package io.github.yuubiz.hirari.feature.reader
 
-import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
-import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
@@ -34,43 +30,43 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.Claims
 import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.KeyResult
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
-import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.Sibling
-import io.github.yuubiz.hirari.core.ui.ScreenBrightness
+import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
+import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.announced
 import kotlinx.coroutines.delay
 
 /** The default `readerBackground` (docs/spec.md section 4.10). */
 internal val ReaderBackground = Color(0xFF616161)
 
-/** Hands the activity's key events to the reader while it is on screen (docs/spec.md section 4.8, キー操作). */
+/**
+ * Hands the activity's key events to the reader while it is on screen (docs/spec.md section 4.8, キー操作), the newest
+ * one when a reader opening a book in place of another is up with it.
+ */
 class KeyRelay {
-    internal var handler: ((KeyEvent) -> Boolean)? = null
+    internal val handlers = Claims<(KeyEvent) -> Boolean>()
 
     /** Whether the reader took [event]. A key it does not take, such as a volume key that is off, goes to the system. */
-    fun dispatch(event: KeyEvent): Boolean = handler?.invoke(event) == true
+    fun dispatch(event: KeyEvent): Boolean = handlers.current?.invoke(event) == true
 }
 
 /**
@@ -92,9 +88,8 @@ fun ReaderScreen(
     val ui = remember { ReaderUi() }
     val stoppingKey = remember { StoppingKey() }
     val close by rememberUpdatedState(onClose)
-    HideSystemBars()
-    ScreenOrientationLock(viewModel.orientation)
-    ScreenBrightness(viewModel.screenBrightness)
+    val awake = viewModel.state?.autoPlay != null || viewModel.breath.view is BreathView.Listening
+    HoldReaderWindow(ReaderWindow(hideSystemBars = true, orientation = viewModel.orientation, brightness = viewModel.screenBrightness, keepScreenOn = awake))
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
 
     fun dismiss() {
@@ -109,7 +104,7 @@ fun ReaderScreen(
     }
 
     DisposableEffect(keys, viewModel) {
-        keys.handler = handler@{ event ->
+        val claim = keys.handlers.claim handler@{ event ->
             val pressed = event.action == KeyEvent.ACTION_DOWN
             when (stoppingKey.onKey(event.keyCode, pressed, event.repeatCount > 0, viewModel.state?.autoPlay != null)) {
                 KeyGate.StopAutoPlay -> {
@@ -133,7 +128,7 @@ fun ReaderScreen(
                 }
             }
         }
-        onDispose { keys.handler = null }
+        onDispose { claim.release() }
     }
     BackHandler { dismiss() }
 
@@ -148,7 +143,7 @@ fun ReaderScreen(
             is ReaderPhase.Failed -> BookError(stringResource(phase.reason.message), onClose)
             ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), onClose)
             ReaderPhase.Reading -> viewModel.state?.let { state ->
-                AutoPlayClock(viewModel, state.autoPlay, listening = viewModel.breath.view is BreathView.Listening)
+                AutoPlayClock(viewModel, state.autoPlay)
                 // Behind a sheet or the guide the page is out of reach of a screen reader, as it is of a finger.
                 val behindPanel = ui.sheet != null || ui.guideShown
                 Box(Modifier.fillMaxSize().then(if (behindPanel) Modifier.clearAndSetSemantics {} else Modifier.semantics { isTraversalGroup = true })) {
@@ -440,52 +435,12 @@ private fun SharePageEffect(viewModel: ReaderViewModel, ui: ReaderUi) {
     }
 }
 
-/** Sends 自動再生 its steps when they are due. The screen stays on while it plays and while 息での操作 [listening]. */
+/** Sends 自動再生 its steps when they are due. */
 @Composable
-private fun AutoPlayClock(viewModel: ReaderViewModel, autoPlay: AutoPlay?, listening: Boolean) {
-    val view = LocalView.current
-    val awake = autoPlay != null || listening
-    DisposableEffect(view, awake) {
-        view.keepScreenOn = awake
-        onDispose { view.keepScreenOn = false }
-    }
+private fun AutoPlayClock(viewModel: ReaderViewModel, autoPlay: AutoPlay?) {
     LaunchedEffect(autoPlay) {
         val due = autoPlay?.dueAtMs ?: return@LaunchedEffect
         delay((due - SystemClock.uptimeMillis()).coerceAtLeast(0))
         viewModel.dispatch(ReaderEvent.AutoPlayDue(maxOf(SystemClock.uptimeMillis(), due)))
     }
-}
-
-@Composable
-private fun HideSystemBars() {
-    val view = LocalView.current
-    DisposableEffect(view) {
-        val window = view.context.findActivity()?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller?.hide(WindowInsetsCompat.Type.systemBars())
-        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
-    }
-}
-
-@Composable
-private fun ScreenOrientationLock(orientation: ReaderOrientation) {
-    val activity = LocalView.current.context.findActivity()
-    DisposableEffect(activity, orientation) {
-        activity?.requestedOrientation = when (orientation) {
-            ReaderOrientation.System -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            ReaderOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            ReaderOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
-        onDispose { }
-    }
-    DisposableEffect(activity) {
-        onDispose { if (activity?.isChangingConfigurations == false) activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
-    }
-}
-
-internal tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }
