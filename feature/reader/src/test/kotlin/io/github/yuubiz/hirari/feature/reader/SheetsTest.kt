@@ -74,7 +74,7 @@ class SheetsTest {
     fun theMenuKeepsTheSpecsThreeGroupsInOrder() {
         assertEquals(MenuItem.entries.map { it.group }.sorted(), MenuItem.entries.map { it.group })
         assertEquals(
-            setOf(MenuItem.SharePage, MenuItem.RestoreAndClose, MenuItem.AutoPlay, MenuItem.Orientation, MenuItem.MirrorControls),
+            setOf(MenuItem.SharePage, MenuItem.RestoreAndClose, MenuItem.AutoPlay, MenuItem.Orientation, MenuItem.MirrorControls, MenuItem.Guide),
             MenuItem.entries.filter { it.available }.toSet(),
         )
     }

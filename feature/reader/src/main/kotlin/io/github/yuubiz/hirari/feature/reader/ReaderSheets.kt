@@ -332,12 +332,18 @@ internal fun MenuSheet(
     onCloseMenu: () -> Unit,
     onCloseReader: () -> Unit,
     onEffect: (CommandEffect?) -> Unit,
+    onGuide: () -> Unit,
 ) {
     fun run(item: MenuItem) {
         val command = when (item) {
             MenuItem.RestoreAndClose -> {
                 viewModel.restorePosition()
                 onCloseReader()
+                return
+            }
+            MenuItem.Guide -> {
+                onCloseMenu()
+                onGuide()
                 return
             }
             MenuItem.SharePage -> ReaderCommand.SharePage

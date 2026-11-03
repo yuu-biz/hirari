@@ -75,7 +75,7 @@ enum class MenuItem(val group: MenuGroup, val available: Boolean) {
     Breath(MenuGroup.Reading, false),
     Orientation(MenuGroup.Reading, true),
     MirrorControls(MenuGroup.Reading, true),
-    Guide(MenuGroup.Reading, false),
+    Guide(MenuGroup.Reading, true),
     Settings(MenuGroup.App, false),
     EditCommandBar(MenuGroup.App, false),
     About(MenuGroup.App, false),

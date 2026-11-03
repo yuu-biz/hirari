@@ -80,10 +80,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
     fun dismiss() {
         val panelOpen = ui.commandBar.panelVisible || ui.sheet != null
         val autoPlaying = viewModel.state?.autoPlay != null
-        when (dismissTarget(autoPlaying, guideShown = false, panelOpen = panelOpen, opening = viewModel.phase == ReaderPhase.Opening)) {
+        when (dismissTarget(autoPlaying, guideShown = ui.guideShown, panelOpen = panelOpen, opening = viewModel.phase == ReaderPhase.Opening)) {
             DismissTarget.AutoPlay -> viewModel.dispatch(ReaderEvent.AutoPlayStopped)
+            DismissTarget.Guide -> ui.guideShown = false
             DismissTarget.Panel -> ui.closePanels()
-            DismissTarget.Guide, DismissTarget.Opening, DismissTarget.Reader -> close()
+            DismissTarget.Opening, DismissTarget.Reader -> close()
         }
     }
 
@@ -138,13 +139,22 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
                         onNeighbor = { ui.sheet = ReaderSheet.BookEnd(it, fromPanel = true) },
                     )
                     is ReaderSheet.BookEnd -> BookEndSheet(viewModel, sheet, onClose = { ui.sheet = null }, onCloseReader = onClose, onOpenBook = onOpenBook)
-                    ReaderSheet.Menu -> MenuSheet(viewModel, state, onCloseMenu = { ui.sheet = null }, onCloseReader = onClose, onEffect = ui::follow)
+                    ReaderSheet.Menu -> MenuSheet(
+                        viewModel,
+                        state,
+                        onCloseMenu = { ui.sheet = null },
+                        onCloseReader = onClose,
+                        onEffect = ui::follow,
+                        onGuide = { ui.guideShown = true },
+                    )
                     ReaderSheet.Adjust -> AdjustSheet(viewModel, state, onClose = { ui.sheet = null })
                     is ReaderSheet.SharePick -> SharePickSheet(sheet.view, state.config.direction, onPick = { ui.follow(CommandEffect.Share(it)) }, onClose = { ui.sheet = null })
                     null -> Unit
                 }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
                 BookEndEffects(viewModel, ui, onClose, onOpenBook)
+                GuideEffects(viewModel, ui)
+                if (ui.guideShown) GuideOverlay(state.config, onDismiss = { ui.guideShown = false })
             }
         }
         SharePageEffect(viewModel, ui)
@@ -175,12 +185,16 @@ internal class ReaderUi {
     var sheet: ReaderSheet? by mutableStateOf(null)
     var message: Int? by mutableStateOf(null)
 
+    /** 操作ガイド, over everything else (docs/spec.md section 4.8). */
+    var guideShown: Boolean by mutableStateOf(false)
+
     /** The page ページを共有 is writing for the share sheet. */
     var sharing: Int? by mutableStateOf(null)
 
     fun closePanels() {
         commandBar = CommandBarState.Closed
         sheet = null
+        guideShown = false
     }
 
     /** Does what a command left to the screen: opens its sheet, or says it is not there yet. */
@@ -262,6 +276,26 @@ private fun BookEndEffects(viewModel: ReaderViewModel, ui: ReaderUi, onClose: ()
                 else -> R.string.book_end_first_in_folder
             }
             BookEndEffect.Close -> onClose()
+        }
+    }
+}
+
+/**
+ * Shows the operation guide the first time a book is read, and remembers it once it is closed, by whatever closes it
+ * (docs/spec.md section 4.8, 操作ガイド). A guide that was up when the app went away shows again.
+ */
+@Composable
+private fun GuideEffects(viewModel: ReaderViewModel, ui: ReaderUi) {
+    LaunchedEffect(viewModel) {
+        if (!viewModel.guideSeen()) ui.guideShown = true
+    }
+    var wasShown by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.guideShown) {
+        if (ui.guideShown) {
+            wasShown = true
+        } else if (wasShown) {
+            wasShown = false
+            viewModel.markGuideSeen()
         }
     }
 }

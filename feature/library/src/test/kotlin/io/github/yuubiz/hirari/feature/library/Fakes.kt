@@ -378,6 +378,14 @@ internal class FakeLaunch : LaunchRepository {
     override suspend fun setLastFolder(folder: LastFolder?) {
         record = record.copy(lastFolder = folder)
     }
+
+    var guideSeen = false
+
+    override suspend fun readerGuideSeen(): Boolean = guideSeen
+
+    override suspend fun markReaderGuideSeen() {
+        guideSeen = true
+    }
 }
 
 internal class Fixture {

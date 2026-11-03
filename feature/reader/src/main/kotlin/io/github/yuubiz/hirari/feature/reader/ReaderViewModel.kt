@@ -286,6 +286,16 @@ class ReaderViewModel(
         return found.also { siblings[edge] = it }
     }
 
+    /** Whether the operation guide was shown to the end before (docs/spec.md section 4.8, 操作ガイド). */
+    suspend fun guideSeen(): Boolean = services.await().storage.launch.readerGuideSeen()
+
+    fun markGuideSeen() {
+        viewModelScope.launch {
+            val shared = services.await()
+            shared.appScope.launch { shared.storage.launch.markReaderGuideSeen() }
+        }
+    }
+
     /** 位置を戻して閉じる: the book gets back the position and state it had when it opened. The screen closes next. */
     fun restorePosition() {
         val book = opened ?: return

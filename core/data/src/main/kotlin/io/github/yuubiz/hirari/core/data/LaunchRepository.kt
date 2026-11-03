@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import java.io.File
@@ -34,6 +35,11 @@ interface LaunchRepository {
     suspend fun finishStart()
 
     suspend fun setLastFolder(folder: LastFolder?)
+
+    /** Whether the reader's operation guide has been shown to the end on this device (docs/spec.md section 4.8). */
+    suspend fun readerGuideSeen(): Boolean
+
+    suspend fun markReaderGuideSeen()
 }
 
 @Serializable
@@ -42,6 +48,7 @@ internal data class StoredLaunch(
     val lastFolderLocation: Long? = null,
     val lastFolderPath: String? = null,
     val lastFolderDocumentId: String? = null,
+    val readerGuideSeen: Boolean = false,
 ) {
     fun toRecord() = LaunchRecord(
         unfinishedStarts = unfinishedStarts.coerceAtLeast(0),
@@ -72,9 +79,15 @@ internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaun
             it.copy(lastFolderLocation = folder?.location?.value, lastFolderPath = folder?.path, lastFolderDocumentId = folder?.documentId)
         }
     }
+
+    override suspend fun readerGuideSeen(): Boolean = store.data.first().readerGuideSeen
+
+    override suspend fun markReaderGuideSeen() {
+        store.updateData { it.copy(readerGuideSeen = true) }
+    }
 }
 
-/** A file that does not read as the record starts over: losing it only loses the last folder. */
+/** A file that does not read as the record starts over: losing it loses the last folder and shows the guide once more. */
 internal object LaunchSerializer : Serializer<StoredLaunch> {
     override val defaultValue = StoredLaunch()
 

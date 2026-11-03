@@ -52,6 +52,25 @@ class LaunchRepositoryTest {
     }
 
     @Test
+    fun `the guide is unseen until it is marked and stays seen across restarts`() = runBlocking {
+        val store = MemoryStore()
+        assertEquals(false, DataStoreLaunchRepository(store).readerGuideSeen())
+        DataStoreLaunchRepository(store).markReaderGuideSeen()
+        val launch = DataStoreLaunchRepository(store.restarted())
+        assertEquals(true, launch.readerGuideSeen())
+        launch.beginStart()
+        launch.finishStart()
+        launch.setLastFolder(null)
+        assertEquals(true, launch.readerGuideSeen())
+    }
+
+    @Test
+    fun `a record written before the guide existed reads as not seen`() = runBlocking {
+        val old = """{"unfinishedStarts":1}""".toByteArray()
+        assertEquals(StoredLaunch(unfinishedStarts = 1), LaunchSerializer.readFrom(ByteArrayInputStream(old)))
+    }
+
+    @Test
     fun `an unreadable file starts over`() = runBlocking {
         assertEquals(StoredLaunch(), LaunchSerializer.readFrom(ByteArrayInputStream("not json".toByteArray())))
         assertEquals(StoredLaunch(), LaunchSerializer.readFrom(ByteArrayInputStream("[1, 2]".toByteArray())))
