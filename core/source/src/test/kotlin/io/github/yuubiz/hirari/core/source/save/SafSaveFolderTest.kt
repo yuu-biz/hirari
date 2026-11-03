@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import android.system.ErrnoException
+import android.system.OsConstants
 import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.source.smb.FakeConnector
 import io.github.yuubiz.hirari.core.source.smb.SMB_READ_BLOCK
@@ -28,6 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.io.FileDescriptor
 import kotlin.io.path.createTempDirectory
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -180,6 +183,25 @@ class SafSaveFolderTest {
         val outcome = runBlocking { server.saveTo("vol1.cbz", false, SafSaveFolder(resolver, tree)) }
         assertEquals(SaveOutcome.Failed(SaveFailure.NoPermission), outcome)
         assertEquals(setOf("root"), provider.docs.keys)
+    }
+
+    private fun saveSyncingWith(fsync: (FileDescriptor) -> Unit): SaveOutcome {
+        val server = SmbServer(FakeConnector(mapOf("vol1.cbz" to byteArrayOf(1, 2, 3))), SmbLogin.Guest, scope, emptyFlow(), Dispatchers.IO, 15.seconds)
+        return runBlocking { server.saveTo("vol1.cbz", false, SafSaveFolder(resolver, tree, fsync = fsync)) }
+    }
+
+    @Test
+    fun `a file the storage fails to sync is not renamed and is deleted`() {
+        assertEquals(SaveOutcome.Failed(SaveFailure.WriteFailed), saveSyncingWith { throw ErrnoException("fsync", OsConstants.EIO) })
+        assertEquals(setOf("root"), provider.docs.keys)
+        assertEquals(SaveOutcome.Failed(SaveFailure.NoRoom), saveSyncingWith { throw ErrnoException("fsync", OsConstants.ENOSPC) })
+        assertEquals(setOf("root"), provider.docs.keys)
+    }
+
+    @Test
+    fun `a file that cannot be synced, as a pipe, is still saved`() {
+        assertEquals(SaveOutcome.Saved("vol1.cbz", 1, 3), saveSyncingWith { throw ErrnoException("fsync", OsConstants.EINVAL) })
+        assertContentEquals(byteArrayOf(1, 2, 3), provider.named("vol1.cbz")!!.file!!.readBytes())
     }
 
     @Test

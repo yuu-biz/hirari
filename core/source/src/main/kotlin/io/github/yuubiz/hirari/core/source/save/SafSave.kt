@@ -9,6 +9,7 @@ import android.system.Os
 import android.system.OsConstants
 import android.os.ParcelFileDescriptor
 import io.github.yuubiz.hirari.core.source.listChildren
+import java.io.FileDescriptor
 import java.io.FileOutputStream
 import java.io.IOException
 
@@ -17,13 +18,15 @@ import java.io.IOException
  * never use it on the main thread. The tree needs a write grant.
  *
  * Files are made with the generic MIME type, so a provider that fixes the extension to the type keeps the name
- * `名前.part` as it is, and are then renamed. A provider that cannot rename a document cannot be saved to: the file is
- * deleted and [CannotRenameException] is thrown before anything is written.
+ * `名前.part` as it is, and are then written through to the storage with [fsync] and renamed. A provider that cannot
+ * rename a document cannot be saved to: the file is deleted and [CannotRenameException] is thrown before anything is
+ * written.
  */
 class SafSaveFolder(
     private val resolver: ContentResolver,
     private val treeUri: Uri,
     private val documentId: String = DocumentsContract.getTreeDocumentId(treeUri),
+    private val fsync: (FileDescriptor) -> Unit = Os::fsync,
 ) : SaveFolder {
     private val folderUri: Uri get() = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
 
@@ -31,7 +34,7 @@ class SafSaveFolder(
 
     override fun createFolder(name: String): SaveFolder {
         val created = createDocument(Document.MIME_TYPE_DIR, name)
-        return SafSaveFolder(resolver, treeUri, DocumentsContract.getDocumentId(created))
+        return SafSaveFolder(resolver, treeUri, DocumentsContract.getDocumentId(created), fsync)
     }
 
     override fun create(name: String): SaveFile {
@@ -40,7 +43,7 @@ class SafSaveFolder(
             val flags = resolver.query(uri, arrayOf(Document.COLUMN_FLAGS), null, null, null)?.use { if (it.moveToFirst()) it.getInt(0) else 0 } ?: 0
             if (flags and Document.FLAG_SUPPORTS_RENAME == 0) throw CannotRenameException()
             val descriptor = resolver.openFileDescriptor(uri, "w") ?: throw SaveDestinationException("the provider returned no descriptor")
-            return SafSaveFile(resolver, uri, descriptor)
+            return SafSaveFile(resolver, uri, descriptor, fsync)
         } catch (t: Throwable) {
             runCatching { DocumentsContract.deleteDocument(resolver, uri) }
             throw t
@@ -66,6 +69,7 @@ private class SafSaveFile(
     private val resolver: ContentResolver,
     private val uri: Uri,
     private val descriptor: ParcelFileDescriptor,
+    private val fsync: (FileDescriptor) -> Unit,
 ) : SaveFile {
     private val output = FileOutputStream(descriptor.fileDescriptor)
     private var open = true
@@ -104,12 +108,25 @@ private class SafSaveFile(
         if (!open) return
         open = false
         try {
-            if (sync) runCatching { output.fd.sync() }
+            if (sync) syncThrough()
         } finally {
             try {
                 output.close()
             } finally {
                 descriptor.close()
+            }
+        }
+    }
+
+    /** Writes the file through to the storage. A pipe or another file that cannot be synced is left as it is. */
+    private fun syncThrough() {
+        try {
+            fsync(descriptor.fileDescriptor)
+        } catch (e: ErrnoException) {
+            when (e.errno) {
+                OsConstants.EINVAL, OsConstants.EROFS -> Unit
+                OsConstants.ENOSPC, OsConstants.EDQUOT -> throw NoRoomException()
+                else -> throw SaveDestinationException("the storage did not take the file", e)
             }
         }
     }
