@@ -35,6 +35,7 @@ import io.github.yuubiz.hirari.core.image.TileSource
 import io.github.yuubiz.hirari.core.image.Tiling
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
+import io.github.yuubiz.hirari.core.model.Bookmark
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookEndEffect
@@ -83,8 +84,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -373,6 +376,34 @@ class ReaderViewModel(
         return CoverRangeTarget(book.id, entry)
     }
 
+    /** The bookmarks of this book in the order of their positions; none until the book is open. */
+    fun bookmarks(): Flow<List<Bookmark>> {
+        val book = opened ?: return flowOf(emptyList())
+        return book.services.storage.bookmarks.inBook(book.id).catch { emit(emptyList()) }
+    }
+
+    /**
+     * しおりを追加 at the view starting with [page], named [typed] or by default when it is blank (docs/spec.md
+     * section 4.8). The write runs on the process's scope; [done] hears on the main thread whether it was stored.
+     */
+    fun addBookmark(page: Int, typed: String, done: (Boolean) -> Unit) {
+        val book = opened ?: return done(false)
+        val position = bookmarkAt(page, book.book.pages.size)
+        val write = book.services.appScope.async { quietly { book.services.storage.bookmarks.add(book.id, position, bookmarkLabel(typed), Instant.now()) } }
+        viewModelScope.launch { done(write.await()) }
+    }
+
+    fun deleteBookmark(mark: Bookmark) {
+        val book = opened ?: return
+        book.services.appScope.launch { quietly { book.services.storage.bookmarks.delete(listOf(mark.id)) } }
+    }
+
+    /** Goes to the page of [mark]. */
+    fun goTo(mark: Bookmark) {
+        val pageCount = opened?.book?.pages?.size ?: return
+        mark.page(pageCount)?.let { dispatch(ReaderEvent.GoTo(it)) }
+    }
+
     /**
      * 表紙にする: [page] becomes the cover of the book in the index, whole (docs/spec.md section 4.8). The write runs on
      * the process's scope, so leaving the screen does not stop it, and once it is stored the thumbnails are made
@@ -478,6 +509,7 @@ class ReaderViewModel(
             CommandEffect.StartAutoPlay -> dispatch(ReaderEvent.AutoPlayStarted(nowMs))
             CommandEffect.SharePage -> return shareChoice(current.current)
             CommandEffect.SetCover -> return coverChoice(current.current)
+            CommandEffect.AddBookmark -> return CommandEffect.Show(ReaderSheet.AddBookmark(current.current.pages.first()))
             is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.Cover, is CommandEffect.OpenSettings, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
         }
         return null
@@ -863,6 +895,16 @@ private fun Exception.openFailure(): BookFailure = when (this) {
     is SecurityException -> BookFailure.NoPermission
     is NoRoomForCopyException -> BookFailure.NoRoomForCopy
     else -> BookFailure.ReadError
+}
+
+/** Whether [write] went through; a write the database refuses is reported, not thrown. */
+private suspend fun quietly(write: suspend () -> Unit): Boolean = try {
+    write()
+    true
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    false
 }
 
 /** A thumbnail that fails to be made again is made by the lists when they show the book. */

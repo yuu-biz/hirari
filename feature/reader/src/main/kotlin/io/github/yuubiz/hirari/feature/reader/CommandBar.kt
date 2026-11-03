@@ -43,6 +43,9 @@ sealed interface CommandEffect {
     /** 息で操作, which the screen runs since turning it on may ask for the microphone. */
     data object ToggleBreath : CommandEffect
 
+    /** しおりを追加 at the view on screen, which [ReaderViewModel.command] makes into the sheet that names it. */
+    data object AddBookmark : CommandEffect
+
     /** 表紙にする of the view on screen, which [coverChoice] makes into [Show] or [Cover]. */
     data object SetCover : CommandEffect
 
@@ -84,10 +87,11 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.AutoPlay -> CommandEffect.StartAutoPlay
     ReaderCommand.SharePage -> CommandEffect.SharePage
     ReaderCommand.Breath -> CommandEffect.ToggleBreath
+    ReaderCommand.AddBookmark -> CommandEffect.AddBookmark
+    ReaderCommand.Bookmarks -> CommandEffect.Show(ReaderSheet.Bookmarks)
     ReaderCommand.SetCover -> CommandEffect.SetCover
     ReaderCommand.Settings -> CommandEffect.OpenSettings(SettingsTarget.Settings)
     ReaderCommand.EditCommandBar -> CommandEffect.OpenSettings(SettingsTarget.CommandBar)
-    ReaderCommand.AddBookmark, ReaderCommand.Bookmarks,
     ReaderCommand.ReverseOrder,
     ReaderCommand.BookSettings,
     -> CommandEffect.NotYet

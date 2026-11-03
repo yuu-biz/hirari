@@ -144,6 +144,7 @@ internal fun PagePanelSheet(
     sheet: ReaderSheet.Pages,
     onClose: () -> Unit,
     onNeighbor: (BookEdge) -> Unit,
+    onBookmarks: () -> Unit,
 ) {
     val pageCount = state.pagination.shapes.size
     val head = state.current.pages.min()
@@ -177,7 +178,7 @@ internal fun PagePanelSheet(
                 SheetButton(R.string.page_panel_shift_forward) { act(ReaderAction.Shift(forward = true)) }
                 SheetButton(R.string.page_panel_previous_book) { onNeighbor(BookEdge.Start) }
                 SheetButton(R.string.page_panel_next_book) { onNeighbor(BookEdge.End) }
-                SheetButton(R.string.command_bookmarks, enabled = false) {}
+                SheetButton(R.string.command_bookmarks, onClick = onBookmarks)
                 SheetButton(R.string.page_panel_undo) { goTo(sheet.openedOn) }
                 SheetButton(R.string.panel_close, onClick = onClose)
             }
@@ -313,7 +314,7 @@ private fun StepButton(step: Int, modifier: Modifier, onClick: () -> Unit) {
 
 /** [description] is what a screen reader says in place of the label, for a label such as `p. 12` that it would spell out. */
 @Composable
-private fun SheetButton(label: Int, enabled: Boolean = true, args: Array<Any> = emptyArray(), description: String? = null, onClick: () -> Unit) {
+internal fun SheetButton(label: Int, enabled: Boolean = true, args: Array<Any> = emptyArray(), description: String? = null, onClick: () -> Unit) {
     TextButton(onClick = onClick, enabled = enabled, modifier = if (description == null) Modifier else Modifier.semantics { contentDescription = description }) {
         Text(stringResource(label, *args), Modifier.then(if (description == null) Modifier else Modifier.decorative()), color = if (enabled) SheetText else SheetDisabled)
     }
@@ -426,6 +427,8 @@ internal fun MenuSheet(
             }
             MenuItem.SharePage -> ReaderCommand.SharePage
             MenuItem.SetCover -> ReaderCommand.SetCover
+            MenuItem.AddBookmark -> ReaderCommand.AddBookmark
+            MenuItem.Bookmarks -> ReaderCommand.Bookmarks
             MenuItem.AutoPlay -> ReaderCommand.AutoPlay
             MenuItem.Breath -> ReaderCommand.Breath
             MenuItem.Orientation -> ReaderCommand.Orientation
@@ -589,7 +592,7 @@ internal fun SharePickSheet(view: PageView.Two, direction: ReadingDirection, tit
 }
 
 @Composable
-private fun SwitchRow(label: Int, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(label: Int, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()

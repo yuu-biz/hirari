@@ -160,6 +160,7 @@ fun ReaderScreen(
                         sheet,
                         onClose = { ui.sheet = null },
                         onNeighbor = { ui.sheet = ReaderSheet.BookEnd(it, fromPanel = true) },
+                        onBookmarks = { ui.sheet = ReaderSheet.Bookmarks },
                     )
                     is ReaderSheet.BookEnd -> BookEndSheet(viewModel, sheet, onClose = { ui.sheet = null }, onCloseReader = onClose, onOpenBook = onOpenBook)
                     ReaderSheet.Menu -> MenuSheet(
@@ -181,6 +182,19 @@ fun ReaderScreen(
                             ui.sheet = null
                             if (sheet.range) openCoverRange(page, viewModel, ui, onCoverRange) else ui.follow(CommandEffect.Cover(page))
                         },
+                        onClose = { ui.sheet = null },
+                    )
+                    is ReaderSheet.AddBookmark -> AddBookmarkSheet(
+                        sheet.page,
+                        onAdd = { label ->
+                            ui.sheet = null
+                            viewModel.addBookmark(sheet.page, label) { added -> ui.message = if (added) R.string.bookmark_added else R.string.bookmark_add_failed }
+                        },
+                        onClose = { ui.sheet = null },
+                    )
+                    ReaderSheet.Bookmarks -> BookmarksSheet(
+                        viewModel,
+                        onAdd = { ui.sheet = ReaderSheet.AddBookmark(state.current.pages.first()) },
                         onClose = { ui.sheet = null },
                     )
                     null -> Unit

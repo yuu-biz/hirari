@@ -122,6 +122,15 @@
     <string name="cover_which_page">どちらのページを表紙にしますか</string>
     <string name="cover_set">このページを表紙にしました</string>
     <string name="cover_set_failed">表紙にできませんでした</string>
+    <string name="bookmark_name">名前</string>
+    <string name="bookmark_add">追加</string>
+    <string name="bookmark_cancel">キャンセル</string>
+    <string name="bookmark_added">しおりを追加しました</string>
+    <string name="bookmark_add_failed">しおりを追加できませんでした</string>
+    <string name="bookmarks_empty">この本にはしおりがありません</string>
+    <string name="bookmark_line">%1$s（%2$s）</string>
+    <string name="bookmark_delete">削除</string>
+    <string name="a11y_bookmark_delete">しおり「%1$s」を削除</string>
     <string name="share_page_number">p. %1$d</string>
     <string name="share_failed">このページを共有できませんでした</string>
 

@@ -22,6 +22,12 @@ sealed interface ReaderSheet {
     /** 表紙にする, or with [range] 範囲を選んで表紙にする, on a pair: which of its two pages. */
     data class CoverPick(val view: PageView.Two, val range: Boolean) : ReaderSheet
 
+    /** しおりを追加 at the view starting with [page], with a name the user may change. */
+    data class AddBookmark(val page: Int) : ReaderSheet
+
+    /** しおり一覧 of this book. */
+    data object Bookmarks : ReaderSheet
+
     /**
      * The neighboring book toward [edge]: the sheet of 本の端での動作, or with [fromPanel] the choices of 前の本 and
      * 次の本 on the page panel.
@@ -33,7 +39,7 @@ sealed interface ReaderSheet {
      * Every other key goes to the sheet's controls, and on the page panel Del goes to the page number field.
      */
     fun takes(code: Int): Boolean = when (this) {
-        is Pages, Adjust, is SharePick, is CoverPick, is BookEnd -> code == KeyCodes.BACK || code == KeyCodes.MENU
+        is Pages, Adjust, is SharePick, is CoverPick, is BookEnd, is AddBookmark, Bookmarks -> code == KeyCodes.BACK || code == KeyCodes.MENU
         Menu -> code == KeyCodes.BACK || code == KeyCodes.MENU || code == KeyCodes.DEL
     }
 }
@@ -67,8 +73,8 @@ enum class MenuGroup { Book, Reading, App }
 
 /** The menu's items in their order. [available] is false for the items of later milestones, shown disabled. */
 enum class MenuItem(val group: MenuGroup, val available: Boolean) {
-    AddBookmark(MenuGroup.Book, false),
-    Bookmarks(MenuGroup.Book, false),
+    AddBookmark(MenuGroup.Book, true),
+    Bookmarks(MenuGroup.Book, true),
     BookSettings(MenuGroup.Book, false),
     SetCover(MenuGroup.Book, true),
     SetCoverFromRange(MenuGroup.Book, true),

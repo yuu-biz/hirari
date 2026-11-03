@@ -64,6 +64,12 @@ class CommandEffectTest {
     }
 
     @Test
+    fun theBookmarkCommandsAddOneOrListThem() {
+        assertEquals(CommandEffect.AddBookmark, config.effectOf(ReaderCommand.AddBookmark))
+        assertEquals(CommandEffect.Show(ReaderSheet.Bookmarks), config.effectOf(ReaderCommand.Bookmarks))
+    }
+
+    @Test
     fun setCoverMakesTheOnePageOfAViewTheCoverAndAsksWhichPageOfAPair() {
         assertEquals(CommandEffect.SetCover, config.effectOf(ReaderCommand.SetCover))
         assertEquals(CommandEffect.Cover(4), coverChoice(PageView.One(4)))
@@ -95,7 +101,7 @@ class CommandEffectTest {
 
     @Test
     fun commandsOfLaterMilestonesSayTheyAreNotYetThere() {
-        for (command in listOf(ReaderCommand.AddBookmark)) {
+        for (command in listOf(ReaderCommand.BookSettings, ReaderCommand.ReverseOrder)) {
             assertEquals(CommandEffect.NotYet, config.effectOf(command), "$command")
         }
     }
