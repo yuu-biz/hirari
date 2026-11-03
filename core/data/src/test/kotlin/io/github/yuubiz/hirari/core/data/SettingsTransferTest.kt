@@ -106,7 +106,7 @@ class SettingsTransferTest {
         val (book, exported) = withStorage { storage -> storage.fill() to storage.transfer.export(includeReading = true) }
         withStorage { storage ->
             val changes = storage.import(exported)
-            assertEquals(ImportChanges(settings = 63, bookOverrides = 1, servers = 1, progress = 1, bookmarks = 1, history = 1), changes)
+            assertEquals(ImportChanges(settings = 64, bookOverrides = 1, servers = 1, progress = 1, bookmarks = 1, history = 1), changes)
 
             assertEquals(everything, storage.settings.settings.first())
             val restored = assertIs<LibraryLocation.SmbShare>(storage.locations.locations.first().single())

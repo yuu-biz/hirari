@@ -32,8 +32,8 @@ sealed interface StartPlan {
     data object Restore : StartPlan
 
     /**
-     * Home alone, and on top of it the folder the file list showed last, scrolled to [reveal], and then the last
-     * book. An empty plan starts at home.
+     * Home alone, and on top of it, when the setting asks for it, the folder the file list showed last, scrolled to
+     * [reveal], and then the last book. An empty plan starts at home.
      */
     data class Open(val folder: FolderKey? = null, val reveal: String? = null, val reopen: Reopen? = null) : StartPlan
 }
@@ -65,16 +65,22 @@ suspend fun LibraryServices.planStart(restoring: Boolean = false): StartPlan {
     val current = settings.settings.first()
     val reopen = current.reopenLastBook
     val last = if (reopen == ReopenLastBook.Off || current.historyLimit == 0) null else history.observe(HistorySort.Newest).first().firstOrNull()
-    return decideStart(record, reopen, last, locations.locations.first())
+    return decideStart(record, current.reopenLastFolder, reopen, last, locations.locations.first())
 }
 
 /**
- * The plan from what the last starts left. A folder or book whose place is gone or lost its grant is left out, as
- * is a text book until the text reader exists (M5).
+ * The plan from what the last starts left. The last folder is left out unless [reopenFolder]. A folder or book
+ * whose place is gone or lost its grant is left out, as is a text book until the text reader exists (M5).
  */
-fun decideStart(record: LaunchRecord, reopen: ReopenLastBook, last: HistoryItem?, places: List<LibraryLocation>): StartPlan.Open {
+fun decideStart(
+    record: LaunchRecord,
+    reopenFolder: Boolean,
+    reopen: ReopenLastBook,
+    last: HistoryItem?,
+    places: List<LibraryLocation>,
+): StartPlan.Open {
     fun usable(id: LocationId) = places.firstOrNull { it.id == id }.usable()
-    val folder = record.lastFolder?.takeIf { usable(it.location) }?.let { FolderKey(it.location, it.path, it.documentId) }
+    val folder = record.lastFolder?.takeIf { reopenFolder && usable(it.location) }?.let { FolderKey(it.location, it.path, it.documentId) }
     val book = last?.book?.takeIf { book ->
         val source = book.source
         book.format !is BookFormat.Text && (source !is BookSource.InLocation || usable(source.location))

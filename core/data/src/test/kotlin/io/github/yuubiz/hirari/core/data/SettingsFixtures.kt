@@ -91,6 +91,7 @@ val everything = GlobalSettings(
     foldersFirst = false,
     showDotFiles = true,
     allowFileEdits = true,
+    reopenLastFolder = true,
     reopenLastBook = ReopenLastBook.Ask,
     historyLimit = 500,
     historySort = HistorySort.PathDescending,

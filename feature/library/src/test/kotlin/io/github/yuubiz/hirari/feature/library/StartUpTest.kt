@@ -22,17 +22,45 @@ class StartUpTest {
     private val last = book(place.id, "作品/2巻.zip")
     private val request = OpenBookRequest(BookAddress.InLocation(place.id, "作品/2巻.zip", folder = false))
 
-    private fun given(reopen: ReopenLastBook, lastFolder: LastFolder? = folder, unfinished: Int = 0, historyLimit: Int = 100) {
+    private fun given(
+        reopen: ReopenLastBook,
+        lastFolder: LastFolder? = folder,
+        unfinished: Int = 0,
+        historyLimit: Int = 100,
+        reopenFolder: Boolean = true,
+    ) {
         fixture.locations.rows.value = listOf(place)
         fixture.grants.held += place.treeUri
         fixture.books.put(last)
         fixture.history.entries.value = listOf(HistoryEntry(last.id, T0))
-        fixture.settings.value.value = fixture.settings.value.value.copy(reopenLastBook = reopen, libraryView = LibraryView.List, historyLimit = historyLimit)
+        fixture.settings.value.value = fixture.settings.value.value.copy(reopenLastFolder = reopenFolder, reopenLastBook = reopen, libraryView = LibraryView.List, historyLimit = historyLimit)
         fixture.launch.record = LaunchRecord(unfinished, lastFolder)
     }
 
     @Test
-    fun `a start opens the last folder over home, and the last book only when the setting asks for it`() = runTest {
+    fun `with the folder setting off a start shows home, and the last book still opens over it when the setting asks for it`() = runTest {
+        given(ReopenLastBook.Off, reopenFolder = false)
+        assertEquals(StartPlan.Open(), fixture.services.planStart())
+
+        given(ReopenLastBook.Ask, reopenFolder = false)
+        assertEquals(StartPlan.Open(reopen = Reopen.Ask("2巻.zip", request)), fixture.services.planStart())
+
+        given(ReopenLastBook.Immediately, reopenFolder = false)
+        assertEquals(StartPlan.Open(reopen = Reopen.Now(request)), fixture.services.planStart())
+    }
+
+    @Test
+    fun `a start with the folder setting off still records the last folder for when it is turned on`() = runTest {
+        given(ReopenLastBook.Off, reopenFolder = false)
+        fixture.services.planStart()
+        assertEquals(folder, fixture.launch.record.lastFolder)
+
+        fixture.settings.value.value = fixture.settings.value.value.copy(reopenLastFolder = true)
+        assertEquals(StartPlan.Open(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
+    }
+
+    @Test
+    fun `a start opens the last folder over home when the setting is on, and the last book only when its setting asks for it`() = runTest {
         given(ReopenLastBook.Off)
         assertEquals(StartPlan.Open(FolderKey(place.id, "作品", "doc:作品")), fixture.services.planStart())
 
