@@ -221,6 +221,25 @@ class FolderCoversTest {
     }
 
     @Test
+    fun `choosing another folder cover while the first choice is still looked up ends on the second`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(entry("a.png"), entry("b.png"))
+        fixture.coverBooks.folders[""] = listOf(entry("作品", directory = true))
+        fixture.coverBooks.folders["作品"] = listOf(entry("a.png"), entry("b.png"))
+        val list = viewModel()
+        val rows = list.shown().rows.associateBy { it.item.entry.name }
+        val slow = CompletableDeferred<Unit>()
+        fixture.coverBooks.stalls["作品"] = slow
+
+        list.chooseFolderCover(rows.getValue("a.png"), choose = true)
+        list.chooseFolderCover(rows.getValue("b.png"), choose = true)
+        slow.complete(Unit)
+        assertEquals(FolderCover("作品/b.png"), fixture.locations.chosenCovers.last().third)
+        val b = locationBookId(place, "作品/b.png")
+        assertEquals(listOf(b, b, b), fixture.thumbnails.regenerated.map { (it.subject as ThumbSubject.Folder).chosen?.id })
+    }
+
+    @Test
     fun `giving up the cover of the folder clears the choice and remakes the folder`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(entry("p.png"))

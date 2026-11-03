@@ -455,11 +455,15 @@ internal class FakeCoverBooks : CoverBooks {
     /** Holds every listing until it completes, as a slow server does. */
     var gate: CompletableDeferred<Unit>? = null
 
+    /** Holds the next listing of a path until it completes; the listings after it go at once. */
+    val stalls = mutableMapOf<String, CompletableDeferred<Unit>>()
+
     override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = BookResult.Failed(BookFailure.NotFound)
 
     override suspend fun list(place: LibraryLocation, path: String, documentId: String?): List<FolderEntry> {
         listCalls += path
         gate?.await()
+        stalls.remove(path)?.await()
         return folders[path] ?: throw java.io.IOException("no such folder")
     }
 }

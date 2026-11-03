@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.data.SettingsRepository
+import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CoroutineScope
 import java.time.Instant
@@ -76,4 +77,7 @@ class LibraryServices(
     val covers: Covers,
     val appScope: CoroutineScope,
     val clock: () -> Instant = Instant::now,
-)
+) {
+    /** The choices of folder covers under way, by place and folder path. */
+    internal val folderCoverRuns = LatestRuns<Pair<LocationId, String>>(appScope)
+}
