@@ -73,7 +73,7 @@ class LayoutViewsTest {
 
     @Test
     fun onePageBookIsOneView() {
-        for (mode in listOf(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide)) {
+        for (mode in listOf(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide, LayoutMode.Vertical)) {
             for (cover in listOf(false, true)) {
                 assertEquals(listOf(One(0)), layout("T", LayoutSettings(mode, RightToLeft, cover)))
             }
@@ -114,7 +114,7 @@ class LayoutViewsTest {
             fun isWide(page: Int) = (sample.shapes[page] as? PageShape.Known)?.isWide == true
             for (view in sample.views) {
                 when (sample.settings.mode) {
-                    LayoutMode.Single -> assertTrue(view is One, "Single gives only One: $view")
+                    LayoutMode.Single, LayoutMode.Vertical -> assertTrue(view is One, "${sample.settings.mode} gives only One: $view")
                     LayoutMode.SplitWide -> when (view) {
                         is One -> assertTrue(!isWide(view.page), "a wide page is split: $view")
                         is Half -> assertTrue(isWide(view.page), "only wide pages are split: $view")

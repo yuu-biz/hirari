@@ -38,7 +38,7 @@ val arbShapes: Arb<List<PageShape>> = Arb.list(arbShape, 1..24)
 
 val arbResolvedSettings: Arb<LayoutSettings> = arbitrary {
     LayoutSettings(
-        mode = Arb.element(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide).bind(),
+        mode = Arb.element(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide, LayoutMode.Vertical).bind(),
         direction = Arb.enum<ReadingDirection>().bind(),
         coverAlone = Arb.boolean().bind(),
     )

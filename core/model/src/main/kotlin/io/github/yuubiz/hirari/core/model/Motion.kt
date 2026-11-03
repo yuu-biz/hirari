@@ -1,5 +1,8 @@
 package io.github.yuubiz.hirari.core.model
 
+/** Stops, and the steps of 縦に連続, move at 1750 dp per second (docs/spec.md section 4.8, 停止点). */
+const val STOP_SPEED_DP_PER_MS = 1.75f
+
 /**
  * A value that runs linearly from [from] to [to] over [durationMs] from [startMs]. Turn effects
  * and moves between stop points share it, because both end at once when the next input comes

@@ -2,7 +2,8 @@ package io.github.yuubiz.hirari.core.model
 
 enum class ReadingDirection { RightToLeft, LeftToRight }
 
-enum class LayoutMode { Single, Spread, SplitWide, Auto }
+/** [Vertical] is 縦に連続: every page is a view of its own, and the reader scrolls them as one [Strip]. */
+enum class LayoutMode { Single, Spread, SplitWide, Auto, Vertical }
 
 enum class ScreenOrientation { Portrait, Landscape }
 
@@ -77,7 +78,7 @@ fun layoutViews(
     require(anchor in 0 until pageCount) { "anchor $anchor is outside 0 until $pageCount" }
     val pages = 0 until pageCount
     return when (settings.mode) {
-        LayoutMode.Single -> pages.map { PageView.One(it) }
+        LayoutMode.Single, LayoutMode.Vertical -> pages.map { PageView.One(it) }
         LayoutMode.SplitWide -> pages.flatMap {
             if (shape(it).isWide) {
                 listOf(PageView.Half(it, HalfPart.First), PageView.Half(it, HalfPart.Second))

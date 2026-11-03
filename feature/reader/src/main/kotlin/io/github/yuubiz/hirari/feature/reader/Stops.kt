@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.model.Motion
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rect
+import io.github.yuubiz.hirari.core.model.STOP_SPEED_DP_PER_MS
 import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.StopOrder
 import io.github.yuubiz.hirari.core.model.Turn
@@ -12,9 +13,6 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.hypot
 import kotlin.math.roundToLong
-
-/** Stops move at 1750 dp per second (docs/spec.md section 4.8, 停止点). */
-const val STOP_SPEED_DP_PER_MS = 1.75f
 
 /** Positions closer than this, in pixels, count as the same. */
 private const val SAME_PX = 0.5f
