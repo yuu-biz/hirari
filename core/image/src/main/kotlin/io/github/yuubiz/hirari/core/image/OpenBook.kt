@@ -62,7 +62,7 @@ class OpenBook internal constructor(
         object : PageStash {
             override suspend fun holds(index: Int): Boolean = stashed.holds(pages[index])
 
-            override suspend fun fill(index: Int): Boolean = stashed.fill(pages[index])
+            override suspend fun fill(index: Int): Fill = stashed.fill(pages[index])
         }
     }
 

@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader.prefetch
 
+import io.github.yuubiz.hirari.core.image.Fill
 import io.github.yuubiz.hirari.core.image.PageStash
 import io.github.yuubiz.hirari.feature.reader.Turn
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +23,7 @@ fun diskOrder(shown: IntRange, pageCount: Int, travel: Turn, depth: Int = DISK_P
 /**
  * The SMB prefetch layer of one book (docs/spec.md section 5.3): reads the pages of [diskOrder] onto disk through
  * [stash], one at a time, so a page the view wants waits behind one entry at most. Moving to other pages starts over
- * from there. Main thread only.
+ * from there. A page that runs out of memory stops the layer until the view moves. Main thread only.
  */
 class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageStash, private val pageCount: Int) {
     private var around: Pair<IntRange, Turn>? = null
@@ -33,7 +34,9 @@ class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageSta
         around = shown to travel
         running?.cancel()
         running = scope.launch {
-            for (page in diskOrder(shown, pageCount, travel)) stash.fill(page)
+            for (page in diskOrder(shown, pageCount, travel)) {
+                if (stash.fill(page) == Fill.OutOfMemory) break
+            }
         }
     }
 

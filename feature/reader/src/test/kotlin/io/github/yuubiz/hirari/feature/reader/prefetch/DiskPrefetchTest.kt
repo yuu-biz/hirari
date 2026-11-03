@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader.prefetch
 
+import io.github.yuubiz.hirari.core.image.Fill
 import io.github.yuubiz.hirari.core.image.PageStash
 import io.github.yuubiz.hirari.feature.reader.Turn
 import kotlinx.coroutines.CompletableDeferred
@@ -24,19 +25,25 @@ class DiskPrefetchTest {
         assertEquals(emptyList<Int>(), diskOrder(0..0, pageCount = 1, Turn.Forward))
     }
 
-    /** Fills complete one at a time when the test lets the next through. */
+    /** Fills complete one at a time when the test lets the next through. A page in [outcomes] is not kept. */
     private class Stash : PageStash {
         val filled = mutableListOf<Int>()
+        val outcomes = mutableMapOf<Int, Fill>()
         var next = CompletableDeferred<Unit>()
 
         override suspend fun holds(index: Int) = index in filled
 
-        override suspend fun fill(index: Int): Boolean {
+        override suspend fun fill(index: Int): Fill {
             next.await()
             next = CompletableDeferred()
             filled += index
-            return true
+            return outcomes[index] ?: Fill.OnDisk
         }
+    }
+
+    private fun kotlinx.coroutines.test.TestScope.letThrough(stash: Stash, count: Int) = repeat(count) {
+        stash.next.complete(Unit)
+        runCurrent()
     }
 
     @Test
@@ -69,5 +76,24 @@ class DiskPrefetchTest {
         stash.next.complete(Unit)
         runCurrent()
         assertEquals(listOf(11, 12, 99, 99), stash.filled)
+    }
+
+    @Test
+    fun aPageThatRunsOutOfMemoryStopsTheLayerUntilTheViewMoves() = runTest {
+        val stash = Stash().apply { outcomes[12] = Fill.OutOfMemory; outcomes[11] = Fill.NotKept }
+        val prefetch = DiskPrefetch(backgroundScope, stash, pageCount = 200)
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        letThrough(stash, 2)
+        assertEquals(listOf(11, 12), stash.filled)
+
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        letThrough(stash, 1)
+        assertEquals(listOf(11, 12), stash.filled)
+
+        prefetch.update(11..11, Turn.Forward)
+        runCurrent()
+        assertEquals(listOf(11, 12, 12), stash.filled)
     }
 }

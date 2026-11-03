@@ -20,8 +20,20 @@ interface PageStash {
     /** Whether the bytes of the page at [index] are on disk. */
     suspend fun holds(index: Int): Boolean
 
-    /** Reads the page at [index] from the book onto disk unless it is there. Whether it is there now. */
-    suspend fun fill(index: Int): Boolean
+    /** Reads the page at [index] from the book onto disk unless it is there. */
+    suspend fun fill(index: Int): Fill
+}
+
+/** What [PageStash.fill] did with a page. */
+enum class Fill {
+    /** The page's bytes are on disk. */
+    OnDisk,
+
+    /** The page could not be read, or the disk could not keep it. */
+    NotKept,
+
+    /** Reading the page ran out of memory (docs/spec.md section 6.1). */
+    OutOfMemory,
 }
 
 /**
@@ -40,14 +52,16 @@ internal class StashedPages(private val server: PageBytes, private val stash: Di
 
     suspend fun holds(page: PageEntry): Boolean = withContext(Dispatchers.IO) { stash.cache.has(key(page)) }
 
-    suspend fun fill(page: PageEntry): Boolean {
-        if (holds(page)) return true
+    suspend fun fill(page: PageEntry): Fill {
+        if (holds(page)) return Fill.OnDisk
         return try {
-            fetch(page).kept
+            if (fetch(page).kept) Fill.OnDisk else Fill.NotKept
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            false
+            Fill.NotKept
+        } catch (_: OutOfMemoryError) {
+            Fill.OutOfMemory
         }
     }
 

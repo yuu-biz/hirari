@@ -29,12 +29,14 @@ class StashTest {
     private class Server : PageBytes {
         val reads = AtomicInteger()
         var failing = false
+        var outOfMemory = false
         var gate: CompletableDeferred<Unit>? = null
 
         override suspend fun read(page: PageEntry): PageResult<ByteArray> {
             reads.incrementAndGet()
             gate?.await()
             if (failing) throw IOException("gone")
+            if (outOfMemory) throw OutOfMemoryError("entry")
             val i = page.entryIndex - 10
             return PageResult.Ready(ByteArray(i + 1) { i.toByte() })
         }
@@ -70,8 +72,8 @@ class StashTest {
     fun aPagePrefetchedOntoDiskIsNotReadFromTheServerAgain() = runBlocking {
         val server = Server()
         val opened = book(server)
-        assertTrue(opened.stash!!.fill(1))
-        assertTrue(opened.stash!!.fill(1))
+        assertEquals(Fill.OnDisk, opened.stash!!.fill(1))
+        assertEquals(Fill.OnDisk, opened.stash!!.fill(1))
         assertEquals(listOf<Byte>(1, 1), opened.raw(1).bytes())
         assertEquals(1, server.reads.get())
     }
@@ -84,7 +86,7 @@ class StashTest {
         while (server.reads.get() == 0) kotlinx.coroutines.yield()
         val reading = async { opened.raw(0) }
         server.gate!!.complete(Unit)
-        assertTrue(filling.await())
+        assertEquals(Fill.OnDisk, filling.await())
         assertEquals(listOf<Byte>(0), reading.await().bytes())
         assertEquals(1, server.reads.get())
     }
@@ -98,7 +100,7 @@ class StashTest {
         while (server.reads.get() == 0) kotlinx.coroutines.yield()
         val reading = async { opened.raw(2) }
         server.gate!!.complete(Unit)
-        assertFalse(filling.await())
+        assertEquals(Fill.NotKept, filling.await())
         assertEquals(listOf<Byte>(2, 2, 2), reading.await().bytes())
         assertEquals(1, server.reads.get())
     }
@@ -121,10 +123,19 @@ class StashTest {
     fun aPageThatFailsToReadIsNotKept() = runBlocking {
         val server = Server().apply { failing = true }
         val opened = book(server)
-        assertFalse(opened.stash!!.fill(0))
+        assertEquals(Fill.NotKept, opened.stash!!.fill(0))
         assertEquals(readError, opened.raw(0))
         assertFalse(opened.stash!!.holds(0))
         assertNull(cache.get(SmbPrefetchCache.Key("book", 10)))
+    }
+
+    @Test
+    fun aPrefetchThatRunsOutOfMemorySaysSoInsteadOfThrowing() = runBlocking {
+        val server = Server().apply { outOfMemory = true }
+        val opened = book(server)
+        assertEquals(Fill.OutOfMemory, opened.stash!!.fill(0))
+        assertEquals(readError, opened.raw(0))
+        assertFalse(opened.stash!!.holds(0))
     }
 
     @Test
