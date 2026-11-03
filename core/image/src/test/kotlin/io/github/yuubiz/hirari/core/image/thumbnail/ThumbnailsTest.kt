@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.core.image.thumbnail
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -117,11 +118,13 @@ class ThumbnailsTest {
         lane: ThumbLane = ThumbLane.Local,
         coverEntry: Int? = null,
         modified: Long = 1000,
+        coverCrop: CoverCrop? = null,
     ) = ThumbSubject.Book(
         BookId(id),
         Instant.ofEpochMilli(modified),
         byteSize = 5000,
         coverEntry = coverEntry,
+        coverCrop = coverCrop,
         lane = lane,
         open = { BookResult.Failed(BookFailure.ReadError) },
     )
@@ -183,6 +186,37 @@ class ThumbnailsTest {
         assertEquals(requests.size, store.files.keys.size)
         val key = store.files.keys.first { it.coverEntry == 3 }
         assertEquals(BookId("a"), key.book)
+    }
+
+    @Test
+    fun aRangeOfTheCoverPageIsAnotherThumbnailAndTheKeyWithoutOneIsTheSameAsBefore() = runTest {
+        val thumbnails = thumbnails()
+        val crop = CoverCrop(1000, 0, 6000, 10_000)
+        val requests = listOf(
+            request(book("a", coverEntry = 3)),
+            request(book("a", coverEntry = 3, coverCrop = crop)),
+            request(book("a", coverEntry = 3, coverCrop = CoverCrop(1001, 0, 6000, 10_000))),
+        )
+        requests.forEach { launch { thumbnails.thumbnail(it) } }
+        runCurrent()
+        assertEquals(requests.size, store.files.keys.size)
+        assertEquals(listOf(null, crop, CoverCrop(1001, 0, 6000, 10_000)), store.files.keys.sortedBy { it.coverCrop?.left ?: -1 }.map { it.coverCrop })
+        assertEquals(crop, maker.calls[1].book.coverCrop)
+    }
+
+    @Test
+    fun remakingARangeForgetsOnlyThatRangesThumbnail() = runTest {
+        val thumbnails = thumbnails()
+        val crop = CoverCrop(0, 0, 5000, 5000)
+        launch { thumbnails.thumbnail(request(book("a", coverEntry = 3))) }
+        launch { thumbnails.thumbnail(request(book("a", coverEntry = 3, coverCrop = crop))) }
+        runCurrent()
+        val again = async { thumbnails.regenerate(request(book("a", coverEntry = 3, coverCrop = crop))) }
+        runCurrent()
+        assertTrue(again.await() is ThumbResult.Ready)
+        assertEquals(3, maker.calls.size)
+        assertEquals(crop, maker.calls.last().book.coverCrop)
+        assertEquals(2, store.files.keys.size)
     }
 
     @Test

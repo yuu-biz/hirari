@@ -117,6 +117,8 @@
     <string name="adjust_global">全体の設定に戻す</string>
 
     <string name="share_which_page">どちらのページを共有しますか</string>
+    <string name="cover_range_which_page">どちらのページの範囲を選びますか</string>
+    <string name="cover_range_unavailable">この本の表紙の範囲は選べません</string>
     <string name="share_page_number">p. %1$d</string>
     <string name="share_failed">このページを共有できませんでした</string>
 </resources>

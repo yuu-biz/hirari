@@ -13,6 +13,7 @@ import androidx.navigation.toRoute
 import android.net.Uri
 import io.github.yuubiz.hirari.feature.library.ArchiveFile
 import io.github.yuubiz.hirari.feature.library.ArchiveKey
+import io.github.yuubiz.hirari.feature.library.CoverRangeKey
 import io.github.yuubiz.hirari.feature.library.FolderKey
 import io.github.yuubiz.hirari.feature.library.TextAddress
 import io.github.yuubiz.hirari.feature.text.EntryArchive
@@ -49,6 +50,14 @@ internal data class ArchiveRoute(val location: Long, val path: String, val docum
 }
 
 internal fun ArchiveKey.toRoute() = ArchiveRoute(location.value, path, documentId)
+
+/** 範囲を選んで表紙にする (docs/spec.md section 4.4): the page with the `entryIndex` [entry] of the indexed book [book]. */
+@Serializable
+internal data class CoverRangeRoute(val book: String, val entry: Int) {
+    fun toKey() = CoverRangeKey(BookId(book), entry)
+}
+
+internal fun CoverRangeKey.toRoute() = CoverRangeRoute(book.value, entry)
 
 internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.value, path, documentId, reveal)
 

@@ -46,6 +46,7 @@ import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
 class ArchiveActions(
     val openBook: (OpenBookRequest) -> Unit,
     val openText: (TextAddress) -> Unit,
+    val chooseRange: (CoverRangeKey) -> Unit,
     val close: () -> Unit,
 )
 
@@ -110,6 +111,7 @@ fun ArchiveScreen(model: ArchiveViewModel, actions: ArchiveActions) {
                     is Held.Page -> item.page.name to listOfNotNull(
                         action(R.string.archive_read_up_to) { model.readUpTo(item.page) },
                         if (shown?.indexed == true) action(R.string.archive_set_cover) { model.setCover(item.page) } else null,
+                        if (shown?.indexed == true) action(R.string.archive_set_cover_range) { model.rangeKey(item.page)?.let(actions.chooseRange) } else null,
                         if (shown?.inFolder == true) {
                             val chosen = shown.folderCoverPage == item.page.entryIndex
                             action(if (chosen) R.string.archive_folder_cover_off else R.string.archive_folder_cover) { model.chooseFolderCover(item.page, choose = !chosen) }

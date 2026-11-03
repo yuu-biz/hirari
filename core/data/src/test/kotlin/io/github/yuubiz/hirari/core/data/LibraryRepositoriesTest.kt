@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
@@ -154,6 +155,31 @@ class LibraryRepositoriesTest {
         assertEquals(120, stored.book.pageCount)
         assertEquals(7, stored.coverEntry)
         assertEquals(BookSource.InLocation(place, "series/a.zip"), stored.book.source)
+    }
+
+    @Test
+    fun `a range of the cover page is kept across opening the book and read back by the lists`() = runTest {
+        val place = locations.addSafTree("Manga", UriString("content://tree/1"))
+        books.record(book("a", place, "series/a.zip"))
+        val crop = CoverCrop(1000, 500, 6000, 9500)
+        books.setCover(BookId("a"), 7, crop)
+        books.record(book("a", place, "series/a.zip"))
+        assertEquals(crop, books.get(BookId("a"))!!.coverCrop)
+        assertEquals(crop, books.inFolder(place, "series").first().single().coverCrop)
+        history.record(BookId("a"), at(1), limit = 10)
+        assertEquals(crop, history.observe(HistorySort.Newest).first().single().coverCrop)
+    }
+
+    @Test
+    fun `choosing a page without a range, or no page, drops the range`() = runTest {
+        val place = locations.addSafTree("Manga", UriString("content://tree/1"))
+        books.record(book("a", place, "series/a.zip"))
+        books.setCover(BookId("a"), 7, CoverCrop(1000, 500, 6000, 9500))
+        books.setCover(BookId("a"), 8)
+        assertEquals(8 to null, books.get(BookId("a"))!!.let { it.coverEntry to it.coverCrop })
+        books.setCover(BookId("a"), 7, CoverCrop(1000, 500, 6000, 9500))
+        books.setCover(BookId("a"), null, CoverCrop(1000, 500, 6000, 9500))
+        assertEquals(null to null, books.get(BookId("a"))!!.let { it.coverEntry to it.coverCrop })
     }
 
     @Test

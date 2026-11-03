@@ -7,6 +7,7 @@ import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ThumbSize
@@ -45,7 +46,10 @@ sealed interface CoverSpec {
     /** The binding direction of the book, which picks the half of a cover scanned as a spread. */
     val direction: ReadingDirection
 
-    /** [coverEntry] is the `entryIndex` of the page the user chose, or `null` for the first page. */
+    /**
+     * [coverEntry] is the `entryIndex` of the page the user chose, or `null` for the first page. [coverCrop] is the
+     * part of that page the user chose, or `null` for the whole page.
+     */
     data class Book(
         override val id: BookId,
         override val modified: Instant,
@@ -53,6 +57,7 @@ sealed interface CoverSpec {
         val coverEntry: Int?,
         override val direction: ReadingDirection,
         val origin: CoverOrigin,
+        val coverCrop: CoverCrop? = null,
     ) : CoverSpec
 
     /** The folder at [path] of [place]; [chosen] is the image or page the user chose for it, if any. */
@@ -72,7 +77,7 @@ sealed interface CoverSpec {
  * book lies when it is in one; a book whose place is gone has none, and neither has a text, which shows a fixed
  * icon (docs/spec.md section 4.4).
  */
-internal fun coverSpecOf(book: Book, coverEntry: Int?, place: LibraryLocation?, direction: ReadingDirection): CoverSpec.Book? {
+internal fun coverSpecOf(book: Book, coverEntry: Int?, place: LibraryLocation?, direction: ReadingDirection, coverCrop: CoverCrop? = null): CoverSpec.Book? {
     val folder = book.format == BookFormat.Images(Container.Folder)
     val origin = when {
         book.format is BookFormat.Text -> return null
@@ -84,7 +89,7 @@ internal fun coverSpecOf(book: Book, coverEntry: Int?, place: LibraryLocation?, 
             is BookSource.External -> if (folder) CoverOrigin.Tree(source.uri) else CoverOrigin.Document(source.uri)
         }
     }
-    return CoverSpec.Book(book.id, book.modified, book.byteSize, coverEntry, direction, origin)
+    return CoverSpec.Book(book.id, book.modified, book.byteSize, coverEntry, direction, origin, coverCrop)
 }
 
 /** The thumbnail in the store that [CoverSpec] names at a size, which is what a loaded cover and a regeneration share. */
@@ -96,10 +101,11 @@ data class CoverKey(
     val folder: Boolean,
     val sizePx: Int,
     val direction: ReadingDirection,
+    val coverCrop: CoverCrop? = null,
 )
 
 fun CoverSpec.key(sizePx: Int): CoverKey = when (this) {
-    is CoverSpec.Book -> CoverKey(id, modified, byteSize, coverEntry, folder = false, sizePx, direction)
+    is CoverSpec.Book -> CoverKey(id, modified, byteSize, coverEntry, folder = false, sizePx, direction, coverCrop)
     is CoverSpec.Folder -> CoverKey(id, modified, byteSize = 0, coverEntry = null, folder = true, sizePx, direction)
 }
 

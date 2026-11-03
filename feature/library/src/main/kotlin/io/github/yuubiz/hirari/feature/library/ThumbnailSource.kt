@@ -1,6 +1,8 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.image.thumbnail.PagePreview
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
 import io.github.yuubiz.hirari.core.image.thumbnail.Thumbnails
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +21,9 @@ interface ThumbnailSource {
 
     /** サムネイルを作り直す: forgets and makes again. */
     suspend fun regenerate(request: ThumbRequest): ThumbResult
+
+    /** One page of [book] shown whole and fitted into [maxSidePx], for choosing a range of it as the cover. Not stored. */
+    suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview
 }
 
 class ThumbnailsSource(private val thumbnails: Thumbnails) : ThumbnailSource {
@@ -27,4 +32,7 @@ class ThumbnailsSource(private val thumbnails: Thumbnails) : ThumbnailSource {
     override fun hold(request: ThumbRequest): Closeable = thumbnails.hold(request)
 
     override suspend fun regenerate(request: ThumbRequest): ThumbResult = thumbnails.regenerate(request)
+
+    override suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview =
+        thumbnails.preview(book, entryIndex, maxSidePx)
 }

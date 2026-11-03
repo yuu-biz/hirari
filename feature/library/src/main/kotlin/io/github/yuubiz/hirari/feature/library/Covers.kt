@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import io.github.yuubiz.hirari.core.image.thumbnail.FolderEntry as ThumbEntry
+import io.github.yuubiz.hirari.core.image.thumbnail.PagePreview
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbLane
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
@@ -80,6 +81,13 @@ class Covers(
     }
 
     /**
+     * The page with the `entryIndex` [entryIndex] of the book of [spec], whole and fitted into [maxSidePx], for
+     * choosing a range of it as the cover (docs/spec.md section 4.4). The book opens as a cover's does, in its lane.
+     */
+    suspend fun preview(spec: CoverSpec.Book, entryIndex: Int, maxSidePx: Int): PagePreview =
+        source.preview(book(spec), entryIndex, maxSidePx)
+
+    /**
      * The listing entry of the item at [path] of [place], found in its folder, or `null` when the folder cannot be
      * listed or the item is not in it. The date and size of the entry name the thumbnail.
      */
@@ -124,7 +132,7 @@ class Covers(
         }
     }
 
-    private fun book(spec: CoverSpec.Book) = ThumbSubject.Book(spec.id, spec.modified, spec.byteSize, spec.coverEntry, spec.origin.lane()) { decoding ->
+    private fun book(spec: CoverSpec.Book) = ThumbSubject.Book(spec.id, spec.modified, spec.byteSize, spec.coverEntry, spec.origin.lane(), spec.coverCrop) { decoding ->
         books.open(spec, decoding)
     }
 

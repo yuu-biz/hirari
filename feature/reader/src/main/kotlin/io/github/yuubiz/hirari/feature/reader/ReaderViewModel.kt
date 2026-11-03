@@ -127,6 +127,9 @@ private class Located(
 /** A book read from an SMB server, and the meter of what it fetched. */
 private class Remote(val server: SmbServer, val meter: FetchMeter)
 
+/** The page of an indexed book that 範囲を選んで表紙にする works on. */
+data class CoverRangeTarget(val book: BookId, val entry: Int)
+
 sealed interface ReaderPhase {
     data object Opening : ReaderPhase
 
@@ -284,6 +287,16 @@ class ReaderViewModel(
         siblings[edge]?.let { return it }
         val found = services.await().siblings.beside(request.book, edge)
         return found.also { siblings[edge] = it }
+    }
+
+    /**
+     * The page [page] as the screen that frames a range of it names it (docs/spec.md section 4.4): the book's id and
+     * the page's `entryIndex`, or `null` before the book is open.
+     */
+    fun coverRangeTarget(page: Int): CoverRangeTarget? {
+        val book = opened ?: return null
+        val entry = book.book.pages.getOrNull(page)?.entryIndex ?: return null
+        return CoverRangeTarget(book.id, entry)
     }
 
     /** Whether the operation guide was shown to the end before (docs/spec.md section 4.8, 操作ガイド). */

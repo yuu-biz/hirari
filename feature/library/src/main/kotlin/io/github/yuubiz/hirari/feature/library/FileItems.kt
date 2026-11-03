@@ -176,8 +176,8 @@ class CoverContext(
  * nothing but the maps it is given.
  */
 fun List<FileRow>.withCovers(indexed: List<LibraryBook>, context: CoverContext): List<FileRow> {
-    val coverByPath = HashMap<String, Int?>(indexed.size * 2)
-    for (book in indexed) (book.book.source as? BookSource.InLocation)?.let { coverByPath[it.path] = book.coverEntry }
+    val coverByPath = HashMap<String, LibraryBook>(indexed.size * 2)
+    for (book in indexed) (book.book.source as? BookSource.InLocation)?.let { coverByPath[it.path] = book }
     return map { row ->
         val entry = row.item.entry
         val id = locationBookId(context.place, row.path)
@@ -185,7 +185,7 @@ fun List<FileRow>.withCovers(indexed: List<LibraryBook>, context: CoverContext):
         val modified = entry.modified ?: Instant.EPOCH
         val cover = when (row.item) {
             is FileItem.Archive ->
-                CoverSpec.Book(id, modified, entry.size ?: 0, coverByPath[row.path], direction, CoverOrigin.Archive(context.place, row.path, entry.documentId))
+                CoverSpec.Book(id, modified, entry.size ?: 0, coverByPath[row.path]?.coverEntry, direction, CoverOrigin.Archive(context.place, row.path, entry.documentId), coverByPath[row.path]?.coverCrop)
             is FileItem.Image ->
                 CoverSpec.Book(id, modified, entry.size ?: 0, null, direction, CoverOrigin.Image(context.place, row.path, entry.documentId))
             is FileItem.Folder -> if (row.path in context.pending) null else

@@ -30,4 +30,4 @@ internal class ThumbnailStoreAdapter(private val cache: ThumbnailCache) : Thumbn
     override fun hold(key: ThumbnailKey): Closeable = cache.hold(key.toCacheKey())
 }
 
-internal fun ThumbnailKey.toCacheKey() = ThumbKey(book, modified, byteSize, coverEntry, sizePx, direction)
+internal fun ThumbnailKey.toCacheKey() = ThumbKey(book, modified, byteSize, coverEntry, sizePx, direction, coverCrop)

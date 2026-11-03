@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.data.LibraryBook
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookOverrides
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.Rotation
@@ -53,7 +54,7 @@ private class SlowBooks : BookRepository {
 
     override fun continueReading(limit: Int): Flow<List<LibraryBook>> = emptyFlow()
 
-    override suspend fun setCover(id: BookId, entry: Int?) = Unit
+    override suspend fun setCover(id: BookId, entry: Int?, crop: CoverCrop?) = Unit
 }
 
 class OverridesWriterTest {

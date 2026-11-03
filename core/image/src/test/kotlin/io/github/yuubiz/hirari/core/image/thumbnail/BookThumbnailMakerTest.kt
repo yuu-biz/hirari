@@ -1,12 +1,14 @@
 package io.github.yuubiz.hirari.core.image.thumbnail
 
 import io.github.yuubiz.hirari.core.image.BookContent
+import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.image.PageBytes
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -86,6 +88,40 @@ class BookThumbnailMakerTest {
         val listed = listOf(page(0, entryIndex = 0, "001.jpg"), page(1, entryIndex = 5, "002.jpg"))
         assertEquals(Made.Unreadable, make(archive(listed, FailureReason.Timeout, coverEntry = 5)))
         assertEquals(listOf("002.jpg"), read)
+    }
+
+    @Test
+    fun aRangeIsCutFromTheChosenPageAndTheSameRulesFindThatPage() = runTest {
+        val listed = listOf(page(0, entryIndex = 0, "001.jpg"), page(1, entryIndex = 5, "002.jpg"))
+        val ranged = ThumbSubject.Book(BookId("a"), Instant.EPOCH, byteSize = 100, coverEntry = 5, coverCrop = CoverCrop(0, 0, 5000, 5000)) {
+            BookResult.Opened(OpenBook(BookContent.Images(unshownBytes), Container.Zip, listed, null, it))
+        }
+        assertEquals(Made.Unreadable, make(ranged))
+        assertEquals(listOf("002.jpg"), read)
+    }
+
+    private suspend fun preview(listed: List<PageEntry>, entryIndex: Int, indexError: FailureReason? = null) =
+        maker.preview(archive(listed, indexError), entryIndex, 1000)
+
+    @Test
+    fun aPagePreviewNamesThePageByItsEntryIndexNotItsPosition() = runTest {
+        val listed = listOf(page(0, entryIndex = 7, "001.jpg"), page(1, entryIndex = 3, "002.jpg"))
+        assertEquals(PagePreview.Failed, preview(listed, entryIndex = 3))
+        assertEquals(listOf("002.jpg"), read)
+    }
+
+    @Test
+    fun aPagePreviewOfAPageTheBookDoesNotHaveIsMissing() = runTest {
+        val listed = listOf(page(0, entryIndex = 7, "001.jpg"))
+        assertEquals(PagePreview.Missing, preview(listed, entryIndex = 1))
+        assertEquals(emptyList<String>(), read)
+    }
+
+    @Test
+    fun aPagePreviewOfABookThatDoesNotOpenIsFailedOrUnavailableAsThumbnailsAre() = runTest {
+        fun failing(failure: BookFailure) = ThumbSubject.Book(BookId("a"), Instant.EPOCH, byteSize = 100) { BookResult.Failed(failure) }
+        assertEquals(PagePreview.Failed, maker.preview(failing(BookFailure.Encrypted), 0, 1000))
+        assertEquals(PagePreview.Unavailable, maker.preview(failing(BookFailure.ReadError), 0, 1000))
     }
 
     @Test

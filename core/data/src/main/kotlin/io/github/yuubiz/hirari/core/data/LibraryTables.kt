@@ -110,6 +110,8 @@ internal data class BookRow(
     @ColumnInfo(name = "page_count") val pageCount: Int?,
     /** The `entryIndex` of the page the user chose as the cover. */
     @ColumnInfo(name = "cover_entry") val coverEntry: Int?,
+    /** The range of that page the user chose, as [CoverCrop.encode] writes it. */
+    @ColumnInfo(name = "cover_crop") val coverCrop: String? = null,
 )
 
 internal fun Book.toRow(coverEntry: Int?): BookRow {
@@ -161,15 +163,15 @@ internal interface BookDao {
     @Upsert
     suspend fun upsert(row: BookRow)
 
-    /** Keeps the page count and the cover that [row] does not know. */
+    /** Keeps the page count and the cover, with its range, that [row] does not know. */
     @Transaction
     suspend fun record(row: BookRow) {
         val known = get(row.bookId)
-        upsert(row.copy(pageCount = row.pageCount ?: known?.pageCount, coverEntry = known?.coverEntry))
+        upsert(row.copy(pageCount = row.pageCount ?: known?.pageCount, coverEntry = known?.coverEntry, coverCrop = known?.coverCrop))
     }
 
-    @Query("UPDATE books SET cover_entry = :entry WHERE book_id = :bookId")
-    suspend fun setCover(bookId: String, entry: Int?)
+    @Query("UPDATE books SET cover_entry = :entry, cover_crop = :crop WHERE book_id = :bookId")
+    suspend fun setCover(bookId: String, entry: Int?, crop: String?)
 
     @Transaction
     @Query("SELECT * FROM books WHERE location_id = :locationId AND folder = :folder")

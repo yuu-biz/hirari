@@ -7,6 +7,7 @@ import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.Bookmark
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.HistoryEntry
 import io.github.yuubiz.hirari.core.model.HistorySort
@@ -26,6 +27,8 @@ data class LibraryBook(
     /** The `entryIndex` of the page the user chose as the cover, or `null` for the first page. */
     val coverEntry: Int?,
     val progress: BookProgress?,
+    /** The part of that page the user chose as the cover, or `null` for the whole page (docs/spec.md section 4.4). */
+    val coverCrop: CoverCrop? = null,
 )
 
 /** The index of opened books, their covers and their overrides. Safe to call from the main thread. */
@@ -41,8 +44,11 @@ interface BookRepository {
     /** 続きを読む: books being read, last read first (docs/spec.md section 4.2). */
     fun continueReading(limit: Int = 10): Flow<List<LibraryBook>>
 
-    /** `null` goes back to the first page in natural order (docs/spec.md section 4.4). */
-    suspend fun setCover(id: BookId, entry: Int?)
+    /**
+     * Stores the page [entry] as the cover, with the part [crop] of it, or the whole page when `null`. An [entry] of
+     * `null` goes back to the first page in natural order, which has no range (docs/spec.md section 4.4).
+     */
+    suspend fun setCover(id: BookId, entry: Int?, crop: CoverCrop? = null)
 
     fun overrides(id: BookId): Flow<BookOverrides>
 
@@ -60,7 +66,7 @@ internal class RoomBookRepository(private val database: HirariDatabase) : BookRe
     override suspend fun record(book: Book) = books.record(book.toRow(coverEntry = null))
 
     override suspend fun get(id: BookId): LibraryBook? = books.get(id.value)?.let { row ->
-        LibraryBook(row.toModel(), row.coverEntry, database.bookProgress().get(id.value)?.toModel())
+        LibraryBook(row.toModel(), row.coverEntry, database.bookProgress().get(id.value)?.toModel(), row.coverCropOrNull())
     }
 
     override fun inFolder(location: LocationId, folder: String): Flow<List<LibraryBook>> =
@@ -69,7 +75,8 @@ internal class RoomBookRepository(private val database: HirariDatabase) : BookRe
     override fun continueReading(limit: Int): Flow<List<LibraryBook>> =
         books.observeReading(limit).map { rows -> rows.map { it.toModel() } }
 
-    override suspend fun setCover(id: BookId, entry: Int?) = books.setCover(id.value, entry)
+    override suspend fun setCover(id: BookId, entry: Int?, crop: CoverCrop?) =
+        books.setCover(id.value, entry, crop?.takeIf { entry != null }?.encode())
 
     override fun overrides(id: BookId): Flow<BookOverrides> =
         overrides.observe(id.value).map { it?.overrides?.toBookOverrides() ?: BookOverrides() }
@@ -84,7 +91,10 @@ internal class RoomBookRepository(private val database: HirariDatabase) : BookRe
     }
 }
 
-private fun BookWithProgress.toModel() = LibraryBook(book.toModel(), book.coverEntry, progress?.toModel())
+private fun BookWithProgress.toModel() = LibraryBook(book.toModel(), book.coverEntry, progress?.toModel(), book.coverCropOrNull())
+
+/** The range that was stored, or none when the text does not read (the page is then shown whole). */
+private fun BookRow.coverCropOrNull(): CoverCrop? = coverCrop?.let(CoverCrop::decode)
 
 data class HistoryItem(
     val entry: HistoryEntry,
@@ -94,6 +104,8 @@ data class HistoryItem(
     val progress: BookProgress?,
     /** The `entryIndex` of the page the user chose as the cover of [book], or `null` for the first page. */
     val coverEntry: Int? = null,
+    /** The part of that page the user chose, or `null` for the whole page. */
+    val coverCrop: CoverCrop? = null,
 )
 
 /** The history tab (docs/spec.md sections 2.8 and 4.6). Safe to call from the main thread. */
@@ -122,6 +134,7 @@ internal class RoomHistoryRepository(private val database: HirariDatabase) : His
                     location = (book?.source as? BookSource.InLocation)?.let { locations[it.location.value] },
                     progress = row.progress?.toModel(),
                     coverEntry = row.book?.coverEntry,
+                    coverCrop = row.book?.coverCropOrNull(),
                 )
             }
             when (sort) {

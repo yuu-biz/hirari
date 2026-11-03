@@ -1,8 +1,11 @@
 package io.github.yuubiz.hirari.core.image.thumbnail
 
+import android.graphics.Bitmap
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.CoverCrop
+import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import java.io.Closeable
 import java.io.File
@@ -22,6 +25,8 @@ data class ThumbnailKey(
     val sizePx: Int,
     /** Picks the half of a cover scanned as a spread (section 4.4). */
     val direction: ReadingDirection,
+    /** The part of the cover page the user chose, `null` for the whole page. Only a key with a range carries it into the digest. */
+    val coverCrop: CoverCrop? = null,
 )
 
 /** What the store knows about a [ThumbnailKey]. */
@@ -69,7 +74,8 @@ sealed interface ThumbSubject {
 
     /**
      * A book, or one image file: the cover is its first page in natural order, or the page with the `entryIndex`
-     * [coverEntry]. A page that no longer exists gives the first page.
+     * [coverEntry]. A page that no longer exists gives the first page. With a [coverCrop] the thumbnail is that part
+     * of the chosen page, whatever its shape, and the wide cover's half is not cut (section 4.4). A range belongs to its page: without a [coverEntry], or when that page is gone, it has no effect.
      *
      * @property open opens the book with the decoding it is given, with [io.github.yuubiz.hirari.core.image.Books].
      * It may throw, which counts as the book being unavailable for now.
@@ -80,6 +86,7 @@ sealed interface ThumbSubject {
         val byteSize: Long,
         val coverEntry: Int? = null,
         val lane: ThumbLane = ThumbLane.Local,
+        val coverCrop: CoverCrop? = null,
         val open: suspend (ImageDecoding) -> BookResult,
     ) : ThumbSubject
 
@@ -122,6 +129,21 @@ class ThumbRequest(
     init {
         require(sizePx > 0) { "size $sizePx" }
     }
+}
+
+/** A page of a book shown whole, to choose a part of it as the cover (docs/spec.md section 4.4). */
+sealed interface PagePreview {
+    /** [bitmap] is the page fitted into the size asked for, in the image's own orientation; [shape] is the original size. The caller owns it. */
+    class Ready(val bitmap: Bitmap, val shape: PageShape.Known) : PagePreview
+
+    /** The book has no page with that `entryIndex`. */
+    data object Missing : PagePreview
+
+    /** The page cannot be shown, and will not be as long as the file stays the same. */
+    data object Failed : PagePreview
+
+    /** Reading failed for a reason that may pass. */
+    data object Unavailable : PagePreview
 }
 
 /** The outcome of a request. Cancelling it is not an outcome: the call throws `CancellationException`. */

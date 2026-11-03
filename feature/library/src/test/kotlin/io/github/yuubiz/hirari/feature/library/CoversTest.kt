@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.image.thumbnail.FolderEntry as ThumbEntry
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbLane
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.ReadingDirection
@@ -51,6 +52,19 @@ class CoversTest {
         assertEquals(320, request.sizePx)
         assertEquals(ReadingDirection.LeftToRight, request.direction)
         assertEquals(ThumbPriority.Nearby, request.priority)
+    }
+
+    @Test
+    fun `a range of the cover page goes to the subject and makes another key than the page whole`() {
+        val crop = CoverCrop(1000, 2000, 6000, 9000)
+        val whole = book(saf, "s/1.zip", cover = 4)
+        val ranged = whole.copy(coverCrop = crop)
+        val subject = assertIs<ThumbSubject.Book>(covers.request(CoverRef(ranged, 320), ThumbPriority.Visible).subject)
+        assertEquals(crop, subject.coverCrop)
+        assertNull(assertIs<ThumbSubject.Book>(covers.request(CoverRef(whole, 320), ThumbPriority.Visible).subject).coverCrop)
+        assertNotEquals(whole.key(320), ranged.key(320))
+        assertEquals(whole.key(320), whole.copy(coverCrop = null).key(320))
+        assertNotEquals(ranged.key(320), ranged.copy(coverCrop = CoverCrop(1000, 2000, 6000, 9001)).key(320))
     }
 
     @Test

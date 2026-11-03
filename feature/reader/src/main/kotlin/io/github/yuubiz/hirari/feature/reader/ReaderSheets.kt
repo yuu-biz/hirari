@@ -333,12 +333,18 @@ internal fun MenuSheet(
     onCloseReader: () -> Unit,
     onEffect: (CommandEffect?) -> Unit,
     onGuide: () -> Unit,
+    onCoverRange: () -> Unit,
 ) {
     fun run(item: MenuItem) {
         val command = when (item) {
             MenuItem.RestoreAndClose -> {
                 viewModel.restorePosition()
                 onCloseReader()
+                return
+            }
+            MenuItem.SetCoverFromRange -> {
+                onCloseMenu()
+                onCoverRange()
                 return
             }
             MenuItem.Guide -> {
@@ -472,9 +478,9 @@ internal fun AdjustSheet(viewModel: ReaderViewModel, state: ReaderState, onClose
 
 private val ADJUST_LEVELS = -5..5
 
-/** ページを共有 on a pair: the two pages as they sit on screen, the earlier one on the right in a right-to-left book. */
+/** ページを共有 or 範囲を選んで表紙にする ([title] asks) on a pair: the two pages as they sit on screen, the earlier one on the right in a right-to-left book. */
 @Composable
-internal fun SharePickSheet(view: PageView.Two, direction: ReadingDirection, onPick: (Int) -> Unit, onClose: () -> Unit) {
+internal fun SharePickSheet(view: PageView.Two, direction: ReadingDirection, title: Int, onPick: (Int) -> Unit, onClose: () -> Unit) {
     val onScreen = if (direction == ReadingDirection.RightToLeft) listOf(view.later, view.earlier) else listOf(view.earlier, view.later)
     Scrim(onClose) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -487,7 +493,7 @@ internal fun SharePickSheet(view: PageView.Two, direction: ReadingDirection, onP
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(stringResource(R.string.share_which_page), color = SheetText, modifier = Modifier.padding(12.dp))
+                Text(stringResource(title), color = SheetText, modifier = Modifier.padding(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     for (page in onScreen) SheetButton(R.string.share_page_number, args = arrayOf(page + 1)) { onPick(page) }
                 }

@@ -1,12 +1,15 @@
 package io.github.yuubiz.hirari.core.image.thumbnail
 
 import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.image.DecodeLimits
 import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.ReadingDirection
+import kotlin.math.ceil
 
 /**
  * The page a thumbnail shows (docs/spec.md section 4.4): the one with the `entryIndex` [coverEntry] that the user
@@ -46,6 +49,42 @@ internal fun coverCrop(shape: PageShape.Known, width: Int, direction: ReadingDir
     if (!shape.isWide) return null
     val half = width / 2
     return CropBox(left = if (direction == ReadingDirection.RightToLeft) width - half else 0, width = half)
+}
+
+/**
+ * The range of the cover page to cut: [crop], when [page] is the page the user chose with [coverEntry]. A range
+ * belongs to its page, so when the chosen page is gone and the first page stands in for it, the first page is shown
+ * whole (docs/spec.md section 4.4).
+ */
+internal fun rangeOf(page: PageEntry, coverEntry: Int?, crop: CoverCrop?): CoverCrop? =
+    crop?.takeIf { coverEntry != null && page.entryIndex == coverEntry }
+
+/**
+ * The size to decode a cover page of [shape] to so that the part [crop] of it has [sizePx] on its long side, the
+ * way [coverTarget] decodes a wide cover at twice the width (docs/spec.md section 4.4). The decode is never larger
+ * than the longest bitmap side of section 3.7, so a small range of a large page may come out under [sizePx]; a
+ * decode never enlarges a page, so a page smaller than that is taken as it is.
+ */
+internal fun cropTarget(shape: PageShape.Known, crop: CoverCrop, sizePx: Int): PixelSize {
+    val partWidth = shape.width.toDouble() * crop.width / CoverCrop.SCALE
+    val partHeight = shape.height.toDouble() * crop.height / CoverCrop.SCALE
+    var scale = sizePx / maxOf(partWidth, partHeight)
+    scale = minOf(scale, DecodeLimits.MAX_BITMAP_SIDE / maxOf(shape.width, shape.height).toDouble())
+    return PixelSize(ceil(shape.width * scale - ROUNDING_SLACK).toInt().coerceAtLeast(1), ceil(shape.height * scale - ROUNDING_SLACK).toInt().coerceAtLeast(1))
+}
+
+/** A product that comes out a hair over a whole number of pixels is that number, not one more. */
+private const val ROUNDING_SLACK = 1e-6
+
+/** The pixels of a decode of [width] x [height] that [crop] covers: the edges are rounded outward, so no pixel of the range is lost. */
+internal data class CropRect(val left: Int, val top: Int, val width: Int, val height: Int)
+
+internal fun cropRect(crop: CoverCrop, width: Int, height: Int): CropRect {
+    fun low(edge: Int, length: Int) = (edge.toLong() * length / CoverCrop.SCALE).toInt().coerceIn(0, length - 1)
+    fun high(edge: Int, length: Int) = ((edge.toLong() * length + CoverCrop.SCALE - 1) / CoverCrop.SCALE).toInt().coerceIn(1, length)
+    val left = low(crop.left, width)
+    val top = low(crop.top, height)
+    return CropRect(left, top, maxOf(high(crop.right, width) - left, 1), maxOf(high(crop.bottom, height) - top, 1))
 }
 
 /** What making a thumbnail came to. */

@@ -48,6 +48,7 @@ class Thumbnails internal constructor(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
     private val now: () -> Long,
+    private val previewer: PagePreviewer = PagePreviewer { _, _, _ -> PagePreview.Unavailable },
 ) {
     private val bookFlights = Flights<ThumbnailKey, ThumbResult>(scope)
     private val folderFlights = HashMap<ThumbnailKey, FolderFlight>()
@@ -73,6 +74,19 @@ class Thumbnails internal constructor(
      * folder tried before the one it shows, and makes the thumbnail again.
      */
     suspend fun regenerate(request: ThumbRequest): ThumbResult = checkNotNull(resolve(request, Mode.Remake))
+
+    /**
+     * The page with the `entryIndex` [entryIndex] of [book] shown whole and fitted into [maxSidePx], for choosing a
+     * part of it as the cover (section 4.4). It is not stored. It takes a turn of the lane like a thumbnail does, ahead
+     * of the ones a list only prepares, and the caller owns the bitmap.
+     */
+    suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview = try {
+        gates.getValue(book.lane).withPermit(Urgency(ThumbPriority.Visible)) { previewer.preview(book, entryIndex, maxSidePx) }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        PagePreview.Unavailable
+    }
 
     /**
      * The result for [request], from the store when it can and made otherwise. It emits once, then waits: the
@@ -116,7 +130,7 @@ class Thumbnails internal constructor(
     }
 
     private fun keyOf(book: ThumbSubject.Book, request: ThumbRequest) =
-        ThumbnailKey(book.id, book.modified, book.byteSize, book.coverEntry, request.sizePx, request.direction)
+        ThumbnailKey(book.id, book.modified, book.byteSize, book.coverEntry, request.sizePx, request.direction, book.coverCrop)
 
     private fun keyOf(folder: ThumbSubject.Folder, request: ThumbRequest) =
         ThumbnailKey(folder.id, folder.modified, byteSize = 0, FOLDER_COVER, request.sizePx, request.direction)
@@ -366,13 +380,17 @@ class Thumbnails internal constructor(
         private const val FOLDER_COVER = -2
 
         /** Thumbnails that decode with [decoding], a decoder of their own. Make one for the process. */
-        fun create(store: ThumbnailStore, decoding: ImageDecoding): Thumbnails = Thumbnails(
-            store,
-            BookThumbnailMaker(decoding),
-            CoroutineScope(SupervisorJob() + Dispatchers.Default),
-            Dispatchers.IO,
-            now = { System.nanoTime() / 1_000_000 },
-        )
+        fun create(store: ThumbnailStore, decoding: ImageDecoding): Thumbnails {
+            val maker = BookThumbnailMaker(decoding)
+            return Thumbnails(
+                store,
+                maker,
+                CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                Dispatchers.IO,
+                now = { System.nanoTime() / 1_000_000 },
+                previewer = maker,
+            )
+        }
 
         /**
          * Thumbnails sized for this device: half the memory budget of the reader, two decodes at once (one on a

@@ -44,10 +44,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.KeyResult
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageBarState
+import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import kotlinx.coroutines.delay
@@ -65,10 +67,17 @@ class KeyRelay {
 
 /**
  * The image reader. [onClose] leaves it; the position is already saved by then. [onOpenBook] leaves it for
- * another book, the neighbor of 本の端での動作.
+ * another book, the neighbor of 本の端での動作. [onCoverRange] leaves it for the screen that frames a range of the page
+ * with the `entryIndex` as the cover of the book (docs/spec.md section 4.4).
  */
 @Composable
-fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit, onOpenBook: (OpenBookRequest) -> Unit) {
+fun ReaderScreen(
+    viewModel: ReaderViewModel,
+    keys: KeyRelay,
+    onClose: () -> Unit,
+    onOpenBook: (OpenBookRequest) -> Unit,
+    onCoverRange: (BookId, Int) -> Unit,
+) {
     val density = LocalDensity.current.density
     val ui = remember { ReaderUi() }
     val stoppingKey = remember { StoppingKey() }
@@ -146,9 +155,20 @@ fun ReaderScreen(viewModel: ReaderViewModel, keys: KeyRelay, onClose: () -> Unit
                         onCloseReader = onClose,
                         onEffect = ui::follow,
                         onGuide = { ui.guideShown = true },
+                        onCoverRange = { chooseCoverRange(state, viewModel, ui, onCoverRange) },
                     )
                     ReaderSheet.Adjust -> AdjustSheet(viewModel, state, onClose = { ui.sheet = null })
-                    is ReaderSheet.SharePick -> SharePickSheet(sheet.view, state.config.direction, onPick = { ui.follow(CommandEffect.Share(it)) }, onClose = { ui.sheet = null })
+                    is ReaderSheet.SharePick -> SharePickSheet(sheet.view, state.config.direction, R.string.share_which_page, onPick = { ui.follow(CommandEffect.Share(it)) }, onClose = { ui.sheet = null })
+                    is ReaderSheet.CoverPick -> SharePickSheet(
+                        sheet.view,
+                        state.config.direction,
+                        R.string.cover_range_which_page,
+                        onPick = { page ->
+                            ui.sheet = null
+                            openCoverRange(page, viewModel, ui, onCoverRange)
+                        },
+                        onClose = { ui.sheet = null },
+                    )
                     null -> Unit
                 }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
@@ -298,6 +318,19 @@ private fun GuideEffects(viewModel: ReaderViewModel, ui: ReaderUi) {
             viewModel.markGuideSeen()
         }
     }
+}
+
+/** 範囲を選んで表紙にする from the menu (docs/spec.md section 4.8): the page of the view, or for a pair the one the user picks. */
+private fun chooseCoverRange(state: ReaderState, viewModel: ReaderViewModel, ui: ReaderUi, open: (BookId, Int) -> Unit) {
+    when (val view = state.current) {
+        is PageView.Two -> ui.sheet = ReaderSheet.CoverPick(view)
+        else -> openCoverRange(view.pages.min(), viewModel, ui, open)
+    }
+}
+
+private fun openCoverRange(page: Int, viewModel: ReaderViewModel, ui: ReaderUi, open: (BookId, Int) -> Unit) {
+    val target = viewModel.coverRangeTarget(page)
+    if (target == null) ui.message = R.string.cover_range_unavailable else open(target.book, target.entry)
 }
 
 /** Writes the page of [ReaderUi.sharing] and hands it to the system's share sheet (docs/spec.md section 4.8). */

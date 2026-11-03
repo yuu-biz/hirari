@@ -19,6 +19,9 @@ sealed interface ReaderSheet {
     /** ページを共有 on a pair: which of its two pages. */
     data class SharePick(val view: PageView.Two) : ReaderSheet
 
+    /** 範囲を選んで表紙にする on a pair: which of its two pages. */
+    data class CoverPick(val view: PageView.Two) : ReaderSheet
+
     /**
      * The neighboring book toward [edge]: the sheet of 本の端での動作, or with [fromPanel] the choices of 前の本 and
      * 次の本 on the page panel.
@@ -30,7 +33,7 @@ sealed interface ReaderSheet {
      * Every other key goes to the sheet's controls, and on the page panel Del goes to the page number field.
      */
     fun takes(code: Int): Boolean = when (this) {
-        is Pages, Adjust, is SharePick, is BookEnd -> code == KeyCodes.BACK || code == KeyCodes.MENU
+        is Pages, Adjust, is SharePick, is CoverPick, is BookEnd -> code == KeyCodes.BACK || code == KeyCodes.MENU
         Menu -> code == KeyCodes.BACK || code == KeyCodes.MENU || code == KeyCodes.DEL
     }
 }
@@ -68,7 +71,7 @@ enum class MenuItem(val group: MenuGroup, val available: Boolean) {
     Bookmarks(MenuGroup.Book, false),
     BookSettings(MenuGroup.Book, false),
     SetCover(MenuGroup.Book, false),
-    SetCoverFromRange(MenuGroup.Book, false),
+    SetCoverFromRange(MenuGroup.Book, true),
     SharePage(MenuGroup.Book, true),
     RestoreAndClose(MenuGroup.Book, true),
     AutoPlay(MenuGroup.Reading, true),

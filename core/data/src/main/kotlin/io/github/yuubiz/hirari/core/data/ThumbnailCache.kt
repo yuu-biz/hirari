@@ -12,6 +12,7 @@ import androidx.room3.Room
 import androidx.room3.RoomDatabase
 import androidx.room3.Upsert
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -42,10 +43,16 @@ data class ThumbKey(
     val sizePx: Int,
     /** The binding direction picks the half of a cover scanned as a spread, so another direction is another thumbnail. */
     val direction: ReadingDirection,
+    /** The part of the cover page the user chose, or `null` for the whole page, which leaves the key as it was before ranges. */
+    val coverCrop: CoverCrop? = null,
 ) {
-    /** The SHA-1 of the fields, each written out and ended by a NUL byte. */
+    /**
+     * The SHA-1 of the fields, each written out and ended by a NUL byte. The range is the last field and is written
+     * only when there is one, so the key of a cover without a range does not change.
+     */
     val digest: String by lazy {
-        val text = listOf(book.value, modified.toEpochMilli(), byteSize, coverEntry ?: -1, sizePx, direction.name).joinToString("") { "$it\u0000" }
+        val fields = listOf(book.value, modified.toEpochMilli(), byteSize, coverEntry ?: -1, sizePx, direction.name)
+        val text = (coverCrop?.let { fields + it.encode() } ?: fields).joinToString("") { "$it\u0000" }
         MessageDigest.getInstance("SHA-1").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
 }

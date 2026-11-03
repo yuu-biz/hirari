@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -63,8 +64,8 @@ data class HistoryTab(val sort: HistorySort, val items: List<HistoryItem>, val c
 
 /** What the covers of the home tabs need besides the books (docs/spec.md section 4.4). */
 private class CoverEnv(val layout: CoverLayout, val directions: Map<BookId, ReadingDirection>, val default: ReadingDirection) {
-    fun spec(book: Book, coverEntry: Int?, place: LibraryLocation?): CoverSpec.Book? =
-        coverSpecOf(book, coverEntry, place, directions[book.id] ?: default)
+    fun spec(book: Book, coverEntry: Int?, coverCrop: CoverCrop?, place: LibraryLocation?): CoverSpec.Book? =
+        coverSpecOf(book, coverEntry, place, directions[book.id] ?: default, coverCrop)
 }
 
 data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
@@ -108,7 +109,7 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
             Shelf(
                 continueReading = reading.map { item ->
                     val place = (item.book.source as? BookSource.InLocation)?.let { byId[it.location] }
-                    ContinueItem(item, item.progress?.percent() ?: 0, env.spec(item.book, item.coverEntry, place))
+                    ContinueItem(item, item.progress?.percent() ?: 0, env.spec(item.book, item.coverEntry, item.coverCrop, place))
                 },
                 pinned = pins.map { PinnedItem(it, byId[it.location]) },
                 places = places,
@@ -121,7 +122,7 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
             .flatMapLatest { sort ->
                 combine(history.observe(sort), coverEnv()) { items, env ->
                     val specs = HashMap<BookId, CoverSpec.Book>()
-                    for (item in items) item.book?.let { env.spec(it, item.coverEntry, item.location) }?.let { specs[item.entry.book] = it }
+                    for (item in items) item.book?.let { env.spec(it, item.coverEntry, item.coverCrop, item.location) }?.let { specs[item.entry.book] = it }
                     HistoryTab(sort, items, env.layout, specs)
                 }
             }

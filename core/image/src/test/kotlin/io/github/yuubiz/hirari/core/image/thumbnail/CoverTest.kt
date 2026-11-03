@@ -1,9 +1,11 @@
 package io.github.yuubiz.hirari.core.image.thumbnail
 
 import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.image.DecodeLimits
 import io.github.yuubiz.hirari.core.image.DecodePlan
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.planDecode
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -91,6 +93,53 @@ class CoverTest {
         val decoded = (plan as DecodePlan.Decode).output
         assertEquals(PixelSize(300, 300), decoded)
         assertEquals(CropBox(left = 150, width = 150), coverCrop(shape, decoded.width, ReadingDirection.RightToLeft))
+    }
+
+    @Test
+    fun aRangeBelongsToTheChosenPageAndIsDroppedWhenAnotherPageStandsInForIt() {
+        val crop = CoverCrop(0, 0, 5000, 5000)
+        assertEquals(crop, rangeOf(pages[1], coverEntry = 3, crop))
+        assertNull(rangeOf(pages[0], coverEntry = 3, crop))
+        assertNull(rangeOf(pages[0], coverEntry = null, crop))
+        assertNull(rangeOf(pages[1], coverEntry = 3, crop = null))
+    }
+
+    @Test
+    fun aRangeIsDecodedAtTheScaleThatGivesItsLongSideTheThumbnailSize() {
+        val page = PageShape.Known(2000, 3000)
+        // Half the width and a third of the height: 1000 x 1000 of the page, so the page is decoded at 0.3.
+        assertEquals(PixelSize(600, 900), cropTarget(page, CoverCrop(2500, 0, 7500, 3333), 300))
+        // The whole page is the page fitted to the size.
+        assertEquals(PixelSize(200, 300), cropTarget(page, CoverCrop(0, 0, 10_000, 10_000), 300))
+    }
+
+    @Test
+    fun aSmallRangeOfALargePageIsDecodedNoLargerThanTheBitmapLimit() {
+        val target = cropTarget(PageShape.Known(6000, 8000), CoverCrop(0, 0, 1000, 1000), 600)
+        assertEquals(DecodeLimits.MAX_BITMAP_SIDE, maxOf(target.width, target.height))
+        assertEquals(3072, target.width)
+    }
+
+    @Test
+    fun aRangeOfASmallPageAsksForMoreThanThePageHasAndNeverEnlargesIt() {
+        val page = PageShape.Known(400, 600)
+        val target = cropTarget(page, CoverCrop(0, 0, 5000, 5000), 600)
+        val plan = planDecode(400, 600, target, averagingLimit = 8, bytesPerPixel = 4, budgetBytes = 64L shl 20) as DecodePlan.Decode
+        assertEquals(PixelSize(400, 600), plan.output)
+    }
+
+    @Test
+    fun theRangeIsCutFromTheDecodeWithItsEdgesRoundedOutward() {
+        assertEquals(CropRect(25, 50, 50, 25), cropRect(CoverCrop(2500, 5000, 7500, 7500), 100, 100))
+        assertEquals(CropRect(0, 0, 4, 3), cropRect(CoverCrop(0, 0, 3500, 2001), 10, 10))
+        assertEquals(CropRect(9, 9, 1, 1), cropRect(CoverCrop(9000, 9000, 10_000, 10_000), 10, 10))
+    }
+
+    @Test
+    fun aRangeStaysInsideATinyDecode() {
+        val rect = cropRect(CoverCrop(9000, 9000, 10_000, 10_000), 3, 2)
+        assertEquals(true, rect.left + rect.width <= 3 && rect.top + rect.height <= 2 && rect.width >= 1 && rect.height >= 1)
+        assertEquals(CropRect(0, 0, 1, 1), cropRect(CoverCrop(0, 0, 1000, 1000), 1, 1))
     }
 
     @Test

@@ -30,7 +30,7 @@ private class StoredOverrides(private val stored: Map<BookId, BookOverrides>) : 
 
     override fun continueReading(limit: Int): Flow<List<LibraryBook>> = error("unused")
 
-    override suspend fun setCover(id: BookId, entry: Int?) = error("unused")
+    override suspend fun setCover(id: BookId, entry: Int?, crop: io.github.yuubiz.hirari.core.model.CoverCrop?) = error("unused")
 }
 
 private class FixedSettings(value: GlobalSettings) : SettingsRepository {

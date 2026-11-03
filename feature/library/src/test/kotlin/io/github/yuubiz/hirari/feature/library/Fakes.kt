@@ -5,7 +5,9 @@ import io.github.yuubiz.hirari.core.data.CoverIndex
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.ImageDecoding
+import io.github.yuubiz.hirari.core.image.thumbnail.PagePreview
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,7 @@ import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.Bookmark
 import io.github.yuubiz.hirari.core.model.BookmarkSort
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.HistoryEntry
@@ -165,11 +168,17 @@ internal class FakeBooks : BookRepository {
     /** The `entryIndex` of the page the user chose as the cover, by book. */
     val chosenPages = MutableStateFlow<Map<BookId, Int>>(emptyMap())
 
-    private val joined = combine(books, progress, chosenPages) { books, progress, pages -> books.values.map { LibraryBook(it, pages[it.id], progress[it.id]) } }
+    /** The range of that page the user chose, by book. */
+    val chosenCrops = MutableStateFlow<Map<BookId, CoverCrop>>(emptyMap())
+
+    private val joined = combine(books, progress, chosenPages, chosenCrops) { books, progress, pages, crops ->
+        books.values.map { LibraryBook(it, pages[it.id], progress[it.id], crops[it.id]) }
+    }
 
     override suspend fun record(book: Book) = put(book)
 
-    override suspend fun get(id: BookId): LibraryBook? = books.value[id]?.let { LibraryBook(it, null, progress.value[id]) }
+    override suspend fun get(id: BookId): LibraryBook? =
+        books.value[id]?.let { LibraryBook(it, chosenPages.value[id], progress.value[id], chosenCrops.value[id]) }
 
     override fun inFolder(location: LocationId, folder: String): Flow<List<LibraryBook>> = joined.map { list ->
         list.filter {
@@ -182,7 +191,13 @@ internal class FakeBooks : BookRepository {
         list.filter { it.progress?.state == ReadState.Reading }.sortedByDescending { it.progress!!.updatedAt }.take(limit)
     }
 
-    override suspend fun setCover(id: BookId, entry: Int?) = Unit
+    val coverSets = mutableListOf<Triple<BookId, Int?, CoverCrop?>>()
+
+    override suspend fun setCover(id: BookId, entry: Int?, crop: CoverCrop?) {
+        coverSets += Triple(id, entry, crop)
+        chosenPages.update { if (entry == null) it - id else it + (id to entry) }
+        chosenCrops.update { if (entry == null || crop == null) it - id else it + (id to crop) }
+    }
 
     val overrides = MutableStateFlow<Map<BookId, BookOverrides>>(emptyMap())
 
@@ -453,6 +468,14 @@ internal class FakeThumbnails : ThumbnailSource {
     override suspend fun regenerate(request: ThumbRequest): ThumbResult {
         regenerated += request
         return result
+    }
+
+    val previews = mutableListOf<Triple<ThumbSubject.Book, Int, Int>>()
+    var preview: PagePreview = PagePreview.Unavailable
+
+    override suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview {
+        previews += Triple(book, entryIndex, maxSidePx)
+        return preview
     }
 }
 

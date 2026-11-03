@@ -249,6 +249,9 @@ class ArchiveViewModel(
         write { books.setCover(id, page.entryIndex) }
     }
 
+    /** 範囲を選んで表紙にする (docs/spec.md section 4.4): the screen that frames a range of [page] opens for this key. */
+    fun rangeKey(page: ArchivePage): CoverRangeKey? = opened?.id?.let { CoverRangeKey(it, page.entryIndex) }
+
     /**
      * このページをフォルダの表紙にする and its undoing (docs/spec.md section 4.4): the folder that holds the archive
      * shows [page], and its thumbnail is made again.

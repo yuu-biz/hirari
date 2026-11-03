@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
@@ -50,7 +51,7 @@ class ReadingSessionTest {
 
         override fun continueReading(limit: Int): Flow<List<LibraryBook>> = emptyFlow()
 
-        override suspend fun setCover(id: BookId, entry: Int?) = Unit
+        override suspend fun setCover(id: BookId, entry: Int?, crop: CoverCrop?) = Unit
 
         override fun overrides(id: BookId): Flow<BookOverrides> = emptyFlow()
 

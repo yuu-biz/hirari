@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.core.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
@@ -17,6 +18,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.security.MessageDigest
 import kotlin.coroutines.CoroutineContext
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -59,6 +61,27 @@ class ThumbnailCacheTest {
             base.copy(direction = ReadingDirection.LeftToRight),
         )
         assertEquals(others.size + 1, (others + base).map { it.digest }.toSet().size)
+    }
+
+    @Test
+    fun `a cover without a range keeps the key it had before ranges existed`() {
+        val text = listOf("a", 1000L, 5000L, -1, 300, "RightToLeft").joinToString("") { "$it\u0000" }
+        val before = MessageDigest.getInstance("SHA-1").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        assertEquals(before, key("a").digest)
+        assertEquals(before, key("a").copy(coverCrop = null).digest)
+    }
+
+    @Test
+    fun `a range makes another key, and each range its own`() {
+        val whole = key("a").copy(coverEntry = 3)
+        val keys = listOf(
+            whole,
+            whole.copy(coverCrop = CoverCrop(0, 0, 5000, 5000)),
+            whole.copy(coverCrop = CoverCrop(1, 0, 5000, 5000)),
+            whole.copy(coverCrop = CoverCrop(0, 0, 5000, 5001)),
+        )
+        assertEquals(keys.size, keys.map { it.digest }.toSet().size)
+        assertEquals(keys[1].digest, whole.copy(coverCrop = CoverCrop.of(0, 0, 5000, 5000)).digest)
     }
 
     @Test

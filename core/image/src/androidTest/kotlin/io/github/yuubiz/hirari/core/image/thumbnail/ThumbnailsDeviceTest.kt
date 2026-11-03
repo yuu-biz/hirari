@@ -12,6 +12,8 @@ import io.github.yuubiz.hirari.core.image.FolderFile
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.parsePagesManifest
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.CoverCrop
+import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.source.FileChannelSource
 import kotlinx.coroutines.async
@@ -123,6 +125,53 @@ class ThumbnailsDeviceTest {
             image.recycle()
             assertEquals("$direction", dominant(expected), dominant(pixel))
         }
+    }
+
+    @Test
+    fun aRangeOfTheCoverPageIsCutOutAndThePageIsShownWholeToChooseItFrom() = runBlocking {
+        val page = File(dir, "stripes.png")
+        val bitmap = Bitmap.createBitmap(1200, 800, Bitmap.Config.ARGB_8888)
+        for (x in 0 until 1200) for (y in 0 until 800) {
+            bitmap.setPixel(x, y, if (y >= 400) Color.YELLOW else if (x < 400) Color.RED else if (x < 800) Color.GREEN else Color.BLUE)
+        }
+        page.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        fun subject(crop: CoverCrop?) = ThumbSubject.Book(BookId("stripes"), Instant.EPOCH, page.length(), coverEntry = 0, coverCrop = crop) { decoding ->
+            Books.openFolder(listOf(FolderFile("stripes.png", page.length()) { FileChannelSource(RandomAccessFile(page, "r").channel) }), decoding)
+        }
+
+        val middle = (thumbnails.regenerate(request(subject(CoverCrop(3333, 0, 6667, 5000)))) as ThumbResult.Ready).file
+        val green = BitmapFactory.decodeFile(middle.path)
+        assertEquals("the middle third of the top half is square", SIZE_PX, green.width)
+        assertEquals(SIZE_PX.toDouble(), green.height.toDouble(), 2.0)
+        for ((x, y) in listOf(6 to 6, green.width - 7 to 6, 6 to green.height - 7, green.width - 7 to green.height - 7, green.width / 2 to green.height / 2)) {
+            assertEquals("($x, $y) is inside the range", Color.GREEN, nearest(green.getPixel(x, y)))
+        }
+        green.recycle()
+
+        val top = (thumbnails.regenerate(request(subject(CoverCrop(0, 0, 10_000, 5000)))) as ThumbResult.Ready).file
+        val stripes = BitmapFactory.decodeFile(top.path)
+        assertEquals(SIZE_PX, stripes.width)
+        assertEquals("the top half of 1200 x 800 is 3:1", SIZE_PX / 3.0, stripes.height.toDouble(), 2.0)
+        assertEquals(Color.RED, nearest(stripes.getPixel(6, 6)))
+        assertEquals(Color.BLUE, nearest(stripes.getPixel(stripes.width - 7, stripes.height - 7)))
+        stripes.recycle()
+
+        val whole = (thumbnails.regenerate(request(subject(null))) as ThumbResult.Ready).file
+        assertTrue("the page whole is not the range", whole.length() != top.length())
+
+        val shown = thumbnails.preview(subject(null), entryIndex = 0, maxSidePx = 600) as PagePreview.Ready
+        assertEquals(PageShape.Known(1200, 800), shown.shape)
+        assertEquals(600, shown.bitmap.width)
+        assertEquals(400, shown.bitmap.height)
+        assertEquals(Color.YELLOW, nearest(shown.bitmap.getPixel(300, 300)))
+        shown.bitmap.recycle()
+        assertEquals(PagePreview.Missing, thumbnails.preview(subject(null), entryIndex = 9, maxSidePx = 600))
+    }
+
+    /** The pure color [color] is nearest to, which WebP's loss does not move it away from. */
+    private fun nearest(color: Int): Int = listOf(Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW).minBy {
+        Math.abs(Color.red(it) - Color.red(color)) + Math.abs(Color.green(it) - Color.green(color)) + Math.abs(Color.blue(it) - Color.blue(color))
     }
 
     private fun dominant(color: Int): String = when {

@@ -41,6 +41,9 @@ import io.github.yuubiz.hirari.feature.library.ArchiveActions
 import io.github.yuubiz.hirari.feature.library.ArchiveScreen
 import io.github.yuubiz.hirari.feature.library.ArchiveUi
 import io.github.yuubiz.hirari.feature.library.ArchiveViewModel
+import io.github.yuubiz.hirari.feature.library.CoverRangeScreen
+import io.github.yuubiz.hirari.feature.library.CoverRangeUi
+import io.github.yuubiz.hirari.feature.library.CoverRangeViewModel
 import io.github.yuubiz.hirari.feature.library.FolderActions
 import io.github.yuubiz.hirari.feature.library.FolderContent
 import io.github.yuubiz.hirari.feature.library.FolderScreen
@@ -177,10 +180,17 @@ class MainActivity : ComponentActivity() {
                                 ArchiveActions(
                                     openBook = { nav.navigate(it.toReaderRoute()) },
                                     openText = { nav.navigate(it.toRoute()) },
+                                    chooseRange = { nav.navigate(it.toRoute()) },
                                     close = { nav.popBackStack() },
                                 ),
                             )
                         }
+                    }
+                    composable<CoverRangeRoute> { entry ->
+                        val key = entry.toRoute<CoverRangeRoute>().toKey()
+                        val range = viewModel(key = key.toString()) { CoverRangeViewModel(app.library, key) }
+                        ReportSettled(nav, entry, app) { range.state.first { it !is CoverRangeUi.Loading } }
+                        CoverRangeScreen(range, onClose = { nav.popBackStack() })
                     }
                     composable<LicensesRoute> { entry ->
                         ReportSettled(nav, entry, app) {}
@@ -201,6 +211,7 @@ class MainActivity : ComponentActivity() {
                                 keys,
                                 onClose = { if (!nav.popBackStack()) finish() },
                                 onOpenBook = { nav.navigate(it.toReaderRoute()) { popUpTo<ReaderRoute> { inclusive = true } } },
+                                onCoverRange = { book, entry -> nav.navigate(CoverRangeRoute(book.value, entry)) },
                             )
                         }
                     }
