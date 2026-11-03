@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.data.FolderCover
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
@@ -15,6 +16,7 @@ import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.ThumbSize
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
+import io.github.yuubiz.hirari.core.model.normalizePath
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -54,8 +56,14 @@ sealed interface FolderContent {
         val thumbSize: ThumbSize,
         val sort: LibrarySort,
         val foldersFirst: Boolean,
+        val covers: CoverLayout,
+        /** The image file chosen as the cover of this folder, if one is. */
+        val folderCoverPath: String?,
     ) : FolderContent
 }
+
+/** The covers a list shows and the size of their thumbnails (docs/spec.md section 4.4). */
+data class CoverLayout(val covers: Covers, val sizePx: Int)
 
 data class FolderUi(val placeName: String, val path: String, val content: FolderContent, val notice: Notice? = null)
 
@@ -136,12 +144,37 @@ class FolderViewModel(
 
     private fun shown(services: LibraryServices, entries: List<FolderEntry>, layout: Flow<Layout>): Flow<FolderContent> {
         val sorted = layout.map { it.ordering }.distinctUntilChanged().map { entries.toRows(folder.path, it) }.flowOn(compute)
-        val marked = combine(sorted, services.books.inFolder(folder.location, folder.path), progressOf(services, sorted)) { rows, indexed, progress ->
-            rows.withMarks(indexed, progress)
+        val context = place.value?.let { coverContext(services, it, entries) } ?: flowOf(null)
+        val marked = combine(sorted, services.books.inFolder(folder.location, folder.path), progressOf(services, sorted), context) { rows, indexed, progress, covers ->
+            val marked = rows.withMarks(indexed, progress)
+            if (covers == null) marked else marked.withCovers(indexed, covers)
         }.flowOn(compute)
-        return combine(marked, query, layout) { rows, query, layout ->
-            FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.thumbSize, layout.ordering.sort, layout.ordering.foldersFirst)
+        val chosenHere = services.coverIndex.folderCovers(folder.location).map { it[folder.path]?.takeIf { cover -> cover.entry == null }?.imagePath }.distinctUntilChanged()
+        return combine(marked, query, layout, chosenHere) { rows, query, layout, chosenHere ->
+            val covers = CoverLayout(services.covers, services.covers.sizePx(layout.thumbSize))
+            FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.thumbSize, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere)
         }.flowOn(compute)
+    }
+
+    /**
+     * What the covers of this listing need: the directions of the books that have one, the global one, and the image
+     * chosen for each folder in it, whose file is looked up once off the main thread. The rows are shown before the
+     * lookup ends, but a folder with a chosen image shows no cover until it is found, so its cover is never made
+     * without the image.
+     */
+    private fun coverContext(services: LibraryServices, place: LibraryLocation, entries: List<FolderEntry>): Flow<CoverContext> {
+        val folders = entries.filter { it.directory }.mapTo(HashSet()) { normalizePath("${folder.path}/${it.name}") }
+        val chosen = services.coverIndex.folderCovers(folder.location)
+            .map { all -> all.filterKeys { it in folders } }
+            .distinctUntilChanged()
+            .flatMapLatest { all ->
+                flow {
+                    if (all.isNotEmpty()) emit(emptyMap<String, ChosenCover>() to all.keys)
+                    emit(all.mapNotNull { (path, cover) -> services.covers.chosen(place, cover)?.let { path to it } }.toMap() to emptySet())
+                }
+            }
+        val direction = services.settings.settings.map { it.readingDirection }.distinctUntilChanged()
+        return combine(services.coverIndex.directions(), direction, chosen) { directions, default, (chosen, pending) -> CoverContext(place, default, directions, chosen, pending) }
     }
 
     /** The progress of the books and texts of the [rows] by path, which a book marked before it was ever opened has too. */
@@ -240,6 +273,22 @@ class FolderViewModel(
     }
 
     fun pin(row: FileRow) = write { locations.pin(folder.location, row.path, clock()) }
+
+    /** サムネイルを作り直す of the long-press sheet (docs/spec.md section 4.4). */
+    fun remake(row: FileRow) {
+        val spec = row.cover ?: return
+        val size = (state.value.content as? FolderContent.Shown)?.thumbSize ?: return
+        write { covers.regenerate(spec, covers.sizesFrom(size)) }
+    }
+
+    /**
+     * フォルダの表紙にする and its undoing, for an image file of this folder (docs/spec.md section 4.4): the folder
+     * shows the image, and its thumbnail is made again.
+     */
+    fun chooseFolderCover(row: FileRow, choose: Boolean) {
+        val place = place.value ?: return
+        write { applyFolderCover(place, folder.path, if (choose) FolderCover(row.path) else null) }
+    }
 
     private fun write(block: suspend LibraryServices.() -> Unit) {
         viewModelScope.launch { services.await().block() }

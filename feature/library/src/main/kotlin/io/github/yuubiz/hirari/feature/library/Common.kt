@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -33,21 +34,28 @@ import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LibraryView
 
 /**
- * Where a cover goes. Thumbnails arrive in a later unit (docs/spec.md section 4.4); until then the slot shows
- * the kind label in its corner on a plain square.
+ * Where a cover goes (docs/spec.md section 4.4): a plain square with the kind label in its corner, or in its
+ * middle when the cover cannot be shown. [content] draws the cover between the two.
  */
 @Composable
-fun CoverSlot(label: String?, modifier: Modifier = Modifier, faded: Boolean = false) {
+fun CoverSlot(
+    label: String?,
+    modifier: Modifier = Modifier,
+    faded: Boolean = false,
+    centered: Boolean = false,
+    content: @Composable BoxScope.() -> Unit = {},
+) {
     val scheme = MaterialTheme.colorScheme
     Box(
         modifier.background(if (faded) scheme.surfaceVariant.copy(alpha = 0.4f) else scheme.surfaceVariant, RoundedCornerShape(4.dp)),
     ) {
+        content()
         if (label != null) {
             Text(
                 label,
-                Modifier.align(Alignment.BottomEnd).padding(2.dp).background(scheme.inverseSurface, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
+                Modifier.align(if (centered) Alignment.Center else Alignment.BottomEnd).padding(2.dp).background(scheme.inverseSurface, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
                 color = scheme.inverseOnSurface,
-                fontSize = 9.sp,
+                fontSize = if (centered) 12.sp else 9.sp,
                 fontWeight = FontWeight.Bold,
             )
         }

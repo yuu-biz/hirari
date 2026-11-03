@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -59,7 +61,7 @@ import kotlin.math.roundToInt
 
 /**
  * The rows in the chosen view (docs/spec.md section 4.3). Binding a row reads only the row: no query and no
- * decode, so a 1000-entry folder scrolls on what the listing already holds. Covers wait for the thumbnail unit.
+ * decode, so a 1000-entry folder scrolls on what the listing already holds; the covers come from [CoverBox].
  */
 @Composable
 internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
@@ -81,8 +83,9 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     state = grid,
                     modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH),
                 ) {
-                    items(content.rows, key = { it.path }) { row -> GridCell(row, onOpen, onLongPress) }
+                    items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, onOpen, onLongPress) }
                 }
+                PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
                 FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
             }
             LibraryView.ThumbnailList, LibraryView.List -> {
@@ -90,19 +93,16 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                 LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
                 LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH)) {
                     items(content.rows, key = { it.path }) { row ->
-                        ListRow(row, covers = content.view == LibraryView.ThumbnailList, content.thumbSize, onOpen, onLongPress)
+                        ListRow(row, content.covers.takeIf { content.view == LibraryView.ThumbnailList }, content.thumbSize, onOpen, onLongPress)
                     }
+                }
+                if (content.view == LibraryView.ThumbnailList) {
+                    PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers) { list.layoutInfo.visibleItemsInfo.visibleRange() }
                 }
                 FastScroller(content.rows.size, { list.firstVisibleItemIndex }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
             }
         }
     }
-}
-
-private val ThumbSize.cellWidth get() = when (this) {
-    ThumbSize.Small -> 88.dp
-    ThumbSize.Medium -> 112.dp
-    ThumbSize.Large -> 144.dp
 }
 
 private val ThumbSize.listCoverWidth get() = when (this) {
@@ -111,12 +111,10 @@ private val ThumbSize.listCoverWidth get() = when (this) {
     ThumbSize.Large -> 56.dp
 }
 
-private const val COVER_RATIO = 0.7f
-
 @Composable
-private fun GridCell(row: FileRow, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+private fun GridCell(row: FileRow, covers: CoverLayout, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     Column(Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).padding(6.dp)) {
-        Cover(row, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
+        Cover(row, covers, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
         Text(
             row.item.entry.name,
             Modifier.padding(top = 4.dp),
@@ -129,11 +127,11 @@ private fun GridCell(row: FileRow, onOpen: (FileRow) -> Unit, onLongPress: (File
 }
 
 @Composable
-private fun ListRow(row: FileRow, covers: Boolean, size: ThumbSize, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+private fun ListRow(row: FileRow, covers: CoverLayout?, size: ThumbSize, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
     Row(Modifier.fillMaxWidth().rowPress({ onOpen(row) }, { onLongPress(row) }).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (covers) {
-            Cover(row, Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO))
+        if (covers != null) {
+            Cover(row, covers, Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO))
         } else {
             Box(Modifier.width(32.dp), contentAlignment = Alignment.Center) { MarkGlyph(row.mark) }
         }
@@ -149,10 +147,11 @@ private fun ListRow(row: FileRow, covers: Boolean, size: ThumbSize, onOpen: (Fil
 
 /** The thumbnail slot with the kind label and the read-state mark (docs/spec.md sections 4.3 and 4.4). */
 @Composable
-private fun Cover(row: FileRow, modifier: Modifier) {
+private fun Cover(row: FileRow, covers: CoverLayout, modifier: Modifier) {
     val mark = row.mark
     Box(modifier) {
-        CoverSlot(row.kindLabel(), Modifier.fillMaxSize(), faded = mark == ReadMark.Read)
+        val ref = remember(row.cover, covers.sizePx) { row.cover?.let { CoverRef(it, covers.sizePx) } }
+        CoverBox(ref, covers.covers, row.kindLabel(), Modifier.fillMaxSize(), faded = mark == ReadMark.Read)
         Box(Modifier.align(Alignment.TopStart).padding(4.dp)) { MarkGlyph(mark) }
         if (mark is ReadMark.Reading) {
             LinearProgressIndicator(
@@ -162,6 +161,15 @@ private fun Cover(row: FileRow, modifier: Modifier) {
         }
     }
 }
+
+@Composable
+private fun List<FileRow>.coverRefs(covers: CoverLayout): List<CoverRef?> =
+    remember(this, covers.sizePx) { map { row -> row.cover?.let { CoverRef(it, covers.sizePx) } } }
+
+private fun List<LazyGridItemInfo>.visibleRange(): IntRange = if (isEmpty()) IntRange.EMPTY else first().index..last().index
+
+@JvmName("visibleListRange")
+private fun List<LazyListItemInfo>.visibleRange(): IntRange = if (isEmpty()) IntRange.EMPTY else first().index..last().index
 
 /** Shapes as well as colors tell the states apart: a dot, a percentage, a check. */
 @Composable

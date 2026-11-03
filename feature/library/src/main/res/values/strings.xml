@@ -108,6 +108,13 @@
     <string name="archive_failed_missing">この本が見つかりません</string>
     <string name="archive_failed_encrypted">この書庫は暗号化されています</string>
     <string name="archive_failed_read">この書庫を読めませんでした</string>
+    <string name="sheet_remake">サムネイルを作り直す</string>
+    <string name="sheet_folder_cover">フォルダの表紙にする</string>
+    <string name="sheet_folder_cover_off">フォルダの表紙をやめる</string>
+    <string name="archive_folder_cover">このページをフォルダの表紙にする</string>
+    <string name="archive_folder_cover_off">フォルダの表紙をやめる</string>
+    <string name="cover_loading">表紙を作っています</string>
+    <string name="cover_failed">表紙を作れません</string>
     <string name="sheet_shortcut">ホーム画面にショートカットを作成</string>
     <string name="notice_shortcut_missing">ショートカットの場所かファイルが見つかりません</string>
     <string name="notice_shortcut_unsupported">ホーム画面がショートカットの追加に対応していません</string>

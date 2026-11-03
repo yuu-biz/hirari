@@ -142,7 +142,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     }
     sheetFor?.let { row ->
         ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
-            RowSheet(row, hasShortcut = model.shortcut(row) != null) { action ->
+            RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty()) { action ->
                 sheetFor = null
                 when (action) {
                     SheetAction.Open -> open(row)
@@ -151,6 +151,8 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     SheetAction.MarkRead -> model.mark(row, ReadState.Read)
                     SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)
                     SheetAction.Pin -> model.pin(row)
+                    SheetAction.Remake -> model.remake(row)
+                    SheetAction.FolderCover -> model.chooseFolderCover(row, choose = (state.content as? FolderContent.Shown)?.folderCoverPath != row.path)
                     SheetAction.Shortcut -> model.shortcut(row)?.let { shortcut ->
                         scope.launch { if (!actions.pinShortcut(shortcut)) model.show(Notice.ShortcutUnsupported) }
                     }
@@ -246,11 +248,11 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-private enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut }
+private enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
-private fun RowSheet(row: FileRow, hasShortcut: Boolean, onAction: (SheetAction) -> Unit) {
+private fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, onAction: (SheetAction) -> Unit) {
     val actions = buildList {
         add(SheetAction.Open to R.string.sheet_open)
         if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
@@ -260,6 +262,10 @@ private fun RowSheet(row: FileRow, hasShortcut: Boolean, onAction: (SheetAction)
             if (row.mark != ReadMark.Unread) add(SheetAction.MarkUnread to R.string.sheet_mark_unread)
         }
         if (row.item is FileItem.Folder) add(SheetAction.Pin to R.string.sheet_pin)
+        if (row.item is FileItem.Image && canChooseCover) {
+            add(SheetAction.FolderCover to if (folderCoverChosen) R.string.sheet_folder_cover_off else R.string.sheet_folder_cover)
+        }
+        if (row.cover != null) add(SheetAction.Remake to R.string.sheet_remake)
         if (hasShortcut) add(SheetAction.Shortcut to R.string.sheet_shortcut)
     }
     Column(Modifier.padding(bottom = 24.dp)) {

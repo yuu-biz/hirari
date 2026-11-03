@@ -1,10 +1,14 @@
 package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.LibraryBook
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.NaturalOrder
+import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.locationBookId
 import io.github.yuubiz.hirari.core.model.normalizePath
 import java.text.Normalizer
 import java.time.Instant
@@ -67,6 +71,8 @@ data class FileRow(
     val sizeText: String? = null,
     val mark: ReadMark? = null,
     val pageCount: Int? = null,
+    /** What the thumbnail is made from; `null` for a text, which shows a fixed icon (docs/spec.md section 4.4). */
+    val cover: CoverSpec? = null,
 )
 
 data class Ordering(val sort: LibrarySort, val foldersFirst: Boolean, val showDotFiles: Boolean)
@@ -147,4 +153,45 @@ fun filterKey(text: String): String = Normalizer.normalize(text, Normalizer.Form
 fun List<FileRow>.filtered(query: String): List<FileRow> {
     val key = filterKey(query.trim())
     return if (key.isEmpty()) this else filter { key in it.filterKey }
+}
+
+/**
+ * What the covers of a listing need beyond the listing (docs/spec.md section 4.4). [directions] holds the books
+ * with a binding direction of their own; the others follow [defaultDirection]. [chosen] is the image or page the
+ * user chose as the cover of each folder, by the folder's path.
+ */
+class CoverContext(
+    val place: LibraryLocation,
+    val defaultDirection: ReadingDirection,
+    val directions: Map<BookId, ReadingDirection>,
+    val chosen: Map<String, ChosenCover>,
+    /** Folders with a cover the user chose that is not found yet: they show no cover until it is, or it is not there. */
+    val pending: Set<String> = emptySet(),
+)
+
+/**
+ * Gives each row the [CoverSpec] of its thumbnail: a book or an image file by its own listing entry and the
+ * cover the index holds for it, a folder by its entry and the image chosen for it. A row whose cover did not
+ * change gets an equal one, so a list that only changes marks does not restart the covers it shows. Touches
+ * nothing but the maps it is given.
+ */
+fun List<FileRow>.withCovers(indexed: List<LibraryBook>, context: CoverContext): List<FileRow> {
+    val coverByPath = HashMap<String, Int?>(indexed.size * 2)
+    for (book in indexed) (book.book.source as? BookSource.InLocation)?.let { coverByPath[it.path] = book.coverEntry }
+    return map { row ->
+        val entry = row.item.entry
+        val id = locationBookId(context.place, row.path)
+        val direction = context.directions[id] ?: context.defaultDirection
+        val modified = entry.modified ?: Instant.EPOCH
+        val cover = when (row.item) {
+            is FileItem.Archive ->
+                CoverSpec.Book(id, modified, entry.size ?: 0, coverByPath[row.path], direction, CoverOrigin.Archive(context.place, row.path, entry.documentId))
+            is FileItem.Image ->
+                CoverSpec.Book(id, modified, entry.size ?: 0, null, direction, CoverOrigin.Image(context.place, row.path, entry.documentId))
+            is FileItem.Folder -> if (row.path in context.pending) null else
+                CoverSpec.Folder(id, modified, direction, context.place, row.path, entry.documentId, context.chosen[row.path]?.toSpec(context.place, direction))
+            is FileItem.Text -> null
+        }
+        if (cover == row.cover) row else row.copy(cover = cover)
+    }
 }

@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.data.BookmarkRepository
+import io.github.yuubiz.hirari.core.data.CoverIndex
 import io.github.yuubiz.hirari.core.data.HistoryRepository
 import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.LocationRepository
@@ -67,5 +68,7 @@ class LibraryServices(
     val smb: SmbPlaces,
     val archives: ArchiveOpener,
     val launch: LaunchRepository,
+    val coverIndex: CoverIndex,
+    val covers: Covers,
     val clock: () -> Instant = Instant::now,
 )

@@ -1,6 +1,16 @@
 package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.BookRepository
+import io.github.yuubiz.hirari.core.data.CoverIndex
+import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.image.BookResult
+import io.github.yuubiz.hirari.core.image.ImageDecoding
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
+import io.github.yuubiz.hirari.core.model.ReadingDirection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flow
 import io.github.yuubiz.hirari.core.data.BookmarkGroup
 import io.github.yuubiz.hirari.core.data.BookmarkRepository
 import io.github.yuubiz.hirari.core.data.BookmarkScope
@@ -125,9 +135,16 @@ internal class FakeLocations : LocationRepository {
 
     override suspend fun unpin(id: Long) = pins.update { list -> list.filterNot { it.id == id } }
 
-    override fun folderCover(location: LocationId, path: String): Flow<FolderCover?> = MutableStateFlow(null)
+    private val covers = MutableStateFlow<Map<Pair<LocationId, String>, FolderCover>>(emptyMap())
 
-    override suspend fun setFolderCover(location: LocationId, path: String, cover: FolderCover?) = Unit
+    override fun folderCover(location: LocationId, path: String): Flow<FolderCover?> = covers.map { it[location to path] }
+
+    val chosenCovers = mutableListOf<Triple<LocationId, String, FolderCover?>>()
+
+    override suspend fun setFolderCover(location: LocationId, path: String, cover: FolderCover?) {
+        chosenCovers += Triple(location, path, cover)
+        covers.update { if (cover == null) it - (location to path) else it + ((location to path) to cover) }
+    }
 }
 
 /** The index and the progress in one place, as the database joins them. */
@@ -139,7 +156,10 @@ internal class FakeBooks : BookRepository {
 
     fun put(vararg list: BookProgress) = progress.update { it + list.associateBy { p -> p.book } }
 
-    private val joined = combine(books, progress) { books, progress -> books.values.map { LibraryBook(it, null, progress[it.id]) } }
+    /** The `entryIndex` of the page the user chose as the cover, by book. */
+    val chosenPages = MutableStateFlow<Map<BookId, Int>>(emptyMap())
+
+    private val joined = combine(books, progress, chosenPages) { books, progress, pages -> books.values.map { LibraryBook(it, pages[it.id], progress[it.id]) } }
 
     override suspend fun record(book: Book) = put(book)
 
@@ -180,11 +200,15 @@ internal class FakeBooks : BookRepository {
     }
 }
 
-internal class FakeHistory(private val books: FakeBooks) : HistoryRepository {
+internal class FakeHistory(private val books: FakeBooks, private val locations: FakeLocations) : HistoryRepository {
     val entries = MutableStateFlow<List<HistoryEntry>>(emptyList())
 
-    override fun observe(sort: HistorySort): Flow<List<HistoryItem>> = combine(entries, books.books, books.progress) { entries, books, progress ->
-        val items = entries.sortedByDescending { it.openedAt }.map { HistoryItem(it, books[it.book], null, progress[it.book]) }
+    override fun observe(sort: HistorySort): Flow<List<HistoryItem>> = combine(entries, books.books, books.progress, books.chosenPages, locations.rows) { entries, books, progress, pages, places ->
+        val items = entries.sortedByDescending { it.openedAt }.map { entry ->
+            val book = books[entry.book]
+            val place = (book?.source as? BookSource.InLocation)?.let { source -> places.firstOrNull { it.id == source.location } }
+            HistoryItem(entry, book, place, progress[entry.book], pages[entry.book])
+        }
         if (sort == HistorySort.Oldest) items.reversed() else items
     }
 
@@ -351,7 +375,7 @@ internal class FakeLaunch : LaunchRepository {
 internal class Fixture {
     val locations = FakeLocations()
     val books = FakeBooks()
-    val history = FakeHistory(books)
+    val history = FakeHistory(books, locations)
     val bookmarks = FakeBookmarks()
     val settings = FakeSettings()
     val grants = FakeGrants()
@@ -359,5 +383,65 @@ internal class Fixture {
     val smb = FakeSmb()
     val archives = FakeArchives()
     val launch = FakeLaunch()
-    val services = LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, clock = { T0 })
+    val coverIndex = FakeCoverIndex()
+    val thumbnails = FakeThumbnails()
+    val coverBooks = FakeCoverBooks()
+    val covers = Covers(thumbnails, coverBooks, memoryBytes = 1 shl 20, density = { 2f }, decodeContext = Dispatchers.Unconfined, decode = { null })
+    val services = LibraryServices(
+        locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, coverIndex, covers, clock = { T0 },
+    )
+}
+
+internal class FakeCoverIndex : CoverIndex {
+    val directions = MutableStateFlow<Map<BookId, ReadingDirection>>(emptyMap())
+    val folderCovers = MutableStateFlow<Map<String, FolderCover>>(emptyMap())
+
+    override fun directions(): Flow<Map<BookId, ReadingDirection>> = directions
+
+    override fun folderCovers(location: LocationId): Flow<Map<String, FolderCover>> = folderCovers
+}
+
+/** The thumbnail source: every `observe` is recorded when it starts and when it is cancelled; results are what the test sets. */
+internal class FakeThumbnails : ThumbnailSource {
+    class Watch(val request: ThumbRequest) {
+        var active = false
+        var starts = 0
+    }
+
+    val watches = mutableListOf<Watch>()
+    val regenerated = mutableListOf<ThumbRequest>()
+    var result: ThumbResult = ThumbResult.Unavailable
+
+    fun active() = watches.filter { it.active }
+
+    override fun observe(request: ThumbRequest): Flow<ThumbResult> = flow {
+        val watch = Watch(request).also { it.active = true; it.starts++; watches += it }
+        try {
+            emit(result)
+            awaitCancellation()
+        } finally {
+            watch.active = false
+        }
+    }
+
+    override suspend fun regenerate(request: ThumbRequest): ThumbResult {
+        regenerated += request
+        return result
+    }
+}
+
+internal class FakeCoverBooks : CoverBooks {
+    val folders = mutableMapOf<String, List<FolderEntry>>()
+    var listCalls = mutableListOf<String>()
+
+    /** Holds every listing until it completes, as a slow server does. */
+    var gate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
+    override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = BookResult.Failed(BookFailure.NotFound)
+
+    override suspend fun list(place: LibraryLocation, path: String, documentId: String?): List<FolderEntry> {
+        listCalls += path
+        gate?.await()
+        return folders[path] ?: throw java.io.IOException("no such folder")
+    }
 }

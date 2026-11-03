@@ -11,10 +11,14 @@ import android.util.Log
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.ImageDecoding
+import io.github.yuubiz.hirari.core.image.thumbnail.Thumbnails
 import io.github.yuubiz.hirari.feature.library.LibraryServices
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
+import io.github.yuubiz.hirari.feature.library.Covers
 import io.github.yuubiz.hirari.feature.library.DeviceArchives
+import io.github.yuubiz.hirari.feature.library.DeviceCoverBooks
+import io.github.yuubiz.hirari.feature.library.ThumbnailsSource
 import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
@@ -29,6 +33,9 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "HirariApp"
+
+/** docs/spec.md section 5.4, メモリ: the decoded covers take 1/8 of the memory budget. */
+private const val COVER_MEMORY_SHARE = 8
 
 class HirariApp : Application() {
     /** Outlives every screen; the progress writer finishes its writes here after the reader is gone. */
@@ -64,6 +71,14 @@ class HirariApp : Application() {
         library = appScope.async {
             val storage = services.await().storage
             val smb = SmbjPlaces(smbPool.await().shares, storage.credentials, AndroidLocalNetwork(this@HirariApp), appScope)
+            val folders = SafFolderLister(contentResolver)
+            val thumbnails = Thumbnails.forDevice(this@HirariApp, ThumbnailStoreAdapter(storage.thumbnails))
+            val covers = Covers(
+                source = ThumbnailsSource(thumbnails),
+                books = DeviceCoverBooks(contentResolver, cacheDir, folders, smb),
+                memoryBytes = ImageDecoding.deviceBudget(this@HirariApp) / COVER_MEMORY_SHARE,
+                density = { resources.displayMetrics.density },
+            )
             LibraryServices(
                 locations = storage.locations,
                 books = storage.books,
@@ -72,10 +87,12 @@ class HirariApp : Application() {
                 progress = storage.progress,
                 settings = storage.settings,
                 grants = SafTreeGrants(contentResolver),
-                folders = SafFolderLister(contentResolver),
+                folders = folders,
                 smb = smb,
                 archives = DeviceArchives(contentResolver, cacheDir, smb),
                 launch = storage.launch,
+                coverIndex = storage.covers,
+                covers = covers,
             )
         }
         text = appScope.async { services.await().let { TextReaderServices(it.storage, it.progress, appScope) } }
