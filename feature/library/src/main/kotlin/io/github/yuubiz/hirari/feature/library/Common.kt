@@ -155,7 +155,6 @@ fun Notice.message(): Int = when (this) {
     Notice.PlaceUnavailable -> R.string.notice_place_unavailable
     Notice.NotInPlace -> R.string.notice_not_in_place
     Notice.TextNotReady -> R.string.notice_text_not_ready
-    Notice.SmbBookNotReady -> R.string.notice_smb_book_not_ready
     Notice.ShortcutMissing -> R.string.notice_shortcut_missing
     Notice.ShortcutUnsupported -> R.string.notice_shortcut_unsupported
     Notice.IncomingUnreadable -> R.string.notice_incoming_unreadable

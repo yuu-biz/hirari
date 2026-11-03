@@ -58,7 +58,6 @@
     <string name="sheet_pin">ピン留め</string>
     <string name="mark_unread">未読</string>
     <string name="mark_read">既読</string>
-    <string name="notice_smb_book_not_ready">SMB の本はまだ開けません。リーダーの対応を待っています</string>
     <string name="folder_failed_unreachable">サーバーに接続できませんでした</string>
     <string name="folder_failed_auth">サーバーがユーザー名かパスワードを受け付けませんでした。本棚の長押しで編集してください</string>
     <string name="folder_failed_password_unreadable">保存したパスワードを読めません。本棚の長押しで編集し、入れ直してください</string>

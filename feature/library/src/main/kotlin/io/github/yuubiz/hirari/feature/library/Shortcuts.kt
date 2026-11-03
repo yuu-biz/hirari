@@ -47,7 +47,7 @@ suspend fun LibraryServices.resolve(shortcut: PlaceShortcut): ShortcutTarget {
     val entry = (list(place, parent) as? Listing.Listed)?.entries?.firstOrNull { !it.directory && normalizePath(it.name) == name }
     val item = entry?.toItem(showDotFiles = true) ?: return ShortcutTarget.Missing
     return when {
-        item is FileItem.Text && place is LibraryLocation.SafTree -> ShortcutTarget.Text(TextAddress.InLocation(shortcut.location, path, entry.documentId))
+        item is FileItem.Text -> ShortcutTarget.Text(TextAddress.InLocation(shortcut.location, path, entry.documentId))
         item is FileItem.Archive -> ShortcutTarget.Book(OpenBookRequest(BookAddress.InLocation(shortcut.location, path, folder = false, entry.documentId)))
         else -> ShortcutTarget.Missing
     }
@@ -59,11 +59,11 @@ private suspend fun LibraryServices.list(place: LibraryLocation, path: String): 
 }
 
 /**
- * The shortcut the long-press sheet offers for [row] of a folder of [place], or null when the row has none: a folder
- * of any place, or a book or text of a SAF place. The readers do not open SMB books yet (section 4.5).
+ * The shortcut the long-press sheet offers for [row] of a folder of the place [location], or null when the row has
+ * none: a folder, a book or a text, of a place of either kind (docs/spec.md section 4.11).
  */
-fun shortcutFor(row: FileRow, location: LocationId, place: LibraryLocation?): PlaceShortcut? = when (row.item) {
+fun shortcutFor(row: FileRow, location: LocationId): PlaceShortcut? = when (row.item) {
     is FileItem.Folder -> PlaceShortcut(location, row.path, folder = true, row.item.entry.name)
-    is FileItem.Archive, is FileItem.Text -> if (place is LibraryLocation.SafTree) PlaceShortcut(location, row.path, folder = false, row.item.entry.name) else null
+    is FileItem.Archive, is FileItem.Text -> PlaceShortcut(location, row.path, folder = false, row.item.entry.name)
     is FileItem.Image -> null
 }

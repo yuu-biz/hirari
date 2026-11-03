@@ -94,7 +94,6 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
             }
             is FileTarget.Book -> actions.openBook(target.request)
             is FileTarget.Text -> actions.openText(target.address)
-            null -> Unit
         }
     }
 

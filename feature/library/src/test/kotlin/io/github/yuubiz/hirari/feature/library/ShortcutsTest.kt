@@ -18,6 +18,8 @@ class ShortcutsTest {
 
     private fun file(name: String) = FolderEntry(name, "doc:作品/$name", directory = false, size = 1, modified = null)
 
+    private fun serverFile(name: String) = FolderEntry(name, null, directory = false, size = 1, modified = null)
+
     private suspend fun resolve(location: LocationId, path: String, folder: Boolean) = fixture.services.resolve(PlaceShortcut(location, path, folder, ""))
 
     @Test
@@ -62,13 +64,28 @@ class ShortcutsTest {
     }
 
     @Test
-    fun `the sheet offers a shortcut for folders, and for books and texts of a SAF place only`() {
-        val rows = listOf(FolderEntry("外伝", "doc:外伝", directory = true, size = null, modified = null), file("1巻.zip"), file("p01.jpg"))
+    fun `an SMB shortcut opens its book or text by place and path`() = runTest {
+        fixture.locations.rows.value = listOf(server)
+        fixture.smb.folders["作品"] = listOf(serverFile("1巻.zip"), serverFile("後書き.txt"))
+
+        assertEquals(
+            ShortcutTarget.Book(OpenBookRequest(BookAddress.InLocation(server.id, "作品/1巻.zip", folder = false))),
+            resolve(server.id, "作品/1巻.zip", folder = false),
+        )
+        assertEquals(ShortcutTarget.Text(TextAddress.InLocation(server.id, "作品/後書き.txt")), resolve(server.id, "作品/後書き.txt", folder = false))
+        assertEquals(ShortcutTarget.Missing, resolve(server.id, "作品/2巻.zip", folder = false))
+    }
+
+    @Test
+    fun `the sheet offers a shortcut for folders, books and texts of a place of either kind, but not for images`() {
+        val rows = listOf(FolderEntry("外伝", "doc:外伝", directory = true, size = null, modified = null), file("1巻.zip"), file("p01.jpg"), file("後書き.txt"))
             .toRows("作品", Ordering(LibrarySort.Name, foldersFirst = true, showDotFiles = false))
-        assertEquals(PlaceShortcut(place.id, "作品/外伝", folder = true, "外伝"), shortcutFor(rows[0], place.id, place))
-        assertEquals(PlaceShortcut(place.id, "作品/1巻.zip", folder = false, "1巻.zip"), shortcutFor(rows[1], place.id, place))
-        assertNull(shortcutFor(rows[2], place.id, place))
-        assertNull(shortcutFor(rows[1], server.id, server))
-        assertEquals(PlaceShortcut(server.id, "作品/外伝", folder = true, "外伝"), shortcutFor(rows[0], server.id, server))
+            .associateBy { it.path }
+        for (location in listOf(place.id, server.id)) {
+            assertEquals(PlaceShortcut(location, "作品/外伝", folder = true, "外伝"), shortcutFor(rows.getValue("作品/外伝"), location))
+            assertEquals(PlaceShortcut(location, "作品/1巻.zip", folder = false, "1巻.zip"), shortcutFor(rows.getValue("作品/1巻.zip"), location))
+            assertEquals(PlaceShortcut(location, "作品/後書き.txt", folder = false, "後書き.txt"), shortcutFor(rows.getValue("作品/後書き.txt"), location))
+            assertNull(shortcutFor(rows.getValue("作品/p01.jpg"), location))
+        }
     }
 }

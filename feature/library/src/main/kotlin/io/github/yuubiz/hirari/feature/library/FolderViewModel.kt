@@ -251,23 +251,17 @@ class FolderViewModel(
     }
 
     /** ホーム画面にショートカットを作成 of the long-press sheet, when [row] has one. */
-    fun shortcut(row: FileRow): PlaceShortcut? = shortcutFor(row, folder.location, place.value)
+    fun shortcut(row: FileRow): PlaceShortcut? = shortcutFor(row, folder.location)
 
     /**
-     * What tapping [row] opens (docs/spec.md section 4.3). An image file opens its folder as one book at that
-     * image. A text file opens in the text reader. Moving to another folder clears the filter. The readers do not
-     * open the books of an SMB place yet, so those say so (section 4.5).
+     * What tapping [row] opens (docs/spec.md section 4.3), in a place of either kind. An image file opens its folder
+     * as one book at that image. A text file opens in the text reader. Moving to another folder clears the filter.
      */
-    fun open(row: FileRow, start: StartAt = StartAt.Saved): FileTarget? = when (val item = row.item) {
+    fun open(row: FileRow, start: StartAt = StartAt.Saved): FileTarget = when (val item = row.item) {
         is FileItem.Folder -> {
             query.value = ""
             FileTarget.Folder(FolderKey(folder.location, row.path, item.entry.documentId))
         }
-        else -> if (place.value is LibraryLocation.SmbShare) null.also { notice.value = Notice.SmbBookNotReady } else openFile(item, row, start)
-    }
-
-    private fun openFile(item: FileItem, row: FileRow, start: StartAt): FileTarget? = when (item) {
-        is FileItem.Folder -> null
         is FileItem.Archive -> FileTarget.Book(OpenBookRequest(BookAddress.InLocation(folder.location, row.path, folder = false, item.entry.documentId), start))
         is FileItem.Image -> FileTarget.Book(
             OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),

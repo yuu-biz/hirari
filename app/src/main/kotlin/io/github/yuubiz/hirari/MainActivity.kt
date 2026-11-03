@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
                         Kept(app, entry) {
                             val key = entry.toRoute<ArchiveRoute>().toKey()
                             val archive = viewModel { ArchiveViewModel(app.library, key) }
-                            ReportSettled(nav, entry, app) { archive.state.first { it.content !is ArchiveUi.Loading } }
+                            ReportSettled(nav, entry, app) { archive.state.first { it !is ArchiveUi.Loading } }
                             ArchiveScreen(
                                 archive,
                                 ArchiveActions(

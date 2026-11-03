@@ -78,8 +78,6 @@ data class PageCovers(val layout: CoverLayout, val base: CoverSpec.Book) {
     fun ref(page: ArchivePage): CoverRef? = if (page.unreadable) null else CoverRef(base.copy(coverEntry = page.entryIndex), layout.sizePx)
 }
 
-data class ArchiveScreenUi(val content: ArchiveUi, val notice: Notice? = null)
-
 /** What a tap in the list opens. */
 sealed interface ArchiveTarget {
     data class Page(val request: OpenBookRequest) : ArchiveTarget
@@ -106,10 +104,9 @@ class ArchiveViewModel(
     private val compute: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val opening = MutableStateFlow<Opening>(Opening.Pending)
-    private val notice = MutableStateFlow<Notice?>(null)
     private val title = book.path.substringAfterLast('/')
 
-    val state: StateFlow<ArchiveScreenUi> = opening
+    val state: StateFlow<ArchiveUi> = opening
         .flatMapLatest { opened ->
             when (opened) {
                 Opening.Pending -> flowOf(ArchiveUi.Loading)
@@ -117,8 +114,7 @@ class ArchiveViewModel(
                 is Opening.Opened -> shown(services.await(), opened)
             }
         }
-        .let { content -> combine(content, notice, ::ArchiveScreenUi) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ArchiveScreenUi(ArchiveUi.Loading))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ArchiveUi.Loading)
 
     init {
         viewModelScope.launch {
@@ -180,20 +176,17 @@ class ArchiveViewModel(
 
     private val opened: Opening.Opened? get() = opening.value as? Opening.Opened
 
-    /**
-     * What tapping [page] or a text opens. The readers do not open the books of an SMB place yet, so those say so
-     * (docs/spec.md section 4.5).
-     */
-    fun open(page: ArchivePage): ArchiveTarget? {
-        if (opened?.place is LibraryLocation.SmbShare) return null.also { notice.value = Notice.SmbBookNotReady }
+    /** What tapping [page] opens: the reader at the page's place in the list (docs/spec.md section 4.7). */
+    fun open(page: ArchivePage): ArchiveTarget {
         val address = BookAddress.InLocation(book.location, book.path, folder = false, book.documentId)
         return ArchiveTarget.Page(OpenBookRequest(address, StartAt.Page(page.index)))
     }
 
+    /** What tapping [text] opens. An archive of an SMB place has no document, so the text reader opens it by its path. */
     fun open(text: ArchiveText): ArchiveTarget? {
         val opened = opened ?: return null
-        val uri = opened.contents.documentUri ?: return null.also { notice.value = Notice.SmbBookNotReady }
-        return ArchiveTarget.Text(TextAddress.ArchiveEntry(ArchiveFile.Document(uri), text.entryIndex, opened.id))
+        val archive = opened.contents.documentUri?.let(ArchiveFile::Document) ?: ArchiveFile.OnServer(book.location, normalizePath(book.path))
+        return ArchiveTarget.Text(TextAddress.ArchiveEntry(archive, text.entryIndex, opened.id))
     }
 
     /**
@@ -222,7 +215,7 @@ class ArchiveViewModel(
     /** ここまで読んだことにする: the stored position becomes [page]; the last page makes the book read. */
     fun readUpTo(page: ArchivePage) {
         val id = opened?.id ?: return
-        val count = (state.value.content as? ArchiveUi.Shown)?.pages?.size ?: return
+        val count = (state.value as? ArchiveUi.Shown)?.pages?.size ?: return
         val state = if (page.index >= count - 1) ReadState.Read else ReadState.Reading
         write { progress.save(listOf(BookProgress(id, state, ReadingPosition.Image(page.index, count), clock()))) }
     }
@@ -242,10 +235,6 @@ class ArchiveViewModel(
         val folder = normalizePath(book.path).substringBeforeLast('/', "")
         if (folder.isEmpty()) return
         write { applyFolderCover(place, folder, if (choose) FolderCover(normalizePath(book.path), page.entryIndex) else null) }
-    }
-
-    fun dismissNotice() {
-        notice.value = null
     }
 
     private fun write(block: suspend LibraryServices.() -> Unit) {

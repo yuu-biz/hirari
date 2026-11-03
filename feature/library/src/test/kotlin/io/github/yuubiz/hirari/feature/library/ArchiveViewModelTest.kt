@@ -33,13 +33,11 @@ class ArchiveViewModelTest {
     private val cp932 = Charset.forName("windows-31j")
     private val utf8 = Charsets.UTF_8
     private val id = locationBookId(place, "作品/book.zip")
-    private val contents = FakeContents(
-        mapOf(
-            cp932 to listOf("第2話.jpg", "第1話.jpg", "あとがき.txt", "第10話.jpg"),
-            utf8 to listOf("c.jpg", "b.jpg", "x.txt", "a.jpg"),
-        ),
-        detected = cp932,
+    private val names = mapOf(
+        cp932 to listOf("第2話.jpg", "第1話.jpg", "あとがき.txt", "第10話.jpg"),
+        utf8 to listOf("c.jpg", "b.jpg", "x.txt", "a.jpg"),
     )
+    private val contents = FakeContents(names, detected = cp932)
 
     @Before
     fun main() = Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -54,7 +52,7 @@ class ArchiveViewModelTest {
             .also { watch(it.state) }
     }
 
-    private fun ArchiveViewModel.shown() = assertIs<ArchiveUi.Shown>(state.value.content)
+    private fun ArchiveViewModel.shown() = assertIs<ArchiveUi.Shown>(state.value)
 
     @Test
     fun `the list shows the texts first and the pages in natural order of the detected names`() = runTest {
@@ -130,12 +128,31 @@ class ArchiveViewModelTest {
     }
 
     @Test
+    fun `a page of an SMB archive opens the reader there and a text opens by the place and the path of the archive`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "漫画", null, null, null)
+        fixture.locations.rows.value = listOf(server)
+        fixture.archives.result = ArchiveOpenResult.Opened(FakeContents(names, detected = cp932, documentUri = null))
+        val list = ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(server.id, "作品/book.zip"), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        val shown = list.shown()
+
+        assertEquals(
+            ArchiveTarget.Page(OpenBookRequest(BookAddress.InLocation(server.id, "作品/book.zip", folder = false), StartAt.Page(1))),
+            list.open(shown.pages[1].page),
+        )
+        assertEquals(
+            ArchiveTarget.Text(TextAddress.ArchiveEntry(ArchiveFile.OnServer(server.id, "作品/book.zip"), 2, locationBookId(server, "作品/book.zip"))),
+            list.open(shown.texts.single().text),
+        )
+    }
+
+    @Test
     fun `an archive that does not open shows why`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.archives.result = ArchiveOpenResult.Failed(ArchiveFailure.Encrypted)
         val list = ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip"), UnconfinedTestDispatcher(testScheduler))
             .also { watch(it.state) }
-        assertEquals(ArchiveUi.Failed(ArchiveFailure.Encrypted), list.state.value.content)
+        assertEquals(ArchiveUi.Failed(ArchiveFailure.Encrypted), list.state.value)
     }
 
     private val at = java.time.Instant.parse("2026-02-03T04:05:06Z")

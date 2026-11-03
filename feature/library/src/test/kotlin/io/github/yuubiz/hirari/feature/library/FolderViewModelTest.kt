@@ -127,12 +127,14 @@ class FolderViewModelTest {
     }
 
     @Test
-    fun `an SMB place lists through its server, marks its books by place and path, and opens its folders`() = runTest {
+    fun `an SMB place lists through its server, marks its books by place and path, and opens its folders, books and texts`() = runTest {
         val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "漫画", null, "reader", null)
         fixture.locations.rows.value = listOf(server)
         fixture.smb.folders["作品"] = listOf(
             FolderEntry("外伝", null, directory = true, size = null, modified = null),
             FolderEntry("1巻.zip", null, directory = false, size = 1, modified = null),
+            FolderEntry("p01.jpg", null, directory = false, size = 1, modified = null),
+            FolderEntry("後書き.txt", null, directory = false, size = 1, modified = null),
         )
         val list = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(server.id, "作品"), UnconfinedTestDispatcher(testScheduler))
             .also { watch(it.state) }
@@ -141,11 +143,19 @@ class FolderViewModelTest {
 
         assertEquals(listOf(server to "作品"), fixture.smb.listed)
         assertEquals("NAS", list.state.value.placeName)
-        val rows = list.shown().rows
-        assertEquals(listOf(null, ReadMark.Reading(50)), rows.map { it.mark })
-        assertEquals(FileTarget.Folder(FolderKey(server.id, "作品/外伝")), list.open(rows[0]))
-        assertEquals(null, list.open(rows[1]))
-        assertEquals(Notice.SmbBookNotReady, list.state.value.notice)
+        val rows = list.shown().rows.associateBy { it.path }
+        assertEquals(ReadMark.Reading(50), rows.getValue("作品/1巻.zip").mark)
+        assertEquals(FileTarget.Folder(FolderKey(server.id, "作品/外伝")), list.open(rows.getValue("作品/外伝")))
+        assertEquals(
+            FileTarget.Book(OpenBookRequest(BookAddress.InLocation(server.id, "作品/1巻.zip", folder = false))),
+            list.open(rows.getValue("作品/1巻.zip")),
+        )
+        assertEquals(
+            FileTarget.Book(OpenBookRequest(BookAddress.InLocation(server.id, "作品", folder = true), StartAt.Image("p01.jpg"))),
+            list.open(rows.getValue("作品/p01.jpg")),
+        )
+        assertEquals(FileTarget.Text(TextAddress.InLocation(server.id, "作品/後書き.txt")), list.open(rows.getValue("作品/後書き.txt")))
+        assertEquals(null, list.state.value.notice)
         assertEquals(0, fixture.lister.calls)
     }
 
