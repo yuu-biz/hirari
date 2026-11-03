@@ -10,8 +10,6 @@ import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -50,7 +48,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -62,6 +59,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.KeepAwake
+import io.github.yuubiz.hirari.core.model.KeyCodes
+import io.github.yuubiz.hirari.core.model.KeyResult
+import io.github.yuubiz.hirari.core.model.PageBarState
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.TextLayout
@@ -70,7 +71,6 @@ import io.github.yuubiz.hirari.core.text.PageContent
 import io.github.yuubiz.hirari.core.text.TextPage
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.delay
-import kotlin.math.abs
 
 /**
  * Hands key events to the open text reader. The activity calls [dispatch] from `dispatchKeyEvent` before Compose
@@ -119,14 +119,15 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
 
     fun dismiss() = if (panel != null) panel = null else back()
 
-    fun act(action: TextAction) {
+    fun act(action: ReaderAction) {
         touched++
         when (action) {
-            is TextAction.Turn -> viewModel.turn(action.views)
-            TextAction.First -> viewModel.first()
-            TextAction.Last -> viewModel.last()
-            TextAction.OpenMenu -> panel = if (panel == TextPanel.Commands) null else TextPanel.Commands
-            TextAction.Dismiss -> dismiss()
+            is ReaderAction.TurnView, is ReaderAction.StepStops -> action.views()?.let(viewModel::turn)
+            is ReaderAction.Shift -> Unit
+            ReaderAction.First -> viewModel.first()
+            ReaderAction.Last -> viewModel.last()
+            ReaderAction.OpenMenu -> panel = if (panel == TextPanel.Commands) null else TextPanel.Commands
+            ReaderAction.Dismiss -> dismiss()
         }
     }
 
@@ -135,10 +136,10 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
         keys.handler = handler@{ event ->
             val current = (viewModel.state.value as? TextReaderUiState.Reading)?.settings ?: return@handler false
             if (panel != null && panel != TextPanel.Commands && event.keyCode != KeyCodes.BACK) return@handler false
-            when (val outcome = onKey(event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.isShiftPressed, current)) {
-                KeyOutcome.NotHandled -> false
-                KeyOutcome.Consumed -> true
-                is KeyOutcome.Act -> {
+            when (val outcome = current.textKeys().onKey(event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.isShiftPressed)) {
+                KeyResult.NotHandled -> false
+                KeyResult.Consumed -> true
+                is KeyResult.Act -> {
                     act(outcome.action)
                     true
                 }
@@ -182,68 +183,18 @@ private fun Reading(
     onRegionTouch: () -> Unit,
     onPanel: (TextPanel?) -> Unit,
     onCommandAt: (Offset) -> Unit,
-    act: (TextAction) -> Unit,
+    act: (ReaderAction) -> Unit,
 ) {
     val density = LocalDensity.current
-    val slop = LocalViewConfiguration.current.touchSlop
-    val longPress = LocalViewConfiguration.current.longPressTimeoutMillis
     val current by rememberUpdatedState(state)
-    var barDrag by remember { mutableStateOf<PageBarDrag?>(null) }
+    val touch = remember { TextTouch() }
+    val input = remember(viewModel) { TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, onCommandAt, act) }
     Box(
         Modifier
             .fillMaxSize()
             .background(readerBackground(state.settings.readerBackground))
             .onSizeChanged { viewModel.onViewport(Viewport(it.width, it.height, density.density, density.fontScale)) }
-            .pointerInput(slop, longPress) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val settings = current.settings
-                    val heightDp = size.height / density.density
-                    val region = regionAt(down.position.y / density.density, heightDp, settings) ?: return@awaitEachGesture
-                    onRegionTouch()
-                    if (region == TextRegion.CommandBar) onPanel(TextPanel.Commands)
-                    if (region == TextRegion.PageBar) barDrag = PageBarDrag(down.position.x / density.density, down.position.y / density.density)
-                    var last = down
-                    // The 連続 row sees each change first and consumes the ones it scrolls by.
-                    var scrolled = false
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        last = change
-                        scrolled = scrolled || change.isConsumed
-                        if (region == TextRegion.PageBar) {
-                            val at = change.position / density.density
-                            barDrag = barDrag?.moveTo(at.x, at.y, heightDp - settings.barHeightDp, settings.barHeightDp.toFloat(), slop / density.density)
-                        }
-                        if (!change.pressed) break
-                    }
-                    val dx = last.position.x - down.position.x
-                    val dy = last.position.y - down.position.y
-                    val tap = !scrolled && abs(dx) <= slop && abs(dy) <= slop && last.uptimeMillis - down.uptimeMillis < longPress
-                    when (region) {
-                        TextRegion.PageBar -> {
-                            val release = barDrag?.release()
-                            barDrag = null
-                            when (release) {
-                                PageBarRelease.OpenPanel -> onPanel(TextPanel.PageJump)
-                                is PageBarRelease.Jump -> jumpPages(current, viewModel, release.pages)
-                                PageBarRelease.None, null -> Unit
-                            }
-                        }
-                        TextRegion.TurnArea -> {
-                            val barHeight = settings.barHeightDp * density.density
-                            turnAreaTurn(
-                                tap, current.frame?.continuous == true, down.position.x, down.position.y - barHeight, dx, dy,
-                                size.width.toFloat(), size.height - 2 * barHeight, slop, settings,
-                            )?.let { act(TextAction.Turn(it)) }
-                        }
-                        TextRegion.CommandBar -> if (!tap) {
-                            onPanel(null)
-                            onCommandAt(last.position)
-                        }
-                    }
-                }
-            },
+            .pointerInput(input) { with(input) { handle() } },
     ) {
         val frame = state.frame
         val run = state.run
@@ -252,20 +203,15 @@ private fun Reading(
         } else {
             Box(Modifier.fillMaxSize().background(Color(argb(state.colors.paper))), contentAlignment = Alignment.Center) { DelayedProgress() }
         }
-        barDrag?.let { PageBarPreview(state, it) }
+        (touch.pageBar as? PageBarState.Dragging)?.let { PageBarPreview(state, it) }
     }
-}
-
-private fun jumpPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel, pages: Int) {
-    val run = state.run ?: return
-    viewModel.showPage((state.current + pages).coerceIn(0, run.lastIndex))
 }
 
 /** The page a slide on the page bar goes to, grayed out while the slide is cancelled. */
 @Composable
-private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarDrag) {
+private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarState.Dragging) {
     val run = state.run ?: return
-    val target = (state.current + drag.pages).coerceIn(0, run.lastIndex)
+    val target = drag.preview.coerceIn(0, run.lastIndex)
     Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
         Text(
             pageNumberText(run.number(target)),
