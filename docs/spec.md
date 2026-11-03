@@ -645,7 +645,7 @@ JPEG XL は libjxl を JNI で呼んで読む（`:core:image` の `JxlDecoder`�
 | 縮小率 | 出力は表示に必要な大きさ以上、その 2 倍未満にする。JPEG は DCT 段階の縮小を使う。2 の累乗の縮小率をデコーダに渡し、残りは 5.3 節の方法で縮める。デコーダの縮小が面積平均にならない形式（PNG）は縮小率を 1 にする |
 | 1 枚の上限 | 出力が 1 枚の描画上限（GPU の最大テクスチャサイズ、かつハードウェア描画で許される 1 枚の大きさ）を超える場合はタイルにする。M3 の読み込み層がタイルにするのは縦長画像だけで、ほかの画像は長辺 4,096 ピクセルに収まるまで縮小する (要検証。端末の最大テクスチャサイズ)。拡大したときに元の解像度のタイルへ替えることは、リーダーのタイルの描画とともに入れる |
 | 縦長画像 | 縦横比が 1:3 より細長い画像（長辺が短辺の 3 倍を超える。横長も含む）は、表示倍率にかかわらずタイルにする。タイルを描けない呼び出し元は、タイルを求めずに読み、1 枚に縮小した画像を受け取る。リーダーは縦に連続でだけタイルを求め、1 枚に縮小した画像の上に重ねる（4.8 節の「縦に連続」） |
-| タイル | 1 枚を出力の 1024 × 1024 ピクセルとする (要検証)。縮小率は、タイルの解像度が画面の解像度以上、その 2 倍未満になる 2 の累乗とする。表示範囲にかかるタイルと、表示範囲を上下左右に 1 画面分ずつ広げた範囲にかかるタイルを持つ。持つ数は、予算の 4 分の 1 に入る枚数（1 枚 4 MB）までとし、周囲のタイルは近い順に選ぶ。表示範囲のタイルは、この数を超えても持つ。読んだタイルは最近使った順にこの数まで残す |
+| タイル | 1 枚を出力の 1024 × 1024 ピクセルとする (要検証)。縮小率は、タイルの解像度が画面の解像度以上、その 2 倍未満になる 2 の累乗とする。表示範囲にかかるタイルと、表示範囲を上下左右に 1 画面分ずつ広げた範囲にかかるタイルを持つ。持つ数は、予算の 4 分の 1 に入る枚数（1 枚 4 MB）までとし、周囲のタイルは近い順に選ぶ。表示範囲のタイルは、この数を超えても持つ。読んだタイルは最近使った順にこの数まで残す。シャープ（4.8 節の「画像補正」）を掛けたタイルと掛けていないタイルは別に持ち、合わせてこの数に入れる |
 | 予算不足 | 1 枚が予算の半分を超えるときは、失敗にせず縮小率を上げて読む。デコーダの縮小が間引きになる範囲や、出力が表示に必要な大きさを下回る範囲まで上げてもよい |
 | 時間切れ | 1 回のデコードが 10 秒を超えたら `Failed(Timeout, retryable = true)` を返す。そのときまだ並列数の枠を待っているデコードは取り消し、始めない。デコード中のスレッドは止められないので、デコードの並列数の枠を持ったまま終わるまで動かし、結果を捨てる。ヘッダを読む前なら、ヘッダの段階の取り消しの確認で止まる |
 
@@ -1209,6 +1209,7 @@ M1 には項目を選ぶ設定画面がないので、パネルには M1 で動�
 - **全体の設定に戻す** は、4 つの値を全体の設定の値にする。
 - シャープは、縮小した画像の各画素を、上下左右の 4 画素との差の 0.2 倍ずつ強める（3×3 のラプラシアン。画像の端の外は端の画素とみなす）。切り替えると準備済みのビューを作り直す。ほかの 3 つは描画で掛けるので作り直さない。
 - シャープは 1 行ずつ掛け、画像のほかに持つ作業用のメモリを 4 行分に抑える。書き換えのできる画像にはその場で書き戻す。
+- 縦に連続のタイル（4.8 節の「縦に連続」）にも、タイルを読むときに 1 枚ずつ掛ける。タイルの端の外は、タイルの端の画素とみなす。そのため、タイルの境目の 1 画素の行と列は、1 枚の画像に掛けたときと少し違う。隣のタイルの画素まで読むには、3.7 節の縮小の組を崩さずにタイルを 1 出力画素ずつ広く読む必要があり、まだそこまではしない (要検証。境目が見えるか)。切り替えると、タイルを読むための入力は開いたまま、画面のタイルを読み直す。
 - 回転かシャープを変えたときは、前の値で準備に失敗したページも読み直す。メモリが足りずに失敗したページが、シャープを切ると表示できることがあるためである。ヘッダーを読めなかったページは、どちらにも関わらないので読み直さない。
 - グレースケールは、BT.709 の重み（R 0.2126、G 0.7152、B 0.0722）で明るさにする。白黒反転は、各色の値 v を 1 − v にする。どちらも透明度は変えない。
 - サムネイルとページバーのプレビューには補正を掛けない。
@@ -2286,7 +2287,7 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | Macrobenchmark（benchmark-macro-junit4、benchmark-traceprocessor）、UiAutomator | `:benchmark` の計測。benchmark-traceprocessor は、トレースを SQL で読む独自の計測（`TurnMetric`）のために直接使う | Apache-2.0。benchmark-traceprocessor は Wire の実行時ライブラリと Okio（どちらも Apache-2.0）を伴う | 計測時だけ。`:benchmark` の APK に入り、アプリの配布物に入らない |
 | Baseline Profile の Gradle プラグイン `androidx.baselineprofile` 1.5.0 | `:benchmark` の生成と `:app` への取り込み（8.6 節） | Apache-2.0。androidx.benchmark の benchmark-baseline-profile-gradle-plugin、benchmark-gradle-plugin など（Apache-2.0）、com.google.testing.platform の core-proto（Apache-2.0）、protobuf-java（BSD-3-Clause）、kotlin-stdlib（Apache-2.0）を伴う。1.5.0 のプラグインマーカーと各 POM で確かめた | ビルド時だけ。Gradle のプラグインの classpath に入り、アプリの配布物に入らない |
 | profileinstaller 1.4.1 | 初回起動のときに、APK の `baseline.prof` を ART に渡す | Apache-2.0。annotation、concurrent-futures、startup-runtime、listenablefuture（どれも Apache-2.0）を伴う。1.4.1 の POM で確かめた | Maven。`:app` が直接依存する。Activity などがすでに 1.4.0 を推移的に持ち込んでいたので、直接の依存で 1.4.1 に上げる。新しい推移的依存はない（`releaseRuntimeClasspath` の `dependencyInsight` で確かめた）。release の APK に入る |
-| Robolectric 4.17 | `:core:data` の DB の JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
+| Robolectric 4.17 | `:core:data` の DB、`:core:image` のタイル、`:feature:reader` の画面と状態の JVM 上の試験 | MIT。icu4j（Unicode-3.0）、bcprov（Bouncy Castle License。MIT と同じ条項）、asm（BSD-3-Clause）、guava、conscrypt、sqlite4java、snakeyaml、test-parameter-injector、javax.inject、AndroidX の concurrent-futures と espresso-idling-resource（Apache-2.0）、javax.annotation-api（CDDL-1.1 と GPL-2.0 with Classpath-exception の二重ライセンスのうち CDDL-1.1 を選ぶ）を伴う。試験の実行時に AOSP の android-all（Apache-2.0）を取得する。4.17 の推移的依存の POM で確かめた | 試験時だけ。配布物に入らない |
 | XZ for Java 1.12（`org.tukaani:xz`） | `tools/corpus` で 7z と tar のコーパスを LZMA、LZMA2、x86 の分岐フィルタ、xz で圧縮する | 0BSD。推移的な依存はない（1.12 の POM で確かめた） | コーパスの生成時だけ。配布物に入らない |
 | Apache Commons Compress 1.28.0 | `tools/corpus` で BZip2 に圧縮する。JVM の試験で、コーパスの 7z と tar を独立に読んで確かめる | Apache-2.0。commons-codec、commons-io、commons-lang3（どれも Apache-2.0）を伴う。zstd-jni、brotli の dec、XZ for Java、asm は任意の依存で、XZ for Java だけを上の行のとおり直接使う（1.28.0 の POM で確かめた） | コーパスの生成時と試験時だけ。配布物に入らない |
 

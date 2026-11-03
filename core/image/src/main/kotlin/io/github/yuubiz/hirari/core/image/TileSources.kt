@@ -32,32 +32,39 @@ interface TileSource : Closeable {
 
     /**
      * The bitmap of [key], of the size of its [tileRect] at its sample size, or smaller when memory ran out on
-     * the first read (docs/spec.md section 6.1).
+     * the first read (docs/spec.md section 6.1). With [sharpen], シャープ is on it, its edges read as the edges of
+     * an image (docs/spec.md section 4.8).
      */
-    suspend fun tile(key: TileKey): PageResult<Bitmap>
+    suspend fun tile(key: TileKey, sharpen: Boolean = false): PageResult<Bitmap>
 }
+
+/** A tile as the cache holds it: sharpened tiles apart from plain ones. */
+private data class Held(val key: TileKey, val sharpen: Boolean)
 
 /**
  * What both tile sources share: the plan, the bound on tiles held, and the cache. The cache keeps the tiles most
- * recently asked for, up to [maxTiles], which is also what a plan asks for at most, so a viewport's tiles stay
- * while the screen keeps asking for them.
+ * recently asked for, up to [maxTiles] plain and sharpened together, which is also what a plan asks for at most,
+ * so a viewport's tiles stay while the screen keeps asking for them.
  */
 internal abstract class CachedTiles(override val size: PixelSize, private val decoding: ImageDecoding) : TileSource {
     private val maxTiles = tileLimit(decoding.budgetBytes)
-    private val cache = object : LinkedHashMap<TileKey, Bitmap>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<TileKey, Bitmap>) = size > maxTiles
+    private val cache = object : LinkedHashMap<Held, Bitmap>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Held, Bitmap>) = size > maxTiles
     }
     private val scope = CoroutineScope(SupervisorJob())
 
     override fun plan(viewport: PixelRect, scale: Double): TilePlan = planTiles(size, viewport, scale, maxTiles)
 
-    override suspend fun tile(key: TileKey): PageResult<Bitmap> {
-        synchronized(cache) { cache[key] }?.let { return PageResult.Ready(it) }
+    override suspend fun tile(key: TileKey, sharpen: Boolean): PageResult<Bitmap> {
+        val held = Held(key, sharpen)
+        synchronized(cache) { cache[held] }?.let { return PageResult.Ready(it) }
         val rect = tileRect(key, size)
         if (rect.isEmpty) return corrupt
         val result = try {
             decodeWithTimeout(scope, decoding.dispatcher) { _ ->
-                retryingOnce { reduction -> decodeTile(rect, key.sample, reduction)?.let { PageResult.Ready(it) } ?: corrupt }
+                retryingOnce { reduction ->
+                    decodeTile(rect, key.sample, reduction)?.let { PageResult.Ready(if (sharpen) it.sharpenedTile() else it) } ?: corrupt
+                }
             }
         } catch (_: CancellationException) {
             currentCoroutineContext().ensureActive()
@@ -67,8 +74,16 @@ internal abstract class CachedTiles(override val size: PixelSize, private val de
         } catch (_: Exception) {
             corrupt
         }
-        if (result is PageResult.Ready) synchronized(cache) { cache[key] = result.image }
+        if (result is PageResult.Ready) synchronized(cache) { cache[held] = result.image }
         return result
+    }
+
+    /** [sharpened], with this tile recycled when that made another or ran out of memory. */
+    private fun Bitmap.sharpenedTile(): Bitmap = try {
+        sharpened(this).also { if (it !== this) recycle() }
+    } catch (e: Throwable) {
+        recycle()
+        throw e
     }
 
     /**

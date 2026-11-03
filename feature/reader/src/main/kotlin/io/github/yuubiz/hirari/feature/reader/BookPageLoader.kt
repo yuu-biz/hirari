@@ -9,6 +9,7 @@ import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.image.RawPage
 import io.github.yuubiz.hirari.core.image.RawResult
 import io.github.yuubiz.hirari.core.image.scanMargins
+import io.github.yuubiz.hirari.core.image.sharpened
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -69,7 +70,7 @@ class BookPageLoader(private val book: OpenBook, private val dispatcher: Corouti
             bitmap = bitmap.replacedBy { rotated(it, steps.rotation) }
             val margins = if (readMargins) scanMargins(bitmap) else null
             bitmap = bitmap.replacedBy { cropped(it, steps.part) }
-            if (steps.sharpen) bitmap = bitmap.replacedBy(::sharpenedBitmap)
+            if (steps.sharpen) bitmap = bitmap.replacedBy(::sharpened)
             val hardware = bitmap.copy(Bitmap.Config.HARDWARE, false)
             if (hardware == null) {
                 PageResult.Ready(MadePage(bitmap, margins))
@@ -118,28 +119,6 @@ private fun cropped(bitmap: Bitmap, part: PagePart): Bitmap {
     if (part == PagePart.Whole) return bitmap
     val rect = part.pixelsOf(PixelSize(bitmap.width, bitmap.height))
     return Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width, rect.height)
-}
-
-/**
- * シャープ a row at a time, into this bitmap when it is mutable, so the work beside the bitmaps is four rows. A
- * bitmap already on the GPU has no pixels to read here, so it stays as it is.
- */
-private fun sharpenedBitmap(bitmap: Bitmap): Bitmap {
-    if (bitmap.config == Bitmap.Config.HARDWARE) return bitmap
-    val width = bitmap.width
-    val out = if (bitmap.isMutable) bitmap else Bitmap.createBitmap(width, bitmap.height, Bitmap.Config.ARGB_8888)
-    try {
-        sharpenRows(
-            width,
-            bitmap.height,
-            read = { y, row -> bitmap.getPixels(row, 0, width, 0, y, width, 1) },
-            write = { y, row -> out.setPixels(row, 0, width, 0, y, width, 1) },
-        )
-    } catch (e: Throwable) {
-        if (out !== bitmap) out.recycle()
-        throw e
-    }
-    return out
 }
 
 /**

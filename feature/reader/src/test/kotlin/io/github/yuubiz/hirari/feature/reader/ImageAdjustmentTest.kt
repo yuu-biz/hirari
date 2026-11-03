@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.image.sharpenRows
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.KeyCodes
 import io.github.yuubiz.hirari.core.model.ReaderCommand

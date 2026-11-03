@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.image.TilePlan
 import io.github.yuubiz.hirari.core.image.TileSource
 import io.github.yuubiz.hirari.core.image.planTiles
 import io.github.yuubiz.hirari.core.model.FailureReason
+import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.PageResult
@@ -23,6 +24,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 private val STRIP = ReaderConfig(layout = LayoutSettings(LayoutMode.Vertical, ReadingDirection.RightToLeft, coverAlone = false))
@@ -32,15 +34,17 @@ private val LONG = PageShape.Known(800, 6000)
 
 private class FakeTiles(override val size: PixelSize) : TileSource {
     val asked = mutableListOf<TileKey>()
+    val sharpened = mutableListOf<TileKey>()
     var closed = false
     var failing = false
 
     override fun plan(viewport: PixelRect, scale: Double): TilePlan = planTiles(size, viewport, scale, maxTiles = 6)
 
-    override suspend fun tile(key: TileKey): PageResult<Bitmap> {
-        asked += key
+    /** A sharpened tile is 5 wide, so a test can tell it from a plain one. */
+    override suspend fun tile(key: TileKey, sharpen: Boolean): PageResult<Bitmap> {
+        if (sharpen) sharpened += key else asked += key
         if (failing) return PageResult.Failed(FailureReason.ConnectionLost, retryable = true)
-        return PageResult.Ready(Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888))
+        return PageResult.Ready(Bitmap.createBitmap(if (sharpen) 5 else 4, 4, Bitmap.Config.ARGB_8888))
     }
 
     override fun close() {
@@ -67,6 +71,30 @@ class StripTilesTest {
         assertEquals(PixelRect(0, 740, 800, 2163), window.shown)
         assertEquals(emptyMap(), state.reduce(ReaderEvent.ConfigChanged(state.config.copy(rotation = Rotation.Half))).tileWindows())
         assertEquals(emptyMap(), readerOf(listOf(LONG), ReaderConfig(), PORTRAIT).tileWindows())
+        assertFalse(window.sharpen)
+        val sharp = state.reduce(ReaderEvent.ConfigChanged(state.config.copy(adjust = ImageAdjust(sharpen = true))))
+        assertTrue(sharp.tileWindows().getValue(0).sharpen)
+    }
+
+    @Test
+    fun turningSharpenOnReadsTheTilesAgainSharpenedFromTheSameSource() = runTest {
+        val sources = HashMap<Int, FakeTiles>()
+        val tiles = tiles(sources)
+        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35)
+        tiles.update(mapOf(0 to window))
+        advanceUntilIdle()
+        val source = sources.getValue(0)
+        val keys = source.plan(window.shown, window.scale).all.toSet()
+        assertEquals(keys, source.asked.toSet())
+        assertEquals(emptyList(), source.sharpened)
+        tiles.update(mapOf(0 to window.copy(sharpen = true)))
+        advanceUntilIdle()
+        assertEquals(keys, source.sharpened.toSet())
+        assertFalse(source.closed)
+        assertEquals(List(keys.size) { 5 }, tiles.drawn(0).map { it.bitmap.width })
+        tiles.update(mapOf(0 to window))
+        advanceUntilIdle()
+        assertEquals(List(keys.size) { 4 }, tiles.drawn(0).map { it.bitmap.width })
     }
 
     @Test

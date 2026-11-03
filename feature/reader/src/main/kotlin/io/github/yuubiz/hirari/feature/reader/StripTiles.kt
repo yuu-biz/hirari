@@ -17,8 +17,11 @@ import kotlinx.coroutines.launch
 import kotlin.math.floor
 import kotlin.math.ceil
 
-/** The part of a page's image on screen, in image pixels, and how many screen pixels show one image pixel. */
-data class TileWindow(val shown: PixelRect, val scale: Double)
+/**
+ * The part of a page's image on screen, in image pixels, how many screen pixels show one image pixel, and whether
+ * シャープ is on the tiles.
+ */
+data class TileWindow(val shown: PixelRect, val scale: Double, val sharpen: Boolean = false)
 
 /**
  * The pages of 縦に連続 on screen that show as tiles (docs/spec.md sections 3.7 and 4.8): those narrower than 1:3, as
@@ -37,7 +40,7 @@ fun ReaderState.tileWindows(): Map<Int, TileWindow> {
             ceil((viewport.width - rect.left) / scale).toInt().coerceIn(0, shape.width),
             ceil((viewport.height - rect.top) / scale).toInt().coerceIn(0, shape.height),
         )
-        if (shown.isEmpty) null else page to TileWindow(shown, scale)
+        if (shown.isEmpty) null else page to TileWindow(shown, scale, config.adjust.sharpen)
     }.toMap()
 }
 
@@ -73,6 +76,7 @@ internal class StripTiles(
         var opening: Job? = null
         var failed = false
         var plan: TilePlan? = null
+        var sharpen = false
         val tiles = HashMap<TileKey, Bitmap>()
         val reading = HashMap<TileKey, Job>()
     }
@@ -146,6 +150,13 @@ internal class StripTiles(
     private fun plan(entry: Held, source: TileSource, window: TileWindow) {
         val plan = source.plan(window.shown, window.scale)
         entry.plan = plan
+        if (entry.sharpen != window.sharpen) {
+            entry.sharpen = window.sharpen
+            entry.tiles.clear()
+            entry.reading.values.forEach { it.cancel() }
+            entry.reading.clear()
+        }
+        val sharpen = entry.sharpen
         val wanted = plan.all.toSet()
         entry.tiles.keys.retainAll(wanted)
         for ((key, job) in entry.reading.entries.toList()) {
@@ -157,9 +168,9 @@ internal class StripTiles(
         for (key in plan.all) {
             if (key in entry.tiles || key in entry.reading) continue
             entry.reading[key] = scope.launch {
-                val result = source.tile(key)
+                val result = source.tile(key, sharpen)
                 entry.reading.remove(key)
-                if (result is PageResult.Ready && entry.plan?.all?.contains(key) == true) {
+                if (result is PageResult.Ready && entry.sharpen == sharpen && entry.plan?.all?.contains(key) == true) {
                     entry.tiles[key] = result.image
                     changed()
                 }

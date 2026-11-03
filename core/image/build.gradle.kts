@@ -21,6 +21,8 @@ android {
             // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
             // without it.
             test.systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
+            // Robolectric reads FileDescriptor internals through jdk.internal.access.
+            test.jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
         }
     }
 }
@@ -32,6 +34,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.junit)
 }
