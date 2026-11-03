@@ -578,17 +578,19 @@ class ReaderViewModel(
 
     /**
      * 既定にする (docs/spec.md section 2.9): the book's values become the global settings, and once they are stored,
-     * the book's overrides of them go, so the book follows the global settings again. [done] hears whether it was stored.
+     * the book's overrides of those values go, so the book follows the global settings again. A value the reader
+     * changed meanwhile keeps its override. Both steps run on the process's scope, so leaving the screen does not
+     * split them. [done] hears whether it was stored.
      */
     fun makeDefault(done: (Boolean) -> Unit) {
         val book = opened ?: return done(false)
         val config = state?.config ?: return done(false)
-        val write = book.services.appScope.async { quietly { book.services.storage.settings.update { it.adopting(config) } } }
-        viewModelScope.launch {
-            val stored = write.await()
-            if (stored) book.overrides.update { it.adopted() }
-            done(stored)
+        val write = book.services.appScope.async {
+            quietly { book.services.storage.settings.update { it.adopting(config) } }.also { stored ->
+                if (stored) book.overrides.update { it.adopted(config) }
+            }
         }
+        viewModelScope.launch { done(write.await()) }
     }
 
     /** 画面の明るさ of the 本ごとの設定 sheet, which is the global `readerBrightness`; the reader follows it once stored. */

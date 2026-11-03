@@ -30,8 +30,21 @@ fun GlobalSettings.adopting(config: ReaderConfig): GlobalSettings = copy(
     adjustNegative = config.adjust.negative,
 )
 
-/** The overrides once 既定にする moved their values into the global settings: those fields follow the global settings again. */
-fun BookOverrides.adopted(): BookOverrides = copy(direction = null, layoutMode = null, coverAlone = null, scaleMode = null, trim = null, adjust = null)
+/**
+ * The overrides once 既定にする moved the values of [taken] into the global settings. A field whose override still
+ * holds the value moved follows the global settings again. A field the reader changed since [taken] was read keeps
+ * its override, since the global settings do not hold that value.
+ */
+fun BookOverrides.adopted(taken: ReaderConfig): BookOverrides = copy(
+    direction = direction.unlessMoved(taken.direction),
+    layoutMode = layoutMode.unlessMoved(taken.layout.mode),
+    coverAlone = coverAlone.unlessMoved(taken.layout.coverAlone),
+    scaleMode = scaleMode.unlessMoved(taken.scaleMode),
+    trim = trim.unlessMoved(taken.trim),
+    adjust = adjust.unlessMoved(taken.adjust),
+)
+
+private fun <T : Any> T?.unlessMoved(moved: T): T? = takeUnless { it == moved }
 
 /** 並びを逆に set to [on]. Off is stored as no override, since the natural order is what a book has without one. */
 fun BookOverrides.reversedTo(on: Boolean): BookOverrides = copy(reverseOrder = if (on) true else null)

@@ -20,6 +20,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.nio.charset.Charset
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -157,5 +159,24 @@ class OverridesWriterTest {
         books.gate!!.complete(Unit)
         advanceUntilIdle()
         assertEquals(BookOverrides(reverseOrder = false), books.stored[ID])
+    }
+
+    @Test
+    fun changesOfDifferentFieldsMadeAtTheSameTimeFromTwoThreadsAreBothKept() = runTest {
+        val store = BookOverridesStore(SlowBooks(), CoroutineScope(StandardTestDispatcher(testScheduler)))
+        val writer = store.open(ID)
+        val inside = CountDownLatch(1)
+        val slow = thread {
+            writer.update {
+                inside.countDown()
+                Thread.sleep(200)
+                it.copy(rotation = Rotation.Quarter)
+            }
+        }
+        inside.await()
+        val quick = thread { writer.update { it.copy(adjust = ImageAdjust(sharpen = true)) } }
+        slow.join()
+        quick.join()
+        assertEquals(BookOverrides(rotation = Rotation.Quarter, adjust = ImageAdjust(sharpen = true)), writer.current)
     }
 }

@@ -60,9 +60,16 @@ class BookSettingsTest {
         assertEquals(ScaleMode.FitWidth, adopted.scaleMode)
         assertEquals(TrimStrength.Strong, adopted.trimStrength)
         assertEquals(ImageAdjust(level = 2, sharpen = true), adopted.adjust)
-        val left = overrides.adopted()
+        val left = overrides.adopted(book)
         assertEquals(BookOverrides(rotation = Rotation.Quarter, nameCharset = overrides.nameCharset), left)
         assertEquals(book, ReaderConfig.of(adopted, left))
+    }
+
+    @Test
+    fun makingTheDefaultLeavesAnOverrideChangedSinceTheValuesWereTaken() {
+        val laterScale = overrides.copy(scaleMode = ScaleMode.Original, adjust = null, trim = TrimStrength.Weak)
+        val left = laterScale.adopted(book)
+        assertEquals(BookOverrides(scaleMode = ScaleMode.Original, trim = TrimStrength.Weak, rotation = Rotation.Quarter, nameCharset = overrides.nameCharset), left)
     }
 
     @Test

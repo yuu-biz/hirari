@@ -42,8 +42,10 @@ class BookOverridesStore(private val books: BookRepository, private val scope: C
 
         /**
          * [transform] sets the fields the reader changed and keeps the others. Only the fields it changes are
-         * written, onto the stored row.
+         * written, onto the stored row. The screen and the process's scope both change a book's overrides, so one
+         * change is applied at a time and none is lost to another.
          */
+        @Synchronized
         fun update(transform: (BookOverrides) -> BookOverrides) {
             val next = transform(current)
             val patch = OverridesPatch.between(current, next) ?: return
