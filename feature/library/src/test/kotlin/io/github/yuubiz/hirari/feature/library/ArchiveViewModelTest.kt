@@ -164,7 +164,7 @@ class ArchiveViewModelTest {
         val screen = ViewModelStore()
         val list = screen.own { ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip"), UnconfinedTestDispatcher(testScheduler)) }
         watch(list.state)
-        assertEquals(ArchiveUi.Loading, list.state.value.content)
+        assertEquals(ArchiveUi.Loading, list.state.value)
 
         screen.clear()
         assertTrue(contents.closed)

@@ -64,7 +64,7 @@ class SmbOpenFixtureTest {
         val smb = SmbjPlaces(SmbShares({ credentials.smbLogin(it.user, it.credential) }, scope), credentials, { true }, scope)
         fixture.locations.rows.value = listOf(place)
         with(fixture) {
-            LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, coverIndex, covers, clock = { T0 })
+            LibraryServices(locations, books, history, bookmarks, books.progressRepository, settings, grants, lister, smb, archives, launch, coverIndex, covers, appScope = scope, clock = { T0 })
         }
     }
 
