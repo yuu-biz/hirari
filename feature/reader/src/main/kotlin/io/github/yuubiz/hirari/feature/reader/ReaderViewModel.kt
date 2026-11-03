@@ -258,7 +258,10 @@ class ReaderViewModel(
     private val trimCallbacks = object : ComponentCallbacks2 {
         override fun onTrimMemory(level: Int) {
             @Suppress("DEPRECATION")
-            if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) opened?.prefetcher?.trim()
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+                opened?.prefetcher?.trim()
+                stripTiles.clear()
+            }
         }
 
         override fun onConfigurationChanged(newConfig: Configuration) = Unit
