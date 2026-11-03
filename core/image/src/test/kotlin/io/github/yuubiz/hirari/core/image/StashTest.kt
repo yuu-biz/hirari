@@ -30,6 +30,7 @@ class StashTest {
         val reads = AtomicInteger()
         var failing = false
         var outOfMemory = false
+        var lost = false
         var gate: CompletableDeferred<Unit>? = null
 
         override suspend fun read(page: PageEntry): PageResult<ByteArray> {
@@ -37,6 +38,7 @@ class StashTest {
             gate?.await()
             if (failing) throw IOException("gone")
             if (outOfMemory) throw OutOfMemoryError("entry")
+            if (lost) return connectionLost
             val i = page.entryIndex - 10
             return PageResult.Ready(ByteArray(i + 1) { i.toByte() })
         }
@@ -136,6 +138,15 @@ class StashTest {
         assertEquals(Fill.OutOfMemory, opened.stash!!.fill(0))
         assertEquals(readError, opened.raw(0))
         assertFalse(opened.stash!!.holds(0))
+    }
+
+    @Test
+    fun aPrefetchOnABrokenConnectionSaysSo() = runBlocking {
+        val server = Server().apply { lost = true }
+        val opened = book(server)
+        assertEquals(Fill.ConnectionLost, opened.stash!!.fill(0))
+        server.lost = false
+        assertEquals(Fill.OnDisk, opened.stash!!.fill(0))
     }
 
     @Test

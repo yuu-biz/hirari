@@ -23,7 +23,8 @@ fun diskOrder(shown: IntRange, pageCount: Int, travel: Turn, depth: Int = DISK_P
 /**
  * The SMB prefetch layer of one book (docs/spec.md section 5.3): reads the pages of [diskOrder] onto disk through
  * [stash], one at a time, so a page the view wants waits behind one entry at most. Moving to other pages starts over
- * from there. A page that runs out of memory stops the layer until the view moves. Main thread only.
+ * from there. A page that runs out of memory or loses the connection stops the layer until the view moves, or until
+ * [restart] once the connection is back. Main thread only.
  */
 class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageStash, private val pageCount: Int) {
     private var around: Pair<IntRange, Turn>? = null
@@ -34,17 +35,30 @@ class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageSta
         if (shown == null) return stop()
         if (around == shown to travel) return
         around = shown to travel
-        running?.cancel()
-        running = scope.launch {
-            for (page in diskOrder(shown, pageCount, travel)) {
-                if (stash.fill(page) == Fill.OutOfMemory) break
-            }
-        }
+        read(shown, travel)
+    }
+
+    /** Starts over from the place of the last [update], as after the connection came back (docs/spec.md section 6.5). */
+    fun restart() {
+        val (shown, travel) = around ?: return
+        read(shown, travel)
     }
 
     /** Stops reading ahead. What is on disk stays, and the next [update] starts over. */
     fun stop() {
         around = null
         running?.cancel()
+    }
+
+    private fun read(shown: IntRange, travel: Turn) {
+        running?.cancel()
+        running = scope.launch {
+            for (page in diskOrder(shown, pageCount, travel)) {
+                when (stash.fill(page)) {
+                    Fill.OnDisk, Fill.NotKept -> Unit
+                    Fill.OutOfMemory, Fill.ConnectionLost -> break
+                }
+            }
+        }
     }
 }

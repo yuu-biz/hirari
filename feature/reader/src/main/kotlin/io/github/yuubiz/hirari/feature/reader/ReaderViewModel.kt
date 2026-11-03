@@ -482,7 +482,10 @@ class ReaderViewModel(
         }
         readForLoupe(book.loader, after.loupeSource())
         prefetchToDisk()
-        if (reconnected(before?.connection, after.connection)) book.prefetcher.retryLost()
+        if (reconnected(before?.connection, after.connection)) {
+            book.prefetcher.retryLost()
+            book.disk?.restart()
+        }
         val hit = after.edgeHit
         if (hit != null && hit != before?.edgeHit) {
             viewModelScope.launch { bookEnd = bookEndEffect(hit.edge, after.config.atBookEnd, ::sibling) }

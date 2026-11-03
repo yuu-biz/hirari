@@ -113,4 +113,28 @@ class DiskPrefetchTest {
         letThrough(stash, 1)
         assertEquals(listOf(99), stash.filled)
     }
+
+    @Test
+    fun aBrokenConnectionStopsTheLayerAndTheReconnectStartsItOverFromTheSamePlace() = runTest {
+        val stash = Stash().apply { outcomes[12] = Fill.ConnectionLost }
+        val prefetch = DiskPrefetch(backgroundScope, stash, pageCount = 200)
+        prefetch.restart()
+        runCurrent()
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        letThrough(stash, 2)
+        assertEquals(listOf(11, 12), stash.filled)
+
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        letThrough(stash, 1)
+        assertEquals(listOf(11, 12), stash.filled)
+
+        stash.outcomes.clear()
+        stash.next = CompletableDeferred()
+        prefetch.restart()
+        runCurrent()
+        letThrough(stash, 3)
+        assertEquals(listOf(11, 12, 11, 12, 13), stash.filled)
+    }
 }

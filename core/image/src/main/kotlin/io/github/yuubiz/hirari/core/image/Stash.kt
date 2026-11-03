@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
@@ -34,6 +35,9 @@ enum class Fill {
 
     /** Reading the page ran out of memory (docs/spec.md section 6.1). */
     OutOfMemory,
+
+    /** The connection to the server broke while reading the page (docs/spec.md section 6.5). */
+    ConnectionLost,
 }
 
 /**
@@ -55,7 +59,12 @@ internal class StashedPages(private val server: PageBytes, private val stash: Di
     suspend fun fill(page: PageEntry): Fill {
         if (holds(page)) return Fill.OnDisk
         return try {
-            if (fetch(page).kept) Fill.OnDisk else Fill.NotKept
+            val fetched = fetch(page)
+            when {
+                fetched.kept -> Fill.OnDisk
+                (fetched.result as? PageResult.Failed)?.reason == FailureReason.ConnectionLost -> Fill.ConnectionLost
+                else -> Fill.NotKept
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
