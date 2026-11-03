@@ -2385,12 +2385,13 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 
 - 確認した。
   - 本を読み終えて一覧に戻ると、再起動せずに読書状態の印が変わる。`FolderViewModelTest`（JVM）の `a book read in the reader changes its mark on the list without listing again` が通った。
-  - 書き出し、アプリのデータの消去、読み込みの順に行うと、設定が戻る。`SettingsTransferTest`（JVM。新しく入れた状態への読み込み）が通った。選んだときは読書位置も戻る。システムの「データを消去」を使う手順は、実機で 1 度行う残りがある。
+  - 書き出し、アプリのデータの消去、読み込みの順に行うと、設定が戻る。`SettingsTransferTest`（JVM。新しく入れた状態への読み込み）が通った。選んだときは読書位置も戻る。
   - 書き出したファイルにパスワードとユーザー名が含まれない。`SettingsTransferTest` の `an export holds neither the password nor the user name of a server` が通った。
   - 1000 件のフォルダの並べ替え、印付け、絞り込みの CPU の側は、`ListingTimingTest`（JVM）が P7 の予算の内で通った。JVM の値は P7 の判定には使えない。
 - 実機が要る。
   - 1000 冊のフォルダで P7 と P8 を満たすこと。
   - ファイル管理アプリから cbz を選ぶと本アプリで開けること。受け取る側の処理は `IncomingTest`（JVM）で確かめた。
+  - 書き出し、システムの「データを消去」、読み込みの順を、実機で 1 度行うこと（JVM の試験は、新しく入れた状態への読み込みで代える）。
 - できていない。画像リーダーのメニューで、しおりの追加としおり一覧が使えない（`MenuItem.AddBookmark`、`MenuItem.Bookmarks`、`ReaderCommand.AddBookmark`、`ReaderCommand.Bookmarks` が「この操作はまだ使えません」を出す）。しおりタブとデータは作ってあるが、リーダーからしおりを作れない。G2 の「しおり追加」もこれに当たる。
 
 #### M3
