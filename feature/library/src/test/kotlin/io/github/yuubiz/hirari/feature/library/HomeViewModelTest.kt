@@ -100,4 +100,31 @@ class HomeViewModelTest {
         assertEquals(HomeTarget.Text(TextAddress.InLocation(place.id, "作品/後書き.txt")), home.request(inPlace))
         assertEquals(HomeTarget.Text(TextAddress.Document(UriString("content://mail/後書き.txt"))), home.request(handed))
     }
+
+    @Test
+    fun `the covers of the shelf and the history name the book, its chosen page and its direction`() = runTest {
+        val first = book(place.id, "作品/1巻.zip")
+        val text = book(place.id, "作品/後書き.txt").copy(format = BookFormat.Text(charset = null))
+        val lost = book(LocationId(9), "x.zip")
+        val handed = book(place.id, "y.zip").copy(source = BookSource.External(UriString("content://mail/y.zip")))
+        fixture.locations.rows.value = listOf(place)
+        fixture.books.put(first, text, lost, handed)
+        fixture.books.chosenPages.value = mapOf(first.id to 5)
+        fixture.books.put(reading(first, viewStart = 4))
+        fixture.coverIndex.directions.value = mapOf(first.id to io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight)
+        fixture.history.entries.value = listOf(first, text, lost, handed).mapIndexed { i, b -> HistoryEntry(b.id, T0.plusSeconds(i.toLong())) }
+        val home = viewModel()
+        watch(home.state)
+
+        val shelf = (home.state.value.shelf as Loadable.Ready).value
+        val spec = checkNotNull(shelf.continueReading.single().cover)
+        assertEquals(5, spec.coverEntry)
+        assertEquals(io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight, spec.direction)
+        assertEquals(CoverOrigin.Archive(place, "作品/1巻.zip", null), spec.origin)
+        assertEquals(320, shelf.covers.sizePx)
+
+        val specs = (home.state.value.history as Loadable.Ready).value.specs
+        assertEquals(setOf(first.id, handed.id), specs.keys)
+        assertEquals(CoverOrigin.Document(UriString("content://mail/y.zip")), specs.getValue(handed.id).origin)
+    }
 }

@@ -51,7 +51,7 @@ internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
             item(key = "continue") {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(shelf.continueReading, key = { it.book.book.id.value }) { item ->
-                        ContinueCard(item) { home.request(item.book.book)?.let(actions::open) }
+                        ContinueCard(item, shelf.covers) { home.request(item.book.book)?.let(actions::open) }
                     }
                 }
             }
@@ -122,10 +122,10 @@ private fun EmptyPlaces() {
 }
 
 @Composable
-private fun ContinueCard(item: ContinueItem, onOpen: () -> Unit) {
+private fun ContinueCard(item: ContinueItem, covers: CoverLayout, onOpen: () -> Unit) {
     Column(Modifier.width(96.dp).clickable(onClick = onOpen)) {
         Box(Modifier.size(96.dp, 136.dp)) {
-            CoverSlot(item.book.book.kindLabel(), Modifier.fillMaxSize())
+            CoverBox(item.cover?.let { CoverRef(it, covers.sizePx) }, covers.covers, item.book.book.kindLabel(), Modifier.fillMaxSize())
             LinearProgressIndicator(
                 progress = { item.percent / 100f },
                 modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.BottomCenter),

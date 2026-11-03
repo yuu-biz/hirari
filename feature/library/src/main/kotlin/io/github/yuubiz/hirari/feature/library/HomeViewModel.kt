@@ -15,6 +15,7 @@ import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
+import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.UriString
@@ -44,15 +45,27 @@ sealed interface Loadable<out T> {
 /** A folder of a place, as the file list opens it. Without [documentId] a SAF list looks the path up. */
 data class FolderKey(val location: LocationId, val path: String, val documentId: String? = null)
 
-data class ContinueItem(val book: LibraryBook, val percent: Int)
+data class ContinueItem(val book: LibraryBook, val percent: Int, val cover: CoverSpec.Book? = null)
 
 /** A pinned folder with its place, or `null` when the place is gone. */
 data class PinnedItem(val pin: PinnedFolder, val place: LibraryLocation?)
 
 /** The 本棚 tab, top to bottom (docs/spec.md section 4.2). */
-data class Shelf(val continueReading: List<ContinueItem>, val pinned: List<PinnedItem>, val places: List<LibraryLocation>)
+data class Shelf(
+    val continueReading: List<ContinueItem>,
+    val pinned: List<PinnedItem>,
+    val places: List<LibraryLocation>,
+    val covers: CoverLayout,
+)
 
-data class HistoryTab(val sort: HistorySort, val items: List<HistoryItem>)
+/** [specs] has the cover of each book of [items] that has one, by its id. */
+data class HistoryTab(val sort: HistorySort, val items: List<HistoryItem>, val covers: CoverLayout, val specs: Map<BookId, CoverSpec.Book>)
+
+/** What the covers of the home tabs need besides the books (docs/spec.md section 4.4). */
+private class CoverEnv(val layout: CoverLayout, val directions: Map<BookId, ReadingDirection>, val default: ReadingDirection) {
+    fun spec(book: Book, coverEntry: Int?, place: LibraryLocation?): CoverSpec.Book? =
+        coverSpecOf(book, coverEntry, place, directions[book.id] ?: default)
+}
 
 data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 
@@ -84,19 +97,34 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUi())
 
+    private fun LibraryServices.coverEnv(): Flow<CoverEnv> =
+        combine(settings.settings.map { it.thumbSize }.distinctUntilChanged(), coverIndex.directions(), settings.settings.map { it.readingDirection }.distinctUntilChanged()) { size, directions, default ->
+            CoverEnv(CoverLayout(covers, covers.sizePx(size)), directions, default)
+        }
+
     private fun LibraryServices.shelf(): Flow<Loadable<Shelf>> =
-        combine(books.continueReading(CONTINUE_READING), locations.pinned, locations.locations) { reading, pins, places ->
+        combine(books.continueReading(CONTINUE_READING), locations.pinned, locations.locations, coverEnv()) { reading, pins, places, env ->
             val byId = places.associateBy { it.id }
             Shelf(
-                continueReading = reading.map { ContinueItem(it, it.progress?.percent() ?: 0) },
+                continueReading = reading.map { item ->
+                    val place = (item.book.source as? BookSource.InLocation)?.let { byId[it.location] }
+                    ContinueItem(item, item.progress?.percent() ?: 0, env.spec(item.book, item.coverEntry, place))
+                },
                 pinned = pins.map { PinnedItem(it, byId[it.location]) },
                 places = places,
+                covers = env.layout,
             )
         }.loadable()
 
     private fun LibraryServices.historyTab(): Flow<Loadable<HistoryTab>> =
         settings.settings.map { it.historySort }.distinctUntilChanged()
-            .flatMapLatest { sort -> history.observe(sort).map { HistoryTab(sort, it) } }
+            .flatMapLatest { sort ->
+                combine(history.observe(sort), coverEnv()) { items, env ->
+                    val specs = HashMap<BookId, CoverSpec.Book>()
+                    for (item in items) item.book?.let { env.spec(it, item.coverEntry, item.location) }?.let { specs[item.entry.book] = it }
+                    HistoryTab(sort, items, env.layout, specs)
+                }
+            }
             .loadable()
 
     private fun LibraryServices.bookmarksTab(): Flow<Loadable<BookmarksTab>> =

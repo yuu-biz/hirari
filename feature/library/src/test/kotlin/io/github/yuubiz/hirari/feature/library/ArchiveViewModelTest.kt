@@ -123,4 +123,54 @@ class ArchiveViewModelTest {
             .also { watch(it.state) }
         assertEquals(ArchiveUi.Failed(ArchiveFailure.Encrypted), list.state.value.content)
     }
+
+    private val at = java.time.Instant.parse("2026-02-03T04:05:06Z")
+
+    @Test
+    fun `the pages get the thumbnail of the archive with each page as its cover`() = runTest {
+        fixture.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", directory = false, size = 500, modified = at))
+        fixture.coverIndex.directions.value = mapOf(id to io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight)
+        val list = viewModel()
+        val covers = checkNotNull(list.shown().covers)
+
+        val refs = list.shown().pages.map { checkNotNull(covers.ref(it.page)) }
+        assertEquals(listOf(1, 0, 3), refs.map { (it.spec as CoverSpec.Book).coverEntry })
+        val spec = refs.first().spec as CoverSpec.Book
+        assertEquals(id, spec.id)
+        assertEquals(at, spec.modified)
+        assertEquals(500, spec.byteSize)
+        assertEquals(io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight, spec.direction)
+        assertEquals(CoverOrigin.Archive(place, "作品/book.zip", "doc:book"), spec.origin)
+        assertEquals(320, refs.first().sizePx)
+    }
+
+    @Test
+    fun `without the entry of the archive in its folder the pages keep their numbered squares`() = runTest {
+        assertEquals(null, viewModel().shown().covers)
+    }
+
+    @Test
+    fun `choosing a page as the cover of the folder saves it and remakes the folder`() = runTest {
+        fixture.coverBooks.folders[""] = listOf(FolderEntry("作品", "doc:作品", directory = true, size = null, modified = at))
+        fixture.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", directory = false, size = 500, modified = at))
+        val list = viewModel()
+        assertTrue(list.shown().inFolder)
+        val page = list.shown().pages[1].page
+
+        list.chooseFolderCover(page, choose = true)
+        assertEquals(
+            listOf(Triple<LocationId, String, io.github.yuubiz.hirari.core.data.FolderCover?>(place.id, "作品", io.github.yuubiz.hirari.core.data.FolderCover("作品/book.zip", page.entryIndex))),
+            fixture.locations.chosenCovers,
+        )
+        val folder = assertIs<io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject.Folder>(fixture.thumbnails.regenerated.first().subject)
+        assertEquals(page.entryIndex, folder.chosen?.coverEntry)
+        assertEquals(3, fixture.thumbnails.regenerated.size)
+
+        assertEquals(page.entryIndex, list.shown().folderCoverPage)
+
+        fixture.locations.chosenCovers.clear()
+        list.chooseFolderCover(page, choose = false)
+        assertEquals(null, fixture.locations.chosenCovers.single().third)
+        assertEquals(null, list.shown().folderCoverPage)
+    }
 }

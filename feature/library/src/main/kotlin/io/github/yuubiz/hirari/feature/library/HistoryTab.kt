@@ -47,7 +47,7 @@ internal fun HistoryTabContent(tab: HistoryTab, home: HomeViewModel, actions: Ho
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(tab.items, key = { it.entry.book.value }) { item ->
-                    HistoryRow(item, home, actions)
+                    HistoryRow(item, tab.covers, tab.specs[item.entry.book], home, actions)
                 }
             }
         }
@@ -69,7 +69,7 @@ internal fun HistoryTabContent(tab: HistoryTab, home: HomeViewModel, actions: Ho
 
 /** Swiping either way removes the entry (docs/spec.md section 4.6). */
 @Composable
-private fun HistoryRow(item: HistoryItem, home: HomeViewModel, actions: HomeActions) {
+private fun HistoryRow(item: HistoryItem, covers: CoverLayout, cover: CoverSpec.Book?, home: HomeViewModel, actions: HomeActions) {
     val swipe = rememberSwipeToDismissBoxState()
     var menu by remember { mutableStateOf(false) }
     SwipeToDismissBox(
@@ -79,7 +79,7 @@ private fun HistoryRow(item: HistoryItem, home: HomeViewModel, actions: HomeActi
     ) {
         Box {
             ListItem(
-                leadingContent = { CoverSlot(item.book?.kindLabel(), Modifier.size(40.dp, 56.dp)) },
+                leadingContent = { CoverBox(cover?.let { CoverRef(it, covers.sizePx) }, covers.covers, item.book?.kindLabel(), Modifier.size(40.dp, 56.dp)) },
                 headlineContent = {
                     Text(item.book?.title ?: stringResource(R.string.book_not_indexed), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },
