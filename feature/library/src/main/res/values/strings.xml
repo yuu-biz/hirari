@@ -113,6 +113,7 @@
     <string name="cover_range_whole">ページ全体</string>
     <string name="cover_range_drop">範囲をやめる</string>
     <string name="cover_range_retry">もう一度読む</string>
+    <string name="cover_range_save_failed">表紙を保存できませんでした。もう一度決定してください</string>
     <string name="cover_range_frame">表紙にする範囲の枠</string>
     <string name="cover_range_not_found">この本が見つかりません</string>
     <string name="cover_range_no_images">テキストの本には表紙の範囲を選べません</string>

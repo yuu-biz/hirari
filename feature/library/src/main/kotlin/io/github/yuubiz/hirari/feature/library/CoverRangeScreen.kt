@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +55,10 @@ import kotlin.math.roundToInt
 @Composable
 fun CoverRangeScreen(model: CoverRangeViewModel, onClose: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
+    val save by model.save.collectAsStateWithLifecycle()
+    LaunchedEffect(save) {
+        if (save == CoverSave.Saved) onClose()
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -73,14 +78,9 @@ fun CoverRangeScreen(model: CoverRangeViewModel, onClose: () -> Unit) {
                 }
                 is CoverRangeUi.Ready -> RangeEditor(
                     content,
-                    onChoose = {
-                        model.choose(it)
-                        onClose()
-                    },
-                    onDropRange = {
-                        model.dropRange()
-                        onClose()
-                    },
+                    save,
+                    onChoose = model::choose,
+                    onDropRange = model::dropRange,
                     onCancel = onClose,
                 )
             }
@@ -108,7 +108,8 @@ private val HandleLine = Color(0xFF202028)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RangeEditor(ready: CoverRangeUi.Ready, onChoose: (CropFrame) -> Unit, onDropRange: () -> Unit, onCancel: () -> Unit) {
+private fun RangeEditor(ready: CoverRangeUi.Ready, save: CoverSave, onChoose: (CropFrame) -> Unit, onDropRange: () -> Unit, onCancel: () -> Unit) {
+    val saving = save == CoverSave.Saving
     var frame by rememberSaveable(ready, stateSaver = FrameSaver) { mutableStateOf(ready.frame) }
     val image = remember(ready.page) { ready.page.asImageBitmap() }
     val density = LocalDensity.current
@@ -160,12 +161,15 @@ private fun RangeEditor(ready: CoverRangeUi.Ready, onChoose: (CropFrame) -> Unit
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(stringResource(R.string.cover_range_hint), color = Color(0xFFB0B0B8), style = MaterialTheme.typography.bodySmall)
+            if (save == CoverSave.Failed) {
+                Text(stringResource(R.string.cover_range_save_failed), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onCancel) { Text(stringResource(R.string.cover_range_cancel)) }
                 TextButton(onClick = { frame = ready.frame }) { Text(stringResource(R.string.cover_range_reset)) }
                 TextButton(onClick = { frame = CropFrame.Whole }) { Text(stringResource(R.string.cover_range_whole)) }
-                if (ready.ranged) TextButton(onClick = onDropRange) { Text(stringResource(R.string.cover_range_drop)) }
-                Button(onClick = { onChoose(frame) }) { Text(stringResource(R.string.cover_range_confirm)) }
+                if (ready.ranged) TextButton(onClick = onDropRange, enabled = !saving) { Text(stringResource(R.string.cover_range_drop)) }
+                Button(onClick = { onChoose(frame) }, enabled = !saving) { Text(stringResource(R.string.cover_range_confirm)) }
             }
         }
     }

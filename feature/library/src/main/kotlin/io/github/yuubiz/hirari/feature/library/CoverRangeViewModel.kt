@@ -12,6 +12,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -35,8 +36,8 @@ enum class CoverRangeFailure {
     Unavailable,
 }
 
-/** Where the choice of 決定 or 範囲をやめる is: not made, being stored, or not stored for a reason that may pass. */
-enum class CoverSave { Idle, Saving, Failed }
+/** Where the choice of 決定 or 範囲をやめる is: not made, being stored, stored, or not stored for a reason that may pass. */
+enum class CoverSave { Idle, Saving, Saved, Failed }
 
 sealed interface CoverRangeUi {
     data object Loading : CoverRangeUi
@@ -114,7 +115,7 @@ class CoverRangeViewModel(
     private fun store(crop: CoverCrop?) {
         val book = spec ?: return
         val services = loaded ?: return
-        if (!mutableSave.compareAndSet(CoverSave.Idle, CoverSave.Saving) && !mutableSave.compareAndSet(CoverSave.Failed, CoverSave.Saving)) return
+        if (mutableSave.getAndUpdate { CoverSave.Saving } == CoverSave.Saving) return
         services.appScope.launch {
             try {
                 services.books.setCover(key.book, key.entry, crop)
@@ -124,7 +125,7 @@ class CoverRangeViewModel(
                 mutableSave.value = CoverSave.Failed
                 return@launch
             }
-            mutableSave.value = CoverSave.Idle
+            mutableSave.value = CoverSave.Saved
             try {
                 val thumbSize = services.settings.settings.first().thumbSize
                 services.covers.regenerate(book.copy(coverEntry = key.entry, coverCrop = crop), services.covers.sizesFrom(thumbSize))

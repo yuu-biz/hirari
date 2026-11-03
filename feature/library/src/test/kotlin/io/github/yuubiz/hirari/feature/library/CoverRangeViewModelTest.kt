@@ -128,6 +128,25 @@ class CoverRangeViewModelTest {
     }
 
     @Test
+    fun `the choice is saved only once the write has completed, and the thumbnails are made after`() = runTest {
+        val model = viewModel(entry = 3)
+        val gate = CompletableDeferred<Unit>()
+        fixture.books.coverGate = gate
+
+        model.choose(CropFrame(0.1f, 0.2f, 0.6f, 0.9f))
+        model.choose(CropFrame(0.2f, 0.2f, 0.7f, 0.9f))
+
+        assertEquals(CoverSave.Saving, model.save.value)
+        assertEquals(emptyList(), fixture.books.coverSets)
+
+        gate.complete(Unit)
+
+        assertEquals(CoverSave.Saved, model.save.value)
+        assertEquals(listOf(Triple(indexed.id, 3 as Int?, CoverCrop(1000, 2000, 6000, 9000) as CoverCrop?)), fixture.books.coverSets)
+        assertEquals(ThumbSize.entries.size, fixture.thumbnails.regenerated.size)
+    }
+
+    @Test
     fun `a thumbnail that cannot be made again after the choice is stored does not end the process`() = runTest {
         val model = viewModel(entry = 3)
         fixture.settings.failure = java.io.IOException("unreadable")
