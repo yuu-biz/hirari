@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.BookFailure
@@ -241,13 +242,15 @@ class ReaderViewModel(
         val start: Int,
         /** How far down [start] the saved position of 縦に連続 is, as a fraction of the page's height. */
         val startOffset: Float,
-        val config: ReaderConfig,
+        /** The setup the reader starts from, which follows the settings until the screen size is known. */
+        var config: ReaderConfig,
         val prefetcher: Prefetcher<RawPage, Bitmap>,
         val services: ReaderServices,
         val progress: ProgressLog,
         val overrides: BookOverridesStore.OverridesWriter,
         /** The reader as the global settings alone set it up, which a change back to stores as no override. */
-        val global: ReaderConfig,
+        var global: ReaderConfig,
+        var settings: GlobalSettings,
         val shareDir: File,
         val loader: BookPageLoader,
         val remote: Remote?,
@@ -437,7 +440,7 @@ class ReaderViewModel(
             CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
             CommandEffect.StartAutoPlay -> dispatch(ReaderEvent.AutoPlayStarted(nowMs))
             CommandEffect.SharePage -> return shareChoice(current.current)
-            is CommandEffect.Show, is CommandEffect.Share, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
+            is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.OpenSettings, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
         }
         return null
     }
@@ -565,12 +568,24 @@ class ReaderViewModel(
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val remote = located.remote
         val disk = book.stash?.let { DiskPrefetch(viewModelScope, it, book.pages.size) }
-        opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), shareDir, loader, remote, disk)
+        opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), settings, shareDir, loader, remote, disk)
         remote?.server?.state?.let { connection -> viewModelScope.launch { connection.collect { dispatch(ReaderEvent.ConnectionChanged(it)) } } }
         stops.attach(session)
         phase = ReaderPhase.Reading
         followBreathSetting(services)
         start()
+        viewModelScope.launch { services.storage.settings.settings.catch {}.collect(::followSettings) }
+    }
+
+    /** The global settings changed while the book is open, as on the settings screen opened from the reader. */
+    private fun followSettings(settings: GlobalSettings) {
+        val book = opened ?: return
+        if (settings == book.settings) return
+        val before = book.global
+        book.settings = settings
+        book.global = ReaderConfig.of(settings)
+        val current = state ?: return run { book.config = book.config.following(before, settings, book.overrides.current) }
+        dispatch(ReaderEvent.ConfigChanged(current.config.following(before, settings, book.overrides.current)))
     }
 
     /**

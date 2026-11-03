@@ -57,6 +57,29 @@ class CommandEffectTest {
     }
 
     @Test
+    fun settingsAndTheCommandBarEditorOpenTheSettings() {
+        assertEquals(CommandEffect.OpenSettings(SettingsTarget.Settings), config.effectOf(ReaderCommand.Settings))
+        assertEquals(CommandEffect.OpenSettings(SettingsTarget.CommandBar), config.effectOf(ReaderCommand.EditCommandBar))
+    }
+
+    @Test
+    fun aChangeOfTheSettingsReachesTheOpenReaderButNotWhatTheSessionSwitched() {
+        val before = GlobalSettings()
+        val global = ReaderConfig.of(before)
+        val overrides = BookOverrides(scaleMode = ScaleMode.FitWidth)
+        val session = ReaderConfig.of(before, overrides).configured(ReaderCommand.MirrorControls).configured(ReaderCommand.Orientation)
+        val after = before.copy(commandBarItems = listOf(ReaderCommand.Gutter), scaleMode = ScaleMode.Original, layoutMode = LayoutMode.Single, mirrorControls = true)
+        val followed = session.following(global, after, overrides)
+        assertEquals(listOf(ReaderCommand.Gutter), followed.commandBarItems)
+        assertEquals(LayoutMode.Single, followed.layout.mode)
+        assertEquals(ScaleMode.FitWidth, followed.scaleMode)
+        assertEquals(session.orientation, followed.orientation)
+        assertEquals(false, followed.mirrored)
+        val untouched = ReaderConfig.of(before, overrides).following(global, after, overrides)
+        assertEquals(ReaderConfig.of(after, overrides), untouched)
+    }
+
+    @Test
     fun theDefaultItemsStayTheFourOfTheSpec() {
         assertEquals(listOf(ReaderCommand.Orientation, ReaderCommand.Trim, ReaderCommand.Layout, ReaderCommand.ScaleMode), ReaderCommand.Defaults)
     }

@@ -419,11 +419,18 @@ internal fun MenuSheet(
                 onGuide()
                 return
             }
+            MenuItem.About -> {
+                onCloseMenu()
+                onEffect(CommandEffect.OpenSettings(SettingsTarget.About))
+                return
+            }
             MenuItem.SharePage -> ReaderCommand.SharePage
             MenuItem.AutoPlay -> ReaderCommand.AutoPlay
             MenuItem.Breath -> ReaderCommand.Breath
             MenuItem.Orientation -> ReaderCommand.Orientation
             MenuItem.MirrorControls -> ReaderCommand.MirrorControls
+            MenuItem.Settings -> ReaderCommand.Settings
+            MenuItem.EditCommandBar -> ReaderCommand.EditCommandBar
             else -> return
         }
         val effect = viewModel.command(command, android.os.SystemClock.uptimeMillis())

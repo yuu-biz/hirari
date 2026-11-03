@@ -64,6 +64,7 @@ import io.github.yuubiz.hirari.feature.text.TextKeyRelay
 import io.github.yuubiz.hirari.feature.text.TextReaderScreen
 import io.github.yuubiz.hirari.feature.text.TextReaderUiState
 import io.github.yuubiz.hirari.feature.text.TextReaderViewModel
+import io.github.yuubiz.hirari.feature.settings.SettingsOpening
 import io.github.yuubiz.hirari.feature.settings.SettingsScreen
 import io.github.yuubiz.hirari.feature.library.planStart
 import kotlinx.coroutines.Dispatchers
@@ -130,7 +131,7 @@ class MainActivity : ComponentActivity() {
                                     HomeMenu(
                                         onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
                                         onOpenFolder = { pickFolder.launch(null) },
-                                        onSettings = { nav.navigate(SettingsRoute) },
+                                        onSettings = { nav.navigate(SettingsRoute()) },
                                         onOpen = { nav.navigate(it) },
                                     )
                                 },
@@ -199,7 +200,20 @@ class MainActivity : ComponentActivity() {
                     composable<SettingsRoute> { entry ->
                         ReportSettled(nav, entry, app) { app.services.await() }
                         val storage by produceState<Storage?>(null) { value = app.services.await().storage }
-                        storage?.let { SettingsScreen(it, onBack = { nav.popBackStack() }, onOpenLicenses = { nav.navigate(LicensesRoute) }) }
+                        val opening = entry.toRoute<SettingsRoute>().opening
+                        storage?.let {
+                            SettingsScreen(
+                                it,
+                                onBack = { nav.popBackStack() },
+                                // このアプリについて opened from the reader leaves the settings for the licenses, so going back returns to the reader.
+                                onOpenLicenses = {
+                                    nav.navigate(LicensesRoute) {
+                                        if (opening == SettingsOpening.About) popUpTo<SettingsRoute> { inclusive = true }
+                                    }
+                                },
+                                opening = opening,
+                            )
+                        }
                     }
                     composable<ReaderRoute> { entry ->
                         Kept(app, entry) {
@@ -212,6 +226,7 @@ class MainActivity : ComponentActivity() {
                                 onClose = { if (!nav.popBackStack()) finish() },
                                 onOpenBook = { nav.navigate(it.toReaderRoute()) { popUpTo<ReaderRoute> { inclusive = true } } },
                                 onCoverRange = { book, entry -> nav.navigate(CoverRangeRoute(book.value, entry)) },
+                                onOpenSettings = { nav.navigate(it.toRoute()) },
                             )
                         }
                     }
@@ -225,7 +240,7 @@ class MainActivity : ComponentActivity() {
                                 reader,
                                 textKeys,
                                 onBack = { if (!nav.popBackStack()) finish() },
-                                onOpenSettings = { nav.navigate(SettingsRoute) },
+                                onOpenSettings = { nav.navigate(SettingsRoute()) },
                                 onOpenText = { nav.navigate(it.toRoute()) { popUpTo<TextRoute> { inclusive = true } } },
                             )
                         }

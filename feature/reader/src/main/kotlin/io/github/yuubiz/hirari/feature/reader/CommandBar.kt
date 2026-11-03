@@ -42,9 +42,15 @@ sealed interface CommandEffect {
     /** 息で操作, which the screen runs since turning it on may ask for the microphone. */
     data object ToggleBreath : CommandEffect
 
+    /** A screen of the settings that the app opens over the reader. */
+    data class OpenSettings(val target: SettingsTarget) : CommandEffect
+
     /** A command of a later milestone. */
     data object NotYet : CommandEffect
 }
+
+/** Where 設定, コマンドバーの編集, and このアプリについて go: the settings screen, its `commandBarItems` dialog, or its about dialog. */
+enum class SettingsTarget { Settings, CommandBar, About }
 
 /** The effect of [command] on a reader set up as this (docs/spec.md section 4.8, コマンドバー). */
 fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command) {
@@ -64,9 +70,11 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.AutoPlay -> CommandEffect.StartAutoPlay
     ReaderCommand.SharePage -> CommandEffect.SharePage
     ReaderCommand.Breath -> CommandEffect.ToggleBreath
+    ReaderCommand.Settings -> CommandEffect.OpenSettings(SettingsTarget.Settings)
+    ReaderCommand.EditCommandBar -> CommandEffect.OpenSettings(SettingsTarget.CommandBar)
     ReaderCommand.AddBookmark, ReaderCommand.Bookmarks,
-    ReaderCommand.ReverseOrder, ReaderCommand.EditCommandBar,
-    ReaderCommand.BookSettings, ReaderCommand.SetCover, ReaderCommand.Settings,
+    ReaderCommand.ReverseOrder,
+    ReaderCommand.BookSettings, ReaderCommand.SetCover,
     -> CommandEffect.NotYet
 }
 

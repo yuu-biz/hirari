@@ -36,32 +36,39 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.model.UriString
 import java.time.LocalDate
+
+/**
+ * What the settings screen opens on: the list, or one dialog over it for the reader's コマンドバーの編集 or このアプリについて
+ * (docs/spec.md section 4.8, メニュー). Closing that dialog leaves the screen, back to where it was opened from.
+ */
+enum class SettingsOpening { List, CommandBar, About }
 
 /**
  * The settings screen (docs/spec.md sections 4.10 and 4.11), built on [storage] and hosted by `:app` as one route.
  * [onBack] leaves the screen. [onOpenLicenses] opens [LicenseScreen]. All reads and writes run off the main thread.
  */
 @Composable
-fun SettingsScreen(storage: Storage, onBack: () -> Unit, onOpenLicenses: () -> Unit) {
+fun SettingsScreen(storage: Storage, onBack: () -> Unit, onOpenLicenses: () -> Unit, opening: SettingsOpening = SettingsOpening.List) {
     val context: Context = LocalContext.current
     val services = remember(storage) { settingsServices(storage, context) }
-    SettingsScreen(services, onBack, onOpenLicenses)
+    SettingsScreen(services, onBack, onOpenLicenses, opening)
 }
 
 /** The same screen on any [services], for the tests and for apps that build their own. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicenses: () -> Unit) {
+fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicenses: () -> Unit, opening: SettingsOpening = SettingsOpening.List) {
     val viewModel: SettingsViewModel = viewModel(factory = remember(services) { viewModelFactory { initializer { SettingsViewModel(services) } } })
     val ui by viewModel.state.collectAsStateWithLifecycle()
 
-    var openedSetting by rememberSaveable { mutableStateOf<String?>(null) }
+    var openedSetting by rememberSaveable { mutableStateOf(if (opening == SettingsOpening.CommandBar) GlobalSettings::commandBarItems.name else null) }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var includeReading by rememberSaveable { mutableStateOf(false) }
-    var aboutDialog by rememberSaveable { mutableStateOf(false) }
+    var aboutDialog by rememberSaveable { mutableStateOf(opening == SettingsOpening.About) }
 
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(JSON_TYPE)) { uri ->
         if (uri != null) viewModel.export(UriString(uri.toString()), includeReading)
@@ -116,7 +123,10 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                 }
                 openedSetting?.let { key ->
                     SettingsTable.firstOrNull { it.key == key }?.let {
-                        SettingDialog(it, settings, ui.fonts, { openFont.launch(FONT_MIME_TYPES) }, viewModel::change) { openedSetting = null }
+                        SettingDialog(it, settings, ui.fonts, { openFont.launch(FONT_MIME_TYPES) }, viewModel::change) {
+                            openedSetting = null
+                            if (opening == SettingsOpening.CommandBar) onBack()
+                        }
                     }
                 }
             }
@@ -141,7 +151,10 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                 aboutDialog = false
                 onOpenLicenses()
             },
-            onDismiss = { aboutDialog = false },
+            onDismiss = {
+                aboutDialog = false
+                if (opening == SettingsOpening.About) onBack()
+            },
         )
     }
     when (val action = ui.action) {

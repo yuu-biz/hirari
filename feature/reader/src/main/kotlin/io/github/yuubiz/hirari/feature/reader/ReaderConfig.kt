@@ -98,6 +98,21 @@ data class ReaderConfig(
 }
 
 /**
+ * This reader's setup once the global settings became [settings] while it is open, for a book with [overrides]
+ * (docs/spec.md section 4.8, メニュー). What the session switched for itself, 画面の向き, 操作の反転, and 綴じ目の表示,
+ * stays switched; every other value is what [settings] and [overrides] give. [global] is what the global settings
+ * gave before the change.
+ */
+fun ReaderConfig.following(global: ReaderConfig, settings: GlobalSettings, overrides: BookOverrides): ReaderConfig {
+    val next = ReaderConfig.of(settings, overrides)
+    return next.copy(
+        orientation = if (orientation != global.orientation) orientation else next.orientation,
+        tapZones = next.tapZones.copy(mirrored = next.mirrored != (mirrored != global.mirrored)),
+        gutter = if (gutter != global.gutter) gutter else next.gutter,
+    )
+}
+
+/**
  * These overrides with what the reader changed from [before] to [after], which 2.9 of docs/spec.md keeps for the
  * book: 綴じ方向, 組み方, 表紙の単独表示, 拡大モード, 余白トリミング, the rotation, and 画像補正. A value changed back
  * to what [global] has is stored as no override, so the book follows the global setting again. A value the change

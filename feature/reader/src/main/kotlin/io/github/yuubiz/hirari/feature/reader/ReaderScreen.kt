@@ -75,7 +75,8 @@ class KeyRelay {
 /**
  * The image reader. [onClose] leaves it; the position is already saved by then. [onOpenBook] leaves it for
  * another book, the neighbor of 本の端での動作. [onCoverRange] leaves it for the screen that frames a range of the page
- * with the `entryIndex` as the cover of the book (docs/spec.md section 4.4).
+ * with the `entryIndex` as the cover of the book (docs/spec.md section 4.4). [onOpenSettings] opens the settings
+ * over the reader; coming back, the reader follows what changed there.
  */
 @Composable
 fun ReaderScreen(
@@ -84,6 +85,7 @@ fun ReaderScreen(
     onClose: () -> Unit,
     onOpenBook: (OpenBookRequest) -> Unit,
     onCoverRange: (BookId, Int) -> Unit,
+    onOpenSettings: (SettingsTarget) -> Unit,
 ) {
     val density = LocalDensity.current.density
     val ui = remember { ReaderUi() }
@@ -190,6 +192,12 @@ fun ReaderScreen(
             }
         }
         SharePageEffect(viewModel, ui)
+        ui.settings?.let { target ->
+            LaunchedEffect(target) {
+                ui.settings = null
+                onOpenSettings(target)
+            }
+        }
         ui.message?.let { message ->
             LaunchedEffect(message) {
                 delay(MESSAGE_MS)
@@ -226,6 +234,8 @@ internal class ReaderUi {
 
     /** 息で操作 was chosen, for [BreathControl] to run. */
     var breathToggled: Boolean by mutableStateOf(false)
+    /** The settings the screen is about to open over the reader. */
+    var settings: SettingsTarget? by mutableStateOf(null)
 
     fun closePanels() {
         commandBar = CommandBarState.Closed
@@ -245,6 +255,10 @@ internal class ReaderUi {
                 sharing = effect.page
             }
             CommandEffect.ToggleBreath -> breathToggled = true
+            is CommandEffect.OpenSettings -> {
+                closePanels()
+                settings = effect.target
+            }
             CommandEffect.NotYet -> message = R.string.reader_not_yet
             else -> Unit
         }

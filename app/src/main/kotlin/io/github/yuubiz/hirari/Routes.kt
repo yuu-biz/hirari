@@ -21,6 +21,8 @@ import io.github.yuubiz.hirari.feature.library.TextAddress
 import io.github.yuubiz.hirari.feature.text.EntryArchive
 import io.github.yuubiz.hirari.feature.text.TextBookRef
 import io.github.yuubiz.hirari.feature.library.childToward
+import io.github.yuubiz.hirari.feature.reader.SettingsTarget
+import io.github.yuubiz.hirari.feature.settings.SettingsOpening
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -29,8 +31,18 @@ internal data object HomeRoute
 @Serializable
 internal data object LicensesRoute
 
+/** The settings screen, opened on [opening] (docs/spec.md section 4.8, メニュー). */
 @Serializable
-internal data object SettingsRoute
+internal data class SettingsRoute(val opening: SettingsOpening = SettingsOpening.List)
+
+/** Where the reader's 設定, コマンドバーの編集, and このアプリについて open the settings. */
+internal fun SettingsTarget.toRoute() = SettingsRoute(
+    when (this) {
+        SettingsTarget.Settings -> SettingsOpening.List
+        SettingsTarget.CommandBar -> SettingsOpening.CommandBar
+        SettingsTarget.About -> SettingsOpening.About
+    },
+)
 
 /** The SMB form (docs/spec.md section 4.5): a new server without [location], else that server. */
 @Serializable
