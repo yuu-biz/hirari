@@ -207,6 +207,10 @@ class ReaderViewModel(
     var orientation: ReaderOrientation by mutableStateOf(ReaderOrientation.System)
         private set
 
+    /** 画面の明るさ in percent, or `null` for the device's, kept apart from [state] so a turn does not touch it. */
+    var screenBrightness: Int? by mutableStateOf(null)
+        private set
+
     /** Changes whenever a view is prepared or dropped, or a page fails. */
     var prepared: Int by mutableIntStateOf(0)
         private set
@@ -729,6 +733,7 @@ class ReaderViewModel(
         }
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
         orientation = after.config.orientation
+        screenBrightness = after.config.brightness
         if (before != null && before.config !== after.config) {
             book.overrides.update { it.changedBy(before.config, after.config, book.global) }
         }

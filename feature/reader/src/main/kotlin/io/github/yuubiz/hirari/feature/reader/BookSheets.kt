@@ -82,8 +82,8 @@ internal fun BottomPanel(title: String, onClose: () -> Unit, content: @Composabl
 
 /** しおりを追加 (docs/spec.md section 4.8): the name starts as the default one, and a blank name is the default too. */
 @Composable
-internal fun AddBookmarkSheet(page: Int, onAdd: (String) -> Unit, onClose: () -> Unit) {
-    val default = defaultBookmarkLabel(bookmarkAt(page, page + 1))
+internal fun AddBookmarkSheet(page: Int, pageCount: Int, onAdd: (String) -> Unit, onClose: () -> Unit) {
+    val default = defaultBookmarkLabel(bookmarkAt(page, pageCount))
     var typed by rememberSaveable(page) { mutableStateOf(default) }
     BottomPanel(stringResource(R.string.command_add_bookmark), onClose) {
         OutlinedTextField(

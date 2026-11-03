@@ -94,7 +94,7 @@ fun ReaderScreen(
     val close by rememberUpdatedState(onClose)
     HideSystemBars()
     ScreenOrientationLock(viewModel.orientation)
-    ScreenBrightness(viewModel.state?.config?.brightness)
+    ScreenBrightness(viewModel.screenBrightness)
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
 
     fun dismiss() {
@@ -188,6 +188,7 @@ fun ReaderScreen(
                     )
                     is ReaderSheet.AddBookmark -> AddBookmarkSheet(
                         sheet.page,
+                        state.pagination.shapes.size,
                         onAdd = { label ->
                             ui.sheet = null
                             viewModel.addBookmark(sheet.page, label) { added -> ui.message = if (added) R.string.bookmark_added else R.string.bookmark_add_failed }
