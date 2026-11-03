@@ -9,6 +9,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
@@ -28,6 +29,7 @@ import java.io.Closeable
 import java.io.IOException
 import java.io.File
 import java.time.Instant
+import java.util.concurrent.Executors
 import kotlin.coroutines.cancellation.CancellationException
 
 private class MemoryStore(private val dir: File) : ThumbnailStore {
@@ -921,5 +923,25 @@ class ThumbnailsTest {
         assertEquals(listOf<ThumbResult>(ThumbResult.Failed), seen)
         assertEquals(1, store.held.size)
         job.cancel()
+    }
+
+    @Test
+    fun aPreviewOpensTheBookOnTheIoDispatcherNotOnTheThreadThatAsked() = runTest {
+        val executor = Executors.newSingleThreadExecutor { Thread(it, "preview-io") }
+        try {
+            var ranOn: String? = null
+            val previewer = PagePreviewer { _, _, _ ->
+                ranOn = Thread.currentThread().name
+                PagePreview.Failed
+            }
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val thumbnails = Thumbnails(
+                store, maker, CoroutineScope(SupervisorJob() + dispatcher), executor.asCoroutineDispatcher(), now = { clock }, previewer = previewer,
+            )
+            assertEquals(PagePreview.Failed, thumbnails.preview(book("a"), 3, 1000))
+            assertEquals("preview-io", ranOn)
+        } finally {
+            executor.shutdown()
+        }
     }
 }

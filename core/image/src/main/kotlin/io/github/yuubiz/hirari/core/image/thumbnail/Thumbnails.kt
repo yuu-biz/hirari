@@ -78,14 +78,26 @@ class Thumbnails internal constructor(
     /**
      * The page with the `entryIndex` [entryIndex] of [book] shown whole and fitted into [maxSidePx], for choosing a
      * part of it as the cover (section 4.4). It is not stored. It takes a turn of the lane like a thumbnail does, ahead
-     * of the ones a list only prepares, and the caller owns the bitmap.
+     * of the ones a list only prepares, and the caller owns the bitmap. The book is opened and the page decoded on the
+     * IO dispatcher, whatever thread asks.
      */
     suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview = try {
-        gates.getValue(book.lane).withPermit(Urgency(ThumbPriority.Visible)) { previewer.preview(book, entryIndex, maxSidePx) }
+        gates.getValue(book.lane).withPermit(Urgency(ThumbPriority.Visible)) { previewOnIo(book, entryIndex, maxSidePx) }
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
         PagePreview.Unavailable
+    }
+
+    /** A bitmap made when the caller was cancelled has no owner left, so it is recycled here. */
+    private suspend fun previewOnIo(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview {
+        var made: PagePreview? = null
+        try {
+            return withContext(io) { previewer.preview(book, entryIndex, maxSidePx).also { made = it } }
+        } catch (e: CancellationException) {
+            (made as? PagePreview.Ready)?.bitmap?.recycle()
+            throw e
+        }
     }
 
     /**
