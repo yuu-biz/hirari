@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# docs/spec.md の (要検証) を、節の見出しと一緒に一覧にする。
+# Lists the (要検証) marks of docs/spec.md with the heading each one sits under.
 #
-#   bash tools/verification/list.sh           見つかった文を「キー、行番号、抜き出した文」で出す
-#   bash tools/verification/list.sh --check   docs/verification.md の台帳と、キーごとの件数を突き合わせる
+#   bash tools/verification/list.sh           print the sentences found, as key, line number and sentence
+#   bash tools/verification/list.sh --check   compare the count per key with the register in docs/verification.md
 #
-# 数える単位は、(要検証) を含む文である。1 つの文に (要検証) が 2 つあっても 1 件で、
-# 同じ行に別の文の (要検証) があれば別の件になる。表の行は、(要検証) を含むセルの中の文を数える。
-# キーは、節の番号（4.8 節の小見出しがあるときは「4.8 小見出し」）、10 章の表は ID（Q18 など）、
-# 9 章のマイルストーンは M6 のような名前である。次は数えない。
-#   - 凡例（先頭の「表記」の行）。
-#   - 9 章の「確認の状況」。台帳への参照だけで、元ではない。
-#   - 完了条件の「(要検証) がすべて解消…」の行。台帳そのものを指す。
-# 台帳の側は、docs/verification.md の `register:start` と `register:end` の間の表の、先頭の列（キー）を使う。
+# The unit is the sentence that holds a mark. Two marks in one sentence are one item, and marks in two sentences of
+# the same line are two items. In a table row, the sentences of the cell that holds the mark are counted.
+# The key is the section number (followed by the sub-heading under 4.8 and the like), the ID of a row of the table
+# in chapter 10 (Q18 and so on), or the milestone of chapter 9 (M6 and so on). Not counted:
+#   - the legend (the "表記" line at the top);
+#   - the "確認の状況" section of chapter 9, which only points at the register;
+#   - the completion condition that says every mark is resolved or registered, which points at the register itself.
+# The register side is the first column (the key) of the table between `register:start` and `register:end` in
+# docs/verification.md.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
