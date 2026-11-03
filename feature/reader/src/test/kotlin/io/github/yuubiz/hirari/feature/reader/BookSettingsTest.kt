@@ -44,6 +44,17 @@ class BookSettingsTest {
     }
 
     @Test
+    fun anOverrideEqualToTheGlobalValueIsStillClearedByBackToTheGlobalSettings() {
+        val same = BookOverrides(scaleMode = global.scaleMode, reverseOrder = true)
+        assertEquals(true, same.keepsBookValues)
+        assertEquals(BookOverrides(reverseOrder = true), same.backToGlobal())
+        assertEquals(false, same.backToGlobal().keepsBookValues)
+        assertEquals(false, BookOverrides(reverseOrder = true, nameCharset = overrides.nameCharset).keepsBookValues)
+        assertEquals(BookOverrides(nameCharset = overrides.nameCharset), overrides.backToGlobal())
+        assertEquals(global, ReaderConfig.of(settings, overrides.backToGlobal()))
+    }
+
+    @Test
     fun undoGoesBackToTheValuesTheSheetOpenedOn() {
         val changed = book.copy(scaleMode = ScaleMode.Original, rotation = Rotation.None)
         val undone = changed.withBookValues(book)

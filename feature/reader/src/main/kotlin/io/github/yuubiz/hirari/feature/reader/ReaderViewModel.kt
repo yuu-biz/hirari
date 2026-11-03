@@ -573,9 +573,6 @@ class ReaderViewModel(
         }
     }
 
-    /** The reader as the global settings alone set it up, where 全体の設定に戻す of 本ごとの設定 goes back to. */
-    val globalConfig: ReaderConfig? get() = opened?.global
-
     /**
      * 既定にする (docs/spec.md section 2.9): the book's values become the global settings, and once they are stored,
      * the book's overrides of those values go, so the book follows the global settings again. A value the reader
@@ -591,6 +588,19 @@ class ReaderViewModel(
             }
         }
         viewModelScope.launch { done(write.await()) }
+    }
+
+    /** The overrides the book keeps, which 全体の設定に戻す clears. Empty before the book is open. */
+    val bookOverrides: BookOverrides get() = opened?.overrides?.current ?: BookOverrides()
+
+    /**
+     * 全体の設定に戻す (docs/spec.md section 4.8): the 本ごとの設定 values become the global settings' and every
+     * override of them goes, also one that equals the global value.
+     */
+    fun backToGlobal() {
+        val book = opened ?: return
+        state?.let { dispatch(ReaderEvent.ConfigChanged(it.config.withBookValues(book.global))) }
+        book.overrides.update { it.backToGlobal() }
     }
 
     /** 画面の明るさ of the 本ごとの設定 sheet, which is the global `readerBrightness`; the reader follows it once stored. */

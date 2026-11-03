@@ -1,5 +1,8 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookOverrides
@@ -36,8 +39,8 @@ class BookOverridesStore(private val books: BookRepository, private val scope: C
 
     /** The overrides of one open book, as its reader changes them. */
     inner class OverridesWriter internal constructor(private val id: BookId, initial: BookOverrides) {
-        @Volatile
-        var current: BookOverrides = initial
+        /** Snapshot state, so a sheet that shows what the book keeps follows it. */
+        var current: BookOverrides by mutableStateOf(initial)
             private set
 
         /**

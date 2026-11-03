@@ -180,8 +180,7 @@ internal fun BookSettingsSheet(
                 set(config.withBookValues(opened))
                 if (config.brightness != opened.brightness) viewModel.setBrightness(opened.brightness)
             }
-            val global = viewModel.globalConfig
-            SheetButton(R.string.adjust_global, enabled = global != null && config.withBookValues(global) != config) { global?.let { set(config.withBookValues(it)) } }
+            SheetButton(R.string.adjust_global, enabled = viewModel.bookOverrides.keepsBookValues, onClick = viewModel::backToGlobal)
             SheetButton(R.string.book_settings_make_default) {
                 viewModel.makeDefault { stored -> onMessage(if (stored) R.string.book_settings_default_done else R.string.book_settings_save_failed) }
             }

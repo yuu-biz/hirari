@@ -46,6 +46,16 @@ fun BookOverrides.adopted(taken: ReaderConfig): BookOverrides = copy(
 
 private fun <T : Any> T?.unlessMoved(moved: T): T? = takeUnless { it == moved }
 
+/**
+ * The overrides once 全体の設定に戻す cleared every value of the 本ごとの設定 sheet, whatever it holds. An override that
+ * equals the global value goes too, so the book follows a later change of the global settings. 並びを逆に and 文字コード stay.
+ */
+fun BookOverrides.backToGlobal(): BookOverrides =
+    copy(direction = null, layoutMode = null, coverAlone = null, scaleMode = null, trim = null, rotation = null, adjust = null)
+
+/** Whether the book keeps an override of a value of the 本ごとの設定 sheet, so 全体の設定に戻す has something to clear. */
+val BookOverrides.keepsBookValues: Boolean get() = this != backToGlobal()
+
 /** 並びを逆に set to [on]. Off is stored as no override, since the natural order is what a book has without one. */
 fun BookOverrides.reversedTo(on: Boolean): BookOverrides = copy(reverseOrder = if (on) true else null)
 
