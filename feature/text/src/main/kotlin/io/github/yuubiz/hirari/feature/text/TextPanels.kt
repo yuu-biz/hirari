@@ -55,9 +55,13 @@ import io.github.yuubiz.hirari.core.data.FontStore
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.CommandTargets
+import io.github.yuubiz.hirari.core.model.NeighborOpening
+import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.PanelTarget
 import io.github.yuubiz.hirari.core.model.Point
+import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.TextTypeface
+import io.github.yuubiz.hirari.core.model.opening
 
 /** The text commands of docs/spec.md section 4.9, in the order of the spec. */
 internal enum class TextCommand(val label: Int) {
@@ -264,18 +268,18 @@ internal fun TextBookEndSheet(
     viewModel: TextReaderViewModel,
     onDismiss: () -> Unit,
     onCloseReader: () -> Unit,
-    onOpen: (TextOpening) -> Unit,
+    onOpen: (NeighborOpening<TextBookRef.InLocation>) -> Unit,
 ) {
-    var sibling by remember(edge) { mutableStateOf<TextSibling?>(null) }
+    var sibling by remember(edge) { mutableStateOf<Sibling<TextBookRef.InLocation>?>(null) }
     LaunchedEffect(edge) { sibling = viewModel.sibling(edge) }
     val atEnd = edge == BookEdge.End
-    val starts = if (atEnd) listOf(TextStart.Saved, TextStart.First) else listOf(TextStart.Saved, TextStart.Last)
+    val starts = if (atEnd) listOf(NeighborStart.Saved, NeighborStart.First) else listOf(NeighborStart.Saved, NeighborStart.Last)
     Sheet(onDismiss) {
         when (val found = sibling) {
-            TextSibling.Last -> Message(if (atEnd) R.string.text_book_end_last_in_folder else R.string.text_book_end_first_in_folder)
-            TextSibling.NoFolder -> Unit
-            is TextSibling.Found, null -> for (start in starts) {
-                TextButton(onClick = { (found as? TextSibling.Found)?.let { onOpen(it.opening(start)) } }, enabled = found != null) {
+            Sibling.Last -> Message(if (atEnd) R.string.text_book_end_last_in_folder else R.string.text_book_end_first_in_folder)
+            Sibling.NoFolder -> Unit
+            is Sibling.Found, null -> for (start in starts) {
+                TextButton(onClick = { (found as? Sibling.Found)?.let { onOpen(it.opening(start)) } }, enabled = found != null) {
                     Text(stringResource(if (atEnd) R.string.text_book_end_next else R.string.text_book_end_previous, stringResource(start.label)))
                 }
             }
@@ -294,11 +298,11 @@ internal fun TextBookEndSheet(
     }
 }
 
-private val TextStart.label: Int
+private val NeighborStart.label: Int
     get() = when (this) {
-        TextStart.Saved -> R.string.text_neighbor_saved
-        TextStart.First -> R.string.text_neighbor_first
-        TextStart.Last -> R.string.text_neighbor_last
+        NeighborStart.Saved -> R.string.text_neighbor_saved
+        NeighborStart.First -> R.string.text_neighbor_first
+        NeighborStart.Last -> R.string.text_neighbor_last
     }
 
 @Composable

@@ -7,16 +7,18 @@ import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.EdgeHit
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
+import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScaleMode
+import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.opening
 import io.github.yuubiz.hirari.core.model.turnMovement
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -101,38 +103,13 @@ class BookEndStateTest {
     }
 }
 
-class BookEndEffectTest {
-    private val found = Sibling.Found(NEXT)
-
-    @Test
-    fun askingShowsTheSheetWithoutLookingTheNeighborUp() = runTest {
-        assertEquals(BookEndEffect.Ask(BookEdge.End), bookEndEffect(BookEdge.End, BookEndAction.Ask) { error("looked up") })
-    }
-
-    @Test
-    fun nextBookOpensTheNextFromItsStartAndThePreviousAtItsEnd() = runTest {
-        assertEquals(BookEndEffect.Open(OpenBookRequest(NEXT, StartAt.Page(0))), bookEndEffect(BookEdge.End, BookEndAction.NextBook) { found })
-        val previous = bookEndEffect(BookEdge.Start, BookEndAction.NextBook) { found } as BookEndEffect.Open
-        assertEquals(StartAt.Page(Int.MAX_VALUE), previous.request.start)
-    }
-
-    @Test
-    fun noNeighborSaysWhy() = runTest {
-        assertEquals(BookEndEffect.Missing(BookEdge.End, Sibling.Last), bookEndEffect(BookEdge.End, BookEndAction.NextBook) { Sibling.Last })
-        assertEquals(BookEndEffect.Missing(BookEdge.Start, Sibling.NoFolder), bookEndEffect(BookEdge.Start, BookEndAction.NextBook) { Sibling.NoFolder })
-    }
-
-    @Test
-    fun closeClosesAtTheEndAndStopAndCloseAtTheStartDoNothingMore() = runTest {
-        assertEquals(BookEndEffect.Close, bookEndEffect(BookEdge.End, BookEndAction.Close) { error("looked up") })
-        assertNull(bookEndEffect(BookEdge.Start, BookEndAction.Close) { error("looked up") })
-        assertNull(bookEndEffect(BookEdge.End, BookEndAction.Stop) { error("looked up") })
-    }
-
+class NeighborRequestTest {
     @Test
     fun theNeighborStartsWhereTheChoiceSays() {
-        assertEquals(StartAt.Saved, found.request(NeighborStart.Saved).start)
-        assertEquals(StartAt.Page(0), found.request(NeighborStart.First).start)
-        assertEquals(StartAt.Page(Int.MAX_VALUE), found.request(NeighborStart.Last).start)
+        val found = Sibling.Found(NEXT)
+        assertEquals(StartAt.Saved, found.opening(NeighborStart.Saved).request().start)
+        assertEquals(StartAt.Page(0), found.opening(NeighborStart.First).request().start)
+        assertEquals(StartAt.Page(Int.MAX_VALUE), found.opening(NeighborStart.Last).request().start)
+        assertEquals(OpenBookRequest(NEXT, StartAt.Page(0)), found.opening(NeighborStart.First).request())
     }
 }

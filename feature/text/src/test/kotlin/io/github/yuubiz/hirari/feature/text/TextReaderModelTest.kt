@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
+import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.TextLayout
@@ -43,7 +44,7 @@ class TextReaderModelTest {
         fonts: TextFonts = FakeFonts(),
         bytes: ByteArray = text.toByteArray(Charsets.UTF_8),
         heapBudget: Long = textHeapBudget(),
-        startAt: TextStart = TextStart.Saved,
+        startAt: NeighborStart = NeighborStart.Saved,
         work: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
         onEdge: (BookEdge) -> Unit = {},
         onTurned: () -> Unit = {},
@@ -341,7 +342,7 @@ class TextReaderModelTest {
     @Test
     fun `a text opens at its start whatever it saved`() = runTest {
         progress.stored.value = mapOf(id to BookProgress(id, ReadState.Reading, ReadingPosition.Text(source.length / 2L, source.length.toLong()), Instant.EPOCH))
-        val model = model(startAt = TextStart.First)
+        val model = model(startAt = NeighborStart.First)
         settle()
         assertEquals(0, model.reading.current)
     }
@@ -350,7 +351,7 @@ class TextReaderModelTest {
     fun `a text opens on its last page whatever it saved, and 位置を戻して閉じる puts the saved position back`() = runTest {
         val saved = BookProgress(id, ReadState.Reading, ReadingPosition.Text(source.length / 2L, source.length.toLong()), Instant.EPOCH)
         progress.stored.value = mapOf(id to saved)
-        val model = model(startAt = TextStart.Last)
+        val model = model(startAt = NeighborStart.Last)
         settle()
         assertEquals(model.reading.run!!.lastIndex, model.reading.current)
         assertTrue(source.length - 1 in model.page)

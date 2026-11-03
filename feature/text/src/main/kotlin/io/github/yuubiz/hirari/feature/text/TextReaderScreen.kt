@@ -63,14 +63,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.KeyCodes
 import io.github.yuubiz.hirari.core.model.KeyResult
+import io.github.yuubiz.hirari.core.model.NeighborOpening
+import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
+import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.TextLayout
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.text.GlyphContent
@@ -105,8 +109,8 @@ fun TextReaderScreen(
     keys: TextKeyRelay,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit = {},
-    startAt: TextStart = TextStart.Saved,
-    onOpenText: (TextOpening) -> Unit = {},
+    startAt: NeighborStart = NeighborStart.Saved,
+    onOpenText: (NeighborOpening<TextBookRef.InLocation>) -> Unit = {},
 ) {
     val application = LocalContext.current.applicationContext as Application
     val viewModel = viewModel(key = "$ref/$startAt") { TextReaderViewModel(application, services, ref, startAt) }
@@ -126,7 +130,7 @@ fun TextReaderScreen(
     keys: TextKeyRelay,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit = {},
-    onOpenText: (TextOpening) -> Unit = {},
+    onOpenText: (NeighborOpening<TextBookRef.InLocation>) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val back by rememberUpdatedState(onBack)
@@ -225,7 +229,7 @@ fun TextReaderScreen(
 
 /** Does what running into an end of the text asks of the screen (docs/spec.md section 4.8, 本の端での動作). */
 @Composable
-private fun BookEndEffects(viewModel: TextReaderViewModel, onAsk: (BookEdge) -> Unit, onClose: () -> Unit, onOpen: (TextOpening) -> Unit) {
+private fun BookEndEffects(viewModel: TextReaderViewModel, onAsk: (BookEdge) -> Unit, onClose: () -> Unit, onOpen: (NeighborOpening<TextBookRef.InLocation>) -> Unit) {
     val effect = viewModel.bookEnd ?: return
     val context = LocalContext.current
     val last = stringResource(R.string.text_book_end_last_in_folder)
@@ -234,17 +238,17 @@ private fun BookEndEffects(viewModel: TextReaderViewModel, onAsk: (BookEdge) -> 
     LaunchedEffect(effect) {
         viewModel.bookEndHandled()
         when (effect) {
-            is TextBookEnd.Ask -> onAsk(effect.edge)
-            is TextBookEnd.Open -> onOpen(effect.opening)
-            is TextBookEnd.Missing -> {
+            is BookEndEffect.Ask -> onAsk(effect.edge)
+            is BookEndEffect.Open -> onOpen(effect.opening)
+            is BookEndEffect.Missing -> {
                 val message = when {
-                    effect.sibling == TextSibling.NoFolder -> noFolder
+                    effect.sibling == Sibling.NoFolder -> noFolder
                     effect.edge == BookEdge.End -> last
                     else -> first
                 }
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             }
-            TextBookEnd.Close -> onClose()
+            BookEndEffect.Close -> onClose()
         }
     }
 }

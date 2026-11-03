@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.Bookmark
+import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.TextTypeface
@@ -109,7 +110,7 @@ internal class TextReaderModel(
     private val history: TextHistory,
     private val clock: () -> Instant = Instant::now,
     private val heapBudget: Long = textHeapBudget(),
-    private val startAt: TextStart = TextStart.Saved,
+    private val startAt: NeighborStart = NeighborStart.Saved,
     /** A turn that waited for the layout and then ran into an end of the text (docs/spec.md section 4.9). */
     private val onEdge: (BookEdge) -> Unit = {},
     /** The view changed by a turn, a jump or a step, and 「めくりで振動」 is on (docs/spec.md section 4.10). */
@@ -178,9 +179,9 @@ internal class TextReaderModel(
         val length = parsed.first.sourceLength
         before = saved
         anchor = when (startAt) {
-            TextStart.Saved -> ((saved?.position as? ReadingPosition.Text)?.charOffset ?: 0L).coerceIn(0L, length.toLong()).toInt()
-            TextStart.First -> 0
-            TextStart.Last -> maxOf(0, length - 1)
+            NeighborStart.Saved -> ((saved?.position as? ReadingPosition.Text)?.charOffset ?: 0L).coerceIn(0L, length.toLong()).toInt()
+            NeighborStart.First -> 0
+            NeighborStart.Last -> maxOf(0, length - 1)
         }
         readState = if (saved?.state == ReadState.Read) ReadState.Read else ReadState.Reading
         lastWritten = saved?.let { it.state to ((it.position as? ReadingPosition.Text)?.charOffset?.toInt() ?: -1) }

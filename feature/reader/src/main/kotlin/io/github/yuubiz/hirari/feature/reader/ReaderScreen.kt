@@ -44,6 +44,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.KeyResult
@@ -52,6 +53,7 @@ import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
+import io.github.yuubiz.hirari.core.model.Sibling
 import kotlinx.coroutines.delay
 
 /** The default `readerBackground` (docs/spec.md section 4.10). */
@@ -289,7 +291,7 @@ private fun BookEndEffects(viewModel: ReaderViewModel, ui: ReaderUi, onClose: ()
                 ui.closePanels()
                 ui.sheet = ReaderSheet.BookEnd(effect.edge)
             }
-            is BookEndEffect.Open -> onOpenBook(effect.request)
+            is BookEndEffect.Open -> onOpenBook(effect.opening.request())
             is BookEndEffect.Missing -> ui.message = when {
                 effect.sibling == Sibling.NoFolder -> R.string.book_end_no_folder
                 effect.edge == BookEdge.End -> R.string.book_end_last_in_folder

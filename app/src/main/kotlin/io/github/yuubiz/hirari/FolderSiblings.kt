@@ -3,9 +3,12 @@ package io.github.yuubiz.hirari
 import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.SettingsRepository
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.NaturalOrder
+import io.github.yuubiz.hirari.core.model.Sibling
+import io.github.yuubiz.hirari.core.model.Siblings
 import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.feature.library.FileItem
 import io.github.yuubiz.hirari.feature.library.FolderEntry
@@ -13,9 +16,6 @@ import io.github.yuubiz.hirari.feature.library.FolderLister
 import io.github.yuubiz.hirari.feature.library.Listing
 import io.github.yuubiz.hirari.feature.library.SmbPlaces
 import io.github.yuubiz.hirari.feature.library.toItem
-import io.github.yuubiz.hirari.core.model.BookEdge
-import io.github.yuubiz.hirari.feature.reader.Sibling
-import io.github.yuubiz.hirari.feature.reader.SiblingBooks
 import kotlinx.coroutines.flow.first
 
 /** The listing of the folder at [path] of the place [location], as the file list reads it. */
@@ -46,13 +46,13 @@ internal class FolderSiblings(
     private val folders: PlaceFolders,
     /** The `showDotFiles` setting, which the list follows. */
     private val dotFiles: suspend () -> Boolean,
-) : SiblingBooks {
+) : Siblings<BookAddress, BookAddress> {
     constructor(locations: LocationRepository, saf: FolderLister, smb: SmbPlaces, settings: SettingsRepository) : this(
         placeFolders(locations::get, saf, smb),
         dotFiles = { settings.settings.first().showDotFiles },
     )
 
-    override suspend fun beside(book: BookAddress, edge: BookEdge): Sibling {
+    override suspend fun beside(book: BookAddress, edge: BookEdge): Sibling<BookAddress> {
         if (book !is BookAddress.InLocation) return Sibling.NoFolder
         val path = normalizePath(book.path)
         if (path.isEmpty()) return Sibling.NoFolder

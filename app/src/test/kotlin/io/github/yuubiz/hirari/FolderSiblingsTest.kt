@@ -14,7 +14,7 @@ import io.github.yuubiz.hirari.feature.library.Listing
 import io.github.yuubiz.hirari.feature.library.SmbPlaces
 import io.github.yuubiz.hirari.feature.library.SmbTestResult
 import io.github.yuubiz.hirari.core.model.BookEdge
-import io.github.yuubiz.hirari.feature.reader.Sibling
+import io.github.yuubiz.hirari.core.model.Sibling
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test

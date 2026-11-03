@@ -31,6 +31,7 @@ import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
@@ -46,8 +47,11 @@ import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingPosition
+import io.github.yuubiz.hirari.core.model.Sibling
+import io.github.yuubiz.hirari.core.model.Siblings
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.bookEndEffect
 import io.github.yuubiz.hirari.core.model.documentBookId
 import io.github.yuubiz.hirari.core.model.folderBookId
 import io.github.yuubiz.hirari.core.model.locationBookId
@@ -89,7 +93,7 @@ class ReaderServices(
     val decoding: ImageDecoding,
     /** Outlives every screen, on `Dispatchers.IO`. */
     val appScope: CoroutineScope,
-    val siblings: SiblingBooks = SiblingBooks.None,
+    val siblings: Siblings<BookAddress, BookAddress> = Siblings.None,
     val smb: SmbServers = SmbServers.None,
     /** The SMB prefetch layer on disk, `cacheDir/smb/` (docs/spec.md section 5.3). */
     val smbCache: SmbPrefetchCache? = null,
@@ -274,17 +278,17 @@ class ReaderViewModel(
     }
 
     /** What running into an edge of the book asks of the screen, until it says it is handled. */
-    var bookEnd: BookEndEffect? by mutableStateOf(null)
+    var bookEnd: BookEndEffect<BookAddress>? by mutableStateOf(null)
         private set
 
     fun bookEndHandled() {
         bookEnd = null
     }
 
-    private val siblings = HashMap<BookEdge, Sibling>()
+    private val siblings = HashMap<BookEdge, Sibling<BookAddress>>()
 
     /** The book beside this one in its folder toward [edge], asked of the library once per edge. */
-    suspend fun sibling(edge: BookEdge): Sibling {
+    suspend fun sibling(edge: BookEdge): Sibling<BookAddress> {
         siblings[edge]?.let { return it }
         val found = services.await().siblings.beside(request.book, edge)
         return found.also { siblings[edge] = it }

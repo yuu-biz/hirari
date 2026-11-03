@@ -63,13 +63,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.ImageAdjust
+import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.Sibling
+import io.github.yuubiz.hirari.core.model.opening
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -265,7 +269,7 @@ internal fun BookEndSheet(
     onCloseReader: () -> Unit,
     onOpenBook: (OpenBookRequest) -> Unit,
 ) {
-    var sibling by remember(sheet.edge) { mutableStateOf<Sibling?>(null) }
+    var sibling by remember(sheet.edge) { mutableStateOf<Sibling<BookAddress>?>(null) }
     LaunchedEffect(sheet.edge) { sibling = viewModel.sibling(sheet.edge) }
     val atEnd = sheet.edge == BookEdge.End
     val starts = when {
@@ -295,7 +299,7 @@ internal fun BookEndSheet(
                         if (atEnd) R.string.book_end_next else R.string.book_end_previous,
                         enabled = found != null,
                         args = arrayOf(stringResource(start.label)),
-                    ) { (found as? Sibling.Found)?.let { onOpenBook(it.request(start)) } }
+                    ) { (found as? Sibling.Found)?.let { onOpenBook(it.opening(start).request()) } }
                 }
             }
             if (!sheet.fromPanel) {

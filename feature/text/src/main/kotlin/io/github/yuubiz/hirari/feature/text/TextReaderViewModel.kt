@@ -17,8 +17,13 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.model.BookEdge
+import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.Bookmark
+import io.github.yuubiz.hirari.core.model.NeighborStart
+import io.github.yuubiz.hirari.core.model.Sibling
+import io.github.yuubiz.hirari.core.model.Siblings
 import io.github.yuubiz.hirari.core.model.TextTypeface
+import io.github.yuubiz.hirari.core.model.bookEndEffect
 import io.github.yuubiz.hirari.core.text.Heading
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -46,7 +51,7 @@ class TextReaderServices(
     val progress: ProgressWriter,
     val appScope: CoroutineScope,
     val smb: SmbFiles,
-    val siblings: TextSiblings = TextSiblings.None,
+    val siblings: Siblings<TextBookRef, TextBookRef.InLocation> = Siblings.None,
 )
 
 /**
@@ -57,7 +62,7 @@ class TextReaderViewModel(
     private val application: Application,
     private val services: Deferred<TextReaderServices>,
     private val ref: TextBookRef,
-    private val startAt: TextStart = TextStart.Saved,
+    private val startAt: NeighborStart = NeighborStart.Saved,
 ) : ViewModel() {
     private val pending = MutableStateFlow<TextReaderUiState>(TextReaderUiState.Opening)
     private var model: TextReaderModel? = null
@@ -128,18 +133,18 @@ class TextReaderViewModel(
     }
 
     /** What running into an end of the text asks of the screen, until it says it is handled. */
-    var bookEnd: TextBookEnd? by mutableStateOf(null)
+    var bookEnd: BookEndEffect<TextBookRef.InLocation>? by mutableStateOf(null)
         private set
 
     fun bookEndHandled() {
         bookEnd = null
     }
 
-    private val siblings = HashMap<BookEdge, TextSibling>()
+    private val siblings = HashMap<BookEdge, Sibling<TextBookRef.InLocation>>()
     private var asking: Job? = null
 
     /** The text beside this one in its folder toward [edge], asked of the library once per edge. */
-    suspend fun sibling(edge: BookEdge): TextSibling {
+    suspend fun sibling(edge: BookEdge): Sibling<TextBookRef.InLocation> {
         siblings[edge]?.let { return it }
         return services.await().siblings.beside(ref, edge).also { siblings[edge] = it }
     }
@@ -147,7 +152,7 @@ class TextReaderViewModel(
     private fun edgeReached(edge: BookEdge) {
         val action = (pending.value as? TextReaderUiState.Reading)?.settings?.atBookEnd ?: return
         if (asking?.isActive == true || bookEnd != null) return
-        asking = viewModelScope.launch { bookEnd = textBookEnd(edge, action, ::sibling) }
+        asking = viewModelScope.launch { bookEnd = bookEndEffect(edge, action, ::sibling) }
     }
 
     /** 位置を戻して閉じる: the text gets back the position and state it had when it opened. The screen closes next. */
