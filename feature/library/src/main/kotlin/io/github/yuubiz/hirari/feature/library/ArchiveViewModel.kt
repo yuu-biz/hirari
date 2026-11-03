@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +35,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.nio.charset.Charset
 import java.time.Instant
@@ -202,23 +205,30 @@ class ArchiveViewModel(
         return ArchiveTarget.Text(TextAddress.ArchiveEntry(archive, text.entryIndex, opened.id))
     }
 
+    private val charsetChanges = Mutex()
+
     /**
      * 文字コード of the menu (docs/spec.md section 3.4); null goes back to the detected one. The stored position
-     * follows its page to the place the new names sort it to (section 2.7).
+     * follows its page to the place the new names sort it to (section 2.7). Changes run one at a time in the order
+     * chosen, each from the charset the one before stored, and leaving the screen does not stop one between its writes.
      */
     fun chooseCharset(charset: Charset?) {
         val opened = opened ?: return
         val id = opened.id
         write {
-            val overrides = books.overrides(id).first()
-            val fallback = Charset.forName(settings.settings.first().fallbackCharset.charsetName)
-            val (before, after) = withContext(compute) {
-                listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id).pages }
+            charsetChanges.withLock {
+                val overrides = books.overrides(id).first()
+                val fallback = Charset.forName(settings.settings.first().fallbackCharset.charsetName)
+                val (before, after) = withContext(compute) {
+                    listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id).pages }
+                }
+                withContext(NonCancellable) {
+                    books.updateOverrides(id) { it.copy(nameCharset = charset) }
+                    val saved = progress.get(id) ?: return@withContext
+                    val moved = saved.movedTo(before, after)
+                    if (moved != saved) progress.save(listOf(moved))
+                }
             }
-            books.updateOverrides(id) { it.copy(nameCharset = charset) }
-            val saved = progress.get(id) ?: return@write
-            val moved = saved.movedTo(before, after)
-            if (moved != saved) progress.save(listOf(moved))
         }
     }
 

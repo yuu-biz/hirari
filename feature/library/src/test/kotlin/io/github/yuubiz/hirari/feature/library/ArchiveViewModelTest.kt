@@ -1,7 +1,11 @@
 package io.github.yuubiz.hirari.feature.library
 
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
@@ -12,10 +16,14 @@ import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.entryBookId
 import io.github.yuubiz.hirari.core.model.locationBookId
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -46,10 +54,10 @@ class ArchiveViewModelTest {
     @After
     fun reset() = Dispatchers.resetMain()
 
-    private fun TestScope.viewModel(): ArchiveViewModel {
+    private fun TestScope.viewModel(compute: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler)): ArchiveViewModel {
         fixture.locations.rows.value = listOf(place)
         fixture.archives.result = ArchiveOpenResult.Opened(contents)
-        return ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip", "doc:book"), UnconfinedTestDispatcher(testScheduler))
+        return ArchiveViewModel(CompletableDeferred(fixture.services), ArchiveKey(place.id, "作品/book.zip", "doc:book"), compute)
             .also { watch(it.state) }
     }
 
@@ -100,6 +108,47 @@ class ArchiveViewModelTest {
 
         list.chooseCharset(null)
         assertEquals(ReadingPosition.Image(0, 3), fixture.books.progress.value[id]?.position)
+    }
+
+    @Test
+    fun `charsets chosen before the last change ends move the stored position one change at a time`() = runTest {
+        val list = viewModel(StandardTestDispatcher(testScheduler))
+        advanceUntilIdle()
+        list.readUpTo(list.shown().pages[0].page)
+        advanceUntilIdle()
+
+        list.chooseCharset(utf8)
+        list.chooseCharset(null)
+        advanceUntilIdle()
+        assertEquals(null, fixture.books.overrides.value[id]?.nameCharset)
+        assertEquals(ReadingPosition.Image(0, 3), fixture.books.progress.value[id]?.position)
+    }
+
+    @Test
+    fun `leaving the screen once the new charset is stored still moves the stored position`() = runTest {
+        val reading = CompletableDeferred<Unit>()
+        val stored = fixture.books.progressRepository
+        val progress = object : ProgressRepository by stored {
+            override suspend fun get(book: BookId): BookProgress? {
+                reading.await()
+                return stored.get(book)
+            }
+        }
+        val services = with(fixture) {
+            LibraryServices(locations, books, history, bookmarks, progress, settings, grants, lister, smb, archives, launch, coverIndex, covers, appScope = fixture.services.appScope)
+        }
+        fixture.locations.rows.value = listOf(place)
+        fixture.archives.result = ArchiveOpenResult.Opened(contents)
+        val list = ArchiveViewModel(CompletableDeferred(services), ArchiveKey(place.id, "作品/book.zip", "doc:book"), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        list.readUpTo(list.shown().pages[0].page)
+
+        list.chooseCharset(utf8)
+        list.viewModelScope.cancel()
+        reading.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(utf8, fixture.books.overrides.value[id]?.nameCharset)
+        assertEquals(ReadingPosition.Image(1, 3), fixture.books.progress.value[id]?.position)
     }
 
     @Test
