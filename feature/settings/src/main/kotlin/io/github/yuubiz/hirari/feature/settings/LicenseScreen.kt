@@ -22,6 +22,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -54,9 +57,10 @@ fun LicenseScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun LicenseItem(library: LicensedLibrary, texts: List<String>) {
+internal fun LicenseItem(library: LicensedLibrary, texts: List<String>) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.clickable { expanded = !expanded }.padding(16.dp)) {
+    val state = stringResource(if (expanded) R.string.licenses_expanded else R.string.licenses_collapsed)
+    Column(Modifier.clickable(role = Role.Button) { expanded = !expanded }.semantics { stateDescription = state }.padding(16.dp)) {
         Text("${library.name} ${library.version}", style = MaterialTheme.typography.titleMedium)
         Text(library.id, style = MaterialTheme.typography.bodySmall)
         Text(library.licenses.joinToString(", "), style = MaterialTheme.typography.bodyMedium)

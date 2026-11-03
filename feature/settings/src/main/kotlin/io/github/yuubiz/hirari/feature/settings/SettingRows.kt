@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
@@ -46,6 +47,9 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rgb
 import io.github.yuubiz.hirari.core.model.TextTypeface
+import io.github.yuubiz.hirari.core.ui.GlyphButton
+import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.minTouchTarget
 
 /**
  * Draws the row of [setting]. Rows that need a choice open their dialog through [onOpen]; the others edit in place.
@@ -127,7 +131,8 @@ private fun <T> SliderRow(setting: SliderSetting<T>, settings: GlobalSettings, s
     val shown = draft.shown(stored)
     val text = setting.format(values[shown])
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        // The slider below says both the name and the value, so the line above is not read a second time.
+        Row(Modifier.fillMaxWidth().decorative(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(setting.label, style = MaterialTheme.typography.bodyLarge)
             Text(text, style = MaterialTheme.typography.bodyLarge)
         }
@@ -162,6 +167,7 @@ private fun ColorSwatch(color: Rgb) {
     Box(
         Modifier
             .size(24.dp)
+            .decorative()
             .background(Color(0xFF000000.toInt() or color.value), CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
     )
@@ -223,7 +229,7 @@ private fun <T> ChoiceDialog(
 @Composable
 private fun RadioRow(label: String, selected: Boolean, onSelect: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton, onClick = onSelect).padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton, onClick = onSelect).minTouchTarget().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(end = 16.dp))
@@ -289,7 +295,7 @@ private fun <T> ColorDialog(setting: ColorSetting<T>, settings: GlobalSettings, 
 }
 
 @Composable
-private fun CommandsDialog(setting: OrderedSetSetting, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit, onClose: () -> Unit) {
+internal fun CommandsDialog(setting: OrderedSetSetting, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit, onClose: () -> Unit) {
     val selected = setting.read(settings)
     val available = setting.choices.map { it.value }.filter { it !in selected }
     fun edit(transform: (List<ReaderCommand>) -> List<ReaderCommand>) = onChange { setting.write(it, transform(setting.read(it))) }
@@ -304,23 +310,9 @@ private fun CommandsDialog(setting: OrderedSetSetting, settings: GlobalSettings,
                     val name = setting.labelOf(command)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(name, Modifier.weight(1f))
-                        val up = stringResource(R.string.settings_command_up, name)
-                        val down = stringResource(R.string.settings_command_down, name)
-                        val remove = stringResource(R.string.settings_command_remove, name)
-                        TextButton(
-                            enabled = command != selected.first(),
-                            onClick = { edit { it.movedCommand(command, -1) } },
-                            modifier = Modifier.semantics { contentDescription = up },
-                        ) { Text("↑") }
-                        TextButton(
-                            enabled = command != selected.last(),
-                            onClick = { edit { it.movedCommand(command, 1) } },
-                            modifier = Modifier.semantics { contentDescription = down },
-                        ) { Text("↓") }
-                        TextButton(
-                            onClick = { edit { it.withoutCommand(command) } },
-                            modifier = Modifier.semantics { contentDescription = remove },
-                        ) { Text("×") }
+                        GlyphButton("↑", stringResource(R.string.settings_command_up, name), { edit { it.movedCommand(command, -1) } }, enabled = command != selected.first())
+                        GlyphButton("↓", stringResource(R.string.settings_command_down, name), { edit { it.movedCommand(command, 1) } }, enabled = command != selected.last())
+                        GlyphButton("×", stringResource(R.string.settings_command_remove, name), { edit { it.withoutCommand(command) } })
                     }
                 }
                 item(key = "available-title") {
@@ -332,17 +324,21 @@ private fun CommandsDialog(setting: OrderedSetSetting, settings: GlobalSettings,
                 items(available, key = { "available-${it.name}" }) { command ->
                     val add = stringResource(R.string.settings_command_add, setting.labelOf(command))
                     Row(
-                        Modifier.fillMaxWidth().clickable(enabled = selected.size < setting.max, role = Role.Button) {
-                            edit { it.withCommand(command, setting.max) }
-                        },
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = selected.size < setting.max, role = Role.Button) {
+                                edit { it.withCommand(command, setting.max) }
+                            }
+                            .minTouchTarget()
+                            .semantics { contentDescription = add },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             setting.labelOf(command),
-                            Modifier.weight(1f).padding(vertical = 12.dp),
+                            Modifier.weight(1f).padding(vertical = 12.dp).decorative(),
                             color = if (selected.size < setting.max) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Text("＋", Modifier.semantics { contentDescription = add })
+                        Text("＋", Modifier.decorative())
                     }
                 }
             }
@@ -353,5 +349,5 @@ private fun CommandsDialog(setting: OrderedSetSetting, settings: GlobalSettings,
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Text(text, Modifier.padding(vertical = 8.dp).semantics { heading() }, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
 }

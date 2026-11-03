@@ -22,6 +22,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.ImportChanges
+import io.github.yuubiz.hirari.core.ui.announced
+import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.minTouchTarget
 
 @Composable
 internal fun ExportDialog(includeReading: Boolean, onIncludeReading: (Boolean) -> Unit, onChoosePlace: () -> Unit, onDismiss: () -> Unit) {
@@ -32,7 +35,7 @@ internal fun ExportDialog(includeReading: Boolean, onIncludeReading: (Boolean) -
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(R.string.export_body))
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 16.dp).toggleable(includeReading, role = Role.Checkbox, onValueChange = onIncludeReading),
+                    Modifier.fillMaxWidth().padding(top = 16.dp).toggleable(includeReading, role = Role.Checkbox, onValueChange = onIncludeReading).minTouchTarget(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = includeReading, onCheckedChange = null, modifier = Modifier.padding(end = 16.dp))
@@ -91,8 +94,8 @@ internal fun WorkingDialog() {
         onDismissRequest = {},
         confirmButton = {},
         text = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.padding(end = 16.dp))
+            Row(Modifier.announced(), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.padding(end = 16.dp).decorative())
                 Text(stringResource(R.string.settings_working))
             }
         },
