@@ -4,24 +4,42 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 
 ## 状態
 
-`docs/spec.md` の 9 章のマイルストーンは、どれも終わっていません。実機や NAS が要る確認が残っているか、コードが足りないためです。完了条件の分類と根拠は、9 章の「確認の状況」にあります。API 37 と API 28 のエミュレータでは、端末上の試験がすべて通りました。
+`docs/spec.md` の 9 章のマイルストーンのうち、完了条件をすべて確認できたのは M0 だけです。ほかはコードが揃い、実機、NAS、実データ、人の手が要る確認が残っています。完了条件ごとの分類と根拠は、9 章の「確認の状況」にあります。仕様書の (要検証) は、`docs/verification.md` の台帳に 1 件ずつ載せています。仕様書を直したら、`bash tools/verification/list.sh --check` で台帳と件数が合うことを確かめます。
 
-- M0（骨組みとライセンスの仕組み）: コード完了。GitHub の CI での確認が 1 件残ります（`check` が通ることと、許可外の依存で失敗することを、手動実行で見ます）。
-- M1（ローカルの ZIP と画像フォルダを読む）: 機能は動きます。ただし P1〜P4 を実際のリーダーで計るトレース区間とベンチマークが未作成です。実機での確認が 3 件残ります（P1〜P4、G2 の片手の手動試験、Q1 の計り直し）。
-- M2（ライブラリ、履歴、しおり、サムネイル）: コード未完です。画像リーダーのしおりの追加と一覧が使えません。実機での確認が 3 件残ります（1000 冊のフォルダの P7 と P8、ファイル管理アプリから cbz を開く、書き出し、データの消去、読み込みの順）。
-- M3（RAR、7z、PDF とすべての画像形式）: コード完了、確認が 3 件残ります（fuzz を延べ 24 時間、幅 800 で高さ 50,000 の画像のスクロールと P10 を実機で、圧縮した RAR 5 と RAR 4 の PPMd の実データ）。
-- M4（SMB）: コード未完です。「端末に保存」がありません。実機と NAS での確認が 2 件残ります（基準 NAS の P4、読書中に Wi-Fi を切る）。
+- M0（骨組みとライセンスの仕組み）: 完了。GitHub の CI で `check` が通ることと、許可外の依存で失敗することを確かめました。
+- M1（ローカルの ZIP と画像フォルダを読む）: 機能は動きます。ただし P1〜P4 を実際のリーダーで計るトレース区間とベンチマークがありません。実機での確認が 3 件残ります（P1〜P4、進んでから戻る手動試験と G2 の片手の手動試験、Q1 と Q2 の計り直し）。
+- M2（ライブラリ、履歴、しおり、サムネイル）: コード完了です。実機での確認が 3 件残ります（1000 冊のフォルダの P7 と P8、ファイル管理アプリから cbz を開く、書き出し、データの消去、読み込みの順）。
+- M3（RAR、7z、PDF とすべての画像形式）: コード完了、確認が 3 件残ります（fuzz は延べ 24 時間のうち 0.30 時間、幅 800 で高さ 50,000 の画像のスクロールと P10 を実機で、圧縮した RAR 5 と RAR 4 の PPMd の実データ）。
+- M4（SMB）: コード完了です。保存の取り消しに小さな穴が 1 つあります（サーバーが応答しないまま待っているとき、タイムアウトまで書きかけの `.part` を消しません）。実機と NAS での確認が 3 件残ります（基準 NAS の P4、読書中に Wi-Fi を切る、端末に保存の保存先を選ぶ画面と実際の提供元）。
 - M5（テキストリーダー）: コード完了、実機での確認が 1 件残ります（P9）。
-- M6（残りのリーダー機能と仕上げ）: コード未完です。息での操作、操作ガイド、範囲を選んで表紙にする画面、縦の連続スクロール、アクセシビリティの点検、(要検証) の解消がありません。実機での確認が 2 件残ります（`coldStart` が 600 ms 以内、低位の確認端末と折りたたみ端末での点検）。
+- M6（残りのリーダー機能と仕上げ）: コード完了です。実機での確認が 5 件残ります（`coldStart` が 600 ms 以内、息での操作の 10 回に 9 回、低位の確認端末での点検、折りたたみ端末での点検、実機の TalkBack での点検）。
 
-残りの端末での確認を動かすコマンドは次のとおりです。端末は `ANDROID_SERIAL` で 1 台に絞ります。
+端末上の試験とモンキー試験は、`8984533` の上で流した結果しかありません（API 37 と API 28 のエミュレータ）。そのあとに足した縦の連続スクロール、息での操作、操作ガイド、端末に保存を含めて、まず流し直します。端末は `ANDROID_SERIAL` で 1 台に絞ります。
 
-- 端末上の試験のすべて（API ごとに実行）: `./gradlew :core:archive:connectedDebugAndroidTest :core:image:connectedDebugAndroidTest :feature:text:connectedDebugAndroidTest :core:data:connectedDebugAndroidTest :app:connectedDebugAndroidTest`
+- 端末上の試験のすべて（API 37 と API 28 のそれぞれで実行）: `./gradlew :core:archive:connectedDebugAndroidTest :core:image:connectedDebugAndroidTest :feature:text:connectedDebugAndroidTest :core:data:connectedDebugAndroidTest :app:connectedDebugAndroidTest`
+- モンキー試験（API 37 のエミュレータで 10,000 イベント。落ち 0 件、ANR 0 件を確かめる）: 下の表のモンキー試験のコマンドです。
+
+残りの確認を動かすコマンドと手順は次のとおりです。
+
+- P1〜P4: `b2d4d06` には、実際のリーダーで計るトレース区間とベンチマークがありません。計る仕組みを足してから、下の表の起動の計測のコマンドの形（`-Pandroid.testInstrumentationRunnerArguments.class=` でクラスを選ぶ）で流します。測定は 5.1 節の中位の基準端末で、当面は 検証用の端末 A です。
+- P6（`coldStart`）: `./gradlew :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=macrobenchmark -Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.benchmark.StartupBenchmark` を実機で流します。
+- Q1 と Q2 の計り直し: 同じコマンドの `class=` を `io.github.yuubiz.hirari.benchmark.RenderSurfaceBenchmark` に替えて、実機で流します。
+- P7: 1000 件のフォルダを選び、Perfetto で `Hirari.listFolder` のトレース区間を見ます。
+- P8: `./gradlew :core:image:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.core.image.thumbnail.ThumbnailsDeviceTest"` を流し、`adb logcat -d -s ThumbnailsDeviceTest` で `P8:` の行を読みます。1000 冊のフォルダでの表示は目で見ます。
 - P9: `./gradlew :feature:text:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.feature.text.TextOnDeviceTest#aMegabyteTextReachesItsFirstPageWithTheSystemFontAndDrawsInk"` を流し、`adb logcat -d -s TextOnDeviceTest` で `P9 on this device` の行を読みます。
-- P6（`coldStart`）と Q1 の計り直し: 下の表の起動の計測のコマンドに `-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.benchmark.StartupBenchmark` か `...RenderSurfaceBenchmark` を足します。
-- fuzz の延べ 24 時間: GitHub の Actions で `fuzz.yml` を手動実行します。
-- モンキー試験: 下の表のコマンドです。API 37 のエミュレータで 10,000 イベントが、落ち 0 件、ANR 0 件で終わっています。
-- P1〜P4、P7、P8、P10、G2、NAS、Wi-Fi、ファイル管理アプリ、折りたたみ端末は、計るコマンドがありません。P1〜P4 はトレース区間の追加から始めます。そのほかは `docs/spec.md` の 5.2 節の計測方法に沿って、手で行います。
+- P10: `./gradlew :tools:corpus:generateStandardCorpus` で標準コーパスを作り、`./gradlew :tools:corpus:generateCorpus` で幅 800 で高さ 50,000 の画像 `tall.png` を含むコーパスを作ります。実機で最後まで読みながら、10 ページごとに `adb shell dumpsys meminfo io.github.yuubiz.hirari` を記録します。
+- G2 の片手の手動試験: 4 章の操作表を片手で一巡します。めくり、ページ移動、組ずらし、しおり追加を含みます。進んでから戻ると同じビューに戻ることも、このとき手で確かめます。
+- 折りたたみ端末の点検: 検証用の端末 B で、見開きと、折りたたみと展開での組み直しを見ます。
+- 基準 NAS の P4: NAS の SMB の場所を登録し、一覧のタップから最初のページの描画までを計ります。NAS が手元にないときの試験には、`tools/smb-fixture` の Docker の Samba を使いますが、P4 の判定には使えません。
+- 読書中に Wi-Fi を切る: SMB の本を読みながら Wi-Fi を切り、「再接続しています」が出てアプリが終了しないこと、準備済みのページが読めること、Wi-Fi を戻すと自動で再接続することを見ます。
+- 端末に保存の保存先: SMB の場所のファイルとフォルダを、端末の保存領域、SD カード、クラウドの提供元に保存します。
+- ファイル管理アプリから cbz を開く、書き出し、データの消去、読み込み: 実機の手動です。
+- 息での操作の 10 回に 9 回: 設定の「息でめくる」をオンにし、静かな部屋で短く 10 回吹いて、9 回以上めくれることを見ます。倍率と下限は、ここで調整します。
+- 実機の TalkBack の点検: `docs/verification.md` の A1〜A7 を順に行います。
+- 低位の確認端末の点検: 当面は API 28 の AVD（メモリ 2 GB）で、端末上の試験のすべてと、`./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000 --standard tools/corpus/build/standard-corpus/standard.zip"` を流して、落ちないことを見ます。API 28 か 29 で RAM 3 GB の実機があれば、メモリ予算を P10 の手順で見ます。
+- 圧縮した RAR 5 と RAR 4 の PPMd の実データ: 手元の書庫を端末の SAF で開き、結果を `docs/spec.md` の 3.3 節と 6.2 節に書きます。
+- fuzz の延べ 24 時間: GitHub の Actions で `fuzz.yml` を手動実行します。`gh workflow run fuzz.yml -f minutes=240 -f host_minutes=30 -f monkey_events=0` を、前の実行が終わってから、あと 5 回ほど続けます（1 回に端末の fuzz が 240 分、ホストの fuzz が `archive` と `jxl` で 30 分ずつです）。合計はジョブの要約に出ます。
+- そのほかの (要検証) の確かめ方は、`docs/verification.md` の台帳の「決める手段」の列にあります。
 
 ## ビルドと試験
 
