@@ -3,9 +3,8 @@ package io.github.yuubiz.hirari.core.image
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
@@ -26,37 +25,58 @@ interface PageStash {
 }
 
 /**
- * [server] with every entry it reads kept in [stash], and read from there when it holds the entry. One entry is read
- * by one caller at a time, so a prefetch and a view that want the same page read it from the server once.
+ * [server] with every entry it reads kept in [stash], and read from there when it holds the entry. Callers that ask
+ * for an entry while it is being read wait for that read, so a prefetch and a view that want the same page read it
+ * from the server once, whether or not the disk keeps it.
  */
 internal class StashedPages(private val server: PageBytes, private val stash: DiskStash) : PageBytes {
-    private val entries = ConcurrentHashMap<Int, Mutex>()
+    /** What one read of an entry got, and whether the disk holds it now. */
+    private class Fetched(val result: PageResult<ByteArray>, val kept: Boolean)
 
-    override suspend fun read(page: PageEntry): PageResult<ByteArray> = locked(page) {
-        withContext(Dispatchers.IO) { stash.cache.get(key(page)) }?.let { return@locked PageResult.Ready(it) }
-        server.read(page).also { read ->
-            if (read is PageResult.Ready) withContext(Dispatchers.IO) { stash.cache.put(key(page), read.image) }
-        }
-    }
+    /** The reads in progress by entry. One that ends without a result gives null, and its waiters read for themselves. */
+    private val reading = ConcurrentHashMap<Int, CompletableDeferred<Fetched?>>()
+
+    override suspend fun read(page: PageEntry): PageResult<ByteArray> = fetch(page).result
 
     suspend fun holds(page: PageEntry): Boolean = withContext(Dispatchers.IO) { stash.cache.has(key(page)) }
 
-    suspend fun fill(page: PageEntry): Boolean = locked(page) {
-        if (holds(page)) return@locked true
-        val read = try {
-            server.read(page)
+    suspend fun fill(page: PageEntry): Boolean {
+        if (holds(page)) return true
+        return try {
+            fetch(page).kept
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            return@locked false
+            false
         }
-        read is PageResult.Ready && withContext(Dispatchers.IO) { stash.cache.put(key(page), read.image) }
     }
 
     override fun close() = server.close()
 
-    private suspend inline fun <T> locked(page: PageEntry, block: () -> T): T =
-        entries.computeIfAbsent(page.entryIndex) { Mutex() }.withLock { block() }
+    private suspend fun fetch(page: PageEntry): Fetched {
+        while (true) {
+            val mine = CompletableDeferred<Fetched?>()
+            val running = reading.putIfAbsent(page.entryIndex, mine)
+            if (running != null) {
+                running.await()?.let { return it }
+                continue
+            }
+            var fetched: Fetched? = null
+            try {
+                return readThrough(page).also { fetched = it }
+            } finally {
+                mine.complete(fetched)
+                reading.remove(page.entryIndex, mine)
+            }
+        }
+    }
+
+    private suspend fun readThrough(page: PageEntry): Fetched {
+        withContext(Dispatchers.IO) { stash.cache.get(key(page)) }?.let { return Fetched(PageResult.Ready(it), kept = true) }
+        val read = server.read(page)
+        val kept = read is PageResult.Ready && withContext(Dispatchers.IO) { stash.cache.put(key(page), read.image) }
+        return Fetched(read, kept)
+    }
 
     private fun key(page: PageEntry) = SmbPrefetchCache.Key(stash.book, page.entryIndex)
 }

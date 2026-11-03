@@ -90,6 +90,34 @@ class StashTest {
     }
 
     @Test
+    fun aViewWaitingOnThePrefetchOfItsPageGetsItOnceEvenWhenTheDiskCannotKeepIt() = runBlocking {
+        val full = SmbPrefetchCache(temp.root.resolve("full"), maxBytes = 1, reserveBytes = 0)
+        val server = Server().apply { gate = CompletableDeferred() }
+        val opened = OpenBook(BookContent.Images(StashedPages(server, DiskStash(full, "book"))), Container.Zip, pages, indexError = null, decoding)
+        val filling = async { opened.stash!!.fill(2) }
+        while (server.reads.get() == 0) kotlinx.coroutines.yield()
+        val reading = async { opened.raw(2) }
+        server.gate!!.complete(Unit)
+        assertFalse(filling.await())
+        assertEquals(listOf<Byte>(2, 2, 2), reading.await().bytes())
+        assertEquals(1, server.reads.get())
+    }
+
+    @Test
+    fun aViewWaitingOnAPrefetchThatIsCancelledReadsThePageItself() = runBlocking {
+        val server = Server().apply { gate = CompletableDeferred() }
+        val opened = book(server)
+        val filling = async { opened.stash!!.fill(1) }
+        while (server.reads.get() == 0) kotlinx.coroutines.yield()
+        val reading = async { opened.raw(1) }
+        kotlinx.coroutines.yield()
+        filling.cancel()
+        server.gate!!.complete(Unit)
+        assertEquals(listOf<Byte>(1, 1), reading.await().bytes())
+        assertTrue(opened.stash!!.holds(1))
+    }
+
+    @Test
     fun aPageThatFailsToReadIsNotKept() = runBlocking {
         val server = Server().apply { failing = true }
         val opened = book(server)
