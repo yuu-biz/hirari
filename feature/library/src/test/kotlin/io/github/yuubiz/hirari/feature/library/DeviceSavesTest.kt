@@ -30,7 +30,7 @@ class DeviceSavesTest {
         val finished = mutableListOf<SaveFinished>()
         val saves = DeviceSaves(smb, folders, backgroundScope, finished::add)
         val announced = mutableListOf<SaveFinished>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { saves.finished.collect { announced += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { while (true) announced += saves.nextUnshown() }
         val release = CompletableDeferred<Unit>()
         smb.saving = { onProgress ->
             onProgress(SaveProgress(512, 1024, "vol1.cbz", 0, 1))
@@ -55,6 +55,30 @@ class DeviceSavesTest {
         val done: SaveFinished = SaveFinished.Saved("vol1.cbz", "vol1 (1).cbz")
         assertEquals(listOf(done), finished)
         assertEquals(listOf(done), announced)
+    }
+
+    @Test
+    fun `ends that come while no screen asks wait for the next screen and go to one screen only`() = runTest {
+        val saves = DeviceSaves(smb, folders, backgroundScope)
+        smb.saving = { SaveOutcome.Failed(SaveFailure.ConnectionLost) }
+        saves.start(request("a.cbz"))
+        testScheduler.runCurrent()
+        smb.saving = { SaveOutcome.Saved("b.cbz", 1, 10) }
+        saves.start(request("b.cbz"))
+        testScheduler.runCurrent()
+
+        val first = mutableListOf<SaveFinished>()
+        val second = mutableListOf<SaveFinished>()
+        val screen = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { while (true) first += saves.nextUnshown() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { while (true) second += saves.nextUnshown() }
+        testScheduler.runCurrent()
+        assertEquals(listOf(SaveFinished.Failed("a.cbz", SaveFailure.ConnectionLost), SaveFinished.Saved("b.cbz", "b.cbz")), first + second)
+
+        screen.cancel()
+        smb.saving = { SaveOutcome.Saved("c.cbz", 1, 10) }
+        saves.start(request("c.cbz"))
+        testScheduler.runCurrent()
+        assertEquals(listOf(SaveFinished.Saved("c.cbz", "c.cbz")), (first + second).drop(2))
     }
 
     @Test

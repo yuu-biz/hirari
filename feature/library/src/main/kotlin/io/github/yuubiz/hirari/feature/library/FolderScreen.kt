@@ -112,9 +112,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
             askNotifications()
         }
     }
-    LaunchedEffect(model) {
-        model.finishedSaves.collect { snackbar.showSnackbar(it.text(resources)) }
-    }
+    SaveResults(model::nextSaveResult, snackbar)
     LaunchedEffect(state.notice) {
         val notice = state.notice ?: return@LaunchedEffect
         snackbar.showSnackbar(resources.getString(notice.message()))

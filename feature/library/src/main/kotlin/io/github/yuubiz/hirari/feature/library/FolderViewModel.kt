@@ -155,8 +155,8 @@ class FolderViewModel(
         .flatMapLatest { it.saves.jobs }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
-    /** How each save ended, while the screen is shown. */
-    val finishedSaves: Flow<SaveFinished> = flow { emit(services.await()) }.flatMapLatest { it.saves.finished }
+    /** Takes how the next save ended that no screen has shown, waiting for one. */
+    suspend fun nextSaveResult(): SaveFinished = services.await().saves.nextUnshown()
 
     init {
         list(reconnect = false)

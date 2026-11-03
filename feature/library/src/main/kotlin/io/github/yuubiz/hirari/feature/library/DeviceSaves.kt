@@ -13,11 +13,9 @@ import io.github.yuubiz.hirari.core.source.save.SaveProgress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -62,8 +60,8 @@ class SafSaveFolders(private val resolver: ContentResolver) : SaveFolders {
 
 /**
  * The saves to the device (docs/spec.md section 4.5), which run on [scope] so that they outlive the screen that
- * started them. Several can run at once. [jobs] holds the ones under way. A save that ends other than by 取り消す is
- * announced on [finished] and to [onFinished], which the app uses for a notification that outlives the screen.
+ * started them. Several can run at once. [jobs] holds the ones under way. A save that ends other than by 取り消す goes
+ * to [onFinished], which the app uses for a notification, and waits for a screen to take it with [nextUnshown].
  */
 class DeviceSaves(
     private val smb: SmbPlaces,
@@ -74,10 +72,15 @@ class DeviceSaves(
     private val ids = AtomicLong()
     private val running = MutableStateFlow<List<SaveJob>>(emptyList())
     private val runs = HashMap<Long, Job>()
-    private val ended = MutableSharedFlow<SaveFinished>(extraBufferCapacity = ENDED_BUFFER)
+    private val unshown = Channel<SaveFinished>(Channel.UNLIMITED)
 
     val jobs: StateFlow<List<SaveJob>> = running.asStateFlow()
-    val finished: SharedFlow<SaveFinished> = ended.asSharedFlow()
+
+    /**
+     * Waits for a save to end that no screen has shown and takes it, oldest first. Ends that come while no screen
+     * asks are kept, so the next screen shown gets them, and each goes to one caller only.
+     */
+    suspend fun nextUnshown(): SaveFinished = unshown.receive()
 
     /** Starts the save and returns its id. */
     fun start(request: SaveRequest): Long {
@@ -96,7 +99,7 @@ class DeviceSaves(
             }
             running.update { jobs -> jobs.filter { it.id != id } }
             synchronized(runs) { runs.remove(id) }
-            ended.tryEmit(result)
+            unshown.trySend(result)
             onFinished(result)
         }
         synchronized(runs) { runs[id] = run }
@@ -129,10 +132,6 @@ class DeviceSaves(
         smb.save(request.place, request.path, request.directory, folders.open(request.destination)) { progress ->
             running.update { jobs -> jobs.map { if (it.id == id) it.copy(progress = progress) else it } }
         }
-
-    private companion object {
-        const val ENDED_BUFFER = 16
-    }
 }
 
 fun SaveProgress.text(): String = progressText(percent, bytesDone, bytesTotal)

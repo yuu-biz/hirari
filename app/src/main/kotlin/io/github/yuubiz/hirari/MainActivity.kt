@@ -250,6 +250,7 @@ class MainActivity : ComponentActivity() {
                     prototypeRoutes()
                 }
                 StartUp(nav, app, app.start)
+                AppSaveResults(nav, app)
             }
         }
     }
