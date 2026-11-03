@@ -64,6 +64,7 @@ class TextReaderViewModel(
     private var typefaces: TypefaceCache? = null
     private var stopped = false
     private var viewport: Viewport? = null
+    private val early = EarlyTurn()
     private val ends = BookEnds(viewModelScope) { edge -> services.await().siblings.beside(ref, edge) }
 
     /** Decoded 挿絵, by path and size, so a turn back does not decode again. */
@@ -102,6 +103,7 @@ class TextReaderViewModel(
                 onTurned = { turnHaptics.trySend(Unit) },
             )
             this@TextReaderViewModel.model = model
+            early.handOver(model)
             launch { model.state.collect { pending.value = it } }
             model.start()
             viewport?.let(model::onViewport)
@@ -124,7 +126,13 @@ class TextReaderViewModel(
     /** Turns [views] views; a turn that runs into an end of the text goes on to [bookEnd] too. */
     fun turn(views: Int): TurnResult {
         ends.pageActed()
-        val result = model?.turn(views) ?: TurnResult.Waiting
+        val model = model
+        val result = if (model != null) {
+            model.turn(views)
+        } else {
+            early.queue(views)
+            TurnResult.Waiting
+        }
         if (result is TurnResult.Edge) edgeReached(result.edge)
         return result
     }

@@ -488,6 +488,20 @@ class TextReaderModelTest {
     }
 
     @Test
+    fun `of the turns asked for before the model exists only the latest is handed over, and it runs when the layout lands`() = runTest {
+        settings.value = settings.value.copy(textSizeSp = 28)
+        val pump = HandPump()
+        val early = EarlyTurn()
+        early.queue(1)
+        early.queue(2)
+        val model = model(text = sampleText(chapters = 1, sentencesPerChapter = 60), work = pump)
+        early.handOver(model)
+        early.handOver(model)
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        assertEquals(2, model.reading.current)
+    }
+
+    @Test
     fun `a jump to the page a bar named lands on it after the pages before it are laid out, and ticks`() = runTest {
         settings.value = settings.value.copy(turnHaptics = true)
         val offset = source.indexOf("名前はまだ3章の10 番目")
