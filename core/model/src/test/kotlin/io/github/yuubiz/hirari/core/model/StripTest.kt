@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.model
 
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.arbitrary
+import io.kotest.property.arbitrary.choice
 import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.enum
 import io.kotest.property.arbitrary.map
@@ -61,12 +62,28 @@ class StripTest {
     fun aPositionFindsItsWayBack(): Unit = runBlocking {
         val cases = arbitrary {
             val strip = Strip.of(arbStripShapes.bind())
-            strip to StripPosition(Arb.int(0 until strip.pageCount).bind(), between(0f, 0.999f).bind())
+            strip to StripPosition(Arb.int(0 until strip.pageCount).bind(), Arb.choice(between(0f, 1f), Arb.element(0f, 1f)).bind())
         }
         checkAll(cases) { (strip, position) ->
             val back = strip.positionAt(strip.offsetOf(position))
-            assertEquals(position.page, back.page)
-            assertTrue(abs(position.fraction - back.fraction) < 1e-4f, "$position came back as $back")
+            close(strip.offsetOf(position), strip.offsetOf(back), 1e-6)
+            if (position.fraction < 1f) assertEquals(position.page, back.page, "$position came back as $back")
+        }
+    }
+
+    @Test
+    fun theBottomOfAPageIsTheTopOfTheNextButAtTheEnd(): Unit = runBlocking {
+        checkAll(arbStripShapes.map(Strip::of)) { strip ->
+            for (page in 0 until strip.pageCount) {
+                for (y in listOf(strip.bottom(page), Math.nextDown(strip.bottom(page)))) {
+                    val at = strip.positionAt(y)
+                    assertEquals(strip.pageAt(strip.offsetOf(at)), at.page, "$at at $y")
+                    if (at.page < strip.pageCount - 1) assertTrue(at.fraction < 1f, "$at at $y")
+                }
+            }
+            val last = StripPosition(strip.pageCount - 1, 1f)
+            assertEquals(last, last.named(strip.pageCount))
+            if (strip.pageCount > 1) assertEquals(StripPosition(1, 0f), StripPosition(0, 1f).named(strip.pageCount))
         }
     }
 
@@ -74,14 +91,20 @@ class StripTest {
     fun theScreenShowsAContiguousRunHoldingThePageItIsOn(): Unit = runBlocking {
         val cases = arbitrary {
             val strip = Strip.of(arbStripShapes.bind())
-            val scroll = StripScroll().panned(0f, -between(0f, 50_000f).bind(), strip, PHONE)
+            val scroll = Arb.choice(
+                arbitrary { StripScroll().panned(0f, -between(0f, 50_000f).bind(), strip, PHONE) },
+                arbitrary {
+                    val position = StripPosition(Arb.int(0 until strip.pageCount).bind(), Arb.choice(between(0f, 1f), Arb.element(0f, 1f)).bind())
+                    StripScroll(position.named(strip.pageCount))
+                },
+            ).bind()
             strip to scroll
         }
         checkAll(cases) { (strip, scroll) ->
             val visible = scroll.visible(strip, PHONE)
             assertTrue(!visible.isEmpty() && visible.first >= 0 && visible.last < strip.pageCount, "$visible")
-            assertTrue(scroll.page(strip, PHONE) in visible)
-            assertEquals(scroll.anchor.page, visible.first)
+            assertTrue(scroll.page(strip, PHONE) in visible, "${scroll.anchor} shows $visible")
+            if (!scroll.endInView(strip, PHONE)) assertTrue(scroll.anchor.page in visible, "${scroll.anchor} shows $visible")
         }
     }
 

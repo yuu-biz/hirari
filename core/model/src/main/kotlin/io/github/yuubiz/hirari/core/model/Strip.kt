@@ -56,7 +56,7 @@ class Strip private constructor(private val tops: DoubleArray) {
 
     fun positionAt(y: Double): StripPosition {
         val page = pageAt(y)
-        return StripPosition(page, ((y - top(page)) / height(page)).coerceIn(0.0, 1.0).toFloat())
+        return StripPosition(page, ((y - top(page)) / height(page)).coerceIn(0.0, 1.0).toFloat()).named(pageCount)
     }
 
     /** The last page whose top is above [y], or at it when [inclusive]; the first page when none is. */
@@ -96,6 +96,12 @@ data class StripPosition(val page: Int, val fraction: Float) {
         require(page >= 0) { "page $page" }
         require(fraction in 0f..1f) { "fraction $fraction is outside 0..1" }
     }
+
+    /**
+     * This point named by the page it is in, on a strip of [pageCount] pages: the bottom of a page is the top of the
+     * next one, but at the end of the strip. A fraction that rounds to 1 names the bottom too.
+     */
+    fun named(pageCount: Int): StripPosition = if (fraction == 1f && page < pageCount - 1) StripPosition(page + 1, 0f) else this
 }
 
 /** The screen over a strip, in pixels, with the strip [zoom] times the width of the screen. */

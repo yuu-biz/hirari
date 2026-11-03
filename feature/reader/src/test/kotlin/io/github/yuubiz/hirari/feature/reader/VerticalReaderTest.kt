@@ -20,9 +20,19 @@ import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.StripPosition
 import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.core.model.Turn
+import io.github.yuubiz.hirari.feature.reader.prefetch.PrefetchRequest
+import io.github.yuubiz.hirari.feature.reader.prefetch.Resident
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchInput
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchTarget
 import io.github.yuubiz.hirari.feature.reader.prefetch.shownViews
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.arbitrary
+import io.kotest.property.arbitrary.choice
+import io.kotest.property.arbitrary.element
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.map
+import io.kotest.property.checkAll
+import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
@@ -45,6 +55,11 @@ private fun ReaderState.settle() = reduce(ReaderEvent.Tick(Long.MAX_VALUE))
 
 private val ReaderState.top: Double get() = scroll!!.top(strip, stripScreen)
 
+/** The request the prefetcher makes of this state, which checks that the page it is on is on screen. */
+private fun ReaderState.prefetchRequest() = prefetchInput().let {
+    PrefetchRequest(it.views, it.current, it.shapes, it.travel, 0L, { 0L }, { 0L }, Resident(), visible = it.visible)
+}
+
 private fun near(expected: Double, actual: Double) = assertTrue(abs(expected - actual) < 0.01, "expected $expected, got $actual")
 
 class VerticalReaderTest {
@@ -54,6 +69,38 @@ class VerticalReaderTest {
         assertEquals(StripPosition(3, 0.25f), state.scroll!!.anchor)
         assertEquals(PageView.One(3), state.current)
         assertNull(ReaderState.open(10, 3, VERTICAL.copy(layout = VERTICAL.layout.copy(mode = LayoutMode.Single)), PORTRAIT).scroll)
+    }
+
+    @Test
+    fun theBottomOfTheSavedPageOpensAtTheTopOfTheNext() {
+        val state = ReaderState.open(10, 3, VERTICAL, PORTRAIT, offset = 1f)
+        assertEquals(StripPosition(4, 0f), state.scroll!!.anchor)
+        assertEquals(PageView.One(4), state.current)
+        state.prefetchRequest()
+        val last = ReaderState.open(10, 9, VERTICAL, PORTRAIT, offset = 1f)
+        assertEquals(PageView.One(9), last.current)
+        last.prefetchRequest()
+    }
+
+    @Test
+    fun aSavedPositionOpensWhereItWasAndIsNotWrittenAgain(): Unit = runBlocking {
+        val cases = arbitrary {
+            val count = Arb.int(1..30).bind()
+            val shapes = List(count) { Arb.element(PageShape.Unknown, SEGMENT, PageShape.Known(800, 400), PageShape.Known(800, 12_000)).bind() }
+            Triple(shapes, Arb.int(0 until count).bind(), Arb.choice(Arb.element(0f, 1f), Arb.int(0..1000).map { it / 1000f }).bind())
+        }
+        checkAll(cases) { (shapes, start, offset) ->
+            val opened = shapes.foldIndexed(ReaderState.open(shapes.size, start, VERTICAL, PORTRAIT, offset)) { page, state, shape ->
+                if (shape is PageShape.Known) state.reduce(ReaderEvent.ShapeLearned(page, shape)) else state
+            }
+            opened.prefetchRequest()
+            val saved = assertNotNull(ProgressLog(BookId("b"), shapes.size, opened = null).next(opened, Instant.EPOCH))
+            val position = saved.position as ReadingPosition.Image
+            val reopened = ReaderState.open(shapes.size, position.viewStart, VERTICAL, PORTRAIT, position.offset)
+            reopened.prefetchRequest()
+            assertEquals(opened.scroll!!.anchor, reopened.scroll!!.anchor)
+            assertNull(ProgressLog(BookId("b"), shapes.size, saved).next(reopened, Instant.EPOCH))
+        }
     }
 
     @Test

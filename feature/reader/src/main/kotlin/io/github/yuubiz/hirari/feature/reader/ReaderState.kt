@@ -18,6 +18,7 @@ import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.ScrollMotion
 import io.github.yuubiz.hirari.core.model.Strip
+import io.github.yuubiz.hirari.core.model.StripPosition
 import io.github.yuubiz.hirari.core.model.StripScreen
 import io.github.yuubiz.hirari.core.model.StripScroll
 import io.github.yuubiz.hirari.core.model.rotated
@@ -417,11 +418,15 @@ data class ReaderState(
         shapes.map { if (it is PageShape.Known) it.rotated(Rotation.Quarter) else it }
 
     companion object {
-        /** In 縦に連続, [offset] is how far down page [start] the top of the screen is, as a fraction of its height. */
+        /**
+         * In 縦に連続, [offset] is how far down page [start] the top of the screen is, as a fraction of its height. The
+         * bottom of a page opens as the top of the next one, which is then the page the reader is on.
+         */
         fun open(pageCount: Int, start: Int, config: ReaderConfig, viewport: Viewport, offset: Float = 0f): ReaderState {
-            val pagination = Pagination.open(pageCount, config.layout, viewport.orientation, start)
-            val scroll = if (config.vertical) StripScroll.at(pagination.current.pages.first(), offset.coerceIn(0f, 1f)) else null
-            return ReaderState(pagination, config, viewport, scroll = scroll)
+            if (!config.vertical) return ReaderState(Pagination.open(pageCount, config.layout, viewport.orientation, start), config, viewport)
+            val anchor = StripPosition(start.coerceIn(0, pageCount - 1), offset.coerceIn(0f, 1f)).named(pageCount)
+            val pagination = Pagination.open(pageCount, config.layout, viewport.orientation, anchor.page)
+            return ReaderState(pagination, config, viewport, scroll = StripScroll(anchor))
         }
     }
 }
