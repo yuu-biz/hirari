@@ -76,6 +76,10 @@ class ReaderRestoreTest {
         error("unreachable")
     }
 
+    /** The view start after [count] turns by [code] from [from], each waited for: the reader turns only once the shape of the page it turns to is known, and a press before that does nothing. */
+    private suspend fun ReaderServices.turns(id: BookId, code: Int, count: Int, from: Int): Int =
+        (1..count).fold(from) { at, _ -> pressUntilMoved(id, code, from = at) }
+
     @Test
     fun aBookTurnsBackToTheSameViewAndReopensWhereItWasClosed() = runBlocking {
         val bytes = instrumentation.context.assets.open("zip/images.zip").use { it.readBytes() }
@@ -90,13 +94,11 @@ class ReaderRestoreTest {
             services.saved(id) { it.state == ReadState.Reading }
             assertEquals("a book opened for the first time starts at its first view", 0, services.viewStart(id))
 
-            repeat(3) { press(KeyEvent.KEYCODE_DPAD_LEFT) }
-            val ahead = services.viewStart(id) { it > 0 }
-            repeat(3) { press(KeyEvent.KEYCODE_DPAD_RIGHT) }
-            assertEquals("three turns back return to the first view after reaching $ahead", 0, services.viewStart(id) { it < ahead })
+            val ahead = services.turns(id, KeyEvent.KEYCODE_DPAD_LEFT, count = 3, from = 0)
+            assertEquals("three turns back return to the first view after reaching $ahead", 0, services.turns(id, KeyEvent.KEYCODE_DPAD_RIGHT, count = 3, from = ahead))
 
-            repeat(4) { press(KeyEvent.KEYCODE_DPAD_LEFT) }
-            closedOn = services.viewStart(id) { it > ahead }
+            closedOn = services.turns(id, KeyEvent.KEYCODE_DPAD_LEFT, count = 4, from = 0)
+            assertTrue("four turns forward reach past $ahead: $closedOn", closedOn > ahead)
         }
 
         ActivityScenario.launch<MainActivity>(intent).use {

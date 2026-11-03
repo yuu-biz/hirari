@@ -115,12 +115,17 @@ class ReaderSheetsTest {
 
     /**
      * A tap the way the system injects it: down and up go through the input dispatcher, [gapMs] apart in event
-     * time, as `input tap` (no gap) and UiAutomator do, not through Compose's own test injection.
+     * time, as `input tap` (no gap) and UiAutomator do, not through Compose's own test injection. The reader hides the
+     * system bars, so its 60 dp page bar ends at the bottom of the real display, which `displayMetrics` leaves short by
+     * the navigation bar of a three-button device. The tap lands 54 dp up, inside the bar and above the 48 dp navigation
+     * bar, so it cannot press that bar's home button while the system bars are still on their way out.
      */
     private fun systemTapPageBar(gapMs: Long) {
-        val metrics = context.resources.displayMetrics
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        context.getSystemService(android.view.WindowManager::class.java).defaultDisplay.getRealMetrics(metrics)
         val x = metrics.widthPixels / 2f
-        val y = metrics.heightPixels - 30 * metrics.density
+        val y = metrics.heightPixels - 54 * metrics.density
         val downAt = android.os.SystemClock.uptimeMillis()
         fun event(action: Int, at: Long) = android.view.MotionEvent.obtain(downAt, at, action, x, y, 0).apply {
             source = android.view.InputDevice.SOURCE_TOUCHSCREEN
