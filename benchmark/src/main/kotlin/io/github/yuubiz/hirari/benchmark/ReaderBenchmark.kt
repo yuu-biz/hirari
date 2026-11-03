@@ -1,0 +1,177 @@
+package io.github.yuubiz.hirari.benchmark
+
+import android.util.Log
+import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.ExperimentalMetricApi
+import androidx.benchmark.macro.FrameTimingMetric
+import androidx.benchmark.macro.MemoryUsageMetric
+import androidx.benchmark.macro.Metric
+import androidx.benchmark.macro.TraceSectionMetric
+import androidx.benchmark.macro.junit4.MacrobenchmarkRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Until
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+private const val TAP_INTERVAL_MS = 300L
+private const val JUMP_INTERVAL_MS = 800L
+private const val PAGE_BAR_CENTER_DP = 45
+private const val STEP_PAGES = 100
+
+/** The default tap zones (docs/spec.md section 4.8): the right 10% turns back and the rest turns forward. */
+private const val BACK_BAND_PERCENT = 95
+
+/** The long press of docs/spec.md section 4.8 (400 ms) opens the page panel. */
+private const val HOLD_MS = 700
+private const val HOLD_ATTEMPTS = 3
+private const val MEMORY_SAMPLE_EVERY = 10
+private const val STANDARD_PAGES = 200
+private const val TAG = "HirariBench"
+
+/**
+ * P1 to P4 and P10 of docs/spec.md section 5.2 on the real reader. Each test adds [READER_PLACE] as a place, opens the
+ * book from its file list as a reader does, and drives it with taps. The book is the standard corpus when it was
+ * pushed to the device (AGENTS.md) and a stand-in otherwise, which makes the numbers of a stand-in meaningless
+ * beyond showing that the test runs.
+ *
+ * The turns go forward for the first half and back for the second, so a book of 200 pages carries 200 turns.
+ */
+@OptIn(ExperimentalMetricApi::class)
+@RunWith(AndroidJUnit4::class)
+class ReaderBenchmark {
+    @get:Rule
+    val rule = MacrobenchmarkRule()
+
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val driver = Driver(instrumentation)
+    private val device = driver.device
+    private val book = Staging(instrumentation, device).readerBook()
+
+    /** P1: the turn to a prepared view, from the input event to the frame that shows it. 200 turns per trial. */
+    @Test
+    fun p1TurnLatency() = measureTurns(intArgument("turns", 200))
+
+    /** P2: the dropped frames over 100 consecutive turns. */
+    @Test
+    fun p2TurnJank() = measureTurns(intArgument("turns", 100))
+
+    /**
+     * P3: 50 jumps through the page panel, in cycles of 100 pages forward, 1 page forward, 100 pages back, 1 page
+     * forward, so that each lands on a page not seen before and the decoded pages that the reader keeps do not
+     * answer it. A jump to a view that was prepared is counted as a turn (`turnCount`), the others as `jumpCount`.
+     */
+    @Test
+    fun p3JumpLatency() = rule.measureFromPlace(
+        driver,
+        READER_PLACE,
+        listOf(FrameTimingMetric(), TurnMetric(), TurnMetric("hirari.jump", "jump"), prepareTime(TraceSectionMetric.Mode.Average), prepareTime(TraceSectionMetric.Mode.Max)),
+        CompilationMode.Full(),
+        prepare = {
+            openBook()
+            openPagePanel()
+        },
+    ) {
+        val cycle = listOf(
+            stepButton("a11y_step_forward", STEP_PAGES),
+            stepButton("a11y_step_forward", 1),
+            stepButton("a11y_step_back", STEP_PAGES),
+            stepButton("a11y_step_forward", 1),
+        )
+        repeat(intArgument("jumps", 50)) {
+            driver.click(cycle[it % cycle.size])
+            Thread.sleep(JUMP_INTERVAL_MS)
+        }
+    }
+
+    /** P4: from the tap on the book in the file list to the first page drawn, with the profile installed. */
+    @Test
+    fun p4FirstPage() = rule.measureFromPlace(
+        driver,
+        READER_PLACE,
+        listOf(TraceSectionMetric("hirari.firstPage"), prepareTime(TraceSectionMetric.Mode.Max)),
+        CompilationMode.Partial(),
+        prepare = { driver.openPlace(READER_PLACE, book) },
+    ) {
+        driver.open(book)
+        Thread.sleep(SETTLE_MS)
+    }
+
+    /** P10: the memory while reading the whole book, with `dumpsys meminfo` sampled every 10 turns into the log. */
+    @Test
+    fun p10Memory() = rule.measureFromPlace(
+        driver,
+        READER_PLACE,
+        listOf(MemoryUsageMetric(MemoryUsageMetric.Mode.Max), MemoryUsageMetric(MemoryUsageMetric.Mode.Last)),
+        CompilationMode.Partial(),
+        prepare = { openBook() },
+    ) {
+        var peakKb = 0L
+        for (turn in 0 until STANDARD_PAGES - 1) {
+            device.click(device.displayWidth / 4, device.displayHeight / 2)
+            Thread.sleep(TAP_INTERVAL_MS)
+            if (turn % MEMORY_SAMPLE_EVERY == 0) peakKb = maxOf(peakKb, sampleMemory(turn + 1))
+        }
+        Log.i(TAG, "P10 peak java+native heap ${peakKb / 1024} MB")
+    }
+
+    private fun measureTurns(turns: Int) = rule.measureFromPlace(
+        driver,
+        READER_PLACE,
+        listOf(
+            FrameTimingMetric(),
+            TurnMetric(),
+            TurnMetric("hirari.jump", "lateTurn"),
+            prepareTime(TraceSectionMetric.Mode.Average),
+            prepareTime(TraceSectionMetric.Mode.Max),
+        ),
+        CompilationMode.Full(),
+        prepare = { openBook() },
+    ) {
+        val forward = (turns + 1) / 2
+        val y = device.displayHeight / 2
+        repeat(forward) { tap(device.displayWidth / 4, y) }
+        repeat(turns - forward) { tap(device.displayWidth * BACK_BAND_PERCENT / 100, y) }
+    }
+
+    private fun openBook() {
+        driver.openFromFileList(READER_PLACE, book)
+        Thread.sleep(SETTLE_MS)
+    }
+
+    private fun tap(x: Int, y: Int) {
+        device.click(x, y)
+        Thread.sleep(TAP_INTERVAL_MS)
+    }
+
+    private fun openPagePanel() {
+        val density = instrumentation.targetContext.resources.displayMetrics.density
+        val x = device.displayWidth / 2
+        val y = device.displayHeight - (PAGE_BAR_CENTER_DP * density).toInt()
+        repeat(HOLD_ATTEMPTS) {
+            val output = device.executeShellCommand("input swipe $x $y $x $y $HOLD_MS")
+            Log.i(TAG, "page bar hold at $x,$y: '$output'")
+            if (device.wait(Until.hasObject(stepButton("a11y_step_forward")), SETTLE_MS)) return
+        }
+        error("the page panel did not open")
+    }
+
+    /** The step buttons of the page panel are found by what a screen reader says of them. */
+    private fun stepButton(description: String, pages: Int = STEP_PAGES) = By.pkg(PACKAGE).desc(driver.appString(description, pages))
+
+    /** Java and native heap of the app in KB, from the app summary of `dumpsys meminfo`. */
+    private fun sampleMemory(page: Int): Long {
+        val summary = device.executeShellCommand("dumpsys meminfo $PACKAGE")
+        fun kb(label: String) = Regex("$label:\\s+(\\d+)").find(summary)?.groupValues?.get(1)?.toLong() ?: 0L
+        val java = kb("Java Heap")
+        val native = kb("Native Heap")
+        Log.i(TAG, "P10 page=$page javaHeapKb=$java nativeHeapKb=$native")
+        return java + native
+    }
+
+    private fun prepareTime(mode: TraceSectionMetric.Mode): Metric = TraceSectionMetric("hirari.prepare", mode)
+}
+
+private const val SETTLE_MS = 1_500L

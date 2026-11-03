@@ -1872,6 +1872,7 @@ M0 の時点で手元にある実機は、検証用の端末 A と 検証用の�
 - 5.2 節の目標は 検証用の端末 A で計測する。中位の端末より速いので、目標を満たしても中位の端末で満たすとは限らない。中位の条件に当たる実機を用意したら、その端末に替えて計り直す (要検証)。
 - 低位の確認は、API 28 のエミュレータで行う。今の AVD のメモリは 2 GB で、条件の 3 GB より厳しい。エミュレータは性能の判定には使わず、落ちないこととメモリ予算の確認にだけ使う。
 - 検証用の端末 B を折りたたみの確認端末とする。
+- 5.2 節の目標を計るコマンドは AGENTS.md の表に 1 つずつ載せてある。どれも `ANDROID_SERIAL` で端末を 1 台に絞り、`androidx.benchmark.enabledRules=macrobenchmark` を付ける。エミュレータで流した数値は、計測の仕組みが動くことの確認にだけ使い、5.2 節の判定には使わない。標準コーパスを端末の `/sdcard/hirari-perf/standard.zip` に置いていないと、計測は 200 枚の小さなページの代用品を作って動く。代用品の数値は目標と比べられない。
 
 ### 5.2 目標
 
@@ -1889,6 +1890,27 @@ M0 の時点で手元にある実機は、検証用の端末 A と 検証用の�
 | P8 | サムネイル | 見えている約 15 項目が、キャッシュからは 1 s、ローカルでの生成では 3 s で埋まる | トレース区間 |
 | P9 | テキストを開く | 1 MB の青空文庫テキストで最初のページまで 300 ms。全体の組版は 3 s | トレース区間 |
 | P10 | メモリ | 標準コーパスを最後まで読む間、ネイティブヒープと Java ヒープの合計がメモリ予算 + 100 MB 以内 | `dumpsys meminfo` を 10 ページごとに記録 |
+
+#### 計測の区間と試験
+
+目標を計る道具は、実際のアプリのトレース区間と、それを読む `:benchmark` の Macrobenchmark である。区間は `android.os.Trace` の非同期区間で、API 28 には非同期区間がないので API 28 の端末では出ない（部品は `:core:ui` の `TraceSection`）。同期の区間にしないのは、仕事が中断と再開でスレッドを移るからである。試験は実際のアプリを UiAutomator で操作する。場所を加えて一覧から本を開く道は Baseline Profile の生成（8.6 節）と同じものを使い、端末の共有ストレージの直下に `hirari-perf` から始まる名前のフォルダを作って場所にする。試行（既定 3 回）ごとにアプリのデータを消してから始めるので、読書位置とサムネイルは前の試行から引き継がない。
+
+| ID | 区間と場所 | 始まり | 終わり | 試験 |
+|---|---|---|---|---|
+| P1、P2 | `hirari.turn lagUs=N`（`ReaderViewModel.dispatch`、`ReaderSurface`） | ほかのビューへ動く入力をアプリが処理した時点で、動き先が準備済みのとき。`N` は入力のイベントの時刻から処理までの待ち（マイクロ秒）で、区間はイベントの時刻より前から始められないので名前に入れる。タップだけがイベントの時刻を渡し、キーと、指を離して確定する引きは 0 とする | そのビューを描くフレームを記録した時点 | `ReaderBenchmark` の `p1TurnLatency`（200 回）、`p2TurnJank`（100 回）。前半は進み（画面の右端 10% 以外のタップ）、後半は戻る（右端のタップ）。読みは `TurnMetric` が行い、入力のイベントの時刻から `android_frames` の表示の時刻までを `turnShownMs` に出す。落ちたフレームは `FrameTimingMetric` と `timelineAppJankPercent` |
+| P3 | `hirari.jump lagUs=N` | 上と同じ。ただし動き先が準備できていないとき | 動き先の画像を描くフレームを記録した時点 | `ReaderBenchmark.p3JumpLatency`。ページパネルのボタンで 100 ページ進む、1 ページ進む、100 ページ戻る、1 ページ進むを繰り返し、50 回動く。毎回、まだ見ていないページに着く。準備済みのビューへ着いたものは `turnCount` に数える |
+| P3 の前半 | | | | 準備していないビューには、今のリーダーはサムネイルの仮表示を持たず、進行の表示（`DelayedProgress`）だけを出す。そのため「サムネイルの仮表示は 1 フレーム以内」は計れない (要検証) |
+| 共通 | `hirari.prepare`（`BookPageLoader.prepare`） | 1 ページの準備の始め | 終わり。デコード、デコードのあとの手順、GPU への上げを含む | 上の試験が `TraceSectionMetric` で平均と最大を出す |
+| P4 | `hirari.firstPage`（`FolderViewModel.open`、`ReaderViewModel`、`ReaderSurface`） | 一覧で本をタップした時点。一覧を通らないで開くとき（履歴など）はリーダーを作った時点 | 最初のビューを描くフレームを記録した時点。読めないページはその失敗の表示を含む。リーダーを閉じたときにも終える | `ReaderBenchmark.p4FirstPage`（ローカル）、`ServerBenchmark.p4FirstPageOnServer`（SMB。サーバーを指定する引数がなければ飛ばす） |
+| P5 | | | | 自動化していない。コーパスに solid の RAR 5 の大きな書庫がない |
+| P7 | `hirari.listFolder`（`SafFolderLister`） | フォルダの問い合わせの始め | 行を読み終えたとき | `LibraryBenchmark.p7ListThousandItems`。空の `.cbz` 1000 個のフォルダ。一覧は 1 回の問い合わせで全項目を返すので、最初の項目まで（300 ms）と全項目まで（1 s）は同じ区間である。並べ替えと描画は含まない |
+| P8 | `hirari.thumbnail`（`CoverLoader`） | 画面に出ている行が表紙を探し始めた時点 | 表紙か失敗が出た時点 | `LibraryBenchmark.p8CoversGenerated`（ストアが空）、`p8CoversFromStore`（ディスクのストアにあり、メモリにはない）。標準の大きさのページ 1 枚の ZIP が 20 冊。`ThumbnailFillMetric` が、先に終わった 15 個の区間の始まりから終わりまでを `thumbnailFillMs` に出す |
+| P9 | `hirari.textFirstPage`（`TextReaderViewModel`） | テキストリーダーを作った時点 | 最初のページの組版ができた時点（描画は含まない） | `TextBenchmark.p9TextFirstPage`。約 1 MB のテキスト。全体の組版（3 s）は計っていない |
+| P10 | | | | `ReaderBenchmark.p10Memory`。標準コーパスを最後まで進め、10 ページごとに `dumpsys meminfo` の Java Heap と Native Heap の合計を logcat のタグ `HirariBench` に出す。`MemoryUsageMetric` の最大値も出す。メモリ予算はこの試験からは見えないので、比べるのは人が行う |
+
+- P4 の SMB の試験は、`tools/smb-fixture` の Samba に対して、エミュレータからホストの `10.0.2.2:14455` へ繋いで流れることを確かめた（`smbHost=10.0.2.2`、`smbPort=14455`、`smbShare=books`、`smbUser=bookworm7`、`smbBook` は置いた書庫）。初めて繋ぐときのローカルネットワークの許可の問い合わせは、試験が許可する。基準 NAS では流していない (要検証)。
+- P9 の試験の本文は、約 1 MB の UTF-8 の文章の先頭に 1 行（`a`）を足してある。足さない本文では、64 KB の見本で文字コードを調べるときに `IllegalArgumentException: newPosition > limit` でアプリが落ちた（`TextCharset.kt` の `read` の、エラーの長さだけ入力の位置を進める行。位置が見本の長さ 65536 を超える）。本文の並びで起きるかどうかが変わる。原因は確かめておらず、直していない (要検証)。
+- ページバーのタップ計測の試験が adb の短いタップでページバーを押してもページパネルが開かなかったので、試験は 400 ms を超える長押しで開く。タップで開かない原因は調べていない (要検証)。
 
 ### 5.3 先読みの方針
 
@@ -2347,6 +2369,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - **取り込み**。`:app` は `baselineProfile(project(":benchmark"))` で受け取り、`androidx.profileinstaller:profileinstaller` を `implementation` で持つ。release の APK に `assets/dexopt/baseline.prof` が入り、初回起動のときに profileinstaller が ART に渡す。
 - **計測**。`StartupBenchmark` の `coldStart` は `CompilationMode.Partial()`（プロファイルあり。入っていなければ失敗する）、`coldStartWithoutProfile` は `CompilationMode.None()` で、差を見る。`connectedBenchmarkAndroidTest` は生成の試験を流さないよう、`androidx.benchmark.enabledRules=macrobenchmark` を付けて流す（AGENTS.md）。エミュレータの値は判定に使えない（5.1 節）。
 - **エミュレータでの結果**。API 37 の x86_64 のエミュレータ（`FeedDeck_API37`）で、`coldStart` の `timeToInitialDisplayMs` の中央値は 1224 ms（最小 903、最大 1590、10 回）、`coldStartWithoutProfile` は 1246 ms（最小 928、最大 1900、10 回）だった。差は回ごとのばらつきの中にある。エミュレータの値は判定に使えず、5.2 節の P6 は実機で計り直す (要検証)。エミュレータでは、プロファイルで事前にコンパイルした効果が見えるとは限らない。
+- **共通の操作**。場所を加えて本を開く操作は、生成と 5.2 節の計測が `:benchmark` の `Driver` で共有する。フォルダ選択画面は最後に使った場所で開くので、場所の名前が見えないときは戻る操作で 1 つ上へ上がって探す。
 - **既知の制約**。生成は、端末のフォルダ選択画面が AOSP か Google のもの（パッケージ名が `documentsui` で終わる）であることを前提にする。ボタンは `android:id/button1` で探し、場所の名前は `hirari-bench` で探すので、端末の言語には依らない。Windows では、`build` の下の生成物のパスが 260 文字を超えると、プラグインが生成物を取り出せない。リポジトリは浅いパスに置く。端末が複数つながっているときは、`ANDROID_SERIAL` で 1 台に絞る。
 
 ## 9. マイルストーン
@@ -2506,7 +2529,8 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
   - P1、P2、P3、P4（ローカル）を中位の基準端末で満たすこと。手元の機種は 5.1 節のとおり。
   - 進んでから戻る手動試験と、G2 の片手の手動試験。4 章の操作表を片手で一巡する。しおりの追加はリーダーから使えるようになった（M2）ので、G2 の項目が揃った。
   - Q1 と Q2 の実機での計り直し。`RenderSurfaceBenchmark` を使う（AGENTS.md の起動の計測のコマンドに `-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.benchmark.RenderSurfaceBenchmark` を足す）。
-- できていない。P1 から P4 を実際のリーダーで計る仕組み。`b2d4d06` では、トレース区間があるのは Q1 の試作（`prototype/`）、P7 の `Saf.kt`、P9 の `TextReaderViewModel` だけで、実際のリーダーに P1 から P4 のトレース区間はなく、P3 と P4 の `TraceSectionMetric` を使うベンチマークもない。実機で計る前に作る。
+- 確認した。P1 から P4 を実際のリーダーで計る仕組みがある（5.2 節の「計測の区間と試験」）。トレース区間（`hirari.turn`、`hirari.jump`、`hirari.prepare`、`hirari.firstPage`）は実際のリーダーにあり、`ReaderBenchmark` と `ServerBenchmark` が実際のアプリを操作して読む。API 37 のエミュレータで流れること（区間が出て、めくりと移動の数が合うこと）を確かめた。数値は判定に使えない。
+- できていない。P3 の前半（サムネイルの仮表示）は、仮表示がないので計れない。P5 は自動化していない。
 
 #### M2
 

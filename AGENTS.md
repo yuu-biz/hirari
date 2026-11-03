@@ -57,7 +57,19 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 | デバッグ版の APK | `./gradlew :app:assembleDebug` |
 | 書庫の端末上の試験（接続した端末かエミュレータで動く） | `./gradlew :core:archive:connectedDebugAndroidTest` |
 | コーパスの生成（`tools/corpus/build/corpus` に出る） | `./gradlew :tools:corpus:generateCorpus` |
-| 起動の計測（実機で。エミュレータの値は使わない） | `./gradlew :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=macrobenchmark` |
+| 標準コーパス（`docs/spec.md` の 5.1 節）の生成。P1 から P4 と P10 の計測が読む（`tools/corpus/build/standard-corpus/standard.zip` に出る。約 350 MB） | `./gradlew :tools:corpus:generateStandardCorpus` |
+| 標準コーパスを計測する端末に置く（1 度だけ。置いていなければ、計測は小さなページの代用品を作って動くが、5.2 節の目標とは比べられない） | `adb -s <serial> shell mkdir -p /sdcard/hirari-perf` のあと `adb -s <serial> push tools/corpus/build/standard-corpus/standard.zip /sdcard/hirari-perf/` |
+| 起動の計測（P6。実機で。エミュレータの値は使わない） | `ANDROID_SERIAL=<serial> ./gradlew :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=macrobenchmark -Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.benchmark.StartupBenchmark` |
+| P1 めくりの遅れ（200 回 × 3 試行。実機で） | `ANDROID_SERIAL=<serial> ./gradlew :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=macrobenchmark -Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.benchmark.ReaderBenchmark#p1TurnLatency` |
+| P2 めくりのジャンク（100 回 × 3 試行。実機で） | 同じ形で `...ReaderBenchmark#p2TurnJank` |
+| P3 先読みしていないページへの移動（100 ページ先と戻りを 50 回 × 3 試行。実機で） | 同じ形で `...ReaderBenchmark#p3JumpLatency` |
+| P4 本を開いてから最初のページ（ローカル。実機で） | 同じ形で `...ReaderBenchmark#p4FirstPage` |
+| P4 の SMB（サーバーが要る。`smbHost`、`smbShare`、`smbBook` を渡さなければ飛ばす。`smbPort`、`smbFolder`、`smbUser`、`smbPassword` は任意） | 同じ形で `...ServerBenchmark#p4FirstPageOnServer` に `-Pandroid.testInstrumentationRunnerArguments.smbHost=<host> -Pandroid.testInstrumentationRunnerArguments.smbShare=<share> -Pandroid.testInstrumentationRunnerArguments.smbBook=standard.zip` を足す |
+| P7 1000 項目のフォルダの一覧（実機で） | 同じ形で `...LibraryBenchmark#p7ListThousandItems` |
+| P8 サムネイル。生成（実機で） | 同じ形で `...LibraryBenchmark#p8CoversGenerated` |
+| P8 サムネイル。ディスクのキャッシュから（実機で） | 同じ形で `...LibraryBenchmark#p8CoversFromStore` |
+| P9 1 MB のテキストの最初のページ（実機で） | 同じ形で `...TextBenchmark#p9TextFirstPage` |
+| P10 メモリ（標準コーパスを最後まで。10 ページごとの `dumpsys meminfo` は logcat のタグ `HirariBench` に出る。実機で） | 同じ形で `...ReaderBenchmark#p10Memory` |
 | Baseline Profile の生成（接続した端末かエミュレータで動く。`app/src/main/generated/baselineProfiles/` に出る） | `./gradlew :app:generateBaselineProfile` |
 | 端末の fuzz（接続した端末かエミュレータで。`--args` の `--minutes` が時間、`--seed` が種） | `./gradlew :tools:fuzz:fuzz -Pandroid.injected.build.abi=x86_64 --args="--minutes 10"` |
 | モンキー試験（デバッグ版の APK とコーパスの本を端末に入れて実行する） | `./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000"` |
@@ -67,6 +79,7 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 - `check` はライセンスも検査します。Maven の依存は Licensee が、`build-logic` の許可リスト（`Licenses.kt`）と照らします。`third_party/` の下のディレクトリは、`verifyThirdParty` が `third_party/manifest.toml` と照らします。
 - ライセンスの検査が効くことを CI で確かめるときは、捨てブランチで許可外の依存（例えば LGPL の `org.mariadb.jdbc:mariadb-java-client`）を `:app` に足し、そのブランチで CI を手動実行して失敗を見ます。確かめたらブランチを消します。
 - Baseline Profile の生成は、端末のフォルダを選ぶ画面（システムの DocumentsUI）を UiAutomator で操作します。API 33 以上の端末かエミュレータで、root なしで動きます。エミュレータで流すときは `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR` を足します。生成物は端末の種類によらないので、エミュレータで作ったものをコミットしてかまいません。
+- 5.2 節の目標の計測は、上の `connectedBenchmarkAndroidTest` の行です。`...` は `io.github.yuubiz.hirari.benchmark.` の略で、`ANDROID_SERIAL=<serial>` と `enabledRules=macrobenchmark` は全部の行に付けます（Windows の PowerShell では `$env:ANDROID_SERIAL="<serial>"` を先に置き、`./gradlew` を `.\gradlew.bat` に読み替えます）。**エミュレータの数値は目標の判定に使いません**（`docs/spec.md` の 5.1 節）。計測の仕組みが動くことを確かめるときだけ、エミュレータで `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR` を足し、数値は非公式と書き添えます。実機のコマンドには付けません。`turns`、`jumps`、`iterations` を `-Pandroid.testInstrumentationRunnerArguments.` で渡すと、回数を減らせます（動作の確認用。判定は既定の回数で行う）。計測は端末の共有ストレージの上位に `hirari-perf` から始まる名前のフォルダを作り、場所として加えます。毎回アプリのデータを消すので、実機の本アプリの設定と履歴は消えます。
 - エミュレータは PC のメモリを大きく使います。端末上の試験は必要なときに 1 台ずつ、対象の試験だけを流します。挙動はできるだけ JVM の単体試験で確かめます。
 - 端末を 2 台以上つないでいるときは、`ANDROID_SERIAL` で使う 1 台を指してから端末を使うタスクを動かします。`connected...` のタスクは、つないでいる全台にアプリを入れ直して動かすので、別の作業が使っている端末のアプリを書き換えます。起動の計測は、アプリの中の `androidx.profileinstaller` の受信部へ shell から放送を送ります。その端末にデバッグ版が入っていると、受信部がメインスレッドでディスクを読み、StrictMode（`docs/spec.md` の 6.3 節）でプロセスが止まります。モンキー試験はこれを落ちとして数えます。
 - CI（`.github/workflows/ci.yml`）は、`v` で始まるタグの push と手動実行のときだけ動きます。

@@ -4,12 +4,17 @@ import androidx.benchmark.macro.ExperimentalMetricApi
 import androidx.benchmark.macro.TraceMetric
 import androidx.benchmark.traceprocessor.TraceProcessor
 
+private const val TURN_LABEL = "turn"
+
 /**
- * P1 and P2 of docs/spec.md section 5.2 for the Q1 prototypes, read from the Perfetto trace.
+ * P1 to P3 of docs/spec.md section 5.2, read from the Perfetto trace, for the Q1 prototypes and for the reader.
+ * [section] names the async section to read (`hirari.turn` for a view that was prepared, `hirari.jump` for one
+ * that was not) and [label] prefixes the measurements, which are listed here with the label `turn`. The frame
+ * counts and jank shares and `turnsSkipped` come only with the label `turn`, so two of these can share a test.
  *
  * - `turnDrawMs`: from the tap's event time to the main thread recording the first frame that draws the
- *   new view. The app's `hirari.turn` async section covers handling to recording, and its name carries the
- *   wait from the event time to the handling.
+ *   new view. The app's section covers handling to recording, and its name carries the wait from the event time
+ *   to the handling.
  * - `turnShownMs`: from the same event time to the end of that frame's FrameTimeline actual slice, which
  *   is when the frame reached the display. Needs API 31 or later.
  * - `turnRenderThreadMs`: the RenderThread's `DrawFrames` slice of that frame. A software bitmap drawn for
@@ -20,7 +25,7 @@ import androidx.benchmark.traceprocessor.TraceProcessor
  * - `turnsSkipped`: taps that found the next view not prepared. They are not turns and are not measured.
  */
 @OptIn(ExperimentalMetricApi::class)
-class TurnMetric : TraceMetric() {
+class TurnMetric(private val section: String = "hirari.turn", private val label: String = TURN_LABEL) : TraceMetric() {
     override fun getMeasurements(captureInfo: CaptureInfo, traceSession: TraceProcessor.Session): List<Measurement> {
         val app = "'${captureInfo.targetPackageName}'"
         val turns = traceSession.query(
@@ -28,7 +33,7 @@ class TurnMetric : TraceMetric() {
             WITH turn AS (
               SELECT s.ts, s.dur, s.name, s.ts + s.dur AS end_ts, p.upid
               FROM slice s JOIN process_track pt ON s.track_id = pt.id JOIN process p ON pt.upid = p.upid
-              WHERE p.name = $app AND s.name LIKE 'hirari.turn lagUs=%' AND s.dur > 0
+              WHERE p.name = $app AND s.name LIKE '$section lagUs=%' AND s.dur > 0
             ),
             frame AS (
               SELECT d.ts, d.dur, CAST(SUBSTR(d.name, 23) AS INT) AS vsync, t.upid
@@ -80,15 +85,17 @@ class TurnMetric : TraceMetric() {
         ).single().long("n")
         val frameCount = frames.long("frames").coerceAtLeast(1)
         return buildList {
-            if (drawMs.isNotEmpty()) add(Measurement("turnDrawMs", drawMs))
-            if (shownMs.isNotEmpty()) add(Measurement("turnShownMs", shownMs))
-            if (renderMs.isNotEmpty()) add(Measurement("turnRenderThreadMs", renderMs))
-            add(Measurement("turnCount", drawMs.size.toDouble()))
-            add(Measurement("turnShownCount", shownMs.size.toDouble()))
-            add(Measurement("turnsSkipped", skipped.toDouble()))
-            add(Measurement("timelineFrameCount", frameCount.toDouble()))
-            add(Measurement("timelineJankPercent", 100.0 * (frames.nullableLong("janky") ?: 0) / frameCount))
-            add(Measurement("timelineAppJankPercent", 100.0 * (frames.nullableLong("app_janky") ?: 0) / frameCount))
+            if (drawMs.isNotEmpty()) add(Measurement("${label}DrawMs", drawMs))
+            if (shownMs.isNotEmpty()) add(Measurement("${label}ShownMs", shownMs))
+            if (renderMs.isNotEmpty()) add(Measurement("${label}RenderThreadMs", renderMs))
+            add(Measurement("${label}Count", drawMs.size.toDouble()))
+            add(Measurement("${label}ShownCount", shownMs.size.toDouble()))
+            if (label == TURN_LABEL) {
+                add(Measurement("turnsSkipped", skipped.toDouble()))
+                add(Measurement("timelineFrameCount", frameCount.toDouble()))
+                add(Measurement("timelineJankPercent", 100.0 * (frames.nullableLong("janky") ?: 0) / frameCount))
+                add(Measurement("timelineAppJankPercent", 100.0 * (frames.nullableLong("app_janky") ?: 0) / frameCount))
+            }
         }
     }
 }

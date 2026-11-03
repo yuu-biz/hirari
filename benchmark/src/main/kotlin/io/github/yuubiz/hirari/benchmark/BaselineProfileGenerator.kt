@@ -5,22 +5,15 @@ import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.BySelector
-import androidx.test.uiautomator.StaleObjectException
-import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
-import java.util.regex.Pattern
 
-private const val PACKAGE = "io.github.yuubiz.hirari"
 private const val PLACE = "hirari-bench"
 private const val BOOK = "images.zip"
-private const val TIMEOUT_MS = 10_000L
 private const val TURNS = 6
-private const val CLICK_ATTEMPTS = 3
 private const val ITERATIONS = 6
 private const val STABLE_ITERATIONS = 2
 
@@ -38,7 +31,8 @@ class BaselineProfileGenerator {
     val rule = BaselineProfileRule()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private val device = UiDevice.getInstance(instrumentation)
+    private val driver = Driver(instrumentation)
+    private val device = driver.device
 
     @Test
     fun coldStartToHome() = rule.collect(
@@ -55,11 +49,11 @@ class BaselineProfileGenerator {
     fun readBook() {
         stageBook()
         rule.collect(PACKAGE, maxIterations = ITERATIONS, stableIterations = STABLE_ITERATIONS) {
-            device.executeShellCommand("pm clear $PACKAGE")
-            pressHome()
+            driver.startClean()
             startActivityAndWait()
-            if (!device.hasObject(By.pkg(PACKAGE).text(PLACE))) addPlace()
-            openFromFileList()
+            if (!device.hasObject(By.pkg(PACKAGE).text(PLACE))) driver.addPlace(PLACE)
+            driver.openFromFileList(PLACE, BOOK)
+            Thread.sleep(1_500)
             turnPages()
             closeReader()
         }
@@ -73,40 +67,6 @@ class BaselineProfileGenerator {
         device.executeShellCommand("rm -rf $place")
         device.executeShellCommand("mkdir -p $place")
         device.executeShellCommand("cp ${copy.absolutePath} $place/$BOOK")
-    }
-
-    private fun addPlace() {
-        val picker = Pattern.compile(".*documentsui")
-        click(By.pkg(PACKAGE).text(appString("place_add")))
-        click(By.pkg(PACKAGE).text(appString("place_add_folder")))
-        click(By.pkg(picker).text(PLACE))
-        click(By.pkg(picker).res("android:id/button1"))
-        check(device.wait(Until.hasObject(By.pkg(picker).res(Pattern.compile(".*:id/alertTitle"))), TIMEOUT_MS)) {
-            "the system did not ask to allow the folder"
-        }
-        click(By.pkg(picker).res("android:id/button1"))
-        check(device.wait(Until.hasObject(By.pkg(PACKAGE).text(PLACE)), TIMEOUT_MS)) { "the place was not added" }
-    }
-
-    private fun openFromFileList() {
-        click(By.pkg(PACKAGE).text(PLACE))
-        click(By.pkg(PACKAGE).text(BOOK))
-        check(device.wait(Until.gone(By.pkg(PACKAGE).text(BOOK)), TIMEOUT_MS)) { "the reader did not open $BOOK" }
-        Thread.sleep(1_500)
-    }
-
-    /** The system's picker and the app's lists redraw as they load, so a found view can be gone by the click. */
-    private fun click(selector: BySelector) {
-        repeat(CLICK_ATTEMPTS) {
-            try {
-                device.wait(Until.findObject(selector), TIMEOUT_MS)?.let {
-                    it.click()
-                    return
-                }
-            } catch (_: StaleObjectException) {
-            }
-        }
-        error("no view to click for $selector")
     }
 
     private fun turnPages() {
@@ -129,10 +89,5 @@ class BaselineProfileGenerator {
         device.pressBack()
         check(device.wait(Until.hasObject(By.pkg(PACKAGE).text(BOOK)), TIMEOUT_MS)) { "the file list did not come back" }
         device.pressBack()
-    }
-
-    private fun appString(name: String): String {
-        val resources = instrumentation.targetContext.packageManager.getResourcesForApplication(PACKAGE)
-        return resources.getString(resources.getIdentifier(name, "string", PACKAGE))
     }
 }

@@ -15,7 +15,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-private const val PACKAGE = "io.github.yuubiz.hirari"
 private const val TAP_INTERVAL_MS = 300L
 private const val PINCHES = 5
 
