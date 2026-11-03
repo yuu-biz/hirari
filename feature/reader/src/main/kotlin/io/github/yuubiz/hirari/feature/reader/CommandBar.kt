@@ -61,9 +61,6 @@ sealed interface CommandEffect {
 
     /** A screen of the settings that the app opens over the reader. */
     data class OpenSettings(val target: SettingsTarget) : CommandEffect
-
-    /** A command of a later milestone. */
-    data object NotYet : CommandEffect
 }
 
 /** What 表紙にする does on [view]: a pair asks which page, any other view makes its one page the cover. */

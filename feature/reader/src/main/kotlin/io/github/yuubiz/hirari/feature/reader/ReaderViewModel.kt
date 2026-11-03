@@ -506,8 +506,7 @@ class ReaderViewModel(
     }
 
     /**
-     * Runs a command of the command bar. What only the screen can do comes back: a sheet to show, or
-     * [CommandEffect.NotYet] for a command of a later milestone.
+     * Runs a command of the command bar. What only the screen can do comes back, such as a sheet to show.
      */
     fun command(command: ReaderCommand, nowMs: Long): CommandEffect? {
         val current = state ?: return null
@@ -519,7 +518,7 @@ class ReaderViewModel(
             CommandEffect.SetCover -> return coverChoice(current.current)
             CommandEffect.ReverseOrder -> return reorder { it.reversedTo(it.reverseOrder != true) }
             CommandEffect.AddBookmark -> return CommandEffect.Show(ReaderSheet.AddBookmark(current.current.pages.first()))
-            is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.Cover, is CommandEffect.OpenSettings, is CommandEffect.Reopen, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
+            is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.Cover, is CommandEffect.OpenSettings, is CommandEffect.Reopen, CommandEffect.ToggleBreath -> return effect
         }
         return null
     }

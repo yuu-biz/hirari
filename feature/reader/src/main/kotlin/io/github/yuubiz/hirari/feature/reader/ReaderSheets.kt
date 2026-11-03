@@ -392,7 +392,7 @@ private val NeighborStart.label: Int
         NeighborStart.Last -> R.string.neighbor_last
     }
 
-/** メニュー (docs/spec.md section 4.8). Items of later milestones show disabled under their names. */
+/** メニュー (docs/spec.md section 4.8). */
 @Composable
 internal fun MenuSheet(
     viewModel: ReaderViewModel,
@@ -469,12 +469,12 @@ private fun MenuRow(item: MenuItem, value: String?, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(enabled = item.available, role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .minTouchTarget()
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(stringResource(item.label), color = if (item.available) SheetText else SheetDisabled, modifier = Modifier.weight(1f))
+        Text(stringResource(item.label), color = SheetText, modifier = Modifier.weight(1f))
         if (value != null) Text(value, color = SheetDisabled)
     }
 }

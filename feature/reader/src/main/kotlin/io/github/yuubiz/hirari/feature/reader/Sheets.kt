@@ -74,21 +74,21 @@ fun menuWidthDp(screenWidthDp: Float, screenHeightDp: Float): Float = minOf(minO
 
 enum class MenuGroup { Book, Reading, App }
 
-/** The menu's items in their order. [available] is false for the items of later milestones, shown disabled. */
-enum class MenuItem(val group: MenuGroup, val available: Boolean) {
-    AddBookmark(MenuGroup.Book, true),
-    Bookmarks(MenuGroup.Book, true),
-    BookSettings(MenuGroup.Book, true),
-    SetCover(MenuGroup.Book, true),
-    SetCoverFromRange(MenuGroup.Book, true),
-    SharePage(MenuGroup.Book, true),
-    RestoreAndClose(MenuGroup.Book, true),
-    AutoPlay(MenuGroup.Reading, true),
-    Breath(MenuGroup.Reading, true),
-    Orientation(MenuGroup.Reading, true),
-    MirrorControls(MenuGroup.Reading, true),
-    Guide(MenuGroup.Reading, true),
-    Settings(MenuGroup.App, true),
-    EditCommandBar(MenuGroup.App, true),
-    About(MenuGroup.App, true),
+/** The menu's items in their order. */
+enum class MenuItem(val group: MenuGroup) {
+    AddBookmark(MenuGroup.Book),
+    Bookmarks(MenuGroup.Book),
+    BookSettings(MenuGroup.Book),
+    SetCover(MenuGroup.Book),
+    SetCoverFromRange(MenuGroup.Book),
+    SharePage(MenuGroup.Book),
+    RestoreAndClose(MenuGroup.Book),
+    AutoPlay(MenuGroup.Reading),
+    Breath(MenuGroup.Reading),
+    Orientation(MenuGroup.Reading),
+    MirrorControls(MenuGroup.Reading),
+    Guide(MenuGroup.Reading),
+    Settings(MenuGroup.App),
+    EditCommandBar(MenuGroup.App),
+    About(MenuGroup.App),
 }

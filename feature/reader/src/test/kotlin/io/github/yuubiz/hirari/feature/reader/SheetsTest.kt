@@ -72,13 +72,16 @@ class SheetsTest {
 
     @Test
     fun theMenuKeepsTheSpecsThreeGroupsInOrder() {
-        assertEquals(MenuItem.entries.map { it.group }.sorted(), MenuItem.entries.map { it.group })
         assertEquals(
-            setOf(
-                MenuItem.SetCoverFromRange, MenuItem.SharePage, MenuItem.RestoreAndClose, MenuItem.AutoPlay, MenuItem.Breath, MenuItem.Orientation, MenuItem.MirrorControls, MenuItem.Guide,
-                MenuItem.AddBookmark, MenuItem.Bookmarks, MenuItem.BookSettings, MenuItem.SetCover, MenuItem.Settings, MenuItem.EditCommandBar, MenuItem.About,
+            mapOf(
+                MenuGroup.Book to listOf(
+                    MenuItem.AddBookmark, MenuItem.Bookmarks, MenuItem.BookSettings, MenuItem.SetCover, MenuItem.SetCoverFromRange, MenuItem.SharePage, MenuItem.RestoreAndClose,
+                ),
+                MenuGroup.Reading to listOf(MenuItem.AutoPlay, MenuItem.Breath, MenuItem.Orientation, MenuItem.MirrorControls, MenuItem.Guide),
+                MenuGroup.App to listOf(MenuItem.Settings, MenuItem.EditCommandBar, MenuItem.About),
             ),
-            MenuItem.entries.filter { it.available }.toSet(),
+            MenuItem.entries.groupBy { it.group },
         )
+        assertEquals(MenuItem.entries.map { it.group }.sorted(), MenuItem.entries.map { it.group })
     }
 }

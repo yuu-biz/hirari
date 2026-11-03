@@ -275,7 +275,7 @@ internal class ReaderUi {
         guideShown = false
     }
 
-    /** Does what a command left to the screen: opens its sheet, or says it is not there yet. */
+    /** Does what a command left to the screen, such as opening its sheet. */
     fun follow(effect: CommandEffect?) {
         when (effect) {
             is CommandEffect.Show -> {
@@ -299,7 +299,6 @@ internal class ReaderUi {
                 closePanels()
                 settings = effect.target
             }
-            CommandEffect.NotYet -> message = R.string.reader_not_yet
             else -> Unit
         }
     }

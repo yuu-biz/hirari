@@ -46,7 +46,6 @@
     <string name="command_set_cover">表紙にする</string>
     <string name="command_share_page">ページを共有</string>
     <string name="command_settings">設定</string>
-    <string name="reader_not_yet">この操作はまだ使えません</string>
 
     <string name="page_panel_first">先頭</string>
     <string name="page_panel_last">末尾</string>
