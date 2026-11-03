@@ -60,6 +60,31 @@ internal fun ReaderAction.textTurn(): Turn? = when (this) {
 
 internal val Turn.views: Int get() = if (this == Turn.Forward) 1 else -1
 
+/** What the reader does for the actions a key makes. */
+internal class TextActions(
+    val turn: (Turn) -> Unit,
+    val first: () -> Unit,
+    val last: () -> Unit,
+    val toggleMenu: () -> Unit,
+    val dismiss: () -> Unit,
+)
+
+/**
+ * Does [action] for a key. The next input ends a running effect at once (docs/spec.md section 4.8), so it ends before
+ * the action moves the view, and only a turn then sets a new one.
+ */
+internal fun TextTouch.perform(action: ReaderAction, on: TextActions) {
+    motion = null
+    when (action) {
+        is ReaderAction.TurnView, is ReaderAction.StepStops -> action.textTurn()?.let(on.turn)
+        is ReaderAction.Shift -> Unit
+        ReaderAction.First -> on.first()
+        ReaderAction.Last -> on.last()
+        ReaderAction.OpenMenu -> on.toggleMenu()
+        ReaderAction.Dismiss -> on.dismiss()
+    }
+}
+
 /** Where a release on the page bar goes in a text. */
 internal sealed interface PageBarJump {
     /** The page that holds source offset [offset], which does not depend on how many pages are laid out by the release. */

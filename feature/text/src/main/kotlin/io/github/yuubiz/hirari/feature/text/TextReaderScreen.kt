@@ -160,14 +160,14 @@ fun TextReaderScreen(
 
     fun act(action: ReaderAction) {
         touched++
-        when (action) {
-            is ReaderAction.TurnView, is ReaderAction.StepStops -> action.textTurn()?.let { turn(it, null) }
-            is ReaderAction.Shift -> Unit
-            ReaderAction.First -> viewModel.first()
-            ReaderAction.Last -> viewModel.last()
-            ReaderAction.OpenMenu -> panel = if (panel == TextPanel.Commands) null else TextPanel.Commands
-            ReaderAction.Dismiss -> dismiss()
-        }
+        val on = TextActions(
+            turn = { turn(it, null) },
+            first = viewModel::first,
+            last = viewModel::last,
+            toggleMenu = { panel = if (panel == TextPanel.Commands) null else TextPanel.Commands },
+            dismiss = ::dismiss,
+        )
+        touch.perform(action, on)
     }
 
     BackHandler { dismiss() }

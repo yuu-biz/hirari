@@ -10,6 +10,8 @@ import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Turn
+import io.github.yuubiz.hirari.core.model.TurnAnimation
+import io.github.yuubiz.hirari.core.model.TurnEffect
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -54,6 +56,20 @@ class TextInputTest {
         assertEquals(4, pageInLaterRun(partial, 2, grown))
         assertEquals(2, pageInLaterRun(partial, 0, grown))
         assertEquals(4, pageInLaterRun(partial, 9, grown))
+    }
+
+    private val turning = TextMotion.Turning(from = 30, TurnAnimation.turn(TurnEffect.Cover, movement = 1, nowMs = 0, durationMs = 100))
+
+    @Test
+    fun `a key action ends the effect that is running before it moves the view`() {
+        val seen = ArrayList<String>()
+        for (action in listOf(ReaderAction.First, ReaderAction.Last, ReaderAction.TurnView(Turn.Forward), ReaderAction.StepStops(Turn.Back), ReaderAction.OpenMenu, ReaderAction.Dismiss, ReaderAction.Shift(forward = true))) {
+            val touch = TextTouch().apply { motion = turning }
+            fun at(name: String): () -> Unit = { seen += "$name:${touch.motion}" }
+            touch.perform(action, TextActions(turn = { seen += "turn:${touch.motion}" }, first = at("first"), last = at("last"), toggleMenu = at("menu"), dismiss = at("dismiss")))
+            assertNull(touch.motion, "$action")
+        }
+        assertEquals(listOf("first:null", "last:null", "turn:null", "turn:null", "menu:null", "dismiss:null"), seen)
     }
 
     private val bar = PageBar(left = 0f, right = 400f, top = 560f, height = 40f, pageCount = 3, direction = ReadingDirection.RightToLeft, touchSlop = 8f)
