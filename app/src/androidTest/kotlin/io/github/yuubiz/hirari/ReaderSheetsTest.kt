@@ -7,10 +7,13 @@ import android.view.KeyEvent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -37,6 +40,8 @@ import org.junit.Test
 import java.io.File
 import java.time.Instant
 
+private val PAGE_LABEL = Regex("""(\d+)(?: から (\d+))? ページ目、全 (\d+) ページ""")
+
 /**
  * The page panel and the menu of docs/spec.md section 4.8 on the real activity. The reader's page number is the
  * label TalkBack reads (section 6.7), which is how these tests see where the reader is.
@@ -56,17 +61,30 @@ class ReaderSheetsTest {
         ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
     }
 
-    /** A corpus book the store has never seen, and the intent that opens it. */
+    /**
+     * A corpus book the store has never seen, and the intent that opens it. The operation guide of a first read is
+     * marked seen, since while it is up it takes every touch and hides the page from a screen reader.
+     */
     private fun freshBook(): Pair<BookId, Intent> = runBlocking {
         val bytes = instrumentation.context.assets.open("zip/images.zip").use { it.readBytes() }
         val file = File(context.cacheDir, "sheets-test.zip").apply { writeBytes(bytes) }
         val id = documentBookId(bytes.copyOf(minOf(bytes.size, BOOK_ID_PREFIX_BYTES)), bytes.size.toLong())
-        app.services.await().storage.progress.save(listOf(BookProgress(id, ReadState.Unread, null, Instant.EPOCH)))
+        val services = app.services.await()
+        services.storage.launch.markReaderGuideSeen()
+        services.storage.progress.save(listOf(BookProgress(id, ReadState.Unread, null, Instant.EPOCH)))
         id to Intent(context, MainActivity::class.java).putExtra("book", Uri.fromFile(file).toString())
     }
 
-    private fun pageLabel(): String? = compose.onAllNodes(hasContentDescription(" / ", substring = true)).fetchSemanticsNodes()
-        .firstNotNullOfOrNull { it.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull() }
+    /** The page label of a screen reader (`1 ページ目、全 37 ページ`, `1 から 2 ページ目、全 37 ページ`) as `1 / 37` or `1-2 / 37`. */
+    private fun pageLabel(): String? = compose.onAllNodes(SemanticsMatcher("has a page label") { labelOf(it) != null }).fetchSemanticsNodes()
+        .firstNotNullOfOrNull { labelOf(it) }
+
+    /** The page's own node carries the label as its description, and the slider of the page panel as its state. */
+    private fun labelOf(node: SemanticsNode): String? = listOfNotNull(
+        node.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull(),
+        node.config.getOrNull(SemanticsProperties.StateDescription),
+    ).firstNotNullOfOrNull { PAGE_LABEL.matchEntire(it)?.destructured }
+        ?.let { (first, last, total) -> "$first${if (last.isEmpty()) "" else "-$last"} / $total" }
 
     private fun awaitPage(head: Int): String {
         compose.waitUntil(15_000) { pageLabel()?.startsWith("$head ") == true || pageLabel()?.startsWith("$head-") == true }
@@ -95,17 +113,69 @@ class ReaderSheetsTest {
 
     private fun tapPageBar() = compose.onRoot().performTouchInput { click(Offset(width / 2f, height - 30.dp.toPx())) }
 
+    /**
+     * A tap the way the system injects it: down and up go through the input dispatcher, [gapMs] apart in event
+     * time, as `input tap` (no gap) and UiAutomator do, not through Compose's own test injection.
+     */
+    private fun systemTapPageBar(gapMs: Long) {
+        val metrics = context.resources.displayMetrics
+        val x = metrics.widthPixels / 2f
+        val y = metrics.heightPixels - 30 * metrics.density
+        val downAt = android.os.SystemClock.uptimeMillis()
+        fun event(action: Int, at: Long) = android.view.MotionEvent.obtain(downAt, at, action, x, y, 0).apply {
+            source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+        }
+        instrumentation.uiAutomation.injectInputEvent(event(android.view.MotionEvent.ACTION_DOWN, downAt), true)
+        if (gapMs > 0) android.os.SystemClock.sleep(gapMs)
+        instrumentation.uiAutomation.injectInputEvent(event(android.view.MotionEvent.ACTION_UP, downAt + gapMs), true)
+    }
+
+    private fun pagePanelUp() = compose.onAllNodes(hasContentDescription("ページ番号")).fetchSemanticsNodes().isNotEmpty()
+
+    private fun guideUp() = compose.onAllNodes(hasText("どこかをタップすると閉じます")).fetchSemanticsNodes().isNotEmpty()
+
+    /**
+     * A short tap on the page bar opens the page panel whatever the gap between its down and up (docs/spec.md
+     * section 4.8, ページバー). The operation guide takes every touch while it is up, so the first tap after a
+     * book is first read only closes it; a benchmark that taps right after opening a new book sees no panel for
+     * that reason, and not because of the bar.
+     */
+    @Test
+    fun aShortTapFromTheSystemOpensThePagePanelAndTheGuideTakesTheFirstOne() {
+        val (_, intent) = freshBook()
+        ActivityScenario.launch<MainActivity>(intent).use {
+            awaitPage(1)
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU)
+            compose.onNodeWithText("操作ガイド").performClick()
+            compose.waitUntil(5_000) { guideUp() }
+            systemTapPageBar(gapMs = 0)
+            compose.waitUntil(5_000) { !guideUp() }
+            compose.waitForIdle()
+            assertEquals("the tap that closed the guide did not reach the bar", false, pagePanelUp())
+
+            systemTapPageBar(gapMs = 0)
+            compose.waitUntil(5_000) { pagePanelUp() }
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            compose.waitUntil(5_000) { !pagePanelUp() }
+
+            systemTapPageBar(gapMs = 60)
+            compose.waitUntil(5_000) { pagePanelUp() }
+        }
+    }
+
     @Test
     fun thePagePanelMovesTheReaderAndUndoGoesBack() {
         val (_, intent) = freshBook()
         ActivityScenario.launch<MainActivity>(intent).use {
             val count = awaitPage(1).substringAfter("/ ")
             tapPageBar()
-            for (step in listOf("−100", "−10", "−1", "+1", "+10", "+100")) compose.onNodeWithText(step).assertIsDisplayed()
+            for (step in listOf("100 ページ戻る", "10 ページ戻る", "1 ページ戻る", "1 ページ進む", "10 ページ進む", "100 ページ進む")) {
+                compose.waitUntil(5_000) { runCatching { compose.onNodeWithContentDescription(step).assertIsDisplayed() }.isSuccess }
+            }
             compose.waitForIdle()
             screenshot("page-panel")
 
-            compose.onNodeWithText("+1").performClick()
+            compose.onNodeWithContentDescription("1 ページ進む").performClick()
             assertEquals("2 / $count", awaitPage(2))
             compose.onNodeWithText("取り消す").performClick()
             awaitPage(1)

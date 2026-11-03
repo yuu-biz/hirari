@@ -24,9 +24,8 @@ private const val STEP_PAGES = 100
 /** The default tap zones (docs/spec.md section 4.8): the right 10% turns back and the rest turns forward. */
 private const val BACK_BAND_PERCENT = 95
 
-/** The long press of docs/spec.md section 4.8 (400 ms) opens the page panel. */
-private const val HOLD_MS = 700
-private const val HOLD_ATTEMPTS = 3
+/** A tap on the page bar opens the page panel; the first one after a book is first read only closes the operation guide. */
+private const val PANEL_ATTEMPTS = 3
 private const val MEMORY_SAMPLE_EVERY = 10
 private const val STANDARD_PAGES = 200
 private const val TAG = "HirariBench"
@@ -150,9 +149,9 @@ class ReaderBenchmark {
         val density = instrumentation.targetContext.resources.displayMetrics.density
         val x = device.displayWidth / 2
         val y = device.displayHeight - (PAGE_BAR_CENTER_DP * density).toInt()
-        repeat(HOLD_ATTEMPTS) {
-            val output = device.executeShellCommand("input swipe $x $y $x $y $HOLD_MS")
-            Log.i(TAG, "page bar hold at $x,$y: '$output'")
+        repeat(PANEL_ATTEMPTS) {
+            device.click(x, y)
+            Log.i(TAG, "page bar tap at $x,$y")
             if (device.wait(Until.hasObject(stepButton("a11y_step_forward")), SETTLE_MS)) return
         }
         error("the page panel did not open")
