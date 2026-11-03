@@ -44,21 +44,34 @@ fun ReaderState.tileWindows(): Map<Int, TileWindow> {
 /** A tile ready to draw: its [bitmap] covers [rect] of the page's image, in image pixels. */
 class DrawnTile(val rect: PixelRect, val bitmap: Bitmap)
 
+/** What reading a page for its tiles gave. */
+internal sealed interface TileOpening {
+    class Tiled(val source: TileSource) : TileOpening
+
+    /** The page has no tiles, or cannot have them, so its prepared page alone shows. */
+    data object Whole : TileOpening
+
+    /** The read failed in a way that may pass, as a lost connection does. */
+    data object Failed : TileOpening
+}
+
 /**
  * The tiles of the pages [tileWindows] names, read over their prepared pages while they are on screen. Each page
- * gets its [TileSource] once it shows; a page that leaves the screen closes it. Tiles are never recycled here, as
- * section 3.7 asks, since a frame may still draw one. Everything runs in [scope], on the main thread; [open] and the
- * tile reads move their work off it, and [close] closes a source off it.
+ * gets its [TileSource] once it shows; a page that leaves the screen closes it. A page whose read [TileOpening.Failed]
+ * is read again when it comes back on screen and on [retry]. Tiles are never recycled here, as section 3.7 asks,
+ * since a frame may still draw one. Everything runs in [scope], on the main thread; [open] and the tile reads move
+ * their work off it, and [close] closes a source off it.
  */
 internal class StripTiles(
     private val scope: CoroutineScope,
-    private val open: suspend (page: Int) -> TileSource?,
+    private val open: suspend (page: Int) -> TileOpening,
     private val close: (TileSource) -> Unit,
     private val changed: () -> Unit,
 ) {
     private class Held {
         var source: TileSource? = null
         var opening: Job? = null
+        var failed = false
         var plan: TilePlan? = null
         val tiles = HashMap<TileKey, Bitmap>()
         val reading = HashMap<TileKey, Job>()
@@ -75,12 +88,22 @@ internal class StripTiles(
         if (next == windows) return
         windows = next
         for (page in held.keys - next.keys) drop(page)
-        for ((page, window) in next) {
+        fill()
+    }
+
+    /** Reads again what failed of the pages on screen: their tiles, and the pages whose read failed. */
+    fun retry() {
+        held.values.forEach { it.failed = false }
+        fill()
+    }
+
+    private fun fill() {
+        for ((page, window) in windows) {
             if (page in whole) continue
             val entry = held.getOrPut(page, ::Held)
             val source = entry.source
             if (source == null) {
-                if (entry.opening == null) entry.opening = scope.launch { opened(page, open(page)) }
+                if (entry.opening == null && !entry.failed) entry.opening = scope.launch { opened(page, open(page)) }
             } else {
                 plan(entry, source, window)
             }
@@ -100,20 +123,24 @@ internal class StripTiles(
         windows = emptyMap()
     }
 
-    private fun opened(page: Int, source: TileSource?) {
+    private fun opened(page: Int, opening: TileOpening) {
         val entry = held[page]
         if (entry == null) {
-            source?.let(close)
+            if (opening is TileOpening.Tiled) close(opening.source)
             return
         }
         entry.opening = null
-        if (source == null) {
-            whole += page
-            held.remove(page)
-            return
+        when (opening) {
+            is TileOpening.Tiled -> {
+                entry.source = opening.source
+                windows[page]?.let { plan(entry, opening.source, it) }
+            }
+            TileOpening.Whole -> {
+                whole += page
+                held.remove(page)
+            }
+            TileOpening.Failed -> entry.failed = true
         }
-        entry.source = source
-        windows[page]?.let { plan(entry, source, it) }
     }
 
     private fun plan(entry: Held, source: TileSource, window: TileWindow) {

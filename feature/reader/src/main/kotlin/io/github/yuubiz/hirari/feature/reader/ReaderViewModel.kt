@@ -31,7 +31,6 @@ import io.github.yuubiz.hirari.core.image.OpenBook
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.image.RawPage
-import io.github.yuubiz.hirari.core.image.TileSource
 import io.github.yuubiz.hirari.core.image.Tiling
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
 import io.github.yuubiz.hirari.core.model.Book
@@ -229,16 +228,18 @@ class ReaderViewModel(
     /** The tiles of [page] read so far, which draw over its prepared page in 縦に連続. */
     fun drawnTiles(page: Int): List<DrawnTile> = stripTiles.drawn(page)
 
-    /** The tiles of [page], from its data the raw-data layer holds when it has it; `null` for a page that is not tiled. */
-    private suspend fun openTiles(page: Int): TileSource? {
-        val book = opened ?: return null
-        val current = state ?: return null
-        val shape = current.pagination.shapes[page] as? PageShape.Known ?: return null
-        val result = book.book.page(page, shape.atWidth(current.viewport.width), book.prefetcher.raw(page), Tiling.AsPlanned)
-        return when (val image = (result as? PageResult.Ready)?.image) {
-            is PreparedImage.Tiled -> image.source
-            is PreparedImage.Whole -> null.also { image.bitmap.recycle() }
-            null -> null
+    /** The tiles of [page], from its data the raw-data layer holds when it has it. */
+    private suspend fun openTiles(page: Int): TileOpening {
+        val book = opened ?: return TileOpening.Whole
+        val current = state ?: return TileOpening.Whole
+        val shape = current.pagination.shapes[page] as? PageShape.Known ?: return TileOpening.Whole
+        return when (val result = book.book.page(page, shape.atWidth(current.viewport.width), book.prefetcher.raw(page), Tiling.AsPlanned)) {
+            is PageResult.Ready -> when (val image = result.image) {
+                is PreparedImage.Tiled -> TileOpening.Tiled(image.source)
+                is PreparedImage.Whole -> TileOpening.Whole.also { image.bitmap.recycle() }
+            }
+            is PageResult.Failed -> if (result.retryable) TileOpening.Failed else TileOpening.Whole
+            is PageResult.Unsupported -> TileOpening.Whole
         }
     }
 
@@ -486,6 +487,7 @@ class ReaderViewModel(
     fun retry(page: Int) {
         opened?.prefetcher?.retry(page)
         opened?.remote?.server?.retry()
+        stripTiles.retry()
     }
 
     /** What the book has fetched from its server, for 取得の状況; `null` for a book not on a server. */
@@ -750,6 +752,7 @@ class ReaderViewModel(
         if (reconnected(before?.connection, after.connection)) {
             book.prefetcher.retryLost()
             book.disk?.restart()
+            stripTiles.retry()
         }
         val hit = after.edgeHit
         if (hit != null && hit != before?.edgeHit) {
