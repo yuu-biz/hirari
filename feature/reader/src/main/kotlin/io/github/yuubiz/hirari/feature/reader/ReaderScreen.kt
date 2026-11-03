@@ -144,12 +144,13 @@ fun ReaderScreen(
             is ReaderPhase.Failed -> BookError(stringResource(phase.reason.message), onClose)
             ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), onClose)
             ReaderPhase.Reading -> viewModel.state?.let { state ->
-                AutoPlayClock(viewModel, state.autoPlay)
+                AutoPlayClock(viewModel, state.autoPlay, listening = viewModel.breath.view is BreathView.Listening)
                 // Behind a sheet or the guide the page is out of reach of a screen reader, as it is of a finger.
                 val behindPanel = ui.sheet != null || ui.guideShown
                 Box(Modifier.fillMaxSize().then(if (behindPanel) Modifier.clearAndSetSemantics {} else Modifier.semantics { isTraversalGroup = true })) {
                     ReaderSurface(viewModel, state, ui, onClose)
                 }
+                BreathControl(viewModel, ui, Modifier.align(Alignment.TopEnd))
                 when (val sheet = ui.sheet) {
                     is ReaderSheet.Pages -> PagePanelSheet(
                         viewModel,
@@ -223,6 +224,9 @@ internal class ReaderUi {
     /** The page ページを共有 is writing for the share sheet. */
     var sharing: Int? by mutableStateOf(null)
 
+    /** 息で操作 was chosen, for [BreathControl] to run. */
+    var breathToggled: Boolean by mutableStateOf(false)
+
     fun closePanels() {
         commandBar = CommandBarState.Closed
         sheet = null
@@ -240,6 +244,7 @@ internal class ReaderUi {
                 closePanels()
                 sharing = effect.page
             }
+            CommandEffect.ToggleBreath -> breathToggled = true
             CommandEffect.NotYet -> message = R.string.reader_not_yet
             else -> Unit
         }
@@ -371,13 +376,13 @@ private fun SharePageEffect(viewModel: ReaderViewModel, ui: ReaderUi) {
     }
 }
 
-/** Sends 自動再生 its steps when they are due, and keeps the screen on while it plays. */
+/** Sends 自動再生 its steps when they are due. The screen stays on while it plays and while 息での操作 [listening]. */
 @Composable
-private fun AutoPlayClock(viewModel: ReaderViewModel, autoPlay: AutoPlay?) {
+private fun AutoPlayClock(viewModel: ReaderViewModel, autoPlay: AutoPlay?, listening: Boolean) {
     val view = LocalView.current
-    val playing = autoPlay != null
-    DisposableEffect(view, playing) {
-        view.keepScreenOn = playing
+    val awake = autoPlay != null || listening
+    DisposableEffect(view, awake) {
+        view.keepScreenOn = awake
         onDispose { view.keepScreenOn = false }
     }
     LaunchedEffect(autoPlay) {

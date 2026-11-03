@@ -47,9 +47,14 @@ class CommandEffectTest {
 
     @Test
     fun commandsOfLaterMilestonesSayTheyAreNotYetThere() {
-        for (command in listOf(ReaderCommand.AddBookmark, ReaderCommand.Breath, ReaderCommand.SetCover)) {
+        for (command in listOf(ReaderCommand.AddBookmark, ReaderCommand.SetCover)) {
             assertEquals(CommandEffect.NotYet, config.effectOf(command), "$command")
         }
+    }
+
+    @Test
+    fun breathIsLeftToTheScreenWhichMayAskForTheMicrophone() {
+        assertEquals(CommandEffect.ToggleBreath, config.effectOf(ReaderCommand.Breath))
     }
 
     @Test

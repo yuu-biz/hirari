@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="permission_continue">続ける</string>
+    <string name="permission_cancel">やめる</string>
+    <string name="permission_open_settings">設定を開く</string>
+    <string name="permission_close">閉じる</string>
+    <string name="breath_permission_rationale">息を吹きかけてめくるために、マイクの音の大きさを使います。音は判定に使うだけで、保存も送信もしません。</string>
+    <string name="breath_permission_refused">マイクが許可されていないので、息での操作はオンにできません。端末の設定でマイクを許可できます。</string>
+</resources>

@@ -75,7 +75,7 @@ enum class MenuItem(val group: MenuGroup, val available: Boolean) {
     SharePage(MenuGroup.Book, true),
     RestoreAndClose(MenuGroup.Book, true),
     AutoPlay(MenuGroup.Reading, true),
-    Breath(MenuGroup.Reading, false),
+    Breath(MenuGroup.Reading, true),
     Orientation(MenuGroup.Reading, true),
     MirrorControls(MenuGroup.Reading, true),
     Guide(MenuGroup.Reading, true),

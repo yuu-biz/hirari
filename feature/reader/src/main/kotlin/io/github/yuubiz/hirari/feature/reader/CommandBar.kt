@@ -39,6 +39,9 @@ sealed interface CommandEffect {
     /** The screen shares [page]. */
     data class Share(val page: Int) : CommandEffect
 
+    /** 息で操作, which the screen runs since turning it on may ask for the microphone. */
+    data object ToggleBreath : CommandEffect
+
     /** A command of a later milestone. */
     data object NotYet : CommandEffect
 }
@@ -60,8 +63,9 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.ImageAdjust -> CommandEffect.Show(ReaderSheet.Adjust)
     ReaderCommand.AutoPlay -> CommandEffect.StartAutoPlay
     ReaderCommand.SharePage -> CommandEffect.SharePage
+    ReaderCommand.Breath -> CommandEffect.ToggleBreath
     ReaderCommand.AddBookmark, ReaderCommand.Bookmarks,
-    ReaderCommand.ReverseOrder, ReaderCommand.EditCommandBar, ReaderCommand.Breath,
+    ReaderCommand.ReverseOrder, ReaderCommand.EditCommandBar,
     ReaderCommand.BookSettings, ReaderCommand.SetCover, ReaderCommand.Settings,
     -> CommandEffect.NotYet
 }

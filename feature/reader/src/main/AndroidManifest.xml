@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 息での操作 (docs/spec.md sections 4.11 and 7), asked for only when it is turned on. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application>
         <provider

@@ -138,4 +138,14 @@
     <string name="a11y_page_slider">ページ</string>
     <string name="page_panel_title">ページパネル</string>
     <string name="neighbor_title">前後の本</string>
+    <string name="breath_badge">息での操作、%1$s</string>
+    <string name="breath_calibrating">周囲の音を測っています</string>
+    <string name="breath_quiet">待機中</string>
+    <string name="breath_sound">音あり</string>
+    <string name="breath_settling">判定中</string>
+    <string name="breath_scrolling_forward">スクロール（進む）</string>
+    <string name="breath_scrolling_back">スクロール（戻る）</string>
+    <string name="breath_no_permission">マイクの許可がありません</string>
+    <string name="breath_unavailable">マイクを使えません</string>
+    <string name="breath_save_failed">設定を保存できませんでした</string>
 </resources>

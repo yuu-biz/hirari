@@ -1,11 +1,14 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import android.Manifest
 import android.app.ActivityManager
 import android.app.Application
 import android.content.ComponentCallbacks2
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +53,7 @@ import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.Siblings
 import io.github.yuubiz.hirari.core.model.StartAt
+import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.bookEndEffect
 import io.github.yuubiz.hirari.core.model.documentBookId
@@ -75,7 +79,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -155,9 +162,18 @@ class ReaderViewModel(
     private val application: Application,
     private val services: Deferred<ReaderServices>,
     private val request: OpenBookRequest,
+    microphone: Microphone = DeviceMicrophone,
 ) : ViewModel() {
     var phase: ReaderPhase by mutableStateOf(ReaderPhase.Opening)
         private set
+
+    /** 息での操作: a settled step goes through the stops as the volume keys do (docs/spec.md section 4.8, 停止点). */
+    val breath = BreathSession(viewModelScope, microphone) { if (!breathHeld) act(ReaderAction.StepStops(it), SystemClock.uptimeMillis()) }
+    private var breathSetting = BreathInput()
+    private var resumed = false
+
+    /** A panel or the guide is up, so what the microphone hears neither turns nor scrolls. */
+    var breathHeld = false
 
     var state: ReaderState? by mutableStateOf(null)
         private set
@@ -386,13 +402,58 @@ class ReaderViewModel(
             CommandEffect.ShiftForward -> act(ReaderAction.Shift(forward = true), nowMs)
             CommandEffect.StartAutoPlay -> dispatch(ReaderEvent.AutoPlayStarted(nowMs))
             CommandEffect.SharePage -> return shareChoice(current.current)
-            is CommandEffect.Show, is CommandEffect.Share, CommandEffect.NotYet -> return effect
+            is CommandEffect.Show, is CommandEffect.Share, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
         }
         return null
     }
 
     /** The global `adjust*` settings, where 全体の設定に戻す of the 画像補正 sheet goes back to. */
     val globalAdjust: ImageAdjust get() = opened?.global?.adjust ?: ImageAdjust()
+
+    /** The reader came to the foreground or left it (`onResume` and `onPause`). The microphone runs only between them. */
+    fun onForeground(foreground: Boolean) {
+        resumed = foreground
+        refreshBreath()
+    }
+
+    /**
+     * Gives [BreathSession] what decides the microphone. The permission is read every time, since the user may give
+     * or take it in the system settings while the reader is away.
+     */
+    private fun refreshBreath() {
+        val granted = application.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        breath.update(breathSetting.copy(granted = granted, foreground = resumed && phase == ReaderPhase.Reading))
+    }
+
+    /** 息で操作 and the setting 息でめくる are one value; `false` when it could not be saved. */
+    suspend fun saveBreath(on: Boolean): Boolean = try {
+        services.await().storage.settings.update { it.copy(breathControl = on) }
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        false
+    }
+
+    /** A long sound scrolled the screen for [elapsedMs] toward [turn]. */
+    fun breathScrolled(turn: Turn, elapsedMs: Float) {
+        if (breathHeld) return
+        val current = state ?: return
+        current.breathPan(turn, elapsedMs * BREATH_SCROLL_DP_PER_MS * current.viewport.density)?.let(::dispatch)
+    }
+
+    private fun followBreathSetting(services: ReaderServices) {
+        viewModelScope.launch {
+            services.storage.settings.settings
+                .map { BreathInput(enabled = it.breathControl, sensitivity = it.breathSensitivity) }
+                .distinctUntilChanged()
+                .catch { }
+                .collect {
+                    breathSetting = it
+                    refreshBreath()
+                }
+        }
+    }
 
     /** The reader left the screen. The process may end before [onCleared], so the history is written now. */
     fun onStop() {
@@ -468,6 +529,7 @@ class ReaderViewModel(
         remote?.server?.state?.let { connection -> viewModelScope.launch { connection.collect { dispatch(ReaderEvent.ConnectionChanged(it)) } } }
         stops.attach(session)
         phase = ReaderPhase.Reading
+        followBreathSetting(services)
         start()
     }
 

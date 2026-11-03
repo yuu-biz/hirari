@@ -421,6 +421,7 @@ internal fun MenuSheet(
             }
             MenuItem.SharePage -> ReaderCommand.SharePage
             MenuItem.AutoPlay -> ReaderCommand.AutoPlay
+            MenuItem.Breath -> ReaderCommand.Breath
             MenuItem.Orientation -> ReaderCommand.Orientation
             MenuItem.MirrorControls -> ReaderCommand.MirrorControls
             else -> return
