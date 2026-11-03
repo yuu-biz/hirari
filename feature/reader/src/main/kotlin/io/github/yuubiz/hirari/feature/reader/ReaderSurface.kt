@@ -162,6 +162,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         viewModel.tilesDrawn
         val now = if (state.animating) frameMs else Long.MAX_VALUE
         if (state.scroll != null) drawStrip(viewModel, state, colorFilter) else for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
+        viewModel.traces.drawn(state.current, viewModel.preparedView(state.current) != null)
         state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter) }
     }
 

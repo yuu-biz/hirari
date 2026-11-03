@@ -90,4 +90,4 @@ class SafFolderLister(private val resolver: ContentResolver) : FolderLister {
 }
 
 /** The trace section of docs/spec.md section 5.2, P7: the query of one folder and reading its rows. */
-const val TRACE_LIST = "Hirari.listFolder"
+const val TRACE_LIST = "hirari.listFolder"

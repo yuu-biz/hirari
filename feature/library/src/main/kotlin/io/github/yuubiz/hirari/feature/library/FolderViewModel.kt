@@ -17,6 +17,7 @@ import io.github.yuubiz.hirari.core.model.ThumbSize
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
 import io.github.yuubiz.hirari.core.model.normalizePath
+import io.github.yuubiz.hirari.core.ui.FirstPageTrace
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -271,10 +272,16 @@ class FolderViewModel(
             query.value = ""
             FileTarget.Folder(FolderKey(folder.location, row.path, item.entry.documentId))
         }
-        is FileItem.Archive -> FileTarget.Book(OpenBookRequest(BookAddress.InLocation(folder.location, row.path, folder = false, item.entry.documentId), start))
-        is FileItem.Image -> FileTarget.Book(
-            OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),
-        )
+        is FileItem.Archive -> {
+            FirstPageTrace.begin()
+            FileTarget.Book(OpenBookRequest(BookAddress.InLocation(folder.location, row.path, folder = false, item.entry.documentId), start))
+        }
+        is FileItem.Image -> {
+            FirstPageTrace.begin()
+            FileTarget.Book(
+                OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),
+            )
+        }
         is FileItem.Text -> FileTarget.Text(TextAddress.InLocation(folder.location, row.path, item.entry.documentId))
     }
 

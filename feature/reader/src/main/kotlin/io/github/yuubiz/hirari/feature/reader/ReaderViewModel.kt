@@ -73,6 +73,7 @@ import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
+import io.github.yuubiz.hirari.core.ui.FirstPageTrace
 import io.github.yuubiz.hirari.feature.reader.prefetch.DiskPrefetch
 import io.github.yuubiz.hirari.feature.reader.prefetch.Prefetcher
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchDepths
@@ -300,7 +301,10 @@ class ReaderViewModel(
         override fun onLowMemory() = Unit
     }
 
+    internal val traces = ReaderTraces()
+
     init {
+        FirstPageTrace.beginIfIdle()
         application.registerComponentCallbacks(trimCallbacks)
         viewModelScope.launch { open() }
     }
@@ -477,6 +481,7 @@ class ReaderViewModel(
         val after = before.reduce(event)
         if (after == before) return
         state = after
+        traces.moved(event, before, after) { preparedView(after.current) != null }
         if (turnTicks(event, before, after)) turnHaptics.trySend(Unit)
         changed(before, after)
     }
@@ -615,6 +620,7 @@ class ReaderViewModel(
     }
 
     override fun onCleared() {
+        traces.close()
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
         stripTiles.clear()

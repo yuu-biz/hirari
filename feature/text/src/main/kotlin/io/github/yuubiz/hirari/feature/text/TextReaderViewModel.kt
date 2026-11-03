@@ -219,7 +219,7 @@ class TextReaderViewModel(
     }
 
     private companion object {
-        const val OPEN_SECTION = "TextOpen"
+        const val OPEN_SECTION = "hirari.textFirstPage"
         const val PICTURE_CACHE_BYTES = 32 shl 20
     }
 }

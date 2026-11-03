@@ -243,7 +243,7 @@ internal class ReaderInput(
         val vx = released.x / density
         if (state is TouchState.Scrolling) viewModel.dispatch(ReaderEvent.Fling(released.y, change.uptimeMillis))
         when (val outcome = touch.reduce(state, TouchEvent.Up(change.position.dp(density), change.uptimeMillis, vx)).outcome) {
-            is TouchOutcome.Tap -> if (!caught) tap(outcome.point, regions)
+            is TouchOutcome.Tap -> if (!caught) tap(outcome.point, regions, change.uptimeMillis)
             is TouchOutcome.Commit -> viewModel.dispatch(ReaderEvent.PullEnded(commit = true, SystemClock.uptimeMillis()))
             is TouchOutcome.Return -> viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
             TouchOutcome.HideLoupe -> viewModel.dispatch(ReaderEvent.LoupeHidden)
@@ -252,11 +252,12 @@ internal class ReaderInput(
         return true
     }
 
-    private fun tap(point: Point, regions: ReaderRegions) {
+    private fun tap(point: Point, regions: ReaderRegions, eventUptimeMillis: Long) {
         val current = state()
         val area = regions.turnArea
         val turn = current.config.tapZones.turnAt(Point(point.x - area.left, point.y - area.top), Size(area.width, area.height)) ?: return
         val overflows = current.geometry()?.overflows == true
+        viewModel.traces.input(eventUptimeMillis)
         viewModel.act(tapAction(turn, overflows, current.config.tapAdvancesStops), SystemClock.uptimeMillis())
     }
 

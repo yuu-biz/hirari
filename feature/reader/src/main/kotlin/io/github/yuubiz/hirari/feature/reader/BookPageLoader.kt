@@ -15,6 +15,7 @@ import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.ui.TraceSection
 import io.github.yuubiz.hirari.feature.reader.prefetch.MadePage
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageLoader
 import io.github.yuubiz.hirari.feature.reader.prefetch.PageSteps
@@ -39,8 +40,14 @@ class BookPageLoader(private val book: OpenBook, private val dispatcher: Corouti
 
     override suspend fun shape(page: Int, raw: RawPage?): PageResult<PageShape.Known> = book.shape(page, raw)
 
-    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: RawPage?, readMargins: Boolean): PageResult<MadePage<Bitmap>> =
-        smallerOnOutOfMemory(size) { prepareAt(page, it, steps, raw, readMargins) }
+    override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: RawPage?, readMargins: Boolean): PageResult<MadePage<Bitmap>> {
+        val trace = TraceSection.begin(TRACE_PREPARE)
+        return try {
+            smallerOnOutOfMemory(size) { prepareAt(page, it, steps, raw, readMargins) }
+        } finally {
+            trace.end()
+        }
+    }
 
     /**
      * The whole page is decoded at the scale where its part matches [size], so a trimmed page keeps the detail of
@@ -84,6 +91,9 @@ class BookPageLoader(private val book: OpenBook, private val dispatcher: Corouti
         }
     }
 }
+
+/** The trace section of docs/spec.md section 5.2 for the preparation of one page: decode, the steps after it, and the upload. */
+private const val TRACE_PREPARE = "hirari.prepare"
 
 /** What the raw data of an entry with no declared size is taken to hold: a page of the standard corpus (section 5.3). */
 private const val UNDECLARED_RAW_BYTES = 1_500_000L

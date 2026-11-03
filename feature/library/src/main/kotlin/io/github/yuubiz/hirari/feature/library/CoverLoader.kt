@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
+import io.github.yuubiz.hirari.core.ui.TraceSection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -93,20 +94,26 @@ class CoverLoader<I : Any>(
     }
 
     private fun look(key: CoverKey, request: ThumbRequest): Flow<CoverState<I>> = flow {
-        memory[key]?.let {
-            source.hold(request).use { _ ->
-                emit(CoverState.Loaded(it))
-                awaitCancellation()
+        val trace = TraceSection.begin(TRACE_THUMBNAIL)
+        try {
+            memory[key]?.let {
+                source.hold(request).use { _ ->
+                    trace.end()
+                    emit(CoverState.Loaded(it))
+                    awaitCancellation()
+                }
             }
-        }
-        source.observe(request).collect { result ->
-            emit(
-                when (result) {
+            source.observe(request).collect { result ->
+                val state = when (result) {
                     is ThumbResult.Ready -> loaded(key, result.file)
                     ThumbResult.Failed -> CoverState.Failed
                     ThumbResult.Unavailable -> CoverState.Unavailable
-                },
-            )
+                }
+                trace.end()
+                emit(state)
+            }
+        } finally {
+            trace.end()
         }
     }
 
@@ -120,6 +127,9 @@ class CoverLoader<I : Any>(
         const val REFRESH_BUFFER = 64
     }
 }
+
+/** The trace section of docs/spec.md section 5.2, P8: a bound row from the lookup of its cover to the cover or its failure. */
+const val TRACE_THUMBNAIL = "hirari.thumbnail"
 
 /**
  * The items the list prepares ahead (docs/spec.md section 4.4): [update] starts what is newly wanted and cancels
