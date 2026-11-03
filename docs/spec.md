@@ -1911,7 +1911,7 @@ M0 の時点で手元にある実機は、検証用の端末 A と 検証用の�
 - 完了していない区間は数えられない。`hirari.firstPage` と `hirari.textFirstPage` の `Count` が 1 回の試行で 1 でなければ、計る区間の終わりまでにページが出なかったので、結果を使わず、試験の待ち時間を伸ばして流し直す。`turnCount` は `turns` に近いはずで（エミュレータで 40 回のうち 39、100 回のうち 98 だった。最後の区間が計る区間の終わりに間に合わなかったと見ている）、大きく外れたら調べる。
 - P4 の SMB の試験は、`tools/smb-fixture` の Samba に対して、エミュレータからホストの `10.0.2.2:14455` へ繋いで流れることを確かめた（`smbHost=10.0.2.2`、`smbPort=14455`、`smbShare=books`、`smbUser=bookworm7`、`smbBook` は置いた書庫）。初めて繋ぐときのローカルネットワークの許可の問い合わせは、試験が許可する。基準 NAS では流していない (要検証)。
 - P9 の試験の本文は、約 1 MB の UTF-8 の文章の先頭に 1 行（`a`）を足してある。以前は、足さない本文で、64 KB の見本で文字コードを調べるときに `IllegalArgumentException: newPosition > limit` でアプリが落ちた。端末の ICU の復号器が、切った見本の終わりを越える長さで不正な並びを報告するためである。直した。不正な並びの長さが見本の残りを越えるときは、見本の終わりまでで読むのをやめ、誤り 1 件と数える（3.11 節）。
-- ページバーを短くタップしてもページパネルが開かない、と計測の試験で見えたことがあった（adb の `input tap` と UiAutomator のクリックで、エミュレータ API 37）。ページバーの入力の不具合ではなく、操作ガイドが原因である。初めて本を読むときは本を表示した時点で操作ガイドが出て、出している間のタップはリーダーに届かない（4.8 節）ので、本を開いた直後の最初のタップはガイドを閉じるだけになる。以前の試験は 3 回まで繰り返す長押しで開いていたので、最初の長押しがガイドを閉じ、次の長押しがパネルを開いていたと見ている。確かめたのは、システムの入力として注入した、押した時刻と離した時刻が同じタップと 60 ms 後に離すタップの両方が、ガイドを閉じたあとのページバーでページパネルを開くことと、ガイドを出している間の最初のタップがガイドだけを閉じてパネルを開かないことである（`ReaderSheetsTest.aShortTapFromTheSystemOpensThePagePanelAndTheGuideTakesTheFirstOne`、エミュレータ API 37）。試験は短いタップで開き、最初のタップがガイドで消えても開くまで 3 回まで繰り返す。
+- ページバーを短くタップしてもページパネルが開かない、と計測の試験で見えたことがあった（adb の `input tap` と UiAutomator のクリックで、エミュレータ API 37）。ページバーの入力の不具合ではなく、操作ガイドが原因である。初めて本を読むときは本を表示した時点で操作ガイドが出て、出している間のタップはリーダーに届かない（4.8 節）ので、本を開いた直後の最初のタップはガイドを閉じるだけになる。以前の試験は 3 回まで繰り返す長押しで開いていたので、最初の長押しがガイドを閉じ、次の長押しがパネルを開いていたと見ている。確かめたのは、システムの入力として注入した、押した時刻と離した時刻が同じタップと 60 ms 後に離すタップの両方が、ガイドを閉じたあとのページバーでページパネルを開くことと、ガイドを出している間の最初のタップがガイドだけを閉じてパネルを開かないことである（`ReaderSheetsTest.aShortTapFromTheSystemOpensThePagePanelAndTheGuideTakesTheFirstOne`、エミュレータ API 37 と API 28）。試験は短いタップで開き、最初のタップがガイドで消えても開くまで 3 回まで繰り返す。
 
 ### 5.3 先読みの方針
 
@@ -2470,11 +2470,11 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 
 根拠は 3 種類ある。
 
-- **JVM の試験**。`b2d4d06` から作った新しい作業ツリーで `./gradlew check`（ビルド、JVM の単体試験、lint、ライセンスの検査）を流して通った。本文で「JVM」と書いたものはこれである。
-- **端末上の試験**。API 37 と API 28 のエミュレータ（x86_64、メモリ 2 GB。実機の値ではない）の結果は、`8984533` の上で流したものである。`b2d4d06` では流していない。そのあと端末上の試験は、`ReaderRestoreTest` に縦の連続スクロールの試験を足し（`57f5c9f`）、`SaveServiceTest` を足した（`95d9e20`）。前者は結果の記録がない。後者は API 37 で通ったと M4 に書いたが、API 28 では流していない。`b2d4d06` で全体を API 37 と API 28 で流し直すコマンドは AGENTS.md の「状態」にある。
+- **JVM の試験**。`77af990` から作った新しい作業ツリーで、端末上の試験の修正（`b9ab677`）を足して `./gradlew check`（ビルド、JVM の単体試験、lint、ライセンスの検査）を流して通った。本文で「JVM」と書いたものはこれである。
+- **端末上の試験**。API 37 と API 28 のエミュレータ（x86_64、メモリ 2 GB。実機の値ではない）の結果は、2026-11-03 に `77af990` の上で流したものである。製品のコードは `77af990` のままで、端末上の試験のコードだけ `b9ab677` で直した（下の「その実行で」）。`:core:archive`、`:core:image`、`:core:data`、`:feature:text`、`:app` のすべてを、`ANDROID_SERIAL` で 1 台に絞って API 37 と API 28 のそれぞれで流した。`:feature:reader` と `:feature:library` に端末上の試験はない。各モジュールの結果の XML が出たことを、Gradle の成否とは別に確かめた。
 - **GitHub Actions**。`gh run view <run の番号>` で結果を見られる。
 
-`8984533` の上の端末上の試験は、次のとおりである。`FuzzTest` の 2 つは、秒数と再現用のディレクトリを渡さないと読み飛ばす作りで、ここでは読み飛ばした。API 31 の AVD は手元になく、6.2 節の「API 28、API 31、最新 API」のうち API 31 は流していない。
+`77af990` の上の端末上の試験は、次のとおりである。`FuzzTest` の 2 つは、秒数と再現用のディレクトリを渡さないと読み飛ばす作りで、ここでは読み飛ばした（結果の XML では失敗の欄に数えられるが、中身は `AssumptionViolatedException` で、Gradle は通る）。API 31 の AVD は手元になく、6.2 節の「API 28、API 31、最新 API」のうち API 31 は流していない。
 
 | 試験 | API 37 | API 28 |
 |---|---|---|
@@ -2485,15 +2485,18 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 | `:core:image` `SafBookTest` | 3 件が通った | 3 件が通った |
 | `:core:image` `TileScalingTest` | 4 件が通った | 4 件が通った |
 | `:core:image` `TrimBitmapTest` | 4 件が通った | 4 件が通った |
-| `:core:image` `ThumbnailsDeviceTest` | 7 件が通った | 7 件が通った |
+| `:core:image` `ThumbnailsDeviceTest` | 8 件が通った | 8 件が通った |
 | `:feature:text` `TextOnDeviceTest` | 4 件が通った | 4 件が通った |
 | `:core:data` `KeystoreCipherTest` | 3 件が通った | 3 件が通った |
 | `:app` `CoversDeviceTest` | 2 件が通った | 2 件が通った |
 | `:app` `KeptScreenTest` | 2 件が通った | 2 件が通った |
-| `:app` `ReaderRestoreTest` | 1 件が通った | 1 件が通った |
-| `:app` `ReaderSheetsTest` | 2 件が通った | 2 件が通った |
+| `:app` `ReaderRestoreTest` | 2 件が通った（縦の連続スクロールの 1 件を含む） | 2 件が通った（同） |
+| `:app` `ReaderSheetsTest` | 3 件が通った | 3 件が通った |
+| `:app` `SaveServiceTest` | 2 件が通った | 2 件が通った |
 
-その実行で、端末上の試験の誤りを 2 つ直した。`ReaderSheetsTest` は、Compose の試験用ルールのフレーム時計が 0 から数えるのに、リーダーはめくりの開始を `SystemClock.uptimeMillis` で記録するので、キーでめくるとめくりが終わらず Compose が止まらなかった。試験の側で時計を合わせた（製品のコードでは、フレーム時計と `uptimeMillis` は端末の上で同じ時計である）。`ThumbnailsDeviceTest` は API 28 にない `readNBytes` を使っていたので、`readBytes` に替えた。
+`8984533` の上の実行で、端末上の試験の誤りを 2 つ直した。`ReaderSheetsTest` は、Compose の試験用ルールのフレーム時計が 0 から数えるのに、リーダーはめくりの開始を `SystemClock.uptimeMillis` で記録するので、キーでめくるとめくりが終わらず Compose が止まらなかった。試験の側で時計を合わせた（製品のコードでは、フレーム時計と `uptimeMillis` は端末の上で同じ時計である）。`ThumbnailsDeviceTest` は API 28 にない `readNBytes` を使っていたので、`readBytes` に替えた。
+
+`77af990` の上の実行で、端末上の試験の誤りをさらに 2 つ直した（`b9ab677`）。製品のコードは変えていない。`ReaderRestoreTest` は、キーを押すたびにめくりを待たずに 3 回、4 回と続けて送っていた。リーダーは、めくる先のページの形が分かってからめくるので、その前の押下は何もしない。続けて押すと押下が落ち、保存された位置が動かずに 15 秒で止まった（API 37 で 3 回続けて、API 28 でも出た）。1 回ずつ位置が動くのを待つように替えると、API 37 で全体の 6 回、API 28 で 8 回、すべて通った。`ReaderSheetsTest` のシステムのタップは、ページバーの高さを `displayMetrics` から求めていたので、3 ボタンのナビゲーションバーがある API 28（1080 × 2160）ではバーの上に外れ、ページパネルが開かなかった（API 28 で 4 回とも）。実際の画面の大きさで下から 54 dp の位置にし、60 dp のページバーの中で、48 dp のナビゲーションバーの上に当てるようにした。下から 30 dp の位置にしたときは、数回に 1 回、アプリが閉じて試験が止まった。そのときのログに、システムが起こしたホームの起動があるので、システムバーが隠れ切る前のタップがナビゲーションバーのホームのボタンを押したと見ている。API 28 で全体の 8 回、API 37 で 6 回、すべて通った。
 
 マイルストーンごとの数は次のとおりである。「実機が要る」は、完了条件のうち実機か手動の実行が要るものを数える。
 
@@ -2568,7 +2571,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - そのほか、確かめたこと。
   - 接続が切れたときの回復の論理は、`SmbRecoveryTest`（JVM。中継器で止める）で確かめた。
   - 端末に保存（4.5 節）の中身。`SmbSaveTest`（JVM。サーバーの代わりのメモリ上の共有に対して、進み具合、フォルダの再帰、名前の重なり（`(1)` から `(9)` と全部埋まったとき、同じ名前を同じフォルダへ同時に保存したとき）、取り消しで `.part` が消えること、最後のブロックの途中の取り消し、接続が戻る場合と戻らない場合、空き容量、保存先の失敗の写像）、`SafSaveFolderTest`（Robolectric。書き込める SAF の提供元の代わりに対して、`.part` を作って名前を変えること、名前を変えられない提供元を断って `NoPermission` で失敗すること、書き出しに失敗したファイルの名前を変えずに消すこと）、`DeviceSavesTest` と `FolderViewModelTest`（JVM。保存の一覧、取り消し、前回の保存先と書き込みの許可）、`SaveNotificationsTest`（JVM。通知の文言）が通った。Docker の Samba（`tools/smb-fixture`）に対して、8 MB のファイルが 1 バイトも違わずに保存でき（localhost で 154 ms）、サブフォルダを含むフォルダが保存でき、2 回目は `画像 (1)` になる。`SmbSaveFixtureTest`（保存先は普通のフォルダ）。
-  - 保存のフォアグラウンドサービスと通知が API 37 のエミュレータで動く。`SaveServiceTest` が通った（進行中の通知が出て、通知の **取り消す** で保存とサービスが終わる。失敗すると結果の通知が出てサービスが終わる）。API 28 では流していない。
+  - 保存のフォアグラウンドサービスと通知がエミュレータで動く。`SaveServiceTest` が API 37 と API 28 で通った（進行中の通知が出て、通知の **取り消す** で保存とサービスが終わる。失敗すると結果の通知が出てサービスが終わる）。
 - 実機が要る。
   - 基準 NAS で P4 の SMB の目標（1500 ms）を満たすこと。
   - 読書中に Wi-Fi を切ると「再接続しています」が出て、アプリが終了せず、準備済みのページが読め、Wi-Fi を戻すと自動で再接続すること。
@@ -2590,10 +2593,10 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - 確認した。完了条件の 4 件。
   - 余白トリミングの試験画像で、切りすぎを防ぐ規則がすべて働く。`TrimTest`（JVM）と `TrimBitmapTest`（端末。API 37 と API 28）が通った。
   - 息での操作の、10 回に 9 回を除く部分。既定でオフ（`BreathSessionTest` の `theMicrophoneIsOffByDefault`）、オンにするときだけ `RECORD_AUDIO` を求める（`BreathRowTest`、`PermissionStepTest`）、リーダーが背面に回るとマイクが止まる（`BreathSessionTest` の `leavingTheForegroundStopsTheMicrophoneAndComingBackStartsItAgain`）。判定は `BreathDetectorTest`、`BreathScrollTest`、`MicrophoneTest` が通った（すべて JVM）。
-  - モンキー試験で、落ちる回数と ANR がともに 0 件である。`./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000 --seed 1"` を API 37 のエミュレータで流し、9 冊（画像のある ZIP とエラーコーパスの本）で合計 10,000 イベント、落ち 0 件、ネイティブの落ち 0 件、ANR 0 件だった（1 時間 22 分）。API 28 では流していない。`fuzz.yml` の run 41552109138（API 34）でも、1,000 イベントで 0 件だった。どちらも `8984533` より前のコードで流した。そのあとに足した機能（縦の連続スクロール、息での操作、操作ガイド）を含む流し直しは、`b2d4d06` で行う（AGENTS.md の「状態」）。
+  - モンキー試験で、落ちる回数と ANR がともに 0 件である。`./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000 --seed 1 --serial emulator-5554"` を API 37 のエミュレータで `77af990` の上（縦の連続スクロール、息での操作、操作ガイドを含む）で流し、9 冊（画像のある ZIP とエラーコーパスの本）で合計 10,000 イベント、落ち 0 件、ネイティブの落ち 0 件、ANR 0 件だった（1 時間 23 分。実行の前に `adb logcat -b crash` を空にし、終わってからも空だった）。API 28 では流していない。`fuzz.yml` の run 41552109138（API 34、`3718c94`）でも、1,000 イベントで 0 件だった。これは GitHub Actions の実行で、ここでは流し直していない。
   - 6.7 節の点検が済み、実機の TalkBack で残るものが課題として登録されている。点検の結果は 6.7 節に書き、`AccessibilityTest`（`:feature:library`、`:feature:reader`、`:feature:settings`）、`TextAccessibilityTest`、`ContrastTest` が通った（JVM）。実機の TalkBack で残る 6 つと、自動検査の実機での実行を、[verification.md](verification.md) の A1 から A7 に登録した。
   - この文書の (要検証) がすべて解消しているか、課題として登録されている。[verification.md](verification.md) が課題の台帳で、仕様書の (要検証) 67 件を 1 件ずつ載せ、`bash tools/verification/list.sh --check` で件数を突き合わせる。
-- そのほか、確かめたこと（M6 の内容）。ルーペ、画像補正、回転、自動再生（`LoupeTest`、`ImageAdjustmentTest`、`RotationTest`、`AutoPlayTest`）。操作ガイド（`GuideTest`、`GuideRecordTest`）。範囲を選んで表紙にする画面（`CoverRangeViewModelTest`、`CropFrameTest`、`CoverCropTest`、`CoverStoreTest`）。縦の連続スクロール（Q15。`StripTest`、`VerticalReaderTest`、`StripTilesTest`。再開の位置は `ReaderRestoreTest` の `theVerticalStripReopensAtThePageAndOffsetItWasClosedOn` が端末で見るが、結果の記録がない）。画像リーダーのメニューとコマンドバーのすべての項目（しおり、本ごとの設定、ページ順の反転、文字コードの選択、設定、コマンドバーの編集、このアプリについて。`BookmarksTest`、`BookSettingsTest`、`PageOrderTest`、`CommandEffectTest`、`CommandBarTest`）。「この操作はまだ使えません」は出さなくなった。Baseline Profile が `app/src/main/generated/baselineProfiles/` にあり、release と `benchmark` の APK に `assets/dexopt/baseline.prof` が入る。`./gradlew :app:assembleRelease` と `:app:assembleBenchmark` で作り、APK を開いて確かめた（release は 23,232 バイト、`benchmark` は 12,127 バイト。`8984533` の上）。
+- そのほか、確かめたこと（M6 の内容）。ルーペ、画像補正、回転、自動再生（`LoupeTest`、`ImageAdjustmentTest`、`RotationTest`、`AutoPlayTest`）。操作ガイド（`GuideTest`、`GuideRecordTest`）。範囲を選んで表紙にする画面（`CoverRangeViewModelTest`、`CropFrameTest`、`CoverCropTest`、`CoverStoreTest`）。縦の連続スクロール（Q15。`StripTest`、`VerticalReaderTest`、`StripTilesTest`。再開の位置は `ReaderRestoreTest` の `theVerticalStripReopensAtThePageAndOffsetItWasClosedOn` が端末で見て、API 37 と API 28 で通った）。画像リーダーのメニューとコマンドバーのすべての項目（しおり、本ごとの設定、ページ順の反転、文字コードの選択、設定、コマンドバーの編集、このアプリについて。`BookmarksTest`、`BookSettingsTest`、`PageOrderTest`、`CommandEffectTest`、`CommandBarTest`）。「この操作はまだ使えません」は出さなくなった。Baseline Profile が `app/src/main/generated/baselineProfiles/` にあり、release と `benchmark` の APK に `assets/dexopt/baseline.prof` が入る。`./gradlew :app:assembleRelease` と `:app:assembleBenchmark` で作り、APK を開いて確かめた（release は 23,232 バイト、`benchmark` は 12,127 バイト。`8984533` の上）。
 - 実機が要る。
   - 完了条件の 2 件。息での操作の 10 回に 9 回（静かな部屋で短く 10 回吹く。設定の「息でめくる」をオンにして行う）。`StartupBenchmark` の `coldStart` が 600 ms 以内に収まること。
   - 内容の 3 件。低位の確認端末（API 28 か 29、RAM 3 GB。当面は API 28 の AVD、メモリ 2 GB で落ちないこととメモリ予算を見る。5.1 節）での点検。折りたたみの確認端末（検証用の端末 B）での、見開きと画面の大きさの変化の点検。実機の TalkBack での点検（A1 から A7）。

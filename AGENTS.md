@@ -14,10 +14,10 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 - M5（テキストリーダー）: コード完了、実機での確認が 1 件残ります（P9）。
 - M6（残りのリーダー機能と仕上げ）: コード完了です。実機での確認が 5 件残ります（`coldStart` が 600 ms 以内、息での操作の 10 回に 9 回、低位の確認端末での点検、折りたたみ端末での点検、実機の TalkBack での点検）。
 
-端末上の試験とモンキー試験は、`8984533` の上で流した結果しかありません（API 37 と API 28 のエミュレータ）。そのあとに足した縦の連続スクロール、息での操作、操作ガイド、端末に保存を含めて、まず流し直します。端末は `ANDROID_SERIAL` で 1 台に絞ります。
+端末上の試験とモンキー試験は、2026-11-03 に `77af990` の上で流して、すべて通りました（API 37 と API 28 のエミュレータ。結果の表は `docs/spec.md` 9 章の「確認の状況」）。縦の連続スクロール、息での操作、操作ガイド、端末に保存を含みます。モンキー試験は API 37 で 10,000 イベント、落ち 0 件、ネイティブの落ち 0 件、ANR 0 件でした。流し直すときは、端末を `ANDROID_SERIAL` で 1 台に絞ります。
 
-- 端末上の試験のすべて（API 37 と API 28 のそれぞれで実行）: `./gradlew :core:archive:connectedDebugAndroidTest :core:image:connectedDebugAndroidTest :feature:text:connectedDebugAndroidTest :core:data:connectedDebugAndroidTest :app:connectedDebugAndroidTest`
-- モンキー試験（API 37 のエミュレータで 10,000 イベント。落ち 0 件、ANR 0 件を確かめる）: 下の表のモンキー試験のコマンドです。
+- 端末上の試験のすべて（API 37 と API 28 のそれぞれで実行）: `./gradlew :core:archive:connectedDebugAndroidTest :core:image:connectedDebugAndroidTest :feature:text:connectedDebugAndroidTest :core:data:connectedDebugAndroidTest :app:connectedDebugAndroidTest`。`:feature:reader` と `:feature:library` に端末上の試験はありません。Gradle は端末への導入に失敗しても成功と出すことがあるので、各モジュールの `build/outputs/androidTest-results/connected/debug/` に結果の XML が出たことも見ます。
+- モンキー試験（API 37 のエミュレータで 10,000 イベント。落ち 0 件、ANR 0 件を確かめる）: 下の表のモンキー試験のコマンドに `--serial emulator-5554` を足します。約 1 時間 23 分かかります。
 
 残りの確認を動かすコマンドと手順は次のとおりです。
 
