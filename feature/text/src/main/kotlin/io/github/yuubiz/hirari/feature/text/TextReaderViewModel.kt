@@ -101,7 +101,7 @@ class TextReaderViewModel(
         model?.onViewport(viewport)
     }
 
-    fun turn(views: Int) = model?.turn(views) ?: Unit
+    fun turn(views: Int): TurnResult = model?.turn(views) ?: TurnResult.Waiting
 
     fun showPage(index: Int) = model?.showPage(index) ?: Unit
 

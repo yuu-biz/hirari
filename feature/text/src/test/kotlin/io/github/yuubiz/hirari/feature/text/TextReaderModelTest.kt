@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.text
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ProgressWriter
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.ReadState
@@ -94,17 +95,17 @@ class TextReaderModelTest {
         val model = model()
         settle()
         val pages = pagesOf()
-        model.turn(-1)
+        assertEquals(TurnResult.Edge(BookEdge.Start), model.turn(-1))
         assertEquals(0, model.reading.current)
-        model.turn(1)
+        assertEquals(TurnResult.Moved(pages[0].start), model.turn(1))
         model.turn(1)
         assertEquals(pages[2], model.page)
-        model.turn(-1)
+        assertEquals(TurnResult.Moved(pages[2].start), model.turn(-1))
         assertEquals(pages[1], model.page)
         model.last()
         settle()
         assertEquals(pages.last(), model.page)
-        model.turn(1)
+        assertEquals(TurnResult.Edge(BookEdge.End), model.turn(1))
         assertEquals(pages.last(), model.page)
     }
 

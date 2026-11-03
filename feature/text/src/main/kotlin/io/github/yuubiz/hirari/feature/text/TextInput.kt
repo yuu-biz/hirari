@@ -33,8 +33,10 @@ import io.github.yuubiz.hirari.core.model.TouchEvent
 import io.github.yuubiz.hirari.core.model.TouchOutcome
 import io.github.yuubiz.hirari.core.model.TouchState
 import io.github.yuubiz.hirari.core.model.Turn
+import io.github.yuubiz.hirari.core.model.TurnAnimation
 import io.github.yuubiz.hirari.core.model.TurnAreaTouch
 import io.github.yuubiz.hirari.core.model.reduce
+import io.github.yuubiz.hirari.core.model.turnMovement
 import io.github.yuubiz.hirari.core.ui.HoldTimer
 import io.github.yuubiz.hirari.core.ui.awaitOrHold
 
@@ -48,12 +50,12 @@ internal fun GlobalSettings.textKeys() = KeyBindings(TEXT_DIRECTION, mirrorContr
 internal fun GlobalSettings.textTapZones() = TapZones(tapLayout, tapBandPercent, mirrorControls)
 
 /**
- * The views [this] turns in a text: 1 forward, -1 back, or null for an action that does not turn. A text has no
- * stops, so stepping through them turns the view.
+ * The turn [this] makes in a text, or null for an action that does not turn. A text has no stops, so stepping
+ * through them turns the view.
  */
-internal fun ReaderAction.views(): Int? = when (this) {
-    is ReaderAction.TurnView -> turn.views
-    is ReaderAction.StepStops -> turn.views
+internal fun ReaderAction.textTurn(): Turn? = when (this) {
+    is ReaderAction.TurnView -> turn
+    is ReaderAction.StepStops -> turn
     else -> null
 }
 
@@ -78,11 +80,15 @@ internal fun pageBarJump(page: Int, atEdge: Boolean, run: PageRun): PageBarJump 
     else -> PageBarJump.Page(page)
 }
 
-/** The touch state the text reader draws: the page bar's preview and the command under the finger. */
+/**
+ * What the text reader draws besides the pages at rest: the page bar's preview, the command under the finger, and
+ * the motion of a turn.
+ */
 @Stable
 internal class TextTouch {
     var pageBar by mutableStateOf<PageBarState>(PageBarState.Idle)
     var highlight by mutableStateOf<TextPanelItem?>(null)
+    var motion by mutableStateOf<TextMotion?>(null)
 }
 
 /**
@@ -98,7 +104,8 @@ internal class TextInput(
     private val panelBounds: TextPanelBounds,
     private val onItem: (TextPanelItem) -> Unit,
     private val haptic: () -> Unit,
-    private val act: (ReaderAction) -> Unit,
+    /** Turns toward a [Turn], continuing the effect from the share of the view a finger pulled, if it did. */
+    private val turn: (Turn, Float?) -> Unit,
 ) {
     suspend fun PointerInputScope.handle() {
         awaitEachGesture {
@@ -109,6 +116,7 @@ internal class TextInput(
             val slop = viewConfiguration.touchSlop / density
             val region = regions.regionAt(down.position.dp(density)) ?: return@awaitEachGesture
             onTouch()
+            touch.motion = null
             when (region) {
                 ReaderRegion.CommandBar -> commandBar(down, settings, slop)
                 ReaderRegion.PageBar -> pageBar(down, current, regions, slop)
@@ -202,8 +210,8 @@ internal class TextInput(
     }
 
     /**
-     * A tap turns by the tap zones and a sideways drag swipes. In the 連続 layout the row of pages scrolls under a
-     * drag instead, so the drag is left to it.
+     * A tap turns by the tap zones and a sideways drag pulls the neighboring view in. In the 連続 layout the row of
+     * pages scrolls under a drag instead, so the drag is left to it.
      */
     private suspend fun AwaitPointerEventScope.turnArea(down: PointerInputChange, current: TextReaderUiState.Reading, regions: ReaderRegions, slop: Float) {
         val settings = current.settings
@@ -212,26 +220,44 @@ internal class TextInput(
         val pullable = if (continuous) emptySet() else setOf(Side.Left, Side.Right)
         var touchState = rules.reduce(TouchState.Idle, TouchEvent.Down(down.position.dp(density), down.uptimeMillis, pullable)).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
-        while (true) {
-            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return
-            velocity.addPosition(change.uptimeMillis, change.position)
-            if (change.pressed) {
-                touchState = rules.reduce(touchState, TouchEvent.Move(change.position.dp(density))).state
-                if (touchState is TouchState.Pulling) change.consume()
-                continue
-            }
-            val vx = velocity.calculateVelocity().x / density
-            when (val outcome = rules.reduce(touchState, TouchEvent.Up(change.position.dp(density), change.uptimeMillis, vx)).outcome) {
-                is TouchOutcome.Tap -> {
-                    val area = regions.turnArea
-                    val at = Point(outcome.point.x - area.left, outcome.point.y - area.top)
-                    settings.textTapZones().turnAt(at, Size(area.width, area.height))?.let { act(ReaderAction.TurnView(it)) }
+        val width = size.width.toFloat()
+        try {
+            while (true) {
+                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return
+                velocity.addPosition(change.uptimeMillis, change.position)
+                if (change.pressed) {
+                    touchState = rules.reduce(touchState, TouchEvent.Move(change.position.dp(density))).state
+                    (touchState as? TouchState.Pulling)?.let {
+                        change.consume()
+                        touch.motion = TextMotion.Pulling(it.turn, it.pulled)
+                    }
+                    continue
                 }
-                is TouchOutcome.Commit -> act(ReaderAction.TurnView(outcome.turn))
-                is TouchOutcome.Return -> act(ReaderAction.TurnView(outcome.turn))
-                is TouchOutcome.ShowLoupe, TouchOutcome.HideLoupe, null -> Unit
+                val vx = velocity.calculateVelocity().x / density
+                val outcome = rules.reduce(touchState, TouchEvent.Up(change.position.dp(density), change.uptimeMillis, vx)).outcome
+                touchState = TouchState.Idle
+                when (outcome) {
+                    is TouchOutcome.Tap -> {
+                        val area = regions.turnArea
+                        val at = Point(outcome.point.x - area.left, outcome.point.y - area.top)
+                        settings.textTapZones().turnAt(at, Size(area.width, area.height))?.let { turn(it, null) }
+                    }
+                    is TouchOutcome.Commit -> turn(outcome.turn, pulledShare(outcome.pulled, width, density))
+                    is TouchOutcome.Return -> touch.motion = TextMotion.Returning(
+                        outcome.turn,
+                        TurnAnimation.returnPull(
+                            settings.turnEffect,
+                            turnMovement(outcome.turn, TEXT_DIRECTION),
+                            pulledShare(outcome.pulled, width, density),
+                            change.uptimeMillis,
+                        ),
+                    )
+                    is TouchOutcome.ShowLoupe, TouchOutcome.HideLoupe, null -> Unit
+                }
+                return
             }
-            return
+        } finally {
+            if (touchState is TouchState.Pulling) touch.motion = null
         }
     }
 }

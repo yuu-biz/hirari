@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.data.BookmarkRepository
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.data.ProgressWriter
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.Bookmark
@@ -40,6 +41,18 @@ sealed interface SearchState {
     data class Searching(val query: String) : SearchState
 
     data class Done(val result: SearchResult) : SearchState
+}
+
+/** What [TextReaderModel.turn] did. */
+sealed interface TurnResult {
+    /** The view moved away from the one whose first page starts at source offset [from]. */
+    data class Moved(val from: Int) : TurnResult
+
+    /** The page is not laid out yet; the turn runs once it is. */
+    data object Waiting : TurnResult
+
+    /** The turn ran into [edge] of the text. */
+    data class Edge(val edge: BookEdge) : TurnResult
 }
 
 sealed interface TextReaderUiState {
@@ -226,17 +239,22 @@ internal class TextReaderModel(
         current?.let { reframe(it, typeface) }
     }
 
-    /** Turns [views] views forward, or back when negative. A turn past either end of the text does nothing. */
-    fun turn(views: Int) {
-        val run = run ?: return
+    /**
+     * Turns [views] views forward, or back when negative. A turn onto a page not laid out yet waits for it, and a
+     * turn past either end of the text moves nothing and says which end it ran into.
+     */
+    fun turn(views: Int): TurnResult {
+        val run = run ?: return TurnResult.Waiting
         val perView = frame?.pagesPerView ?: 1
         val index = run.indexOf(anchor)
         val target = index + views * perView
-        when {
-            target < 0 && index > 0 -> moveTo(run.start(0))
-            target < 0 -> if (!run.fromStart) pendingTurn = views
-            target > run.lastIndex -> if (!run.complete) pendingTurn = views
-            else -> moveTo(run.start(target))
+        val from = run.start(index)
+        return when {
+            target < 0 && index > 0 -> TurnResult.Moved(from).also { moveTo(run.start(0)) }
+            target < 0 && !run.fromStart || target > run.lastIndex && !run.complete -> TurnResult.Waiting.also { pendingTurn = views }
+            target < 0 -> TurnResult.Edge(BookEdge.Start)
+            target > run.lastIndex -> TurnResult.Edge(BookEdge.End)
+            else -> TurnResult.Moved(from).also { moveTo(run.start(target)) }
         }
     }
 

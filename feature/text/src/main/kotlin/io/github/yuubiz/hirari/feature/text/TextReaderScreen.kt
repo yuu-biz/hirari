@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -28,6 +29,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +37,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -58,6 +61,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.KeyCodes
 import io.github.yuubiz.hirari.core.model.KeyResult
@@ -66,9 +70,13 @@ import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.TextLayout
+import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.text.GlyphContent
 import io.github.yuubiz.hirari.core.text.PageContent
 import io.github.yuubiz.hirari.core.text.TextPage
+import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
+import io.github.yuubiz.hirari.core.ui.drawSeamShadow
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.delay
 
@@ -111,6 +119,7 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
     var panel by rememberSaveable { mutableStateOf<TextPanel?>(null) }
     var orientation by rememberSaveable { mutableStateOf<ReaderOrientation?>(null) }
     var touched by remember { mutableIntStateOf(0) }
+    val touch = remember { TextTouch() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
     val settings = (state as? TextReaderUiState.Reading)?.settings
     if (settings?.hideSystemBars != false) HideSystemBars()
@@ -119,10 +128,18 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
 
     fun dismiss() = if (panel != null) panel = null else back()
 
+    fun turn(turn: Turn, pulled: Float?) {
+        val reading = viewModel.state.value as? TextReaderUiState.Reading ?: return
+        val now = SystemClock.uptimeMillis()
+        val result = viewModel.turn(turn.views)
+        if (result is TurnResult.Edge && textEdgeAction(result.edge, reading.settings.atBookEnd) == TextEdgeAction.Close) back()
+        touch.motion = motionAfter(result, turn, pulled, reading.settings, reading.frame?.continuous == true, now)
+    }
+
     fun act(action: ReaderAction) {
         touched++
         when (action) {
-            is ReaderAction.TurnView, is ReaderAction.StepStops -> action.views()?.let(viewModel::turn)
+            is ReaderAction.TurnView, is ReaderAction.StepStops -> action.textTurn()?.let { turn(it, null) }
             is ReaderAction.Shift -> Unit
             ReaderAction.First -> viewModel.first()
             ReaderAction.Last -> viewModel.last()
@@ -154,7 +171,6 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
         is TextReaderUiState.Reading -> {
             val density = LocalDensity.current.density
             val bounds = remember(density) { TextPanelBounds(density) }
-            val touch = remember { TextTouch() }
             val run = rememberCommandRunner(viewModel, onPanel = { panel = it }, onOpenSettings) {
                 orientation = when (orientation ?: s.settings.readerOrientation) {
                     ReaderOrientation.System -> ReaderOrientation.Portrait
@@ -173,7 +189,7 @@ fun TextReaderScreen(viewModel: TextReaderViewModel, keys: TextKeyRelay, onBack:
                             is TextPanelItem.Command -> run(item.command)
                         }
                     },
-                    act = ::act,
+                    turn = ::turn,
                 )
                 TextPanels(panel, s, viewModel, bounds, touch.highlight, onPanel = { panel = it }, onClose = back, onCommand = run)
             }
@@ -190,13 +206,13 @@ private fun Reading(
     onRegionTouch: () -> Unit,
     onPanel: (TextPanel?) -> Unit,
     onItem: (TextPanelItem) -> Unit,
-    act: (ReaderAction) -> Unit,
+    turn: (Turn, Float?) -> Unit,
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(state)
     val input = remember(viewModel, panelBounds) {
-        TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, panelBounds, onItem, { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }, act)
+        TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, panelBounds, onItem, { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }, turn)
     }
     Box(
         Modifier
@@ -208,7 +224,7 @@ private fun Reading(
         val frame = state.frame
         val run = state.run
         if (frame != null && run != null) {
-            if (frame.continuous) ContinuousPages(state, viewModel) else ShownPages(state, viewModel)
+            if (frame.continuous) ContinuousPages(state, viewModel) else ShownPages(state, viewModel, touch)
         } else {
             Box(Modifier.fillMaxSize().background(Color(argb(state.colors.paper))), contentAlignment = Alignment.Center) { DelayedProgress() }
         }
@@ -232,19 +248,52 @@ private fun PageBarPreview(state: TextReaderUiState.Reading, drag: PageBarState.
     }
 }
 
-/** The shown pages of a single or spread layout, the first on the right; a page still being laid out is bare paper. */
+/**
+ * The shown pages of a single or spread layout, the first on the right, with the views of a turn effect, a pull or a
+ * bounce in [touch]. A page still being laid out is bare paper.
+ */
 @Composable
-private fun ShownPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel) {
+private fun ShownPages(state: TextReaderUiState.Reading, viewModel: TextReaderViewModel, touch: TextTouch) {
     val frame = state.frame ?: return
-    val shown = state.shown.map(state::page)
-    val pictures = rememberPictures(shown.filterNotNull(), frame, viewModel)
+    val run = state.run ?: return
+    val motion = touch.motion
+    var frameMs by remember { mutableLongStateOf(SystemClock.uptimeMillis()) }
+    LaunchedEffect(motion) {
+        if (motion == null || motion is TextMotion.Pulling) return@LaunchedEffect
+        while (true) {
+            frameMs = withFrameMillis { it }
+            if (motion.isDoneAt(frameMs)) break
+        }
+        if (touch.motion == motion) touch.motion = null
+    }
+    val viewWidth = frame.pageWidth * frame.pagesPerView + frame.gutter * (frame.pagesPerView - 1)
+    val density = LocalDensity.current.density
+    val layers = textLayers(motion, state.current, frame.pagesPerView, run, state.settings.turnEffect, viewWidth, density, frameMs)
+    val indices = layers.flatMap { it.head until minOf(run.size, it.head + frame.pagesPerView) }.distinct()
+    val pages = indices.associateWith(state::page)
+    val pictures = rememberPictures(pages.values.filterNotNull(), frame, viewModel)
     val painter = remember(state.typeface, state.colors) { PagePainter(viewModel.typeface(state.typeface), state.colors) }
-    val decor = shown.indices.map { decorOf(state, state.current + it) }
+    val decor = indices.associateWith { decorOf(state, it) }
+    val shadow = frame.pagesPerView == 2 && state.settings.gutterStyle == GutterStyle.Shadow
     Canvas(Modifier.fillMaxSize()) {
-        drawIntoCanvas { canvas ->
-            shown.forEachIndexed { i, page ->
-                val left = size.width - (frame.pageWidth + frame.gutter) * i - frame.pageWidth
-                painter.draw(canvas.nativeCanvas, page, frame, left, 0f, decor[i]) { pictures[it] }
+        for (layer in layers) {
+            val count = minOf(run.size, layer.head + frame.pagesPerView) - layer.head
+            drawIntoCanvas { canvas ->
+                val native = canvas.nativeCanvas
+                val faded = layer.alpha < 1f
+                if (faded) native.saveLayerAlpha(null, (layer.alpha * 255).roundToInt())
+                for (i in 0 until count) {
+                    val left = size.width - (frame.pageWidth + frame.gutter) * i - frame.pageWidth + layer.shift
+                    val index = layer.head + i
+                    painter.draw(native, pages[index], frame, left, 0f, decor.getValue(index)) { pictures[it] }
+                }
+                if (faded) native.restore()
+            }
+            if (shadow && count == 2) {
+                val seam = size.width - frame.pageWidth + layer.shift
+                val share = frame.pageWidth * SEAM_SHADOW_SHARE
+                drawSeamShadow(seam, seam + share, 0f, frame.pageHeight, layer.alpha)
+                drawSeamShadow(seam, seam - share, 0f, frame.pageHeight, layer.alpha)
             }
         }
     }

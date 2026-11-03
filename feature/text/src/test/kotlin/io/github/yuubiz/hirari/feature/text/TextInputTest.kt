@@ -12,7 +12,7 @@ class TextInputTest {
     private val defaults = GlobalSettings()
 
     private fun views(code: Int, settings: GlobalSettings = defaults) =
-        (settings.textKeys().onKey(code, pressed = true) as? KeyResult.Act)?.action?.views()
+        (settings.textKeys().onKey(code, pressed = true) as? KeyResult.Act)?.action?.textTurn()?.views
 
     @Test
     fun `the left key and the volume keys turn a text bound on the right`() {
@@ -26,8 +26,8 @@ class TextInputTest {
     @Test
     fun `shifting the pairing does nothing in a text`() {
         assertEquals(null, views(KeyCodes.DPAD_UP))
-        assertEquals(null, ReaderAction.Shift(forward = true).views())
-        assertEquals(1, ReaderAction.StepStops(Turn.Forward).views())
+        assertEquals(null, ReaderAction.Shift(forward = true).textTurn())
+        assertEquals(Turn.Forward, ReaderAction.StepStops(Turn.Forward).textTurn())
     }
 
     private val partial = PageRun(intArrayOf(100, 200, 300), end = 400, fromStart = false, complete = false, sourceLength = 1000)
