@@ -62,7 +62,7 @@ fun CoverSlot(
     }
 }
 
-/** The kind label of docs/spec.md section 4.3, 形式の表示. A folder book has none. */
+/** The kind label of docs/spec.md section 4.3, 形式の表示. A folder book and a single image have none. */
 fun Book.kindLabel(): String? = when (val format = format) {
     is BookFormat.Text -> "TXT"
     is BookFormat.Images -> when (format.container) {
@@ -71,7 +71,7 @@ fun Book.kindLabel(): String? = when (val format = format) {
         Container.SevenZip -> "7Z"
         Container.Tar -> "TAR"
         Container.Pdf -> "PDF"
-        Container.Folder -> null
+        Container.Folder, Container.Image -> null
     }
 }
 

@@ -86,6 +86,15 @@ class LibraryRepositoriesTest {
     }
 
     @Test
+    fun `every kind of image book reads back as the kind it was recorded as`() = runTest {
+        Container.entries.forEach { container ->
+            val book = book(container.name, location = null, path = "picked").copy(format = BookFormat.Images(container))
+            books.record(book)
+            assertEquals(book, books.get(book.id)?.book)
+        }
+    }
+
+    @Test
     fun `changing the password of a server keeps what was read on it`() = runTest {
         val id = locations.addSmbShare(nas, "old".toCharArray())
         val before = locations.get(id)!!

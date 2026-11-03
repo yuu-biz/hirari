@@ -110,7 +110,7 @@ sealed interface BookSource {
 	data class External(val uri: Uri) : BookSource // 他アプリから渡された本
 }
 
-enum class Container { Zip, Rar, SevenZip, Tar, Folder, Pdf }
+enum class Container { Zip, Rar, SevenZip, Tar, Folder, Pdf, Image } // Image は 1 枚の画像ファイルを 1 冊の本としたもの
 
 sealed interface BookFormat {
 	data class Images(val container: Container) : BookFormat
@@ -443,6 +443,7 @@ interface ByteSource : Closeable {
 
 - `ftyp` のブランドは major brand と compatible brands の両方を見る。`mif1` だけを持つファイルは、中の画像アイテムの種類で HEIF か AVIF かを決める。
 - 拡張子と中身が違うときは中身に従う。`.jpg` という名前の PNG は PNG として読む。
+- リーダーが開く文書の先頭のバイトが画像の形式に当たるときは、その画像 1 枚を 1 ページの本（`Container.Image`）として開く。判定は PDF と書庫より先に行う。ページの名前は PDF のページと同じく番号の `1` にし、元データは文書の全体とする。上限は書庫のエントリと同じである（3.7 節）。他アプリから渡された画像（4.11 節）がこれに当たる。
 
 ### 3.3 書庫の読み込み
 
@@ -1673,13 +1674,14 @@ M1 には項目を選ぶ設定画面がないので、パネルには M1 で動�
 - `application/x-rar-compressed`、`application/vnd.rar`、`application/x-cbr`、`application/vnd.comicbook-rar`
 - `application/x-7z-compressed`、`application/x-tar`、`application/pdf`
 - `text/plain`
+- `image/*`
 - `application/octet-stream`
 
 受け取った URI は、可能なら永続許可を取る。取れなければ、そのとき限りで開き、読書位置は Q10 で決めた方法で記録する。
 
 - 受け付けるのは `content:` の URI だけとする。ストレージの権限を持たないので、`file:` の URI は読めない。`ACTION_SEND` の Intent はデータの URI を持たないので、そのフィルタには `scheme` を書かず、`EXTRA_STREAM` の URI をアプリが確かめる。
 - `EXTRA_STREAM` は `ACTION_SEND` のときだけ読む。どのアプリからも Intent を受けるので、`EXTRA_STREAM` は型を決めずに `Parcelable` として読み、URI でない `Parcelable` なら受け付けない。`Parcelable` でない値（文字列など）は読めないので、`EXTRA_STREAM` がないときと同じに扱う。API 32 以前の取り出しは型を確かめないので、URI として受けると、ほかの型の値でクラスの変換に失敗して落ちるためである。Intent の追加の値を読めないとき（送り手のアプリにしかないクラスの値など）も受け付けず、追加の値を捨てて、ほかの処理に読ませない。受け付けなかったときは何も開かずにホームを開き、「渡されたものを開けません」と出す。起動時の動作（4.3 節）は行わない。
-- `image/*` は、リーダーが 1 枚の画像を 1 冊の本として開けるようになるまで受け付けない。今のリーダーは単独の画像の文書を書庫として開こうとして失敗するためである。
+- `image/*` の文書は、リーダーが 1 枚の画像を 1 ページの本として開く（3.2 節）。
 - `application/octet-stream` は、Intent フィルタでは `content:` の URI の拡張子を選べないので、型だけで受け付け、中身で決める。
 - 受け取ったら、文書の先頭 4 KB を入出力のスレッドで読み、3.2 節の表のテキストの行に当たればテキストリーダーで、それ以外はリーダーで開く。読めなかったときもリーダーで開き、リーダーが開けない理由を出す。
 - 他アプリから開いた本だけが画面にあり、戻る操作でアプリを閉じて元のアプリに戻る。

@@ -117,8 +117,18 @@ object Books {
     }
 
     /**
-     * Opens the book in [source], which the book owns from here on: a PDF when `%PDF-` starts within its first
-     * 1024 bytes (docs/spec.md section 3.2), and otherwise an archive, extracted into [extractDir] when solid.
+     * Opens the image in [source], which the book owns from here on, as a book of one page named `1`, as a PDF names
+     * its pages (docs/spec.md sections 3.2 and 3.10). [type] is what its first bytes show.
+     */
+    fun openImage(source: ByteSource, type: ImageType, decoding: ImageDecoding): BookResult {
+        val page = PageEntry(0, 0, byteArrayOf('1'.code.toByte()), "1", source.size, sniffed = type)
+        return BookResult.Opened(OpenBook(BookContent.Images(SinglePage(source)), Container.Image, listOf(page), indexError = null, decoding))
+    }
+
+    /**
+     * Opens the book in [source], which the book owns from here on: a single image when its first bytes show an
+     * image, a PDF when `%PDF-` starts within its first 1024 bytes (docs/spec.md section 3.2), and otherwise an
+     * archive, extracted into [extractDir] when solid.
      */
     suspend fun openBook(
         source: ByteSource,
@@ -139,6 +149,7 @@ object Books {
                 return BookResult.Failed(read.reason)
             }
         }
+        sniffImage(prefix)?.let { return openImage(source, it, decoding) }
         return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding, extractDir, naming)
     }
 
@@ -278,24 +289,35 @@ private class ArchivePages(private val session: ArchiveSession) : PageBytes {
 }
 
 private class FolderPages(private val files: List<FolderFile>) : PageBytes {
-    override suspend fun read(page: PageEntry): PageResult<ByteArray> = withContext(Dispatchers.IO) {
-        try {
-            files[page.entryIndex].open().use(::readAll)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            readError
-        }
-    }
-
-    private fun readAll(source: ByteSource): PageResult<ByteArray> {
-        if (source.size > ArchiveSession.MAX_ENTRY_BYTES) return tooLargeEntry(source.size)
-        val buffer = ByteBuffer.allocate(source.size.toInt())
-        while (buffer.hasRemaining()) {
-            if (source.read(buffer.position().toLong(), buffer) < 0) return PageResult.Failed(FailureReason.Truncated, retryable = false)
-        }
-        return PageResult.Ready(buffer.array())
-    }
+    override suspend fun read(page: PageEntry): PageResult<ByteArray> = readSafely { files[page.entryIndex].open().use(::readAll) }
 
     override fun close() = Unit
+}
+
+/** The one page of a single image, read from the [source] the book holds open. */
+private class SinglePage(private val source: ByteSource) : PageBytes {
+    override suspend fun read(page: PageEntry): PageResult<ByteArray> = readSafely { readAll(source) }
+
+    override fun close() = source.close()
+}
+
+/** [read] on [Dispatchers.IO], with what it throws as a page failure (docs/spec.md section 2.4). */
+private suspend fun readSafely(read: () -> PageResult<ByteArray>): PageResult<ByteArray> = withContext(Dispatchers.IO) {
+    try {
+        read()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        readError
+    }
+}
+
+/** All of [source], as long as it fits the limit of an entry (docs/spec.md section 3.7). */
+private fun readAll(source: ByteSource): PageResult<ByteArray> {
+    if (source.size > ArchiveSession.MAX_ENTRY_BYTES) return tooLargeEntry(source.size)
+    val buffer = ByteBuffer.allocate(source.size.toInt())
+    while (buffer.hasRemaining()) {
+        if (source.read(buffer.position().toLong(), buffer) < 0) return PageResult.Failed(FailureReason.Truncated, retryable = false)
+    }
+    return PageResult.Ready(buffer.array())
 }

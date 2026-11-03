@@ -49,7 +49,8 @@ sealed interface BookSource {
     data class External(val uri: UriString) : BookSource
 }
 
-enum class Container { Zip, Rar, SevenZip, Tar, Folder, Pdf }
+/** What a book of images was opened from. [Image] is a single image file read as a book of one page. */
+enum class Container { Zip, Rar, SevenZip, Tar, Folder, Pdf, Image }
 
 sealed interface BookFormat {
     data class Images(val container: Container) : BookFormat

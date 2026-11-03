@@ -88,7 +88,7 @@ internal interface LocationDao {
 }
 
 /** What a book is stored as: the container of an image book, or [Text]. */
-internal enum class StoredFormat { Zip, Rar, SevenZip, Tar, Folder, Pdf, Text }
+internal enum class StoredFormat { Zip, Rar, SevenZip, Tar, Folder, Pdf, Image, Text }
 
 /**
  * The index of books the app has opened (docs/spec.md section 7). [folder] is the parent of [path] inside the

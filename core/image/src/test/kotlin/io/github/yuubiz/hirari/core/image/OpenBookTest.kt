@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +17,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -163,6 +165,23 @@ class OpenBookTest {
     }
 
     @Test
+    fun aLoneImageOpensAsABookOfOnePageThatReadsTheWholeFile() = runBlocking {
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) + ByteArray(2000) { it.toByte() }
+        val source = MemorySource(png)
+        val book = (Books.openBook(source, decoding) as BookResult.Opened).book
+        assertEquals(Container.Image, book.container)
+        assertEquals(listOf("1"), book.pages.map { it.name })
+        assertEquals(ImageType.Png, book.pages.single().sniffed)
+        assertEquals(png.size.toLong(), book.pages.single().declaredSize)
+        val raw = (book.raw(0) as PageResult.Ready).image as RawPage.Encoded
+        assertEquals(ImageType.Png, raw.type)
+        assertEquals(png.toList(), java.io.ByteArrayOutputStream().also(raw::writeTo).toByteArray().toList())
+        assertFalse(source.closed)
+        book.close()
+        assertTrue(source.closed)
+    }
+
+    @Test
     fun aFileThatFailsToReadGivesNoRawBytes() = runTest {
         val files = listOf(FolderFile("001.jpg", size = null) { throw IOException("gone") })
         val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
@@ -171,8 +190,11 @@ class OpenBookTest {
     }
 }
 
-private class MemorySource(private val data: ByteArray) : ByteSource {
+internal class MemorySource(private val data: ByteArray) : ByteSource {
     override val size: Long = data.size.toLong()
+
+    var closed = false
+        private set
 
     override fun read(offset: Long, dst: ByteBuffer): Int {
         if (offset >= size) return -1
@@ -181,5 +203,7 @@ private class MemorySource(private val data: ByteArray) : ByteSource {
         return count
     }
 
-    override fun close() = Unit
+    override fun close() {
+        closed = true
+    }
 }
