@@ -47,7 +47,7 @@ class ImageDecoding(val budgetBytes: Long, parallelism: Int, internal val storag
         }
 
         /** The memory budget of docs/spec.md section 5.3 for this device. */
-        internal fun deviceBudget(context: Context): Long {
+        fun deviceBudget(context: Context): Long {
             val activityManager = context.getSystemService(ActivityManager::class.java)
             val memory = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
             return MemoryBudget.bytes(activityManager.memoryClass, memory.totalMem, activityManager.isLowRamDevice)
