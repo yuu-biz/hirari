@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari
 
 import android.app.Application
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.os.Build
@@ -33,6 +34,10 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
@@ -109,10 +114,11 @@ class HirariApp : Application() {
                 launch = storage.launch,
                 coverIndex = storage.covers,
                 covers = covers,
-                saves = DeviceSaves(smb, SafSaveFolders(contentResolver), appScope),
+                saves = DeviceSaves(smb, SafSaveFolders(contentResolver), appScope) { result -> SaveNotifications(this@HirariApp).finished(result) },
                 appScope = appScope,
             )
         }
+        appScope.launch { runSaveService() }
         text = appScope.async {
             val smb = smbPlaces.await()
             services.await().let {
@@ -123,6 +129,17 @@ class HirariApp : Application() {
                     SmbFiles { place, path -> smb.open(place, path) },
                     TextFolderSiblings(it.storage.locations, SafFolderLister(contentResolver), smb, it.storage.settings),
                 )
+            }
+        }
+    }
+
+    /** Runs the foreground service for as long as a save to the device is under way (docs/spec.md section 4.5). */
+    private suspend fun runSaveService() {
+        library.await().saves.jobs.map { it.isNotEmpty() }.distinctUntilChanged().filter { it }.collect {
+            try {
+                startForegroundService(Intent(this, SaveService::class.java))
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "the save service could not start", e)
             }
         }
     }

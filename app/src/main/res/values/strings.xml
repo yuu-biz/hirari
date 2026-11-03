@@ -8,4 +8,10 @@
     <string name="reopen_title">前回の本を開きますか</string>
     <string name="reopen_open">開く</string>
     <string name="reopen_skip">開かない</string>
+    <string name="save_channel_progress">端末への保存の進み具合</string>
+    <string name="save_channel_result">端末への保存の結果</string>
+    <string name="save_notification_idle">保存しています</string>
+    <string name="save_notification_many">%1$d 件を保存しています</string>
+    <string name="save_notification_cancel">取り消す</string>
+    <string name="save_notification_cancel_all">すべて取り消す</string>
 </resources>
