@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.source.save
 
+import io.github.yuubiz.hirari.core.source.smb.Relay
 import io.github.yuubiz.hirari.core.source.smb.SmbAddress
 import io.github.yuubiz.hirari.core.source.smb.SmbFixture
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
@@ -93,6 +94,32 @@ class SmbSaveFixtureTest {
             assertArrayEquals(SmbFixture.pattern.copyOf(3000), png.copyOfRange(8, png.size))
             assertEquals(1000 + 8, File(target, "画像/おまけ/01.png").length().toInt())
             assertTrue(target.walkTopDown().none { it.name.endsWith(SAVE_PART_SUFFIX) })
+        }
+    }
+
+    @Test
+    fun `a save whose connection was reset before it began connects again and saves`() {
+        SmbFixture.require()
+        Relay(SmbFixture.host!!, SmbFixture.port).use { relay ->
+            SmbServer(SmbAddress("127.0.0.1", "books", relay.port), SmbFixture.login(), scope).use { server ->
+                runBlocking { server.list("") }
+                relay.resetOpenConnections()
+                Thread.sleep(1000)
+                val file = File(target, "file").also { it.mkdir() }
+                val (_, saved) = timed("save big.bin over a connection reset before the save") {
+                    runBlocking { server.saveTo(SmbFixture.BIG, false, DiskFolder(file)) }
+                }
+                assertEquals(SaveOutcome.Saved(SmbFixture.BIG, 1, SmbFixture.BIG_SIZE.toLong()), saved.getOrThrow())
+                assertArrayEquals(SmbFixture.pattern, File(file, SmbFixture.BIG).readBytes())
+                relay.resetOpenConnections()
+                Thread.sleep(1000)
+                val folder = File(target, "folder").also { it.mkdir() }
+                val (_, copied) = timed("save 画像 over a connection reset before the save") {
+                    runBlocking { server.saveTo("画像", true, DiskFolder(folder)) }
+                }
+                assertEquals(SaveOutcome.Saved("画像", 6, 3008 + 4008 + 2008 + 1008 + 1008 + 4L), copied.getOrThrow())
+                assertEquals(3, relay.accepted.get())
+            }
         }
     }
 

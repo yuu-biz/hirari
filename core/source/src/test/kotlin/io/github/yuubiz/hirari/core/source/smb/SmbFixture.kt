@@ -56,6 +56,7 @@ object SmbFixture {
  * A TCP relay in front of the fixture. [answerDelayMillis] holds back each chunk the server sends.
  * [silenceOpenConnections] makes the relayed connections drop everything in both directions while their sockets
  * stay open (no FIN, no RST), as a Wi-Fi that went away does; later connections are relayed normally.
+ * [resetOpenConnections] ends them with a reset instead.
  */
 class Relay(private val host: String, private val targetPort: Int) : Closeable {
     private val server = ServerSocket().apply { bind(InetSocketAddress("127.0.0.1", 0)) }
@@ -116,6 +117,12 @@ class Relay(private val host: String, private val targetPort: Int) : Closeable {
     }
 
     fun silenceOpenConnections() = links.forEach { it.silent = true }
+
+    /** Resets the relayed connections on the client's side, as Android does to the sockets of an app in the background. */
+    fun resetOpenConnections() = links.forEach { link ->
+        runCatching { link.client.setSoLinger(true, 0) }
+        link.close()
+    }
 
     override fun close() {
         runCatching { server.close() }

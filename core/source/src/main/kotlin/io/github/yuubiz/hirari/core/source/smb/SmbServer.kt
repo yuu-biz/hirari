@@ -38,7 +38,9 @@ const val MAX_REQUESTS_PER_SERVER = 4
  * When a request finds the connection broken, the request fails with [ConnectionLostException] and the server
  * reconnects after each of [RECONNECT_DELAYS]. Requests made meanwhile fail at once with the same exception
  * instead of waiting. When every attempt fails, the state becomes [SmbConnectionState.Lost] until
- * [networkAvailable] emits or [retry] is called, which starts the attempts over. Open sources reopen their file
+ * [networkAvailable] emits or [retry] is called, which starts the attempts over. A connection the transport saw end
+ * while no request used it is not broken in this sense: the next request connects again in its place, and only a
+ * failed connect starts the attempts. Open sources reopen their file
  * on the new connection by themselves. A closed server stays [SmbConnectionState.Lost] for good, and its requests
  * fail with [ConnectionLostException].
  *
@@ -70,6 +72,7 @@ class SmbServer internal constructor(
 
     // Guarded by lock.
     private var link: Link? = null
+    private var redialing = false
     private var generation = 0L
     private var reconnecting: Job? = null
     private var closed = false
@@ -157,22 +160,41 @@ class SmbServer internal constructor(
         }
     }
 
-    // The first connect holds connecting, not lock, so close and the other requests' bookkeeping never wait on it.
+    // A link the transport saw end, as when the system resets the sockets of an app in the background, is replaced
+    // here (docs/spec.md section 6.5). The connect holds connecting, not lock, so close and the other requests'
+    // bookkeeping never wait on it.
     private fun currentLink(): Link {
         fun existing(): Link? = synchronized(lock) {
             if (closed) throw ConnectionLostException("the server is closed")
-            if (link == null && mutableState.value != SmbConnectionState.Idle) throw ConnectionLostException("SMB is reconnecting")
+            link?.takeUnless { it.connection.isOpen }?.let { ended ->
+                link = null
+                redialing = true
+                scope.launch(io) { ended.connection.closeNow() }
+            }
+            if (link == null && !redialing && mutableState.value != SmbConnectionState.Idle) {
+                throw ConnectionLostException("SMB is reconnecting")
+            }
             link
         }
         existing()?.let { return it }
         synchronized(connecting) {
             existing()?.let { return it }
-            val connection = connector.connect()
+            val connection = try {
+                connector.connect()
+            } catch (e: IOException) {
+                synchronized(lock) {
+                    if (!redialing) throw e
+                    redialing = false
+                    if (!closed) startReconnecting()
+                }
+                throw ConnectionLostException("SMB could not connect again: ${e.javaClass.simpleName}")
+            }
             synchronized(lock) {
                 if (closed) {
                     connection.closeNow()
                     throw ConnectionLostException("the server is closed")
                 }
+                redialing = false
                 return Link(++generation, connection).also {
                     link = it
                     mutableState.value = SmbConnectionState.Connected

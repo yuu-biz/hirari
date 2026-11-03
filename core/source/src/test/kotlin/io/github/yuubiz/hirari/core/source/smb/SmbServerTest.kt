@@ -83,6 +83,76 @@ class SmbServerTest {
     }
 
     @Test
+    fun `a connection that ended while unused is made again by the next request without waiting`() = runTest {
+        val server = server()
+        val seen = timeline(server)
+        val source = server.open("book.zip")
+        assertArrayEquals(bytes.copyOf(100), source.readAt(0, 100))
+        connector.current.end()
+        assertEquals(emptyList<SmbEntry>(), server.list("folder"))
+        assertArrayEquals(bytes.copyOfRange(SMB_READ_BLOCK, SMB_READ_BLOCK + 100), source.readAt(SMB_READ_BLOCK.toLong(), 100))
+        connector.current.end()
+        server.open("book.zip").use { assertArrayEquals(bytes.copyOf(10), it.readAt(0, 10)) }
+        settle()
+        assertEquals("the first connect and one for each ended connection", 3, connector.attempts.get())
+        assertEquals(listOf(0L to SmbConnectionState.Idle, 0L to Connected), seen)
+    }
+
+    @Test
+    fun `a connection that ended and cannot be made again fails the request and starts the reconnects`() = runTest {
+        val server = server()
+        val seen = timeline(server)
+        val source = server.open("book.zip")
+        connector.failures = 10
+        connector.current.end()
+        assertThrows(ConnectionLostException::class.java) { source.readAt(0, 10) }
+        assertThrows(ConnectionLostException::class.java) { server.open("book.zip") }
+        settle()
+        assertEquals(
+            listOf(
+                0L to SmbConnectionState.Idle,
+                0L to Connected,
+                0L to Reconnecting(1),
+                500L to Reconnecting(2),
+                1500L to Reconnecting(3),
+                3500L to Reconnecting(4),
+                7500L to Lost,
+            ),
+            seen,
+        )
+        assertEquals("the first connect, the one in the request, and four attempts", 6, connector.attempts.get())
+    }
+
+    @Test
+    fun `closing while a request connects again drops the new connection`() {
+        val connecting = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val made = mutableListOf<FakeShare>()
+        val calls = AtomicInteger()
+        val connector = ShareConnector {
+            if (calls.incrementAndGet() == 2) {
+                connecting.countDown()
+                release.await(10, TimeUnit.SECONDS)
+            }
+            FakeShare(mapOf("book.zip" to bytes)).also { synchronized(made) { made += it } }
+        }
+        val scope = CoroutineScope(Job())
+        val server = SmbServer(connector, SmbLogin.Guest, scope, emptyFlow(), kotlinx.coroutines.Dispatchers.IO, 10.seconds)
+        server.open("book.zip").close()
+        made.single().end()
+        val pool = Executors.newSingleThreadExecutor()
+        val request = pool.submit<Throwable?> { runCatching { server.open("book.zip") }.exceptionOrNull() }
+        assertTrue(connecting.await(10, TimeUnit.SECONDS))
+        server.close()
+        release.countDown()
+        assertTrue(request.get(10, TimeUnit.SECONDS) is ConnectionLostException)
+        assertTrue("the connection made after the close is dropped", made.last().broken)
+        assertEquals(Lost, server.state.value)
+        pool.shutdown()
+        scope.cancel()
+    }
+
+    @Test
     fun `four failed attempts at 0,5, 1, 2 and 4 s leave the connection lost`() = runTest {
         val server = server()
         val seen = timeline(server)

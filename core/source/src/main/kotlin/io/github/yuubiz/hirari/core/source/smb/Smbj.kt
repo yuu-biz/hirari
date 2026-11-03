@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.logging.Logger
 import javax.net.SocketFactory
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -186,6 +187,8 @@ private class SmbjShare(
     private val connection: Connection,
     private val share: DiskShare,
 ) : ShareConnection {
+    override val isOpen: Boolean get() = connection.isConnected
+
     override fun list(path: String): List<SmbEntry> = request {
         val parent = path.trim('/')
         share.list(parent.smbPath()).mapNotNull { info ->
@@ -234,9 +237,12 @@ private class SmbjFile(private val file: File, override val size: Long, override
 
 private fun String.smbPath(): String = replace('/', '\\')
 
+private val log = Logger.getLogger("HirariSmb")
+
 /**
  * Turns smbj's exceptions into the ones [ShareConnection] promises. smbj's messages can carry the user name, so
- * only the status or the exception's class goes on (docs/spec.md section 6.6).
+ * only the status or the exception's class goes on, and the log gets the classes of the causes too (docs/spec.md
+ * section 6.6).
  */
 private inline fun <T> request(block: () -> T): T =
     try {
@@ -251,5 +257,6 @@ private inline fun <T> request(block: () -> T): T =
             else -> SmbRequestException(e.status.name)
         }
     } catch (e: Exception) {
+        log.warning("SMB request failed: " + generateSequence<Throwable>(e) { it.cause }.take(5).joinToString(" <- ") { it.javaClass.name })
         throw ConnectionLostException("SMB connection failed: ${e.javaClass.simpleName}")
     }

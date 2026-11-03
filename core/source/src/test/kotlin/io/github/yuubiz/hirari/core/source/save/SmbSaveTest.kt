@@ -37,6 +37,9 @@ private class TreeShare(private val files: Map<String, ByteArray>, private val o
     @Volatile
     var broken = false
 
+    @Volatile
+    override var isOpen = true
+
     override fun list(path: String): List<SmbEntry> {
         if (broken) throw ConnectionLostException("fake connection dropped")
         val prefix = if (path.isEmpty()) "" else "$path/"
@@ -310,6 +313,29 @@ class SmbSaveTest {
         assertEquals(SaveOutcome.Saved("vol1.cbz", 1, pattern.size.toLong()), outcome)
         assertArrayEquals(pattern, into.files.getValue("vol1.cbz"))
         assertTrue(into.leftovers().isEmpty())
+    }
+
+    @Test
+    fun `a connection that ended before the save is made again and the save finishes whole`() {
+        val files = mapOf("series/a.zip" to byteArrayOf(1, 2), "series/b.zip" to pattern)
+        val connections = mutableListOf<TreeShare>()
+        val server = server(emptyMap(), connector = ShareConnector { TreeShare(files).also { connections += it } })
+        runBlocking { server.list("series") }
+        connections.last().apply {
+            broken = true
+            isOpen = false
+        }
+        val into = MemoryFolder()
+        assertEquals(SaveOutcome.Saved("b.zip", 1, pattern.size.toLong()), save(server, "series/b.zip", false, into))
+        assertArrayEquals(pattern, into.files.getValue("b.zip"))
+        connections.last().apply {
+            broken = true
+            isOpen = false
+        }
+        assertEquals(SaveOutcome.Saved("series", 2, pattern.size + 2L), save(server, "series", true, into))
+        assertArrayEquals(pattern, into.folders.getValue("series").files.getValue("b.zip"))
+        assertTrue(into.leftovers().isEmpty())
+        assertEquals(3, connections.size)
     }
 
     @Test

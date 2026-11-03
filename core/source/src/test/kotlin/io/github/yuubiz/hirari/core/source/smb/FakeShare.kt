@@ -4,15 +4,28 @@ import java.io.FileNotFoundException
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
-/** An in-memory share. [breakConnection] makes every later request on it fail as a dropped connection does. */
+/**
+ * An in-memory share. [breakConnection] makes every later request on it fail as a dropped connection does; [end] also
+ * makes it report itself closed, as a transport that saw its socket reset does.
+ */
 internal class FakeShare(private val files: Map<String, ByteArray>, private val onRead: () -> Unit = {}) : ShareConnection {
     @Volatile
     var broken = false
         private set
+
+    @Volatile
+    private var ended = false
     val reads = AtomicInteger()
     val opens = AtomicInteger()
 
+    override val isOpen: Boolean get() = !ended
+
     fun breakConnection() {
+        broken = true
+    }
+
+    fun end() {
+        ended = true
         broken = true
     }
 

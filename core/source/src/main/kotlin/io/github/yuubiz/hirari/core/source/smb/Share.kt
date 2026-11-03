@@ -15,6 +15,9 @@ internal fun interface ShareConnector {
 }
 
 internal interface ShareConnection {
+    /** False once the transport knows the connection ended, as when the system reset its socket. Does not block. */
+    val isOpen: Boolean
+
     /** The children of the folder at [path], without `.` and `..`. */
     fun list(path: String): List<SmbEntry>
 
