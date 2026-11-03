@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.CommandTargets
+import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.PanelTarget
 import io.github.yuubiz.hirari.core.model.Point
@@ -52,6 +53,12 @@ sealed interface CommandEffect {
     /** The screen makes [page] the book's cover. */
     data class Cover(val page: Int) : CommandEffect
 
+    /** 並びを逆に, which [ReaderViewModel.command] stores and makes into [Reopen]. */
+    data object ReverseOrder : CommandEffect
+
+    /** The screen opens the book again as [request] asks, after its order or names changed. */
+    data class Reopen(val request: OpenBookRequest) : CommandEffect
+
     /** A screen of the settings that the app opens over the reader. */
     data class OpenSettings(val target: SettingsTarget) : CommandEffect
 
@@ -89,12 +96,11 @@ fun ReaderConfig.effectOf(command: ReaderCommand): CommandEffect = when (command
     ReaderCommand.Breath -> CommandEffect.ToggleBreath
     ReaderCommand.AddBookmark -> CommandEffect.AddBookmark
     ReaderCommand.Bookmarks -> CommandEffect.Show(ReaderSheet.Bookmarks)
+    ReaderCommand.ReverseOrder -> CommandEffect.ReverseOrder
     ReaderCommand.BookSettings -> CommandEffect.Show(ReaderSheet.BookSettings(this))
     ReaderCommand.SetCover -> CommandEffect.SetCover
     ReaderCommand.Settings -> CommandEffect.OpenSettings(SettingsTarget.Settings)
     ReaderCommand.EditCommandBar -> CommandEffect.OpenSettings(SettingsTarget.CommandBar)
-    ReaderCommand.ReverseOrder,
-    -> CommandEffect.NotYet
 }
 
 private inline fun <reified E : Enum<E>> E.next(): E = enumValues<E>().let { it[(ordinal + 1) % it.size] }

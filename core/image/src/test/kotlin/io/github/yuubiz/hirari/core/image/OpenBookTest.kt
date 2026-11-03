@@ -40,6 +40,18 @@ class OpenBookTest {
     }
 
     @Test
+    fun aReversedBookReadsItsLastPageFirstAndNumbersThePagesInTheNewOrder() = runTest {
+        val opened = mutableListOf<String>()
+        val files = listOf("1.jpg", "2.jpg", "3.jpg").map { name -> FolderFile(name, size = null) { opened += name; throw IOException("not here") } }
+        val book = (Books.openFolder(files, decoding) as BookResult.Opened).book.reversed()
+        assertEquals(listOf("3.jpg", "2.jpg", "1.jpg"), book.pages.map { it.name })
+        assertEquals(listOf(0, 1, 2), book.pages.map { it.index })
+        book.raw(0)
+        assertEquals(listOf("3.jpg"), opened)
+        book.close()
+    }
+
+    @Test
     fun aFolderBookIsOpenedFromAFolder() = runTest {
         val book = (Books.openFolder(emptyList(), decoding) as BookResult.Opened).book
         assertEquals(Container.Folder, book.container)

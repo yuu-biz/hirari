@@ -44,7 +44,7 @@ internal sealed interface BookContent : Closeable {
  * [CancellationException] and virtual machine errors other than [OutOfMemoryError] get through. Calls may
  * overlap; an archive serializes its reads in its session, and a PDF its drawing in its document session.
  *
- * @property pages the page list in natural order, fixed while the book is open (section 3.5).
+ * @property pages the page list in natural order, or its reverse after [reversed], fixed while the book is open (section 3.5).
  * @property indexError why listing the archive stopped early, or null when it reached the end.
  * @property container what the book was opened from, for the index of opened books (section 2.2).
  */
@@ -65,6 +65,12 @@ class OpenBook internal constructor(
             override suspend fun fill(index: Int): Fill = stashed.fill(pages[index])
         }
     }
+
+    /**
+     * This book with its pages in the reverse order, for a book whose `reverseOrder` is on (docs/spec.md section
+     * 2.9). The result takes over what this book reads from; call it right after opening, and use only the result.
+     */
+    fun reversed(): OpenBook = OpenBook(content, container, pages.asReversed().mapIndexed { i, entry -> entry.copy(index = i) }, indexError, decoding)
 
     /**
      * The encoded bytes of the page at [index], for the raw-data prefetch layer to hold (docs/spec.md section
@@ -95,7 +101,7 @@ class OpenBook internal constructor(
         is BookContent.Pdf -> guarded {
             decodeWithTimeout(scope, content.document.dispatcher) { _ ->
                 try {
-                    content.document.render(index, target, decoding.budgetBytes)
+                    content.document.render(pages[index].entryIndex, target, decoding.budgetBytes)
                 } catch (_: OutOfMemoryError) {
                     readError
                 } catch (_: RuntimeException) {
@@ -110,7 +116,7 @@ class OpenBook internal constructor(
 
     /** The size of the page at [index], from the image header alone (docs/spec.md sections 2.5 and 5.3). */
     suspend fun shape(index: Int, raw: RawPage? = null): PageResult<PageShape.Known> = when (content) {
-        is BookContent.Pdf -> PageResult.Ready(content.document.shapes[index])
+        is BookContent.Pdf -> PageResult.Ready(content.document.shapes[pages[index].entryIndex])
         is BookContent.Images -> withBytes(content, index, raw) { data, _ -> decodeShape(data) }
     }
 

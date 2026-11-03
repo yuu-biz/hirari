@@ -105,6 +105,8 @@ internal data class ReaderRoute(
     val documentId: String? = null,
     val startPage: Int? = null,
     val startImage: String? = null,
+    val startEntry: Int? = null,
+    val startOffset: Float = 0f,
 ) {
     enum class Kind { Document, Tree, LocationDocument, LocationFolder }
 
@@ -118,6 +120,7 @@ internal data class ReaderRoute(
         val start = when {
             startPage != null -> StartAt.Page(startPage)
             startImage != null -> StartAt.Image(startImage)
+            startEntry != null -> StartAt.Entry(startEntry, startOffset)
             else -> StartAt.Saved
         }
         return OpenBookRequest(book, start)
@@ -140,6 +143,7 @@ internal fun OpenBookRequest.toReaderRoute(): ReaderRoute {
         StartAt.Saved -> route
         is StartAt.Page -> route.copy(startPage = start.index)
         is StartAt.Image -> route.copy(startImage = start.name)
+        is StartAt.Entry -> route.copy(startEntry = start.entryIndex, startOffset = start.offset)
     }
 }
 

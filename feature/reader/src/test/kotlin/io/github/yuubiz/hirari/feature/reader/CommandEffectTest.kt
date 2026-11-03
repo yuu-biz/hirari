@@ -100,13 +100,6 @@ class CommandEffectTest {
     }
 
     @Test
-    fun commandsOfLaterMilestonesSayTheyAreNotYetThere() {
-        for (command in listOf(ReaderCommand.ReverseOrder)) {
-            assertEquals(CommandEffect.NotYet, config.effectOf(command), "$command")
-        }
-    }
-
-    @Test
     fun breathIsLeftToTheScreenWhichMayAskForTheMicrophone() {
         assertEquals(CommandEffect.ToggleBreath, config.effectOf(ReaderCommand.Breath))
     }

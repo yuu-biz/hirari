@@ -16,6 +16,8 @@ import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.TrimStrength
+import io.github.yuubiz.hirari.core.archive.EntryNames
+import java.nio.charset.Charset
 import kotlin.math.roundToInt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -146,7 +148,14 @@ internal fun BookmarksSheet(viewModel: ReaderViewModel, onAdd: () -> Unit, onClo
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun BookSettingsSheet(viewModel: ReaderViewModel, state: ReaderState, sheet: ReaderSheet.BookSettings, onMessage: (Int) -> Unit, onClose: () -> Unit) {
+internal fun BookSettingsSheet(
+    viewModel: ReaderViewModel,
+    state: ReaderState,
+    sheet: ReaderSheet.BookSettings,
+    onMessage: (Int) -> Unit,
+    onEffect: (CommandEffect?) -> Unit,
+    onClose: () -> Unit,
+) {
     val config = state.config
     fun set(next: ReaderConfig) = viewModel.dispatch(ReaderEvent.ConfigChanged(next))
     BottomPanel(stringResource(R.string.command_book_settings), onClose) {
@@ -156,6 +165,11 @@ internal fun BookSettingsSheet(viewModel: ReaderViewModel, state: ReaderState, s
         OptionRow(R.string.command_scale_mode, ScaleMode.entries, config.scaleMode, { it.label }) { set(config.copy(scaleMode = it)) }
         OptionRow(R.string.command_trim, TrimStrength.entries, config.trim, { it.label }) { set(config.copy(trim = it)) }
         OptionRow(R.string.command_rotate, Rotation.entries, config.rotation, { R.string.rotation_degrees }, { arrayOf(it.degrees) }) { set(config.copy(rotation = it)) }
+        SwitchRow(R.string.command_reverse_order, viewModel.reversed) { reversed -> onEffect(viewModel.reorder { it.reversedTo(reversed) }) }
+        if (viewModel.namesHaveCharset) {
+            val charsets = listOf<Charset?>(null) + EntryNames.choices
+            CharsetRow(charsets, viewModel.nameCharset) { charset -> onEffect(viewModel.reorder { it.copy(nameCharset = charset) }) }
+        }
         SectionTitle(R.string.command_image_adjust)
         AdjustControls(config.adjust) { set(config.copy(adjust = it)) }
         BrightnessControls(config.brightness, viewModel::setBrightness)
@@ -175,6 +189,20 @@ internal fun BookSettingsSheet(viewModel: ReaderViewModel, state: ReaderState, s
     }
 }
 
+/** 文字コード: 自動判定, or one of the charsets a user may choose (docs/spec.md section 3.4). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CharsetRow(charsets: List<Charset?>, selected: Charset?, onSelect: (Charset?) -> Unit) {
+    SectionTitle(R.string.charset)
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (charset in charsets) {
+            Chip(charset?.let(::charsetName) ?: stringResource(R.string.charset_detect), on = charset == selected) { onSelect(charset) }
+        }
+    }
+}
+
+private fun charsetName(charset: Charset): String = if (charset == EntryNames.CP932) "Shift_JIS (CP932)" else charset.name()
+
 @Composable
 private fun SectionTitle(label: Int) {
     Text(stringResource(label), color = SheetText, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp).semantics { heading() })
@@ -187,22 +215,24 @@ private fun <T> OptionRow(label: Int, options: List<T>, selected: T, name: (T) -
     SectionTitle(label)
     FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for (option in options) {
-            val on = option == selected
-            val shape = RoundedCornerShape(8.dp)
-            Box(
-                Modifier.selectable(selected = on, role = Role.RadioButton) { onSelect(option) }.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(name(option), *args(option)),
-                    color = SheetText,
-                    modifier = Modifier
-                        .background(if (on) SelectedChip else Color.Transparent, shape)
-                        .border(1.dp, if (on) SheetText else SheetDisabled, shape)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                )
-            }
+            Chip(stringResource(name(option), *args(option)), on = option == selected) { onSelect(option) }
         }
+    }
+}
+
+/** A choice read by a screen reader as a radio button, with a touch target of 48 dp. */
+@Composable
+private fun Chip(text: String, on: Boolean, onSelect: () -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
+    Box(Modifier.selectable(selected = on, role = Role.RadioButton, onClick = onSelect).sizeIn(minWidth = 48.dp, minHeight = 48.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text,
+            color = SheetText,
+            modifier = Modifier
+                .background(if (on) SelectedChip else Color.Transparent, shape)
+                .border(1.dp, if (on) SheetText else SheetDisabled, shape)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 }
 

@@ -51,5 +51,8 @@ class PageListTest {
         assertEquals(listOf("1.jpg", "2.jpg", "10.jpg", "ch2/1.jpg", "ch10/1.jpg"), pages.map { it.name })
         assertEquals(listOf(0, 1, 2, 3, 4), pages.map { it.index })
         assertEquals(listOf(2, 1, 0, 3, 4), pages.map { it.entryIndex })
+        val reversed = sortedPages(entries, reversed = true)
+        assertEquals(listOf("ch10/1.jpg", "ch2/1.jpg", "10.jpg", "2.jpg", "1.jpg"), reversed.map { it.name })
+        assertEquals(listOf(0, 1, 2, 3, 4), reversed.map { it.index })
     }
 }

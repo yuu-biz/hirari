@@ -30,6 +30,13 @@ sealed interface StartAt {
 
     /** The page named [name], for an image file tapped in a file list (section 4.3). */
     data class Image(val name: String) : StartAt
+
+    /**
+     * The page with the `entryIndex` [entryIndex], wherever the book's order puts it, for the reader opening the book
+     * again in another order (section 4.8, 本ごとの設定). The first page when the book has none. In 縦に連続, [offset]
+     * is how far down that page the top of the screen was, as a fraction of its height (section 2.7).
+     */
+    data class Entry(val entryIndex: Int, val offset: Float = 0f) : StartAt
 }
 
 data class OpenBookRequest(val book: BookAddress, val start: StartAt = StartAt.Saved)

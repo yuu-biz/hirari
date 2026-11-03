@@ -156,11 +156,11 @@ class ArchiveViewModel(
     private fun shown(services: LibraryServices, opened: Opening.Opened): Flow<ArchiveUi> {
         val contents = opened.contents
         val id = opened.id
-        val chosen = services.books.overrides(id).map { it.nameCharset }.distinctUntilChanged()
+        val chosen = services.books.overrides(id).map { it.nameCharset to (it.reverseOrder == true) }.distinctUntilChanged()
         val fallback = services.settings.settings.map { Charset.forName(it.fallbackCharset.charsetName) }.distinctUntilChanged()
-        val rows = combine(chosen, fallback) { chosen, fallback -> chosen to contents.charset(chosen, fallback) }
+        val rows = combine(chosen, fallback) { (chosen, reversed), fallback -> Triple(chosen, contents.charset(chosen, fallback), reversed) }
             .distinctUntilChanged()
-            .mapLatest { (chosen, charset) -> Triple(chosen, charset, contents.rows(charset, id)) }
+            .mapLatest { (chosen, charset, reversed) -> Triple(chosen, charset, contents.rows(charset, id, reversed)) }
             .flowOn(compute)
         val progress = rows
             .map { (_, _, rows) -> rows.texts.map { it.id } + id }
@@ -220,7 +220,7 @@ class ArchiveViewModel(
                 val overrides = books.overrides(id).first()
                 val fallback = Charset.forName(settings.settings.first().fallbackCharset.charsetName)
                 val (before, after) = withContext(compute) {
-                    listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id).pages }
+                    listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id, overrides.reverseOrder == true).pages }
                 }
                 withContext(NonCancellable) {
                     books.updateOverrides(id) { it.copy(nameCharset = charset) }

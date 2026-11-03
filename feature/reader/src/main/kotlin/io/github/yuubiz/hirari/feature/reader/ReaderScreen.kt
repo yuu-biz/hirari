@@ -199,7 +199,7 @@ fun ReaderScreen(
                         onAdd = { ui.sheet = ReaderSheet.AddBookmark(state.current.pages.first()) },
                         onClose = { ui.sheet = null },
                     )
-                    is ReaderSheet.BookSettings -> BookSettingsSheet(viewModel, state, sheet, onMessage = { ui.message = it }, onClose = { ui.sheet = null })
+                    is ReaderSheet.BookSettings -> BookSettingsSheet(viewModel, state, sheet, onMessage = { ui.message = it }, onEffect = ui::follow, onClose = { ui.sheet = null })
                     null -> Unit
                 }
                 if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
@@ -214,6 +214,12 @@ fun ReaderScreen(
             LaunchedEffect(target) {
                 ui.settings = null
                 onOpenSettings(target)
+            }
+        }
+        ui.reopening?.let { request ->
+            LaunchedEffect(request) {
+                ui.reopening = null
+                onOpenBook(request)
             }
         }
         ui.message?.let { message ->
@@ -256,6 +262,9 @@ internal class ReaderUi {
     /** The page 表紙にする is making the book's cover. */
     var covering: Int? by mutableStateOf(null)
 
+    /** The book the screen is about to open again in its new order. */
+    var reopening: OpenBookRequest? by mutableStateOf(null)
+
     /** The settings the screen is about to open over the reader. */
     var settings: SettingsTarget? by mutableStateOf(null)
 
@@ -280,6 +289,10 @@ internal class ReaderUi {
             is CommandEffect.Cover -> {
                 closePanels()
                 covering = effect.page
+            }
+            is CommandEffect.Reopen -> {
+                closePanels()
+                reopening = effect.request
             }
             is CommandEffect.OpenSettings -> {
                 closePanels()

@@ -97,6 +97,16 @@ class ArchiveViewModelTest {
     }
 
     @Test
+    fun `a book whose order the reader reversed lists its pages in that order`() = runTest {
+        val list = viewModel()
+        fixture.books.updateOverrides(id) { it.copy(reverseOrder = true) }
+
+        val shown = list.shown()
+        assertEquals(listOf("第10話.jpg", "第2話.jpg", "第1話.jpg"), shown.pages.map { it.page.name })
+        assertEquals(listOf(0, 1, 2), shown.pages.map { it.page.index })
+    }
+
+    @Test
     fun `the stored position follows its page when another charset reorders the pages`() = runTest {
         val list = viewModel()
         list.readUpTo(list.shown().pages[0].page)

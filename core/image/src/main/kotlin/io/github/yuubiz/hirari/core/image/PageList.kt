@@ -30,9 +30,12 @@ fun pageCandidate(name: String, isDirectory: Boolean): PageCandidate {
     }
 }
 
-/** [entries] in natural order, with [PageEntry.index] set to the position in that order. */
-fun sortedPages(entries: List<PageEntry>): List<PageEntry> =
-    entries.sortedWith(NaturalPageOrder).mapIndexed { i, entry -> entry.copy(index = i) }
+/**
+ * [entries] in natural order, or in the reverse of it for a book whose `reverseOrder` is on (docs/spec.md section
+ * 2.9), with [PageEntry.index] set to the position in that order.
+ */
+fun sortedPages(entries: List<PageEntry>, reversed: Boolean = false): List<PageEntry> =
+    entries.sortedWith(NaturalPageOrder).let { if (reversed) it.asReversed() else it }.mapIndexed { i, entry -> entry.copy(index = i) }
 
 private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "jpe", "jfif", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "jxl")
 private val EXCLUDED_EXTENSIONS = setOf("txt", "nfo", "xml", "sfv", "md5", "url")

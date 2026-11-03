@@ -41,12 +41,15 @@ import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
+import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
@@ -96,6 +99,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.OutputStream
 import java.nio.ByteBuffer
+import java.nio.charset.Charset
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
@@ -509,8 +513,9 @@ class ReaderViewModel(
             CommandEffect.StartAutoPlay -> dispatch(ReaderEvent.AutoPlayStarted(nowMs))
             CommandEffect.SharePage -> return shareChoice(current.current)
             CommandEffect.SetCover -> return coverChoice(current.current)
+            CommandEffect.ReverseOrder -> return reorder { it.reversedTo(it.reverseOrder != true) }
             CommandEffect.AddBookmark -> return CommandEffect.Show(ReaderSheet.AddBookmark(current.current.pages.first()))
-            is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.Cover, is CommandEffect.OpenSettings, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
+            is CommandEffect.Show, is CommandEffect.Share, is CommandEffect.Cover, is CommandEffect.OpenSettings, is CommandEffect.Reopen, CommandEffect.ToggleBreath, CommandEffect.NotYet -> return effect
         }
         return null
     }
@@ -617,7 +622,7 @@ class ReaderViewModel(
         val settings = services.storage.settings.settings.first()
         orientation = settings.readerOrientation
         val located = withContext(Dispatchers.IO) {
-            openBook(Opening(services, copyDir, settings.fallbackCharset)).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
+            openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder().also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
         val id = located.id
         val book = when (val result = located.result) {
@@ -639,13 +644,8 @@ class ReaderViewModel(
         val writer = checkNotNull(located.overrides)
         val config = ReaderConfig.of(settings, writer.current)
         val indexed = withContext(Dispatchers.IO) { describe(located, book) }
-        val savedAt = saved?.position as? ReadingPosition.Image
-        val start = when (val at = request.start) {
-            StartAt.Saved -> savedAt?.viewStart
-            is StartAt.Page -> at.index
-            is StartAt.Image -> book.pages.indexOfFirst { it.name.substringAfterLast('/') == at.name }.takeIf { it >= 0 }
-        }?.coerceIn(book.pages.indices) ?: 0
-        val startOffset = savedAt?.takeIf { request.start == StartAt.Saved && it.viewStart == start }?.offset ?: 0f
+        val start = startPage(request.start, book.pages, saved?.position)
+        val startOffset = startOffset(request.start, start, book.pages, saved?.position)
         val lowRam = application.getSystemService(ActivityManager::class.java).isLowRamDevice
         val listener = object : Prefetcher.Listener {
             override fun onShape(page: Int, shape: PageShape.Known) = dispatch(ReaderEvent.ShapeLearned(page, shape))
@@ -788,6 +788,37 @@ class ReaderViewModel(
         }
     }
 
+    /** The book in the order its overrides ask for: reversed when `reverseOrder` is on (docs/spec.md section 2.9). */
+    private fun Located.inOrder(): Located {
+        val opened = result as? BookResult.Opened ?: return this
+        if (overrides?.current?.reverseOrder != true) return this
+        return Located(id, source, documentUri, folder, BookResult.Opened(opened.book.reversed()), remote, overrides, fileSize)
+    }
+
+    /** Whether the book's names come from an archive's bytes, so a charset chosen for them changes them (docs/spec.md section 3.4). */
+    val namesHaveCharset: Boolean get() = opened?.book?.container?.let { it in ARCHIVES } == true
+
+    /** Whether the book's pages go in the reverse of their natural order (並びを逆に). */
+    val reversed: Boolean get() = opened?.overrides?.current?.reverseOrder == true
+
+    /** The charset chosen for the names of this book, or `null` for the detected one. */
+    val nameCharset: Charset? get() = opened?.overrides?.current?.nameCharset
+
+    /**
+     * Stores [change] of the book's page order or names, 並びを逆に and 文字コード (docs/spec.md section 4.8), and opens the
+     * book again at the page on screen, found by its `entryIndex` in the new order. `null` when nothing changes.
+     */
+    fun reorder(change: (BookOverrides) -> BookOverrides): CommandEffect? {
+        val book = opened ?: return null
+        val current = state ?: return null
+        val before = book.overrides.current
+        book.overrides.update(change)
+        if (book.overrides.current == before) return null
+        val anchor = current.scroll?.anchor
+        val entry = book.book.pages[anchor?.page ?: current.current.pages.first()].entryIndex
+        return CommandEffect.Reopen(OpenBookRequest(request.book, StartAt.Entry(entry, anchor?.fraction ?: 0f)))
+    }
+
     /** What every way of opening the book shares: the services, where copies go, and the setting `fallbackCharset`. */
     private class Opening(val services: ReaderServices, val copyDir: File, val fallback: FallbackCharset) {
         /** The writer of book [id], and how the names are decoded with the charset it holds (docs/spec.md section 3.4). */
@@ -902,11 +933,34 @@ class ReaderViewModel(
 
 private const val THUMBNAILS = 64
 
+private val ARCHIVES = setOf(Container.Zip, Container.Rar, Container.SevenZip, Container.Tar)
+
 /** The authority of [SharedPageProvider] after the package name, as `AndroidManifest.xml` declares it. */
 private const val SHARE_AUTHORITY = ".share"
 
 /** Whether no reader has opened in this process yet. */
 private val firstReader = AtomicBoolean(true)
+
+/**
+ * The page the reader opens on for [at], among [pages], with [saved] the stored position. What names no page, as an
+ * image or entry the book no longer holds, opens the first page; a page past the end opens the last.
+ */
+internal fun startPage(at: StartAt, pages: List<PageEntry>, saved: ReadingPosition?): Int = when (at) {
+    StartAt.Saved -> (saved as? ReadingPosition.Image)?.viewStart
+    is StartAt.Page -> at.index
+    is StartAt.Image -> pages.indexOfFirst { it.name.substringAfterLast('/') == at.name }.takeIf { it >= 0 }
+    is StartAt.Entry -> pages.indexOfFirst { it.entryIndex == at.entryIndex }.takeIf { it >= 0 }
+}?.coerceIn(pages.indices) ?: 0
+
+/**
+ * How far down page [start] 縦に連続 opens, as a fraction of its height (docs/spec.md section 2.7): the stored or the
+ * carried offset when [start] is still the page it was taken on, else the top of the page.
+ */
+internal fun startOffset(at: StartAt, start: Int, pages: List<PageEntry>, saved: ReadingPosition?): Float = when (at) {
+    StartAt.Saved -> (saved as? ReadingPosition.Image)?.takeIf { it.viewStart == start }?.offset
+    is StartAt.Entry -> at.offset.takeIf { pages.getOrNull(start)?.entryIndex == at.entryIndex }
+    is StartAt.Page, is StartAt.Image -> null
+} ?: 0f
 
 /** The pixels of [source] for the loupe. */
 class LoupeDetail(val source: LoupeSource, val bitmap: Bitmap)

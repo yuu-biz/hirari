@@ -27,6 +27,9 @@ fun GlobalSettings.adopting(config: ReaderConfig): GlobalSettings = copy(
 /** The overrides once 既定にする moved their values into the global settings: those fields follow the global settings again. */
 fun BookOverrides.adopted(): BookOverrides = copy(direction = null, layoutMode = null, coverAlone = null, scaleMode = null, trim = null, adjust = null)
 
+/** 並びを逆に set to [on]. Off is stored as no override, since the natural order is what a book has without one. */
+fun BookOverrides.reversedTo(on: Boolean): BookOverrides = copy(reverseOrder = if (on) true else null)
+
 /** The steps of 画面の明るさ in percent (docs/spec.md section 4.10, `readerBrightness`). */
 val BRIGHTNESS_STEPS: IntProgression = GlobalSettings.READER_BRIGHTNESS
 

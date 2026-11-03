@@ -145,6 +145,8 @@
     <string name="trim_strong">強</string>
     <string name="trim_strongest">最強</string>
     <string name="rotation_degrees">%1$d 度</string>
+    <string name="charset">文字コード</string>
+    <string name="charset_detect">自動判定</string>
     <string name="brightness">画面の明るさ</string>
     <string name="brightness_device">端末の設定に従う</string>
     <string name="brightness_percent">%1$d%%</string>
