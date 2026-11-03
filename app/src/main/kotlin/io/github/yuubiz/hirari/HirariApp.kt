@@ -62,15 +62,18 @@ class HirariApp : Application() {
         val smbPool = appScope.async {
             SmbServerPool(storage.await().credentials, appScope, getSystemService(ConnectivityManager::class.java).networkAvailable())
         }
+        val smbPlaces = appScope.async {
+            SmbjPlaces(smbPool.await().shares, storage.await().credentials, AndroidLocalNetwork(this@HirariApp), appScope)
+        }
         services = appScope.async {
             val storage = storage.await()
             appScope.launch { reconcile(storage) }
-            val siblings = FolderSiblings(storage.locations, SafFolderLister(contentResolver), storage.settings)
+            val siblings = FolderSiblings(storage.locations, SafFolderLister(contentResolver), smbPlaces.await(), storage.settings)
             ReaderServices(storage, ProgressWriter(storage.progress, appScope), ImageDecoding.forDevice(this@HirariApp), appScope, siblings, smbPool.await())
         }
         library = appScope.async {
             val storage = services.await().storage
-            val smb = SmbjPlaces(smbPool.await().shares, storage.credentials, AndroidLocalNetwork(this@HirariApp), appScope)
+            val smb = smbPlaces.await()
             val folders = SafFolderLister(contentResolver)
             val thumbnails = Thumbnails.forDevice(this@HirariApp, ThumbnailStoreAdapter(storage.thumbnails))
             val covers = Covers(

@@ -1,12 +1,18 @@
 package io.github.yuubiz.hirari
 
+import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.CredentialRef
+import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.feature.library.FolderEntry
 import io.github.yuubiz.hirari.feature.library.FolderLister
 import io.github.yuubiz.hirari.feature.library.ListFailure
 import io.github.yuubiz.hirari.feature.library.Listing
+import io.github.yuubiz.hirari.feature.library.SmbPlaces
+import io.github.yuubiz.hirari.feature.library.SmbTestResult
 import io.github.yuubiz.hirari.feature.reader.BookEdge
 import io.github.yuubiz.hirari.feature.reader.Sibling
 import kotlinx.coroutines.runBlocking
@@ -20,15 +26,43 @@ private fun file(name: String) = FolderEntry(name, "doc:$name", directory = fals
 
 private fun folder(name: String) = FolderEntry(name, "doc:$name", directory = true, size = null, modified = null)
 
+private fun Map<String, List<FolderEntry>>.listing(path: String, documentId: String?): Listing =
+    this[path]?.let { Listing.Listed(documentId, it) } ?: Listing.Failed(ListFailure.NotFound)
+
 private class Folders(private val listings: Map<String, List<FolderEntry>>) : FolderLister {
     override suspend fun list(tree: UriString, path: String, documentId: String?): Listing =
-        listings[path]?.let { Listing.Listed("doc:$path", it) } ?: Listing.Failed(ListFailure.NotFound)
+        if (tree == TREE) listings.listing(path, "doc:$path") else Listing.Failed(ListFailure.NotFound)
 }
 
+/** The folders of one SMB place, counted from the place's folder, as [SmbPlaces.list] gives them. */
+private class Shares(private val listings: Map<String, List<FolderEntry>>) : SmbPlaces {
+    val listed = mutableListOf<Pair<LibraryLocation.SmbShare, String>>()
+
+    override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
+        listed += place to path
+        return listings.listing(path, documentId = null)
+    }
+
+    override suspend fun reconnect(place: LibraryLocation.SmbShare) = error("not used")
+
+    override suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult = error("not used")
+
+    override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource = error("not used")
+
+    override suspend fun forget(id: LocationId) = error("not used")
+}
+
+private val SAF_PLACE = LibraryLocation.SafTree(PLACE, "漫画", TREE)
+private val SMB_PLACE = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "manga", null, "reader", null)
+
 private fun siblings(listings: Map<String, List<FolderEntry>>, dotFiles: Boolean = false) =
-    FolderSiblings(Folders(listings), treeOf = { if (it == PLACE) TREE else null }, dotFiles = { dotFiles })
+    FolderSiblings(placeFolders({ if (it == PLACE) SAF_PLACE else null }, Folders(listings), Shares(emptyMap())), dotFiles = { dotFiles })
 
 private fun book(path: String, isFolder: Boolean = false) = BookAddress.InLocation(PLACE, path, isFolder)
+
+private fun smbFile(name: String) = FolderEntry(name, documentId = null, directory = false, size = 1, modified = null)
+
+private fun smbFolder(name: String) = FolderEntry(name, documentId = null, directory = true, size = null, modified = null)
 
 class FolderSiblingsTest {
     private val series = mapOf(
@@ -59,5 +93,24 @@ class FolderSiblingsTest {
         assertEquals(Sibling.NoFolder, siblings(series).beside(BookAddress.Document(UriString("content://picked")), BookEdge.End))
         assertEquals(Sibling.NoFolder, siblings(series).beside(BookAddress.InLocation(LocationId(9), "作品/第2巻.cbz", false), BookEdge.End))
         assertEquals(Sibling.NoFolder, siblings(series).beside(book("消えた/本.zip"), BookEdge.End))
+    }
+
+    @Test
+    fun aBookOfAnSmbPlaceFindsItsNeighborsInTheListingOfItsServer() = runBlocking {
+        val shares = Shares(
+            mapOf(
+                "作品" to listOf(smbFile("第10巻.zip"), smbFile("第2巻.cbz"), smbFile("第1巻.pdf"), smbFolder("おまけ"), smbFolder("空")),
+                "作品/おまけ" to listOf(smbFile("01.png")),
+                "作品/空" to listOf(smbFile("説明.txt")),
+            ),
+        )
+        val siblings = FolderSiblings(placeFolders({ if (it == SMB_PLACE.id) SMB_PLACE else null }, Folders(emptyMap()), shares), dotFiles = { false })
+        val place = SMB_PLACE.id
+
+        assertEquals(Sibling.Found(BookAddress.InLocation(place, "作品/第10巻.zip", false)), siblings.beside(BookAddress.InLocation(place, "作品/第2巻.cbz", false), BookEdge.End))
+        assertEquals(Sibling.Found(BookAddress.InLocation(place, "作品/おまけ", true)), siblings.beside(BookAddress.InLocation(place, "作品/第1巻.pdf", false), BookEdge.Start))
+        assertEquals(Sibling.Last, siblings.beside(BookAddress.InLocation(place, "作品/第10巻.zip", false), BookEdge.End))
+        assertEquals(setOf(SMB_PLACE), shares.listed.map { it.first }.toSet())
+        assertEquals(setOf("作品", "作品/空", "作品/おまけ"), shares.listed.map { it.second }.toSet())
     }
 }

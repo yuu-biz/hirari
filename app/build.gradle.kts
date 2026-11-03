@@ -25,6 +25,13 @@ android {
             getByName(buildType).kotlin.directories += "src/prototype/kotlin"
         }
     }
+    testOptions {
+        unitTests.all { test ->
+            // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
+            // without it.
+            test.systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
+        }
+    }
 }
 
 // The profile goes to src/main, so the benchmark build and the release build both carry it.
