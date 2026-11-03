@@ -53,10 +53,19 @@ class PrefetchRequest(
     val depths: PrefetchDepths = PrefetchDepths(),
     /** While the settings screen or the thumbnail strip is up, only the current view loads and nothing resident goes. */
     val paused: Boolean = false,
+    /**
+     * The views on screen, which all count as current; more than [current] only in 縦に連続, where every page on
+     * screen is a view of its own.
+     */
+    val visible: IntRange = current..current,
 ) {
     init {
         require(current in views.indices) { "current $current is outside the views" }
+        require(current in visible && visible.first >= 0 && visible.last < views.size) { "visible $visible does not hold $current" }
     }
+
+    /** The views on screen, the current one first and then outward from it. */
+    val onScreen: List<PageView> get() = visible.sortedBy { kotlin.math.abs(it - current) }.map(views::get)
 }
 
 /**
@@ -79,12 +88,13 @@ fun evictionsOnTrim(resident: Resident, shown: PageView): Resident = resident - 
  * page behind. A view that still has to be prepared brings the raw bytes of its pages just before
  * it. The other raw bytes of these views wait until after them. Reaches count from the edge of the
  * current view. Each layer that does not fit the budget loses its farthest items first, and raw
- * bytes take at most half the budget.
+ * bytes take at most half the budget. In 縦に連続 every view on screen counts as the current one, and the reaches
+ * count from the edges of the screen.
  */
 fun planPrefetch(request: PrefetchRequest): PrefetchPlan {
     val candidates = Candidates(request)
-    val shown = request.views[request.current]
-    candidates.addCurrent(shown)
+    val onScreen = request.onScreen
+    onScreen.forEach(candidates::addCurrent)
     val focus = candidates.size
     val ahead = Walk(request, request.travel)
     val behind = Walk(request, if (request.travel == Turn.Forward) Turn.Back else Turn.Forward)
@@ -95,14 +105,14 @@ fun planPrefetch(request: PrefetchRequest): PrefetchPlan {
     candidates.addShapes(previous)
     candidates.addViews(previous) { true }
     candidates.addViews(next) { it > 1 }
-    shown.pages.forEach(candidates::addRaw)
+    onScreen.forEach { it.pages.forEach(candidates::addRaw) }
     candidates.addRaws(next)
     candidates.addRaws(previous)
     while (ahead.hasNext || behind.hasNext) {
         candidates.add(ahead.take(2))
         candidates.add(behind.take(1))
     }
-    return candidates.select(shown, focus)
+    return candidates.select(onScreen, focus)
 }
 
 private class Candidate(val job: PrefetchJob, val bytes: Long, val current: Boolean = false)
@@ -169,15 +179,15 @@ private class Candidates(private val request: PrefetchRequest) {
         }
     }
 
-    /** Candidates before [focus] belong to the current view and stay even while prefetch is paused. */
-    fun select(shown: PageView, focus: Int): PrefetchPlan {
+    /** Candidates before [focus] belong to the views on screen and stay even while prefetch is paused. */
+    fun select(shown: List<PageView>, focus: Int): PrefetchPlan {
         val budget = request.budgetBytes
-        var total = list.firstOrNull { it.current }?.bytes ?: 0L
+        var total = list.filter { it.current }.sumOf { it.bytes }
         var raw = 0L
         var viewsOpen = true
         var rawOpen = true
         val jobs = mutableListOf<PrefetchJob>()
-        val keptViews = mutableSetOf(shown)
+        val keptViews = shown.toMutableSet()
         val keptRaw = mutableSetOf<Int>()
         list.forEachIndexed { index, candidate ->
             val admitted = when (val job = candidate.job) {
@@ -237,10 +247,10 @@ private class Walk(private val request: PrefetchRequest, private val way: Turn) 
         val pageLimit = maxOf(depths.shapePages.toward(request.travel, way), depths.rawPages.toward(request.travel, way))
         val viewLimit = depths.preparedViews.toward(request.travel, way)
         val delta = if (way == Turn.Forward) 1 else -1
-        val passed = request.views[request.current].pages.toMutableSet()
+        val passed = request.visible.flatMapTo(mutableSetOf()) { request.views[it].pages }
         val result = mutableListOf<Step>()
         var pages = 0
-        var index = request.current + delta
+        var index = if (way == Turn.Forward) request.visible.last + 1 else request.visible.first - 1
         var distance = 1
         while (index in request.views.indices && (pages < pageLimit || distance <= viewLimit)) {
             val view = request.views[index]

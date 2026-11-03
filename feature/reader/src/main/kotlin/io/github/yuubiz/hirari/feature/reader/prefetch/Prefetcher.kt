@@ -93,6 +93,8 @@ class PrefetchInput(
     val paused: Boolean = false,
     /** Pages whose margins 余白トリミング wants and does not hold yet. A view of one is prepared again to read them. */
     val readsMargins: (Int) -> Boolean = { false },
+    /** The views on screen; more than [current] only in 縦に連続. */
+    val visible: IntRange = current..current,
 )
 
 /**
@@ -174,6 +176,7 @@ class Prefetcher<R, T>(
                 resident = resident.copy(rawPages = raws.keys.toSet()),
                 depths = depths,
                 paused = input.paused || trimmedOn != null,
+                visible = input.visible,
             ),
         )
         val dropped = cache.keys.filter { it !in plan.keep.views && it !in input.shown }

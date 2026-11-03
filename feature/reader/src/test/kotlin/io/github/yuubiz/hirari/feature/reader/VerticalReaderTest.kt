@@ -204,6 +204,7 @@ class VerticalReaderTest {
         val state = strip(10).reduce(ReaderEvent.Pan(0f, -(SEGMENT_PX * 0.9).toFloat()))
         assertEquals(setOf(PageView.One(0), PageView.One(1)), state.shownViews)
         assertEquals(0..1, state.scroll!!.visible(state.strip, state.stripScreen))
+        assertEquals(0..1, state.prefetchInput().visible)
     }
 
     @Test

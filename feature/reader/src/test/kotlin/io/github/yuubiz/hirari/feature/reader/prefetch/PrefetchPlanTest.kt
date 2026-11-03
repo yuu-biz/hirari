@@ -51,7 +51,8 @@ class PrefetchPlanTest {
         resident: Resident = Resident(),
         depths: PrefetchDepths = PrefetchDepths(),
         paused: Boolean = false,
-    ) = PrefetchRequest(views, current, shapes, travel, budget, { viewBytes }, { rawBytes }, resident, depths, paused)
+        visible: IntRange = current..current,
+    ) = PrefetchRequest(views, current, shapes, travel, budget, { viewBytes }, { rawBytes }, resident, depths, paused, visible)
 
     private fun PrefetchPlan.prepared() = jobs.filterIsInstance<PrepareView>().map { it.view }.toSet()
 
@@ -71,6 +72,18 @@ class PrefetchPlanTest {
             ),
             plan.jobs.take(14),
         )
+    }
+
+    @Test
+    fun everyViewOnScreenComesFirstAndTheReachesCountFromTheEdgesOfTheScreen() {
+        val plan = planPrefetch(request(single(100), current = 50, visible = 50..52))
+        assertEquals(
+            listOf(ReadRaw(50), PrepareView(One(50)), ReadRaw(51), PrepareView(One(51)), ReadRaw(52), PrepareView(One(52)), ReadRaw(53), PrepareView(One(53))),
+            plan.jobs.take(8),
+        )
+        assertEquals((49..54).map(::One).toSet(), plan.prepared())
+        assertEquals((34..84).toSet(), plan.raw())
+        assertTrue(plan.keep.views.containsAll((50..52).map(::One)))
     }
 
     @Test
@@ -237,36 +250,49 @@ class PrefetchPlanTest {
         val resident: Resident,
         val paused: Boolean,
         val lowRam: Boolean,
+        /** The views on screen: more than the current one only in 縦に連続. */
+        val visible: IntRange = current..current,
     ) {
         fun viewBytes(view: PageView) = 3L + view.pages.sum() % 5
 
         fun rawBytes(page: Int) = 1L + page % 3
 
+        val onScreen: List<PageView> get() = visible.map(views::get)
+
         fun plan() = planPrefetch(
-            PrefetchRequest(views, current, shapes, travel, budget, ::viewBytes, ::rawBytes, resident, prefetchDepths(lowRam), paused),
+            PrefetchRequest(views, current, shapes, travel, budget, ::viewBytes, ::rawBytes, resident, prefetchDepths(lowRam), paused, visible),
         )
+
+        /** How many views [index] lies past the edge of the screen. */
+        fun distance(index: Int): Int = when {
+            index < visible.first -> index - visible.first
+            index > visible.last -> index - visible.last
+            else -> 0
+        }
     }
 
     private val scenarios = arbitrary {
         val shapes = Arb.list(Arb.element(tall, wide, PageShape.Unknown), 1..60).bind()
-        val mode = Arb.element(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide).bind()
+        val mode = Arb.element(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide, LayoutMode.Vertical).bind()
         val settings = LayoutSettings(mode, Arb.enum<ReadingDirection>().bind(), Arb.boolean().bind())
         val views = layoutViews(shapes.size, shapes::get, settings, Arb.int(shapes.indices).bind())
         val resident = Resident(
             views = Arb.list(Arb.element(views), 0..8).bind().toSet(),
             rawPages = Arb.list(Arb.int(shapes.indices), 0..20).bind().toSet(),
         )
+        val first = Arb.int(views.indices).bind()
+        val visible = if (mode == LayoutMode.Vertical) first..Arb.int(first..minOf(first + 3, views.lastIndex)).bind() else first..first
         Scenario(
-            views, shapes, Arb.int(views.indices).bind(), Arb.enum<Turn>().bind(), Arb.long(0L..120L).bind(),
-            resident, Arb.boolean().bind(), Arb.boolean().bind(),
+            views, shapes, Arb.int(visible).bind(), Arb.enum<Turn>().bind(), Arb.long(0L..120L).bind(),
+            resident, Arb.boolean().bind(), Arb.boolean().bind(), visible,
         )
     }
 
     @Test
     fun theShownViewIsNeverEvicted() = runBlocking<Unit> {
         checkAll(scenarios) { scenario ->
+            for (shown in scenario.onScreen) assertFalse(shown in scenario.plan().evictions(scenario.resident).views)
             val shown = scenario.views[scenario.current]
-            assertFalse(shown in scenario.plan().evictions(scenario.resident).views)
             assertFalse(shown in evictionsOnTrim(scenario.resident, shown).views)
         }
     }
@@ -274,9 +300,9 @@ class PrefetchPlanTest {
     @Test
     fun whatThePlanKeepsFitsTheBudget() = runBlocking<Unit> {
         checkAll(scenarios.map { it.copy(paused = false) }) { scenario ->
-            val shown = scenario.views[scenario.current]
+            val shown = scenario.onScreen.toSet()
             val keep = scenario.plan().keep
-            val shownBytes = if (shown.pages.all { scenario.shapes[it] is PageShape.Known }) scenario.viewBytes(shown) else 0L
+            val shownBytes = shown.filter { view -> view.pages.all { scenario.shapes[it] is PageShape.Known } }.sumOf(scenario::viewBytes)
             val raw = keep.rawPages.sumOf { scenario.rawBytes(it) }
             val others = (keep.views - shown).sumOf { scenario.viewBytes(it) } + raw
             assertTrue(others <= maxOf(0L, scenario.budget - shownBytes), "$others over ${scenario.budget} with $shownBytes shown")
@@ -303,8 +329,8 @@ class PrefetchPlanTest {
                     is PrepareView -> {
                         assertFalse(job.view in scenario.resident.views)
                         assertTrue(job.view.pages.all { scenario.shapes[it] is PageShape.Known })
-                        val distance = scenario.views.indexOf(job.view) - scenario.current
-                        assertTrue(distance in -2..2, "${job.view} is $distance views away")
+                        val distance = scenario.distance(scenario.views.indexOf(job.view))
+                        assertTrue(distance in -2..2, "${job.view} is $distance views past the screen")
                     }
                 }
             }

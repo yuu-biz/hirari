@@ -44,5 +44,6 @@ fun ReaderState.prefetchInput(paused: Boolean = false): PrefetchInput {
         shown = shownViews,
         paused = paused,
         readsMargins = { trimmed && it !in margins },
+        visible = scroll?.visible(strip, stripScreen) ?: pagination.currentIndex..pagination.currentIndex,
     )
 }
