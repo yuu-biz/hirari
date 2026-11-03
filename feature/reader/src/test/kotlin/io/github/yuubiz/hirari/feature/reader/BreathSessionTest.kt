@@ -201,6 +201,23 @@ class BreathSessionTest {
     }
 
     @Test
+    fun aMicrophoneTakenAwayWhileListeningIsShownAsUnavailableUntilTheReaderComesBack() = runTest(UnconfinedTestDispatcher()) {
+        val mic = FakeMicrophone()
+        val session = BreathSession(backgroundScope, mic) {}
+        session.update(READING)
+        mic.hear(QUIET, QUIET)
+        assertIs<BreathView.Listening>(session.view)
+        mic.sound.close()
+        assertEquals(BreathView.Unavailable, session.view)
+        session.update(READING)
+        assertEquals(BreathView.Unavailable, session.view)
+        session.update(READING.copy(foreground = false))
+        session.update(READING)
+        assertEquals(2, mic.starts)
+        assertIs<BreathView.Listening>(session.view)
+    }
+
+    @Test
     fun theCommandTurnsOffWhatListensAndAsksBeforeTurningOn() {
         assertEquals(BreathToggle.TurnOff, breathToggle(READING))
         assertEquals(BreathToggle.TurnOn, breathToggle(READING.copy(enabled = false)))
