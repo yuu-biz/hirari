@@ -123,14 +123,16 @@ internal class Driver(private val instrumentation: Instrumentation) {
     }
 
     /** Fails with what the screen shows, and leaves a picture of it at `/sdcard/hirari-failure.png`. */
-    private fun fail(message: String): Nothing {
+    fun fail(message: String): Nothing {
         device.executeShellCommand("screencap -p /sdcard/hirari-failure.png")
         val shown = device.findObjects(By.text(Pattern.compile(".+"))).joinToString { "${it.applicationPackage}:${it.text}" }
         error("$message; the screen shows $shown")
     }
 
+    /** The app's string [name] formatted with [args], or as the format itself when there are none. */
     fun appString(name: String, vararg args: Any): String {
         val resources = instrumentation.targetContext.packageManager.getResourcesForApplication(PACKAGE)
-        return resources.getString(resources.getIdentifier(name, "string", PACKAGE), *args)
+        val id = resources.getIdentifier(name, "string", PACKAGE)
+        return if (args.isEmpty()) resources.getString(id) else resources.getString(id, *args)
     }
 }

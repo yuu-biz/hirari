@@ -27,7 +27,9 @@ private const val BACK_BAND_PERCENT = 95
 /** A tap on the page bar opens the page panel; the first one after a book is first read only closes the operation guide. */
 private const val PANEL_ATTEMPTS = 3
 private const val MEMORY_SAMPLE_EVERY = 10
-private const val STANDARD_PAGES = 200
+
+/** A view of the default spreads has two stops at most; the taps past those turn. */
+private const val TAPS_PER_TURN = 6
 private const val TAG = "HirariBench"
 
 /**
@@ -36,7 +38,10 @@ private const val TAG = "HirariBench"
  * pushed to the device (AGENTS.md) and a stand-in otherwise, which makes the numbers of a stand-in meaningless
  * beyond showing that the test runs.
  *
- * The turns go forward for the first half and back for the second, so a book of 200 pages carries 200 turns.
+ * A turn is a change of the view on screen. With 停止点 on (docs/spec.md section 4.8, the default), a tap first steps
+ * to the next stop of the view, so each turn taps until the view changes, read from the page's description for a
+ * screen reader between the taps. The turns go forward to the last view and back to the first, and again, until
+ * the count is reached; they never turn past either end of the book.
  */
 @OptIn(ExperimentalMetricApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -48,6 +53,7 @@ class ReaderBenchmark {
     private val driver = Driver(instrumentation)
     private val device = driver.device
     private val book = Staging(instrumentation, device).readerBook()
+    private val views = ViewSpanReader(driver)
 
     /** P1: the turn to a prepared view, from the input event to the frame that shows it. 200 turns per trial. */
     @Test
@@ -98,7 +104,7 @@ class ReaderBenchmark {
         Thread.sleep(FIRST_PAGE_SETTLE_MS)
     }
 
-    /** P10: the memory while reading the whole book, with `dumpsys meminfo` sampled every 10 turns into the log. */
+    /** P10: the memory while reading the whole book, with `dumpsys meminfo` sampled every 10 pages into the log. */
     @Test
     fun p10Memory() = rule.measureFromPlace(
         driver,
@@ -107,11 +113,15 @@ class ReaderBenchmark {
         CompilationMode.Partial(),
         prepare = { openBook() },
     ) {
-        var peakKb = 0L
-        for (turn in 0 until STANDARD_PAGES - 1) {
-            device.click(device.displayWidth / 4, device.displayHeight / 2)
-            Thread.sleep(TAP_INTERVAL_MS)
-            if (turn % MEMORY_SAMPLE_EVERY == 0) peakKb = maxOf(peakKb, sampleMemory(turn + 1))
+        var view = views.read()
+        var peakKb = sampleMemory(view.first)
+        var sampled = view.first / MEMORY_SAMPLE_EVERY
+        while (!view.atEnd) {
+            view = turn(forward = true, from = view)
+            if (view.first / MEMORY_SAMPLE_EVERY != sampled) {
+                sampled = view.first / MEMORY_SAMPLE_EVERY
+                peakKb = maxOf(peakKb, sampleMemory(view.first))
+            }
         }
         Log.i(TAG, "P10 peak java+native heap ${peakKb / 1024} MB")
     }
@@ -129,10 +139,23 @@ class ReaderBenchmark {
         CompilationMode.Full(),
         prepare = { openBook() },
     ) {
-        val forward = (turns + 1) / 2
-        val y = device.displayHeight / 2
-        repeat(forward) { tap(device.displayWidth / 4, y) }
-        repeat(turns - forward) { tap(device.displayWidth * BACK_BAND_PERCENT / 100, y) }
+        var view = views.read()
+        var forward = true
+        repeat(turns) {
+            if (forward && view.atEnd || !forward && view.atStart) forward = !forward
+            view = turn(forward, view)
+        }
+    }
+
+    /** Taps until the view is no longer [from], and returns the view it turned to. */
+    private fun turn(forward: Boolean, from: ViewSpan): ViewSpan {
+        val x = if (forward) device.displayWidth / 4 else device.displayWidth * BACK_BAND_PERCENT / 100
+        repeat(TAPS_PER_TURN) {
+            tap(x, device.displayHeight / 2)
+            val view = views.read()
+            if (view != from) return view
+        }
+        driver.fail("$TAPS_PER_TURN taps ${if (forward) "forward" else "back"} did not turn from $from")
     }
 
     /** Every trial starts from cleared data, so the book is a first read and the operation guide takes the first tap. */
