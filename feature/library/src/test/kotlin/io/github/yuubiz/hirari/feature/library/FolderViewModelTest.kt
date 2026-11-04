@@ -256,4 +256,39 @@ class FolderViewModelTest {
         assertEquals(listOf(ReadMark.Unread, ReadMark.Unread), list.shown().rows.map { it.mark })
         assertEquals(1, fixture.lister.calls)
     }
+
+    @Test
+    fun `reading the folder again keeps the rows and the filter shown until the new listing swaps them in`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(file("1巻.zip"), file("2巻.zip"))
+        val list = viewModel()
+        list.setFilter("巻")
+        fixture.lister.folders["作品"] = listOf(file("1巻.zip"), file("2巻.zip"), file("3巻.zip"), file("外伝.zip"))
+        fixture.lister.delayMs = 1_000
+
+        list.refresh()
+        advanceTimeBy(SLOW_LISTING_MS + 1)
+        assertTrue(list.state.value.refreshing)
+        assertEquals(listOf("1巻.zip", "2巻.zip"), list.shown().rows.map { it.item.entry.name })
+
+        advanceUntilIdle()
+        assertEquals(false, list.state.value.refreshing)
+        assertEquals(listOf("1巻.zip", "2巻.zip", "3巻.zip"), list.shown().rows.map { it.item.entry.name })
+        assertEquals("巻", list.shown().filter)
+        assertEquals(2, fixture.lister.calls)
+    }
+
+    @Test
+    fun `reading again a folder that failed lists it as at first`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        val list = viewModel()
+        assertIs<FolderContent.Failed>(list.state.value.content)
+        fixture.lister.folders["作品"] = listOf(file("1巻.zip"))
+        fixture.lister.delayMs = 1_000
+
+        list.refresh()
+        assertEquals(FolderContent.Loading, list.state.value.content)
+        advanceUntilIdle()
+        assertEquals(listOf("1巻.zip"), list.shown().rows.map { it.item.entry.name })
+    }
 }

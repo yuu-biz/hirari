@@ -71,7 +71,8 @@ data class CoverLayout(val covers: Covers, val sizePx: Int)
 
 /**
  * [canSave] is whether the place is an SMB server, whose items 端末に保存 copies (docs/spec.md section 4.5). [pinnedId] is
- * the pin of this folder on the shelf, if it has one.
+ * the pin of this folder on the shelf, if it has one. [refreshing] is whether a 読み直し is listing the folder under the
+ * rows still shown.
  */
 data class FolderUi(
     val placeName: String,
@@ -80,6 +81,7 @@ data class FolderUi(
     val notice: Notice? = null,
     val canSave: Boolean = false,
     val pinnedId: Long? = null,
+    val refreshing: Boolean = false,
 )
 
 /** What a tap on a row opens. */
@@ -140,6 +142,7 @@ class FolderViewModel(
     private val listing = MutableStateFlow<ListingState>(ListingState.Loading)
     private val place = MutableStateFlow<LibraryLocation?>(null)
     private val notice = MutableStateFlow<Notice?>(null)
+    private val refreshing = MutableStateFlow(false)
     private var folderDocumentId: String? = folder.documentId
     private var loading: Job? = null
 
@@ -161,8 +164,8 @@ class FolderViewModel(
             val pinnedId = services.locations.pinned
                 .map { pins -> pins.firstOrNull { it.location == folder.location && normalizePath(it.path) == normalizePath(folder.path) }?.id }
                 .distinctUntilChanged()
-            combine(place, content, notice, pinnedId) { place, content, notice, pinnedId ->
-                FolderUi(place?.displayName.orEmpty(), folder.path, content, notice, canSave = place is LibraryLocation.SmbShare, pinnedId = pinnedId)
+            combine(place, content, notice, pinnedId, refreshing) { place, content, notice, pinnedId, refreshing ->
+                FolderUi(place?.displayName.orEmpty(), folder.path, content, notice, canSave = place is LibraryLocation.SmbShare, pinnedId, refreshing)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), FolderUi("", folder.path, FolderContent.Loading))
@@ -229,30 +232,54 @@ class FolderViewModel(
      */
     fun load() = list(reconnect = true)
 
+    /**
+     * 読み直す of the top bar's menu and the pull on the list (docs/spec.md section 4.3, 読み直し): while the rows are
+     * shown, lists the folder again under them, so the scroll and the filter stay, and swaps the rows when it ends. A
+     * folder not shown is listed as by [load].
+     */
+    fun refresh() {
+        if ((listing.value as? ListingState.Done)?.listing !is Listing.Listed) return load()
+        loading?.cancel()
+        refreshing.value = true
+        loading = viewModelScope.launch {
+            try {
+                listing.value = ListingState.Done(fetch(reconnect = true))
+            } finally {
+                refreshing.value = false
+            }
+        }
+    }
+
     private fun list(reconnect: Boolean) {
         loading?.cancel()
+        refreshing.value = false
         listing.value = ListingState.Loading
         loading = viewModelScope.launch {
             val slow = launch {
                 delay(SLOW_LISTING_MS)
                 listing.compareAndSet(ListingState.Loading, ListingState.Slow)
             }
-            val services = services.await()
-            val location = services.locations.get(folder.location)
-            if (location != null) place.value = location
-            val result = when (location) {
-                null -> Listing.Failed(ListFailure.NotFound)
-                is LibraryLocation.SafTree ->
-                    if (location.permissionHeld) services.folders.list(location.treeUri, folder.path, folder.documentId) else Listing.Failed(ListFailure.NoPermission)
-                is LibraryLocation.SmbShare -> {
-                    if (reconnect) services.smb.reconnect(location)
-                    services.smb.list(location, folder.path)
-                }
-            }
+            val result = fetch(reconnect)
             slow.cancel()
-            if (result is Listing.Listed) folderDocumentId = result.folderDocumentId
             listing.value = ListingState.Done(result)
         }
+    }
+
+    private suspend fun fetch(reconnect: Boolean): Listing {
+        val services = services.await()
+        val location = services.locations.get(folder.location)
+        if (location != null) place.value = location
+        val result = when (location) {
+            null -> Listing.Failed(ListFailure.NotFound)
+            is LibraryLocation.SafTree ->
+                if (location.permissionHeld) services.folders.list(location.treeUri, folder.path, folder.documentId) else Listing.Failed(ListFailure.NoPermission)
+            is LibraryLocation.SmbShare -> {
+                if (reconnect) services.smb.reconnect(location)
+                services.smb.list(location, folder.path)
+            }
+        }
+        if (result is Listing.Listed) folderDocumentId = result.folderDocumentId
+        return result
     }
 
     /** 取り消し while the listing is slow. The screen closes next. */

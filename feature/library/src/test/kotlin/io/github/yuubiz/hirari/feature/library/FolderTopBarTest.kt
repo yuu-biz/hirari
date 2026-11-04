@@ -6,6 +6,9 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -15,13 +18,16 @@ import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
+import android.os.Looper
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -42,7 +48,7 @@ class FolderTopBarTest {
 
     private fun show(path: String, view: LibraryView = LibraryView.Grid, parentItem: Boolean = true) {
         fixture.locations.rows.value = listOf(place)
-        fixture.lister.folders[path] = listOf(file("1巻.zip"), file("2巻.zip"))
+        fixture.lister.folders.getOrPut(path) { listOf(file("1巻.zip"), file("2巻.zip")) }
         fixture.settings.value.value = fixture.settings.value.value.copy(libraryView = view, showParentItem = parentItem)
         val model = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, path), Dispatchers.Unconfined)
         val actions = FolderActions(
@@ -51,7 +57,7 @@ class FolderTopBarTest {
             close = { closed++ },
         )
         rule.setContent { MaterialTheme { FolderScreen(model, actions) } }
-        rule.waitUntil { rule.onAllNodes(hasText("1巻.zip")).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil { model.state.value.content is FolderContent.Shown }
     }
 
     private val isButton = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
@@ -157,5 +163,24 @@ class FolderTopBarTest {
         rule.onNodeWithText("ホーム画面にショートカットを作成").performClick()
         rule.waitForIdle()
         assertEquals(listOf(PlaceShortcut(place.id, "", folder = true, label = "漫画")), shortcuts)
+    }
+
+    @Test
+    fun `reading the folder again keeps the list where it was scrolled`() {
+        fixture.lister.folders["a"] = (0 until 60).map { file("r%02d.zip".format(it)) }
+        show("a", LibraryView.List)
+        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(40)
+        rule.onNodeWithText("r40.zip").assertIsDisplayed()
+        fixture.lister.folders["a"] = (0 until 61).map { file("r%02d.zip".format(it)) }
+        fixture.lister.delayMs = 1_000
+        menu("読み直す")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        rule.waitForIdle()
+        rule.onNodeWithText("r40.zip").assertIsDisplayed()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+        rule.waitForIdle()
+        assertEquals(2, fixture.lister.calls)
+        rule.onNodeWithText("r40.zip").assertIsDisplayed()
+        assertTrue(rule.onAllNodes(hasText("r00.zip")).fetchSemanticsNodes().isEmpty())
     }
 }

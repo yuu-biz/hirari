@@ -143,6 +143,7 @@
     <string name="folder_close">閉じる</string>
     <string name="folder_ancestors">上位のフォルダを選ぶ</string>
     <string name="folder_pin">このフォルダをピン留め</string>
+    <string name="folder_refresh">読み直す</string>
     <string name="folder_unpin">ピン留めを外す</string>
     <string name="list_menu">その他の操作</string>
     <string name="row_menu">メニューを開く</string>

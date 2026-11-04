@@ -43,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -181,7 +182,9 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     actions.close()
                 }
                 is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
-                is FolderContent.Shown -> FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem })
+                is FolderContent.Shown -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = model::refresh, modifier = Modifier.fillMaxSize()) {
+                    FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem })
+                }
             }
         }
     }
@@ -310,7 +313,7 @@ private fun IconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 /**
- * The top bar's menu (docs/spec.md section 4.3): the order, the view, and this folder's pin and shortcut. The top of a
+ * The top bar's menu (docs/spec.md section 4.3): the order, the view, 読み直す, and this folder's pin and shortcut. The top of a
  * place is on the shelf already, so it has no pin.
  */
 @Composable
@@ -344,6 +347,13 @@ private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: 
                 }
             }
             HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.folder_refresh)) },
+                onClick = {
+                    open = false
+                    model.refresh()
+                },
+            )
             if (!atTop) {
                 DropdownMenuItem(
                     text = { Text(stringResource(if (pinned) R.string.folder_unpin else R.string.folder_pin)) },
