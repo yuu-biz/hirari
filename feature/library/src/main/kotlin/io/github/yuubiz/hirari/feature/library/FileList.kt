@@ -1,5 +1,9 @@
 package io.github.yuubiz.hirari.feature.library
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -66,18 +70,42 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+/** One item of the list: the one that goes up to the parent folder, or a row of the folder. */
+private sealed interface ListCell {
+    val key: String
+
+    data object Parent : ListCell {
+        override val key = PARENT_KEY
+    }
+
+    data class Entry(val row: FileRow) : ListCell {
+        override val key get() = row.path
+    }
+}
+
+/** No path of a place is `..`, so the parent item's key is never a row's. */
+private const val PARENT_KEY = ".."
+
 /**
- * The rows in the chosen view (docs/spec.md section 4.3). Binding a row reads only the row: no query and no
- * decode, so a 1000-entry folder scrolls on what the listing already holds; the covers come from [CoverBox].
+ * The rows in the chosen view (docs/spec.md section 4.3), after the parent item when [onUp] is given. Binding a row
+ * reads only the row: no query and no decode, so a 1000-entry folder scrolls on what the listing already holds; the
+ * covers come from [CoverBox]. An empty folder, or a filter that matches nothing, says so under the parent item.
  */
 @Composable
-internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
+    val cells = remember(content.rows, onUp != null) {
+        buildList {
+            if (onUp != null) add(ListCell.Parent)
+            content.rows.mapTo(this) { ListCell.Entry(it) }
+        }
+    }
+    val empty = if (content.rows.isEmpty()) (if (content.total == 0) R.string.folder_empty else R.string.folder_no_match) else null
     var revealed by rememberSaveable { mutableStateOf(reveal == null) }
     suspend fun revealOnce(scrollTo: suspend (Int) -> Unit) {
         if (revealed) return
         revealed = true
-        val at = content.rows.indexOfFirst { it.path == reveal }
+        val at = cells.indexOfFirst { it is ListCell.Entry && it.row.path == reveal }
         if (at >= 0) scrollTo(at)
     }
     val focus = remember { CoverFocus() }
@@ -96,26 +124,79 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                         state = grid,
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, focus, fitter, onOpen, onLongPress) }
+                        items(cells, key = { it.key }) { cell ->
+                            when (cell) {
+                                ListCell.Parent -> GridParentCell(fitter, onUp ?: {})
+                                is ListCell.Entry -> GridCell(cell.row, content.covers, focus, fitter, onOpen, onLongPress)
+                            }
+                        }
+                        if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
                     }
-                    PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
-                    FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
+                    PrefetchCovers(cells.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
+                    FastScroller(cells.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
                 LibraryView.ThumbnailList, LibraryView.List -> {
                     val list = rememberLazyListState()
                     LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
+                    val covers = content.covers.takeIf { content.view == LibraryView.ThumbnailList }
                     LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
-                        items(content.rows, key = { it.path }) { row ->
-                            ListRow(row, content.covers.takeIf { content.view == LibraryView.ThumbnailList }, focus, content.thumbSize, onOpen, onLongPress)
+                        items(cells, key = { it.key }) { cell ->
+                            when (cell) {
+                                ListCell.Parent -> ListParentRow(covers != null, content.thumbSize, onUp ?: {})
+                                is ListCell.Entry -> ListRow(cell.row, covers, focus, content.thumbSize, onOpen, onLongPress)
+                            }
                         }
+                        if (empty != null) item { EmptyRow(empty) }
                     }
-                    if (content.view == LibraryView.ThumbnailList) {
-                        PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
+                    if (covers != null) {
+                        PrefetchCovers(cells.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
                     }
-                    FastScroller(content.rows.size, { list.firstVisibleItemIndex }, { list.isScrollInProgress }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
+                    FastScroller(cells.size, { list.firstVisibleItemIndex }, { list.isScrollInProgress }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyRow(@StringRes text: Int) {
+    Text(
+        stringResource(text),
+        Modifier.fillMaxWidth().padding(24.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
+}
+
+/**
+ * The item that goes up to the parent folder, first in a grid (docs/spec.md section 4.3, 親フォルダの項目): an arrow
+ * the size of a cover and `..` where a name goes, as tall as the other cells.
+ */
+@Composable
+private fun GridParentCell(fitter: TitleFitter, onUp: () -> Unit) {
+    val colors = LocalLibraryColors.current
+    val label = stringResource(R.string.folder_up)
+    Column(Modifier.rowPress(onUp, null).semantics { contentDescription = label }.padding(CELL_PADDING)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(COVER_RATIO).decorative(), contentAlignment = Alignment.Center) {
+            Icon(ListIcons.Up, null, Modifier.fillMaxSize(0.7f), tint = colors.stateFolder)
+        }
+        Text(PARENT_KEY, Modifier.fillMaxWidth().padding(top = 4.dp).decorative(), color = colors.stateFolder, style = fitter.style, minLines = GRID_TITLE_LINES, maxLines = GRID_TITLE_LINES)
+        Text("", Modifier.fillMaxWidth().decorative(), style = fitter.style, minLines = 1, maxLines = 1)
+    }
+}
+
+/** The parent item of a list: the arrow where a cover or a mark goes, then its name. */
+@Composable
+private fun ListParentRow(withCovers: Boolean, size: ThumbSize, onUp: () -> Unit) {
+    val colors = LocalLibraryColors.current
+    Row(
+        Modifier.fillMaxWidth().rowPress(onUp, null).minTouchTarget().padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val slot = if (withCovers) Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO) else Modifier.width(32.dp)
+        Box(slot.decorative(), contentAlignment = Alignment.Center) { Icon(ListIcons.Up, null, tint = colors.stateFolder) }
+        Spacer(Modifier.width(12.dp))
+        Text(stringResource(R.string.folder_up), Modifier.weight(1f), color = colors.stateFolder, maxLines = 1)
     }
 }
 
@@ -227,8 +308,8 @@ private fun Cover(row: FileRow, covers: CoverLayout, focus: CoverFocus, modifier
 }
 
 @Composable
-private fun List<FileRow>.coverRefs(covers: CoverLayout): List<CoverRef?> =
-    remember(this, covers.sizePx) { map { row -> row.cover?.let { CoverRef(it, covers.sizePx) } } }
+private fun List<ListCell>.coverRefs(covers: CoverLayout): List<CoverRef?> =
+    remember(this, covers.sizePx) { map { cell -> (cell as? ListCell.Entry)?.row?.cover?.let { CoverRef(it, covers.sizePx) } } }
 
 private fun List<LazyGridItemInfo>.visibleRange(): IntRange = if (isEmpty()) IntRange.EMPTY else first().index..last().index
 

@@ -81,15 +81,24 @@ internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.va
  * scroll position; when it is not, as above a pinned folder, it opens scrolled to the folder the way down went
  * through.
  */
-internal fun NavController.goUpTo(to: FolderKey, from: String) {
+internal fun NavController.goUpTo(to: FolderKey, from: String) = goUp(
+    to,
+    from,
+    top = { currentBackStackEntry?.takeIf { it.destination.hasRoute<FolderRoute>() }?.toRoute<FolderRoute>() },
+    pop = { popBackStack() },
+    open = { navigate(it) },
+)
+
+/** [goUpTo] over a back stack whose [top] file list, `null` for any other screen, [pop] closes. */
+internal fun goUp(to: FolderKey, from: String, top: () -> FolderRoute?, pop: () -> Unit, open: (FolderRoute) -> Unit) {
     while (true) {
-        val top = currentBackStackEntry?.takeIf { it.destination.hasRoute<FolderRoute>() }?.toRoute<FolderRoute>() ?: break
-        if (top.location != to.location.value) break
-        if (normalizePath(top.path) == normalizePath(to.path)) return
-        if (childToward(to.path, top.path) == null) break
-        popBackStack()
+        val folder = top() ?: break
+        if (folder.location != to.location.value) break
+        if (normalizePath(folder.path) == normalizePath(to.path)) return
+        if (childToward(to.path, folder.path) == null) break
+        pop()
     }
-    navigate(to.toRoute(reveal = childToward(to.path, from)))
+    open(to.toRoute(reveal = childToward(to.path, from)))
 }
 
 /**

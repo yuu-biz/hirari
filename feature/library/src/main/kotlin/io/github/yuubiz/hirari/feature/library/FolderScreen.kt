@@ -12,7 +12,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +29,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -130,16 +132,24 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
         }
     }
 
+    val trail = remember(state.placeName, state.path) { folderTrail(state.placeName, state.path) }
+    val up = trail.parent?.let { parent -> { actions.openAncestor(parent) } }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Breadcrumbs(state.placeName, state.path, actions.openAncestor) },
-                navigationIcon = { GlyphButton("←", stringResource(R.string.nav_back), actions.close) },
+                title = { FolderTitle(state.placeName, trail, actions.openAncestor) },
+                navigationIcon = {
+                    if (up == null) {
+                        IconAction(ListIcons.Close, stringResource(R.string.folder_close), actions.close)
+                    } else {
+                        IconAction(ListIcons.Up, stringResource(R.string.folder_up), up)
+                    }
+                },
                 actions = {
-                    TextButton(onClick = {
+                    IconAction(ListIcons.Filter, stringResource(R.string.folder_filter)) {
                         filtering = !filtering
                         if (!filtering) model.setFilter("")
-                    }) { Text(stringResource(R.string.folder_filter)) }
+                    }
                     (state.content as? FolderContent.Shown)?.let { ListMenu(it, model) }
                 },
             )
@@ -165,11 +175,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     actions.close()
                 }
                 is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
-                is FolderContent.Shown -> if (content.rows.isEmpty()) {
-                    EmptyNote(if (content.total == 0) R.string.folder_empty else R.string.folder_no_match)
-                } else {
-                    FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it })
-                }
+                is FolderContent.Shown -> FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem })
             }
         }
     }
@@ -241,20 +247,46 @@ private fun SaveBar(jobs: List<SaveJob>, onCancel: (Long) -> Unit) {
     }
 }
 
-/** The path with each folder a step up (docs/spec.md section 4.3, 上部バー). */
+/**
+ * The place's name over the current folder's, each cut at its start when long so the end of the name stays (docs/spec.md
+ * section 4.3, 上部バー). Below the top of the place, a tap lists the folders above to go up to, the top first.
+ */
 @Composable
-private fun Breadcrumbs(placeName: String, path: String, onPick: (String) -> Unit) {
-    val names = path.split('/').filter { it.isNotEmpty() }
-    Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-        val steps = listOf(placeName to "") + names.mapIndexed { i, name -> name to names.take(i + 1).joinToString("/") }
-        steps.forEachIndexed { i, (name, at) ->
-            if (i > 0) Text("/", Modifier.decorative(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val last = i == steps.lastIndex
-            TextButton(onClick = { onPick(at) }, enabled = !last) {
-                Text(name, maxLines = 1, fontWeight = if (last) FontWeight.Bold else null)
+private fun FolderTitle(placeName: String, trail: FolderTrail, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    if (trail.ancestors.isEmpty()) {
+        Text(placeName, maxLines = 1, overflow = TextOverflow.StartEllipsis)
+        return
+    }
+    Box {
+        Column(Modifier.clickable(onClickLabel = stringResource(R.string.folder_ancestors), role = Role.Button) { open = true }) {
+            Text(
+                placeName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.StartEllipsis,
+            )
+            Text(trail.current, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.StartEllipsis)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            trail.ancestors.forEach { ancestor ->
+                DropdownMenuItem(
+                    text = { Text(ancestor.name, maxLines = 1, overflow = TextOverflow.StartEllipsis) },
+                    onClick = {
+                        open = false
+                        onPick(ancestor.path)
+                    },
+                )
             }
         }
     }
+}
+
+/** A top bar button that shows [icon] and is read as [label]. */
+@Composable
+private fun IconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick) { Icon(icon, contentDescription = label) }
 }
 
 @Composable
@@ -392,7 +424,7 @@ internal fun SheetActions(title: String, actions: @Composable () -> Unit) {
  * lists the long press as an action named メニューを開く.
  */
 @Composable
-internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: () -> Unit): Modifier {
+internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: (() -> Unit)?): Modifier {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val colors = LocalLibraryColors.current
@@ -401,7 +433,7 @@ internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: () -> Unit): Mo
         .combinedClickable(
             interactionSource = interaction,
             indication = LocalIndication.current,
-            onLongClickLabel = stringResource(R.string.row_menu),
+            onLongClickLabel = if (onLongClick == null) null else stringResource(R.string.row_menu),
             onClick = onClick,
             onLongClick = onLongClick,
         )

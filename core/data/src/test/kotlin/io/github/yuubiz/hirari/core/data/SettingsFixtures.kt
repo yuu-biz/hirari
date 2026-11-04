@@ -90,6 +90,7 @@ val everything = GlobalSettings(
     librarySort = LibrarySort.Oldest,
     foldersFirst = false,
     showDotFiles = true,
+    showParentItem = false,
     allowFileEdits = true,
     reopenLastFolder = true,
     reopenLastBook = ReopenLastBook.Ask,

@@ -250,6 +250,7 @@ val SettingsTable: List<Setting> = buildList {
         LibrarySort.Name to "名前", LibrarySort.Newest to "新しい順", LibrarySort.Oldest to "古い順"))
     add(toggle(GlobalSettings::foldersFirst, library, "フォルダを先に") { s, v -> s.copy(foldersFirst = v) })
     add(toggle(GlobalSettings::showDotFiles, library, "隠しファイルを表示") { s, v -> s.copy(showDotFiles = v) })
+    add(toggle(GlobalSettings::showParentItem, library, "親フォルダの項目を出す") { s, v -> s.copy(showParentItem = v) })
     add(toggle(GlobalSettings::allowFileEdits, library, "削除と名前の変更を許可") { s, v -> s.copy(allowFileEdits = v) })
     add(toggle(GlobalSettings::reopenLastFolder, library, "起動時に前回のフォルダを開く") { s, v -> s.copy(reopenLastFolder = v) })
     add(choice(GlobalSettings::reopenLastBook, library, "起動時に前回の本を開く", { s, v -> s.copy(reopenLastBook = v) },

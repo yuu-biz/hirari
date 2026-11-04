@@ -1,0 +1,114 @@
+package io.github.yuubiz.hirari.feature.library
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.model.LibraryView
+import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.UriString
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/** The top bar and the parent item of docs/spec.md section 4.3 (上部バー, 親フォルダの項目). */
+@RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w411dp-h891dp")
+class FolderTopBarTest {
+    @get:Rule
+    val rule = createComposeRule()
+
+    private val fixture = Fixture()
+    private val place = LibraryLocation.SafTree(LocationId(1), "漫画", UriString("content://tree/manga"))
+    private val opened = mutableListOf<String>()
+    private var closed = 0
+
+    private fun file(name: String) = FolderEntry(name, "doc:$name", directory = false, size = 1, modified = null)
+
+    private fun show(path: String, view: LibraryView = LibraryView.Grid, parentItem: Boolean = true) {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders[path] = listOf(file("1巻.zip"), file("2巻.zip"))
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryView = view, showParentItem = parentItem)
+        val model = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, path), Dispatchers.Unconfined)
+        val actions = FolderActions(
+            openBook = {}, openText = {}, openArchive = {}, openFolder = {}, pinShortcut = { true },
+            openAncestor = { opened += it },
+            close = { closed++ },
+        )
+        rule.setContent { MaterialTheme { FolderScreen(model, actions) } }
+        rule.waitUntil { rule.onAllNodes(hasText("1巻.zip")).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    private val isButton = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+    private val upLabel = "上のフォルダへ"
+    private val parentItem = (hasText(upLabel) or hasContentDescription(upLabel)) and !isButton
+
+    private fun upButton(): SemanticsNodeInteraction = rule.onNode(hasContentDescription(upLabel) and isButton)
+
+    @Test
+    fun `up goes to the parent folder below the top of the place`() {
+        show("a/b")
+        upButton().performClick()
+        assertEquals(listOf("a"), opened)
+        assertTrue(rule.onAllNodes(hasContentDescription("閉じる")).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun `at the top of the place the leading button closes the list and no parent item shows`() {
+        show("")
+        rule.onNode(hasContentDescription("閉じる") and isButton).performClick()
+        assertEquals(1, closed)
+        assertTrue(rule.onAllNodes(hasContentDescription(upLabel)).fetchSemanticsNodes().isEmpty())
+        assertTrue(rule.onAllNodes(parentItem).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun `the parent item comes first in the grid and goes up`() = parentItemComesFirst(LibraryView.Grid)
+
+    @Test
+    fun `the parent item comes first in the thumbnail list and goes up`() = parentItemComesFirst(LibraryView.ThumbnailList)
+
+    @Test
+    fun `the parent item comes first in the list and goes up`() = parentItemComesFirst(LibraryView.List)
+
+    private fun parentItemComesFirst(view: LibraryView) {
+        show("a/b", view)
+        val parent = rule.onNode(parentItem).fetchSemanticsNode().boundsInRoot
+        val first = rule.onNodeWithText("1巻.zip").fetchSemanticsNode().boundsInRoot
+        assertTrue(parent.top < first.top || (parent.top == first.top && parent.left < first.left), "$parent before $first")
+        rule.onNode(parentItem).performClick()
+        assertEquals(listOf("a"), opened)
+    }
+
+    @Test
+    fun `the setting hides the parent item`() {
+        show("a/b", parentItem = false)
+        assertTrue(rule.onAllNodes(parentItem).fetchSemanticsNodes().isEmpty())
+        upButton().performClick()
+        assertEquals(listOf("a"), opened)
+    }
+
+    @Test
+    fun `the title lists the folders above and goes up to the one picked`() {
+        show("a/b/c")
+        rule.onNode(hasText("c") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Role)).performClick()
+        rule.onNodeWithText("b").assertExists()
+        assertTrue(rule.onAllNodes(hasText("漫画")).fetchSemanticsNodes().size == 2, "the place in the title and in the menu")
+        assertEquals(1, rule.onAllNodes(hasText("c")).fetchSemanticsNodes().size)
+        rule.onNodeWithText("a").performClick()
+        assertEquals(listOf("a"), opened)
+    }
+}

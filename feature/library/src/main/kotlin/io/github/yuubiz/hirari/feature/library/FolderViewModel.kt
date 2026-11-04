@@ -61,6 +61,8 @@ sealed interface FolderContent {
         val covers: CoverLayout,
         /** The image file chosen as the cover of this folder, if one is. */
         val folderCoverPath: String?,
+        /** Whether the list starts with the item that goes up to the parent folder (docs/spec.md section 4.3, 親フォルダの項目). */
+        val parentItem: Boolean = false,
     ) : FolderContent
 }
 
@@ -111,7 +113,7 @@ private sealed interface ListingState {
     data class Done(val listing: Listing) : ListingState
 }
 
-private data class Layout(val view: LibraryView, val thumbSize: ThumbSize, val ordering: Ordering)
+private data class Layout(val view: LibraryView, val thumbSize: ThumbSize, val ordering: Ordering, val showParentItem: Boolean)
 
 /**
  * One folder of a SAF place. The folder is listed once; sorting, filtering and the read-state marks are worked
@@ -134,7 +136,7 @@ class FolderViewModel(
     val state: StateFlow<FolderUi> = flow { emit(services.await()) }
         .flatMapLatest { services ->
             val layout = services.settings.settings
-                .map { Layout(it.libraryView, it.thumbSize, Ordering(it.librarySort, it.foldersFirst, it.showDotFiles)) }
+                .map { Layout(it.libraryView, it.thumbSize, Ordering(it.librarySort, it.foldersFirst, it.showDotFiles), it.showParentItem) }
                 .distinctUntilChanged()
             val content = listing.flatMapLatest { state ->
                 when (state) {
@@ -172,7 +174,8 @@ class FolderViewModel(
         val chosenHere = services.coverIndex.folderCovers(folder.location).map { it[folder.path]?.takeIf { cover -> cover.entry == null }?.imagePath }.distinctUntilChanged()
         return combine(marked, query, layout, chosenHere) { rows, query, layout, chosenHere ->
             val covers = CoverLayout(services.covers, services.covers.sizePx(layout.thumbSize))
-            FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.thumbSize, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere)
+            val parentItem = layout.showParentItem && folderTrail("", folder.path).parent != null
+            FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.thumbSize, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem)
         }.flowOn(compute)
     }
 
