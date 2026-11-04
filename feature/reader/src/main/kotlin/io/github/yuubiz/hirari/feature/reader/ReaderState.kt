@@ -343,7 +343,7 @@ data class ReaderState(
         val path = geometry.stops(config)
         val from = positionOf(geometry, place)
         val step = when (val place = place) {
-            is Place.Panned -> if (turn == Turn.Forward) StopCursor(path, 0).forwardFrom(from) else backFrom(path, from)
+            is Place.Panned, is Place.Gliding -> if (turn == Turn.Forward) StopCursor(path, 0).forwardFrom(from) else backFrom(path, from)
             else -> StopCursor(path, stopIndex()!!).step(turn)
         }
         return when (step) {
