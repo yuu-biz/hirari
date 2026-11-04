@@ -48,6 +48,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -85,12 +90,14 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                 LibraryView.Grid -> {
                     val grid = rememberLazyGridState()
                     LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
+                    val columns = gridColumns(maxWidth, content.thumbSize)
+                    val fitter = rememberTitleFitter(constraints.maxWidth / columns)
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(gridColumns(maxWidth, content.thumbSize)),
+                        columns = GridCells.Fixed(columns),
                         state = grid,
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, focus, onOpen, onLongPress) }
+                        items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, focus, fitter, onOpen, onLongPress) }
                     }
                     PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
                     FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
@@ -136,16 +143,46 @@ private val ThumbSize.listCoverWidth get() = when (this) {
     ThumbSize.Large -> 56.dp
 }
 
+private val CELL_PADDING = 6.dp
+
+/** The fitter of the titles of cells [cellWidthPx] wide, after their padding. */
 @Composable
-private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
-    Column(Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).padding(6.dp)) {
+private fun rememberTitleFitter(cellWidthPx: Int): TitleFitter {
+    val measurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center)
+    val widthPx = cellWidthPx - with(LocalDensity.current) { (CELL_PADDING * 2).roundToPx() }
+    return remember(measurer, style, widthPx) { TitleFitter(measurer, style, widthPx.coerceAtLeast(1)) }
+}
+
+/**
+ * A grid cell (docs/spec.md section 4.3, グリッドの名前): the cover, the title on two lines and the note on a third,
+ * each kept even when empty so the cells of a row line up. A screen reader and a search by text get the whole name.
+ */
+@Composable
+private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitter: TitleFitter, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+    val colors = LocalLibraryColors.current
+    val name = row.gridName
+    val title = remember(name.title, fitter) { fitter.fit(name.title) }
+    Column(
+        Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).semantics { text = AnnotatedString(row.item.entry.name) }.padding(CELL_PADDING),
+    ) {
         Cover(row, covers, focus, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
         Text(
-            row.item.entry.name,
-            Modifier.padding(top = 4.dp),
-            color = row.nameColor(LocalLibraryColors.current),
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
+            title,
+            Modifier.fillMaxWidth().padding(top = 4.dp).decorative(),
+            color = row.nameColor(colors),
+            style = fitter.style,
+            minLines = GRID_TITLE_LINES,
+            maxLines = GRID_TITLE_LINES,
+            overflow = TextOverflow.Clip,
+        )
+        Text(
+            name.note,
+            Modifier.fillMaxWidth().decorative(),
+            color = colors.itemDetail,
+            style = fitter.style,
+            minLines = 1,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
