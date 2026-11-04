@@ -125,7 +125,7 @@ class TapZonesTest {
 
     @Test
     fun theBarsSplitTheScreen() {
-        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, systemBarsHidden = false)
+        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f)
         assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 0f)))
         assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 59f)))
         assertEquals(ReaderRegion.TurnArea, regions.regionAt(Point(200f, 60f)))
@@ -135,33 +135,46 @@ class TapZonesTest {
         assertEquals(Rect(0f, 60f, 400f, 740f), regions.turnArea)
     }
 
+    /** The insets of the API 37 emulator (1080 × 2400 at 420 dpi, gesture navigation) with the system bars hidden. */
+    private val api37 = SystemGestureEdges.of(mandatoryTop = 61f, mandatoryBottom = 32f, left = 30f, right = 30f)
+
     @Test
-    fun hiddenSystemBarsIgnoreTouchesWithinSixDpOfTheTopAndBottom() {
-        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, systemBarsHidden = true)
-        assertNull(regions.regionAt(Point(200f, 6f)))
-        assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 7f)))
-        assertNull(regions.regionAt(Point(200f, 794f)))
-        assertEquals(ReaderRegion.PageBar, regions.regionAt(Point(200f, 793f)))
+    fun theBarsTakeTouchesInsideTheSystemGestureBands() {
+        val regions = ReaderRegions(Size(411f, 914f), barHeight = 60f, api37)
+        assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 0f)))
+        assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 30f)))
+        assertEquals(ReaderRegion.PageBar, regions.regionAt(Point(200f, 900f)))
+        assertEquals(ReaderRegion.PageBar, regions.regionAt(Point(200f, 914f)))
     }
 
     @Test
-    fun theSystemGestureInsetsSetTheIgnoredBandsAndNeverNarrowerThanSixDp() {
-        val edges = SystemGestureEdges.of(mandatoryTop = 24f, mandatoryBottom = 2f, left = 30f, right = 30f)
-        assertEquals(SystemGestureEdges(24f, SYSTEM_EDGE_DP, 30f, 30f), edges)
-        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, systemBarsHidden = true, edges)
-        assertNull(regions.regionAt(Point(200f, 24f)))
-        assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 25f)))
-        assertNull(regions.regionAt(Point(200f, 794f)))
-        assertEquals(ReaderRegion.PageBar, regions.regionAt(Point(200f, 793f)))
+    fun theBandsAreTheSystemGestureInsetsAndNeverNarrowerThanSixDpAtTheTopAndBottom() {
+        val edges = SystemGestureEdges.of(mandatoryTop = 24f, mandatoryBottom = 2f, left = 30f, right = 20f)
+        assertEquals(SystemGestureEdges(24f, SYSTEM_EDGE_DP, 30f, 20f), edges)
+        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, edges)
+        assertEquals(setOf(ScreenEdge.Top), regions.systemEdgesAt(Point(200f, 23f)))
+        assertEquals(emptySet(), regions.systemEdgesAt(Point(200f, 24f)))
+        assertEquals(setOf(ScreenEdge.Bottom), regions.systemEdgesAt(Point(200f, 795f)))
+        assertEquals(emptySet(), regions.systemEdgesAt(Point(200f, 794f)))
+        assertEquals(setOf(ScreenEdge.Left), regions.systemEdgesAt(Point(29f, 400f)))
+        assertEquals(emptySet(), regions.systemEdgesAt(Point(30f, 400f)))
+        assertEquals(setOf(ScreenEdge.Right), regions.systemEdgesAt(Point(381f, 400f)))
+        assertEquals(setOf(ScreenEdge.Top, ScreenEdge.Left), regions.systemEdgesAt(Point(0f, 0f)))
+        val fixed = ReaderRegions(Size(400f, 800f), 60f)
+        assertEquals(emptySet(), fixed.systemEdgesAt(Point(0f, 400f)), "no side gestures before Android 10")
+        assertEquals(setOf(ScreenEdge.Top), fixed.systemEdgesAt(Point(200f, 5f)))
     }
 
     @Test
-    fun aDragFromTheSideGestureInsetsIsTheBackGesture() {
-        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, systemBarsHidden = true, SystemGestureEdges.of(0f, 0f, left = 30f, right = 20f))
-        assertTrue(regions.startsBackGesture(Point(29f, 400f)))
-        assertFalse(regions.startsBackGesture(Point(30f, 400f)))
-        assertFalse(regions.startsBackGesture(Point(380f, 400f)))
-        assertTrue(regions.startsBackGesture(Point(381f, 400f)))
-        assertFalse(ReaderRegions(Size(400f, 800f), 60f, true).startsBackGesture(Point(0f, 400f)), "no side gestures before Android 10")
+    fun onlyASwipeIntoTheScreenFromAnEdgeIsTheSystems() {
+        val origin = Point(200f, 10f)
+        assertTrue(setOf(ScreenEdge.Top).takeSwipe(origin, Point(205f, 40f)))
+        assertFalse(setOf(ScreenEdge.Top).takeSwipe(origin, Point(240f, 30f)), "a drag along the top edge")
+        assertFalse(setOf(ScreenEdge.Top).takeSwipe(origin, Point(200f, 0f)), "a drag toward the edge")
+        assertTrue(setOf(ScreenEdge.Bottom).takeSwipe(origin, Point(200f, -20f)))
+        assertTrue(setOf(ScreenEdge.Left).takeSwipe(origin, Point(240f, 20f)))
+        assertFalse(setOf(ScreenEdge.Left).takeSwipe(origin, Point(210f, 60f)), "a scroll down from the left edge")
+        assertTrue(setOf(ScreenEdge.Right).takeSwipe(origin, Point(160f, 10f)))
+        assertFalse(emptySet<ScreenEdge>().takeSwipe(origin, Point(200f, 100f)))
     }
 }

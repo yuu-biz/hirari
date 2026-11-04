@@ -144,4 +144,18 @@ class PageBarTest {
     fun holdingAfterSlidingDoesNothing() {
         assertNull(rtl.run(Down(at(200f), 0, page = 12), Move(at(150f)), Hold(400)).last().effect)
     }
+
+    /** The bottom band of the API 37 emulator is 32 dp, inside the 60 dp bar. */
+    @Test
+    fun inTheBottomBandASwipeUpIsTheSystemsButATapAndASlideAreTheBars() {
+        val bottom = setOf(ScreenEdge.Bottom)
+        val press = at(200f, 790f)
+        val swiped = rtl.run(Down(press, 0, page = 12, bottom), Move(at(202f, 770f)), Move(at(150f, 760f)), Up(at(150f, 760f)))
+        assertEquals(PageBarState.Idle, swiped[1].state)
+        assertTrue(swiped.drop(1).all { it.state == PageBarState.Idle && it.effect == null })
+        assertEquals(PageBarEffect.OpenPagePanel, rtl.run(Down(press, 0, page = 12, bottom), Up(press)).last().effect)
+        assertEquals(PageBarEffect.OpenPagePanel, rtl.run(Down(press, 0, page = 12, bottom), Hold(400)).last().effect)
+        assertEquals(PageBarEffect.GoTo(16), rtl.run(Down(press, 0, page = 12, bottom), Move(at(150f, 785f)), Up(at(150f, 785f))).last().effect)
+        assertIs<PageBarState.Dragging>(rtl.run(Down(press, 0, page = 12, bottom), Move(at(150f, 785f)), Move(at(150f, 700f))).last().state)
+    }
 }

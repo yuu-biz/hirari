@@ -169,12 +169,11 @@ internal class TextInput(
             val down = awaitFirstDown(requireUnconsumed = false)
             val current = state()
             val settings = current.settings
-            val regions = ReaderRegions(Size(size.width / density, size.height / density), settings.barHeightDp.toFloat(), settings.hideSystemBars, edges())
+            val regions = ReaderRegions(Size(size.width / density, size.height / density), settings.barHeightDp.toFloat(), edges())
             val slop = viewConfiguration.touchSlop / density
-            val region = regions.regionAt(down.position.dp(density)) ?: return@awaitEachGesture
             onTouch()
             touch.motion = null
-            when (region) {
+            when (regions.regionAt(down.position.dp(density))) {
                 ReaderRegion.CommandBar -> commandBar(down, settings, slop)
                 ReaderRegion.PageBar -> pageBar(down, current, regions, slop)
                 ReaderRegion.TurnArea -> turnArea(down, current, regions, slop)
@@ -242,7 +241,8 @@ internal class TextInput(
             }
         }
         touch.pageBarRun = run
-        step(PageBarEvent.Down(down.position.dp(density), down.uptimeMillis, current.current))
+        val point = down.position.dp(density)
+        step(PageBarEvent.Down(point, down.uptimeMillis, current.current, regions.systemEdgesAt(point)))
         down.consume()
         val hold = HoldTimer(down.uptimeMillis)
         var held = false
@@ -261,6 +261,7 @@ internal class TextInput(
                 return
             }
             step(PageBarEvent.Move(change.position.dp(density)))
+            if (touch.pageBar == PageBarState.Idle) return
         }
     }
 
@@ -274,7 +275,7 @@ internal class TextInput(
         val rules = TurnAreaTouch(TEXT_DIRECTION, settings.mirrorControls, settings.swipeToTurn, slop, settings.loupeHoldMs.toLong())
         val pullable = if (continuous) emptySet() else setOf(Side.Left, Side.Right)
         val point = down.position.dp(density)
-        var touchState = rules.reduce(TouchState.Idle, TouchEvent.Down(point, down.uptimeMillis, pullable, regions.startsBackGesture(point))).state
+        var touchState = rules.reduce(TouchState.Idle, TouchEvent.Down(point, down.uptimeMillis, pullable, regions.systemEdgesAt(point))).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
         val width = size.width.toFloat()
         try {

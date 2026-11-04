@@ -60,7 +60,7 @@ internal class ReaderInput(
             val current = state()
             val density = current.viewport.density
             val point = down.position.dp(density)
-            val regions = ReaderRegions(Size(size.width / density, size.height / density), current.config.barHeightDp, systemBarsHidden = true, edges())
+            val regions = ReaderRegions(Size(size.width / density, size.height / density), current.config.barHeightDp, edges())
             val slop = viewConfiguration.touchSlop / density
             if (current.autoPlay != null) {
                 viewModel.dispatch(ReaderEvent.AutoPlayStopped)
@@ -75,7 +75,6 @@ internal class ReaderInput(
                 ReaderRegion.CommandBar -> commandBar(down, current, slop)
                 ReaderRegion.PageBar -> pageBar(down, current, regions, slop)
                 ReaderRegion.TurnArea -> turnArea(down, current, regions, slop)
-                null -> Unit
             }
         }
     }
@@ -147,7 +146,8 @@ internal class ReaderInput(
                 null -> Unit
             }
         }
-        step(PageBarEvent.Down(down.position.dp(density), down.uptimeMillis, current.current.pages.first()))
+        val point = down.position.dp(density)
+        step(PageBarEvent.Down(point, down.uptimeMillis, current.current.pages.first(), regions.systemEdgesAt(point)))
         down.consume()
         val hold = HoldTimer(down.uptimeMillis)
         var held = false
@@ -166,6 +166,7 @@ internal class ReaderInput(
                 return
             }
             step(PageBarEvent.Move(change.position.dp(density)))
+            if (ui.pageBar == PageBarState.Idle) return
         }
     }
 
@@ -185,7 +186,7 @@ internal class ReaderInput(
         val caught = current.scroll?.motion is ScrollMotion.Glide || current.place is Place.Gliding
         if (caught) viewModel.dispatch(ReaderEvent.Catch)
         val point = down.position.dp(density)
-        var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(point, down.uptimeMillis, pullable, regions.startsBackGesture(point))).state
+        var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(point, down.uptimeMillis, pullable, regions.systemEdgesAt(point))).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
         var last = down.position
         val hold = HoldTimer(down.uptimeMillis, config.loupeHoldMs)

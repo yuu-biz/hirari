@@ -50,7 +50,7 @@ data class TurnAreaTouch(
     val holdMs: Long,
 ) {
     fun reduce(state: TouchState, event: TouchEvent): TouchStep = when (event) {
-        is TouchEvent.Down -> TouchStep(TouchState.Pressed(event.point, event.timeMs, event.pullable, event.backGesture))
+        is TouchEvent.Down -> TouchStep(TouchState.Pressed(event.point, event.timeMs, event.pullable, event.systemEdges))
         is TouchEvent.Hold ->
             if (state is TouchState.Pressed && event.timeMs - state.downAtMs >= holdMs) {
                 TouchStep(TouchState.Loupe(state.origin), TouchOutcome.ShowLoupe(state.origin))
@@ -82,7 +82,7 @@ data class TurnAreaTouch(
             val side = if (dx > 0f) Side.Right else Side.Left
             when {
                 hypot(dx, dy) <= touchSlop -> state
-                state.backGesture -> TouchState.System
+                state.systemEdges.takeSwipe(state.origin, point) -> TouchState.System
                 swipeToTurn && abs(dx) > abs(dy) && side in state.pullable ->
                     TouchState.Pulling(state.origin.x, side, pullTurn(side, direction, mirrored), abs(dx))
                 else -> TouchState.Scrolling
@@ -107,10 +107,10 @@ sealed interface TouchState {
     data object Idle : TouchState
 
     /**
-     * [pullable] is fixed when the finger goes down, so a scroll that reaches an edge never turns. [backGesture] is set
-     * when the finger went down where a drag is the system's back gesture.
+     * [pullable] is fixed when the finger goes down, so a scroll that reaches an edge never turns. [systemEdges] are
+     * the edges whose system gesture bands the finger went down in.
      */
-    data class Pressed(val origin: Point, val downAtMs: Long, val pullable: Set<Side>, val backGesture: Boolean = false) : TouchState
+    data class Pressed(val origin: Point, val downAtMs: Long, val pullable: Set<Side>, val systemEdges: Set<ScreenEdge> = emptySet()) : TouchState
 
     /** [travel] is how far the finger has gone toward [side]. It may be negative after turning around. */
     data class Pulling(val originX: Float, val side: Side, val turn: Turn, val travel: Float) : TouchState {
@@ -120,7 +120,7 @@ sealed interface TouchState {
     /** The drag pans the view, or the pull is not allowed. */
     data object Scrolling : TouchState
 
-    /** A drag from where the system's back gesture starts: the system's, so it neither turns nor scrolls. */
+    /** A swipe into the screen from a system gesture band: the system's, so it neither turns nor scrolls. */
     data object System : TouchState
 
     /** The loupe is up and follows the finger at [finger]; the touch neither turns nor scrolls. */
@@ -128,8 +128,8 @@ sealed interface TouchState {
 }
 
 sealed interface TouchEvent {
-    /** [pullable] comes from [pullableSides], and [backGesture] from [ReaderRegions.startsBackGesture]. */
-    data class Down(val point: Point, val timeMs: Long, val pullable: Set<Side>, val backGesture: Boolean = false) : TouchEvent
+    /** [pullable] comes from [pullableSides], and [systemEdges] from [ReaderRegions.systemEdgesAt]. */
+    data class Down(val point: Point, val timeMs: Long, val pullable: Set<Side>, val systemEdges: Set<ScreenEdge> = emptySet()) : TouchEvent
     data class Move(val point: Point) : TouchEvent
 
     /** The finger is still down at [timeMs], sent once the hold of [TurnAreaTouch.holdMs] is due. */

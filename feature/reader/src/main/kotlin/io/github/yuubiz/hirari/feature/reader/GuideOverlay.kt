@@ -56,7 +56,7 @@ internal fun GuideOverlay(config: ReaderConfig, onDismiss: () -> Unit) {
             .background(GuideScrim)
             .clickable(onClickLabel = close, role = Role.Button, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
     ) {
-        val regions = ReaderRegions(Size(maxWidth.value, maxHeight.value), config.barHeightDp, systemBarsHidden = true)
+        val regions = ReaderRegions(Size(maxWidth.value, maxHeight.value), config.barHeightDp)
         val content = guideContent(regions, config)
         for (zone in content.layout.zones) {
             Zone(zone.rect, tintOf(zone.turn), stringResource(zone.turn.label))

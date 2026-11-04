@@ -89,7 +89,7 @@ class GuideTest {
         }
     }
 
-    private val regions = ReaderRegions(Size(400f, 900f), barHeight = 50f, systemBarsHidden = true)
+    private val regions = ReaderRegions(Size(400f, 900f), barHeight = 50f)
 
     @Test
     fun `the guide puts the zones in the turn area between the two bars`() {

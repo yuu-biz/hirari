@@ -1,15 +1,39 @@
 package io.github.yuubiz.hirari.core.model
 
+import kotlin.math.abs
+
 enum class Turn { Forward, Back }
 
 enum class ReaderRegion { CommandBar, TurnArea, PageBar }
 
-/** System gestures start at least this close to the top and bottom edges while the system bars are hidden. */
+/** The system's swipes from the top and bottom edges start at least this close to them. */
 const val SYSTEM_EDGE_DP = 6f
 
+/** An edge of the screen a system gesture comes in from. */
+enum class ScreenEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    ;
+
+    /** Whether a drag of [dx] and [dy] goes into the screen from this edge, more across the edge than along it. */
+    fun into(dx: Float, dy: Float): Boolean = when (this) {
+        Top -> dy > 0f && dy >= abs(dx)
+        Bottom -> dy < 0f && -dy >= abs(dx)
+        Left -> dx > 0f && dx >= abs(dy)
+        Right -> dx < 0f && -dx >= abs(dy)
+    }
+}
+
+/** Whether a drag from [origin] to [point], of a touch that went down in the bands of these edges, is the system's swipe. */
+fun Set<ScreenEdge>.takeSwipe(origin: Point, point: Point): Boolean = any { it.into(point.x - origin.x, point.y - origin.y) }
+
 /**
- * How far in from each edge of the screen system gestures start, in dp (docs/spec.md section 4.8, 画面の領域). [top]
- * and [bottom] are where the system bars come out, and [left] and [right] where a drag is the back gesture.
+ * How far in from each edge of the screen the system's swipes start, in dp (docs/spec.md section 4.8, 画面の領域).
+ * [top] and [bottom] are where the system bars and the home gesture come in, and [left] and [right] where the back
+ * gesture does. Only a swipe into the screen from a band is the system's; a tap, a hold, or a drag along the edge
+ * stays the reader's.
  */
 data class SystemGestureEdges(val top: Float, val bottom: Float, val left: Float, val right: Float) {
     companion object {
@@ -26,17 +50,20 @@ data class SystemGestureEdges(val top: Float, val bottom: Float, val left: Float
 data class ReaderRegions(
     val screen: Size,
     val barHeight: Float,
-    val systemBarsHidden: Boolean,
     val edges: SystemGestureEdges = SystemGestureEdges.Fixed,
 ) {
     val turnArea: Rect get() = Rect(0f, barHeight, screen.width, screen.height - barHeight)
 
-    /** Whether a drag from [point] is the system's back gesture, which the reader leaves to the system. */
-    fun startsBackGesture(point: Point): Boolean = point.x < edges.left || point.x > screen.width - edges.right
+    /** The edges whose bands hold [point], so that a swipe from it into the screen is the system's. */
+    fun systemEdgesAt(point: Point): Set<ScreenEdge> = buildSet {
+        if (point.y < edges.top) add(ScreenEdge.Top)
+        if (point.y > screen.height - edges.bottom) add(ScreenEdge.Bottom)
+        if (point.x < edges.left) add(ScreenEdge.Left)
+        if (point.x > screen.width - edges.right) add(ScreenEdge.Right)
+    }
 
-    /** The region a touch starting at [point] belongs to, or `null` when the reader ignores it. */
-    fun regionAt(point: Point): ReaderRegion? = when {
-        systemBarsHidden && (point.y <= edges.top || point.y >= screen.height - edges.bottom) -> null
+    /** The region a touch starting at [point] belongs to. */
+    fun regionAt(point: Point): ReaderRegion = when {
         point.y < barHeight -> ReaderRegion.CommandBar
         point.y >= screen.height - barHeight -> ReaderRegion.PageBar
         else -> ReaderRegion.TurnArea

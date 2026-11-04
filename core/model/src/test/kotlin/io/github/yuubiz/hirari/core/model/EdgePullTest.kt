@@ -49,13 +49,26 @@ class EdgePullTest {
     }
 
     @Test
-    fun aDragFromWhereTheBackGestureStartsNeitherPullsNorScrollsButATapThereTaps() {
+    fun aSwipeInFromWhereTheBackGestureStartsNeitherPullsNorScrollsButATapThereTaps() {
         val edge = Point(5f, 400f)
-        val dragged = rtl.reduce(rtl.reduce(TouchState.Idle, Down(edge, 0, both, backGesture = true)).state, Move(Point(80f, 400f))).state
+        val left = setOf(ScreenEdge.Left)
+        val dragged = rtl.reduce(rtl.reduce(TouchState.Idle, Down(edge, 0, both, left)).state, Move(Point(80f, 400f))).state
         assertEquals(TouchState.System, dragged)
         assertNull(rtl.reduce(dragged, Up(Point(80f, 400f), 100, velocityX = 3000f)).outcome)
-        assertEquals(TouchOutcome.Tap(edge), rtl.outcome(Down(edge, 0, both, backGesture = true), Up(edge, 100, 0f)))
+        assertEquals(TouchOutcome.Tap(edge), rtl.outcome(Down(edge, 0, both, left), Up(edge, 100, 0f)))
         assertIs<TouchState.Pulling>(rtl.reduce(rtl.reduce(TouchState.Idle, Down(edge, 0, both)).state, Move(Point(80f, 400f))).state)
+        assertEquals(TouchState.Scrolling, rtl.reduce(rtl.reduce(TouchState.Idle, Down(edge, 0, both, left)).state, Move(Point(8f, 470f))).state)
+    }
+
+    /** A 40 dp bar leaves the turn area inside the 61 dp top band of the API 37 emulator. */
+    @Test
+    fun aSwipeDownFromTheTopBandIsTheSystemsButASidewaysPullThereIsTheReaders() {
+        val regions = ReaderRegions(Size(411f, 914f), barHeight = 40f, SystemGestureEdges.of(61f, 32f, 30f, 30f))
+        val start = Point(200f, 50f)
+        assertEquals(ReaderRegion.TurnArea, regions.regionAt(start))
+        val down = rtl.reduce(TouchState.Idle, Down(start, 0, both, regions.systemEdgesAt(start))).state
+        assertEquals(TouchState.System, rtl.reduce(down, Move(Point(202f, 90f))).state)
+        assertIs<TouchState.Pulling>(rtl.reduce(down, Move(Point(260f, 55f))).state)
     }
 
     @Test

@@ -36,17 +36,19 @@ data class PageBar(
     fun reduce(state: PageBarState, event: PageBarEvent): PageBarStep = when (event) {
         is PageBarEvent.Down -> {
             val armed = Side.entries.filterNot { inEdge(it, event.point.x) }.toSet()
-            PageBarStep(PageBarState.Dragging(event.point, event.timeMs, event.page, event.page, false, false, armed))
+            PageBarStep(PageBarState.Dragging(event.point, event.timeMs, event.page, event.page, false, false, armed, event.systemEdges))
         }
         is PageBarEvent.Move -> PageBarStep(if (state is PageBarState.Dragging) moved(state, event.point) else state)
         is PageBarEvent.Up -> when (state) {
             PageBarState.Idle -> PageBarStep(state)
             is PageBarState.Dragging -> {
-                val last = moved(state, event.point)
-                val effect = when {
-                    !last.moved -> PageBarEffect.OpenPagePanel
-                    last.cancelled || last.preview == last.startPage -> null
-                    else -> PageBarEffect.GoTo(last.preview)
+                val effect = when (val last = moved(state, event.point)) {
+                    PageBarState.Idle -> null
+                    is PageBarState.Dragging -> when {
+                        !last.moved -> PageBarEffect.OpenPagePanel
+                        last.cancelled || last.preview == last.startPage -> null
+                        else -> PageBarEffect.GoTo(last.preview)
+                    }
                 }
                 PageBarStep(PageBarState.Idle, effect)
             }
@@ -60,7 +62,10 @@ data class PageBar(
         PageBarEvent.Cancel -> PageBarStep(PageBarState.Idle)
     }
 
-    private fun moved(state: PageBarState.Dragging, point: Point): PageBarState.Dragging {
+    /** The slide at [point]; a first move past the touch slop that swipes into the screen from a system band is the system's. */
+    private fun moved(state: PageBarState.Dragging, point: Point): PageBarState {
+        val beyond = hypot(point.x - state.origin.x, point.y - state.origin.y) > touchSlop
+        if (!state.moved && beyond && state.systemEdges.takeSwipe(state.origin, point)) return PageBarState.Idle
         val armed = state.armedEdges + Side.entries.filterNot { inEdge(it, point.x) }
         val edge = pickedEdge(point.x, armed)
         val forward = if (direction.leadingSide == Side.Right) state.origin.x - point.x else point.x - state.origin.x
@@ -71,7 +76,7 @@ data class PageBar(
         }
         return state.copy(
             preview = preview,
-            moved = state.moved || hypot(point.x - state.origin.x, point.y - state.origin.y) > touchSlop,
+            moved = state.moved || beyond,
             cancelled = point.y <= top - height,
             armedEdges = armed,
         )
@@ -90,6 +95,7 @@ sealed interface PageBarState {
     /**
      * [preview] is the page to show above the bar, grayed out while [cancelled]. An edge selects its
      * end page only once [armedEdges] holds it, so a press that starts at an edge has to leave it first.
+     * [systemEdges] are the edges whose system gesture bands the press started in.
      */
     data class Dragging(
         val origin: Point,
@@ -99,12 +105,13 @@ sealed interface PageBarState {
         val moved: Boolean,
         val cancelled: Boolean,
         val armedEdges: Set<Side>,
+        val systemEdges: Set<ScreenEdge> = emptySet(),
     ) : PageBarState
 }
 
 sealed interface PageBarEvent {
-    /** [page] is the head page of the current view. */
-    data class Down(val point: Point, val timeMs: Long, val page: Int) : PageBarEvent
+    /** [page] is the head page of the current view, and [systemEdges] come from [ReaderRegions.systemEdgesAt]. */
+    data class Down(val point: Point, val timeMs: Long, val page: Int, val systemEdges: Set<ScreenEdge> = emptySet()) : PageBarEvent
     data class Move(val point: Point) : PageBarEvent
     data class Up(val point: Point) : PageBarEvent
 
