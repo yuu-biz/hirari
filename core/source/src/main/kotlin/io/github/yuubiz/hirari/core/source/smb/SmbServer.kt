@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 import java.io.IOException
 import kotlin.concurrent.thread
@@ -40,8 +41,10 @@ const val MAX_BACKGROUND_REQUESTS_PER_SERVER = MAX_REQUESTS_PER_SERVER - 1
  * When a request finds the connection broken, the request fails with [ConnectionLostException] and the server
  * reconnects after each of [RECONNECT_DELAYS]. Requests made meanwhile fail at once with the same exception
  * instead of waiting. When every attempt fails, the state becomes [SmbConnectionState.Lost] until
- * [networkAvailable] emits or [retry] is called, which starts the attempts over. A connection the transport saw end
- * while no request used it is not broken in this sense: the next request connects again in its place, and only a
+ * [networkAvailable] emits, [retry] is called, or a new request starts the attempts over. Requests that start or
+ * join this request-driven reconnect wait up to [queueTimeout] for it, then continue on the new connection.
+ * A connection the transport saw end while no request used it is not broken in this sense: the next request
+ * connects again in its place, and only a
  * failed connect starts the attempts. Open sources reopen their file
  * on the new connection by themselves. A closed server stays [SmbConnectionState.Lost] for good, and its requests
  * fail with [ConnectionLostException].
@@ -77,6 +80,7 @@ class SmbServer internal constructor(
     private var redialing = false
     private var generation = 0L
     private var reconnecting: Job? = null
+    private var requestDrivenReconnect = false
     private var closed = false
 
     private val mutableState = MutableStateFlow<SmbConnectionState>(SmbConnectionState.Idle)
@@ -140,6 +144,17 @@ class SmbServer internal constructor(
      * [ConnectionLostException] from [block] marks that connection broken.
      */
     internal fun <T> request(purpose: SmbPurpose = SmbPurpose.Foreground, block: (Link) -> T): T {
+        val pending = synchronized(lock) {
+            if (closed) throw ConnectionLostException("the server is closed")
+            if (mutableState.value == SmbConnectionState.Lost) {
+                startReconnecting()
+                requestDrivenReconnect = true
+            }
+            reconnecting?.takeIf { requestDrivenReconnect && mutableState.value is SmbConnectionState.Reconnecting }
+        }
+        if (pending != null && !runBlocking { withTimeoutOrNull(queueTimeout) { pending.join(); true } ?: false }) {
+            throw ConnectionLostException("SMB reconnect waited too long")
+        }
         if (!runBlocking { gate.acquire(purpose, queueTimeout) }) {
             throw ConnectionLostException("SMB requests waited too long for their turn")
         }
@@ -218,6 +233,7 @@ class SmbServer internal constructor(
 
     // Called with lock held.
     private fun startReconnecting() {
+        requestDrivenReconnect = false
         mutableState.value = SmbConnectionState.Reconnecting(1)
         reconnecting?.cancel()
         reconnecting = scope.launch {

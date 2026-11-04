@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState.Connected
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState.Lost
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState.Reconnecting
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -18,6 +19,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,6 +29,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import kotlin.time.Duration.Companion.seconds
 
 /** The reconnect policy of docs/spec.md section 6.5 over an in-memory share, in virtual time. */
@@ -213,6 +216,84 @@ class SmbServerTest {
         server.retry()
         settle()
         assertEquals(Connected, server.state.value)
+    }
+
+    /** Requests block real threads; only the reconnect schedule advances in virtual time. */
+    private fun TestScope.recoverWithRequests(vararg requests: (SmbServer) -> Unit) {
+        val server = SmbServer(connector, SmbLogin.Guest, backgroundScope, emptyFlow(), Dispatchers.Unconfined, 10.seconds)
+        val source = server.open("book.zip")
+        connector.failures = 4
+        connector.current.breakConnection()
+        assertThrows(ConnectionLostException::class.java) { source.readAt(0, 10) }
+        settle()
+        assertEquals(Lost, server.state.value)
+        assertEquals(5, connector.attempts.get())
+
+        val workers = mutableListOf<Thread>()
+        val pool = Executors.newFixedThreadPool(requests.size) { task ->
+            thread(start = false, isDaemon = true) { task.run() }.also { workers += it }
+        }
+        try {
+            val results = requests.map { request -> pool.submit { request(server) } }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (System.nanoTime() < deadline &&
+                (server.state.value != Reconnecting(1) || workers.any {
+                    it.state != Thread.State.WAITING && it.state != Thread.State.TIMED_WAITING
+                }) && results.none { it.isDone }
+            ) Thread.yield()
+            assertTrue("all requests are waiting", workers.all {
+                it.state == Thread.State.WAITING || it.state == Thread.State.TIMED_WAITING
+            })
+            assertEquals("the requests start one new schedule", Reconnecting(1), server.state.value)
+            results.forEach { assertFalse("the request waits for reconnect", it.isDone) }
+            runCurrent()
+            testScheduler.advanceTimeBy(499)
+            runCurrent()
+            assertEquals("no connect before the scheduled delay", 5, connector.attempts.get())
+            testScheduler.advanceTimeBy(1)
+            runCurrent()
+            results.forEach { it.get(5, TimeUnit.SECONDS) }
+            assertEquals(Connected, server.state.value)
+            assertEquals("all requests share one reconnect", 6, connector.attempts.get())
+        } finally {
+            server.close()
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `a list request after Lost reconnects and succeeds`() = runTest {
+        recoverWithRequests({ server ->
+            assertEquals(emptyList<SmbEntry>(), kotlinx.coroutines.runBlocking { server.list("folder") })
+        })
+    }
+
+    @Test
+    fun `a background request after Lost reconnects and succeeds`() = runTest {
+        recoverWithRequests({ server ->
+            server.open("book.zip", SmbPurpose.Background).use { assertArrayEquals(bytes.copyOf(10), it.readAt(0, 10)) }
+        })
+    }
+
+    @Test
+    fun `two requests after Lost wait for one reconnect`() = runTest {
+        recoverWithRequests(
+            { server -> server.open("book.zip").use { assertArrayEquals(bytes.copyOf(10), it.readAt(0, 10)) } },
+            { server -> server.open("book.zip", SmbPurpose.Background).use { assertArrayEquals(bytes.copyOf(10), it.readAt(0, 10)) } },
+        )
+    }
+
+    @Test
+    fun `a closed server fails foreground and background requests at once`() = runTest {
+        val server = server()
+        server.close()
+        val before = testScheduler.currentTime
+        assertThrows(ConnectionLostException::class.java) { server.open("book.zip") }
+        assertThrows(ConnectionLostException::class.java) { server.open("book.zip", SmbPurpose.Background) }
+        assertEquals(before, testScheduler.currentTime)
+        settle()
+        assertEquals(Lost, server.state.value)
+        assertEquals(0, connector.attempts.get())
     }
 
     @Test
