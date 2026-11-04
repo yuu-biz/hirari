@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
@@ -17,13 +18,14 @@ import kotlinx.coroutines.completeWith
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -67,7 +69,7 @@ class Thumbnails internal constructor(
     private val gates = ThumbLane.entries.associateWith { PriorityGate(it.parallelism) }
     private val unavailableUntil = ConcurrentHashMap<ThumbnailKey, Long>()
     private val making = MutableStateFlow(Making.Unknown)
-    private val resumed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val resumed = MutableStateFlow(false)
 
     private enum class Making { Unknown, Allowed, Held }
 
@@ -87,12 +89,15 @@ class Thumbnails internal constructor(
     /** Whether thumbnails are not made, since the last process died making one (docs/spec.md section 4.4). */
     val held: Flow<Boolean> = making.map { it == Making.Held }.distinctUntilChanged()
 
-    /** Emits when [resume] lets thumbnails be made again, so what showed as unavailable meanwhile is worth asking for. */
-    val resumptions: Flow<Unit> = resumed.asSharedFlow()
+    /** Retains that [resume] allowed making covers, including for collectors that start later. */
+    val resumptions: Flow<Unit> = resumed.filter { it }.map { Unit }
 
     /** 表紙を作る: makes thumbnails again after [held]. */
     fun resume() {
-        if (making.compareAndSet(Making.Held, Making.Allowed)) resumed.tryEmit(Unit)
+        if (making.value == Making.Held) {
+            unavailableUntil.clear()
+            if (making.compareAndSet(Making.Held, Making.Allowed)) resumed.value = true
+        }
     }
 
     private suspend fun isHeld(): Boolean = making.first { it != Making.Unknown } == Making.Held
@@ -156,10 +161,16 @@ class Thumbnails internal constructor(
      */
     fun retry(request: ThumbRequest): Flow<ThumbResult> = watch(request, Mode.Retry)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun watch(request: ThumbRequest, mode: Mode): Flow<ThumbResult> = flow {
         hold(request).use {
-            emit(cached(request) ?: checkNotNull(resolve(request, mode)))
-            awaitCancellation()
+            var wasHeld = false
+            emitAll(making.filter { it != Making.Unknown }.transformLatest { state ->
+                val next = if (wasHeld && state == Making.Allowed) Mode.Retry else mode
+                wasHeld = state == Making.Held
+                emit(cached(request) ?: checkNotNull(resolve(request, next)))
+                awaitCancellation()
+            })
         }
     }
 

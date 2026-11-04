@@ -548,6 +548,12 @@ internal class FakeThumbnails : ThumbnailSource {
 
     fun active() = watches.filter { it.active }
 
+    val cached = mutableListOf<ThumbRequest>()
+    override suspend fun cached(request: ThumbRequest): ThumbResult? {
+        cached += request
+        return result.takeUnless { it == ThumbResult.Unavailable }
+    }
+
     val retries = mutableListOf<Watch>()
 
     override fun observe(request: ThumbRequest): Flow<ThumbResult> = watched(request, watches)

@@ -13,8 +13,14 @@ import java.io.Closeable
  * the disk cache and the decoder of the device, so the screens work against this and their tests fake it.
  */
 interface ThumbnailSource {
-    /** The result for [request], then the thumbnail held against eviction until the collector is cancelled. */
+    /**
+     * The result for [request], held against eviction until cancellation. Observes the held state so resume also
+     * retries unavailable rows that collect now or start collecting later.
+     */
     fun observe(request: ThumbRequest): Flow<ThumbResult>
+
+    /** Looks only in the disk store; never makes a cover or lists a folder. */
+    suspend fun cached(request: ThumbRequest): ThumbResult?
 
     /** [observe] after the reason it could not be made passed: what failed for a passing reason is tried at once. */
     fun retry(request: ThumbRequest): Flow<ThumbResult>
@@ -28,7 +34,7 @@ interface ThumbnailSource {
     /** Whether no thumbnail is made, since the last process died making one (docs/spec.md section 4.4). */
     val held: Flow<Boolean>
 
-    /** Emits when [resume] lets thumbnails be made again. */
+    /** Retains that [resume] let thumbnails be made again, including for later collectors. */
     val resumptions: Flow<Unit>
 
     /** 表紙を作る: makes thumbnails again after [held]. */
@@ -40,6 +46,8 @@ interface ThumbnailSource {
 
 class ThumbnailsSource(private val thumbnails: Thumbnails) : ThumbnailSource {
     override fun observe(request: ThumbRequest): Flow<ThumbResult> = thumbnails.observe(request)
+
+    override suspend fun cached(request: ThumbRequest): ThumbResult? = thumbnails.cached(request)
 
     override fun retry(request: ThumbRequest): Flow<ThumbResult> = thumbnails.retry(request)
 

@@ -99,13 +99,38 @@ class CoversTest {
     }
 
     @Test
-    fun `a row without a cover asks again when covers are made again after they were held`() = runTest(UnconfinedTestDispatcher()) {
-        val thumbnails = fixture.thumbnails
-        thumbnails.result = ThumbResult.Unavailable
-        val shown = launch { covers.show(CoverRef(book(saf, "s/1.zip"), 320)).collect {} }
-        thumbnails.resumptions.emit(Unit)
-        assertEquals(listOf(locationBookId(saf, "s/1.zip")), thumbnails.retries.map { it.request.subject.id })
-        shown.cancel()
+    fun `composed offscreen rows never start making and visible covers start middle out`() = runTest(UnconfinedTestDispatcher()) {
+        val refs = (0 until 30).map { CoverRef(book(nas, "s/$it.zip"), 320) }
+        val focus = CoverFocus()
+        // Lazy layouts may compose nearby rows before the first viewport update.
+        val rows = listOf(22, 24, 9, 4, 5, 6, 7, 8).map { index ->
+            launch { covers.show(refs[index], focus).collect {} }
+        }
+        assertTrue(fixture.thumbnails.watches.isEmpty())
+        val viewport = covers.viewport(this, focus)
+        viewport.update(refs, IntRange.EMPTY, scrolling = false)
+        assertTrue(fixture.thumbnails.watches.isEmpty())
+        viewport.update(refs, 4..8, scrolling = false)
+        assertTrue(fixture.thumbnails.cached.isNotEmpty())
+        assertEquals(listOf(6, 5, 7, 4, 8).map { refs[it].spec.id }, fixture.thumbnails.watches.map { it.request.subject.id })
+        viewport.update(refs, 20..24, scrolling = true)
+        assertEquals(5, fixture.thumbnails.watches.size)
+        viewport.update(refs, 20..24, scrolling = false)
+        assertEquals(listOf(22, 21, 23, 20, 24).map { refs[it].spec.id }, fixture.thumbnails.watches.drop(5).map { it.request.subject.id })
+        viewport.clear()
+        rows.forEach { it.cancel() }
+    }
+
+    @Test
+    fun `nearby covers use only the store on local and SMB places`() = runTest(UnconfinedTestDispatcher()) {
+        for (place in listOf(saf, nas)) {
+            val ref = CoverRef(book(place, "nearby.zip"), 320)
+            val prefetcher = covers.prefetcher(this, CoverFocus())
+            prefetcher.update(setOf(ref))
+            assertEquals(ref.spec.id, fixture.thumbnails.cached.last().subject.id)
+            assertTrue(fixture.thumbnails.watches.isEmpty())
+            prefetcher.clear()
+        }
     }
 
     @Test

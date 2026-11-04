@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -35,9 +37,16 @@ internal fun CoverBox(ref: CoverRef?, covers: Covers, badge: CoverBadge?, modifi
     var state by remember(ref) {
         mutableStateOf<CoverState<ImageBitmap>>(ref?.let(covers::peek)?.let { CoverState.Loaded(it) } ?: CoverState.Pending)
     }
-    if (ref != null) LaunchedEffect(ref) { covers.show(ref, focus).collect { state = it } }
+    var onScreen by remember(ref) { mutableStateOf(false) }
+    if (ref != null && (focus != null || onScreen)) LaunchedEffect(ref, focus) {
+        covers.show(ref, focus).collect { state = it }
+    }
+    val slotModifier = if (focus != null) modifier else modifier.onGloballyPositioned {
+        val bounds = it.boundsInWindow()
+        onScreen = bounds.width > 0f && bounds.height > 0f
+    }
     val shown = state
-    CoverSlot(badge, modifier, faded, centered = shown is CoverState.Failed || shown is CoverState.Unavailable) {
+    CoverSlot(badge, slotModifier, faded, centered = shown is CoverState.Failed || shown is CoverState.Unavailable) {
         when (shown) {
             is CoverState.Loaded -> Image(shown.image, contentDescription = null, Modifier.fillMaxSize().alpha(if (faded) FADED_ALPHA else 1f), contentScale = ContentScale.Fit)
             CoverState.Pending -> if (ref != null) PendingMark(ref)
@@ -57,21 +66,17 @@ private fun BoxScope.PendingMark(ref: CoverRef) {
 }
 
 /**
- * Keeps the covers of the items around the screen made and held (docs/spec.md section 4.4), with the nearby
- * priority. [refs] has one entry per item of the list, `null` for an item without a cover; [visible] is the range of
- * items on screen. The window follows it: what stays inside keeps its work, and what leaves is cancelled. It keeps
- * [focus] on the screen, so the rows of the list that share it are made nearest the middle first, and so is the window.
+ * Reads stored covers around the viewport and makes visible covers nearest the middle first (section 4.4).
+ * [refs] has one entry per list item, null for one without a cover. Newly visible covers wait until scrolling stops.
  */
 @Composable
-internal fun PrefetchCovers(refs: List<CoverRef?>, covers: Covers, focus: CoverFocus, visible: () -> IntRange) {
+internal fun PrefetchCovers(refs: List<CoverRef?>, covers: Covers, focus: CoverFocus, scrolling: () -> Boolean = { false }, visible: () -> IntRange) {
     val scope = rememberCoroutineScope()
-    val prefetcher = remember(covers, scope, focus) { covers.prefetcher(scope, focus) }
-    DisposableEffect(prefetcher) { onDispose { prefetcher.clear() } }
-    LaunchedEffect(refs, prefetcher) {
-        snapshotFlow { visible() }.distinctUntilChanged().collect { range ->
-            focus.update(refs, range)
-            val window = nearbyWindow(range.first, range.last, refs.size)
-            prefetcher.update(window.mapNotNullTo(HashSet()) { refs[it] })
+    val viewport = remember(covers, scope, focus) { covers.viewport(scope, focus) }
+    DisposableEffect(viewport) { onDispose { viewport.clear() } }
+    LaunchedEffect(refs, viewport) {
+        snapshotFlow { visible() to scrolling() }.distinctUntilChanged().collect { (range, moving) ->
+            viewport.update(refs, range, moving)
         }
     }
 }

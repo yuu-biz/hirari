@@ -174,12 +174,15 @@ class CoverLoaderTest {
     }
 
     @Test
-    fun `warming asks the source with the request it is given and decodes nothing`() = runTest(UnconfinedTestDispatcher()) {
+    fun `warming reads only the store and holds the cover without observing or decoding`() = runTest(UnconfinedTestDispatcher()) {
         source.result = ready("a.webp")
         val job = launch { loader.warm(request(ThumbPriority.Nearby)).collect {} }
-        assertEquals(ThumbPriority.Nearby, source.active().single().request.priority)
+        assertEquals(ThumbPriority.Nearby, source.cached.single().priority)
+        assertTrue(source.watches.isEmpty())
+        assertTrue(source.holds.single().active)
         assertTrue(decoded.isEmpty())
         job.cancel()
+        assertTrue(source.holds.none { it.active })
     }
 
     @Test

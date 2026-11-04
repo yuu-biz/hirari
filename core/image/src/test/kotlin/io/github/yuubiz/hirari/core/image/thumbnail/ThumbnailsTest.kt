@@ -373,6 +373,41 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun resumeUpdatesAnUnavailableRowAndAlsoRowsThatAreCollectedLater() = runTest {
+        store.interrupted += ThumbnailKey(BookId("dying"), Instant.ofEpochMilli(1000), 5000, null, 300, ReadingDirection.RightToLeft)
+        val thumbnails = thumbnails()
+        val before = mutableListOf<ThumbResult>()
+        val active = launch { thumbnails.observe(request(book("active"))).collect { before += it } }
+        val leaving = launch { thumbnails.observe(request(book("later"))).collect {} }
+        runCurrent()
+        assertEquals(listOf(ThumbResult.Unavailable), before)
+        leaving.cancel()
+        runCurrent()
+        thumbnails.resume()
+        runCurrent()
+        assertEquals("active", shows(before.last()))
+        // This collector missed resume itself, just as a row outside the viewport does.
+        assertEquals(Unit, thumbnails.resumptions.first())
+        assertEquals("later", shows(thumbnails.observe(request(book("later"))).first()))
+        assertEquals(ThumbResult.Failed, thumbnails.observe(request(book("dying"))).first())
+        active.cancel()
+        thumbnails.close()
+    }
+
+    @Test
+    fun nearbyStoreLookupsNeverMakeBooksOrSearchFoldersOnEitherLane() = runTest {
+        val thumbnails = thumbnails()
+        var listings = 0
+        for (lane in ThumbLane.entries) {
+            assertNull(thumbnails.cached(request(book("missing-$lane", lane), priority = ThumbPriority.Nearby)))
+            assertNull(thumbnails.cached(request(folder(item("child", lane = lane), onList = { listings++ }), priority = ThumbPriority.Nearby)))
+        }
+        assertTrue(maker.calls.isEmpty())
+        assertEquals(0, listings)
+        thumbnails.close()
+    }
+
+    @Test
     fun aCoverOverSmbThatTakesLongerThanTheLimitGivesWayAndIsTriedAgainLater() = runTest {
         val thumbnails = thumbnails()
         maker.script = { book ->

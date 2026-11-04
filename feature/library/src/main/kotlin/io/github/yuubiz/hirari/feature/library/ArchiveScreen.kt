@@ -162,7 +162,7 @@ private fun Entries(content: ArchiveUi.Shown, list: Boolean, onPage: (ArchivePag
     if (pageCovers != null && !list) {
         val refs = remember(content.pages, pageCovers) { content.pages.map { pageCovers.ref(it.page) } }
         val before = content.texts.size + if (content.texts.isNotEmpty() && content.pages.isNotEmpty()) 1 else 0
-        PrefetchCovers(refs, pageCovers.layout.covers, focus) {
+        PrefetchCovers(refs, pageCovers.layout.covers, focus, { grid.isScrollInProgress }) {
             val shown = grid.layoutInfo.visibleItemsInfo
             if (shown.isEmpty()) IntRange.EMPTY else maxOf(shown.first().index - before, 0)..(shown.last().index - before)
         }

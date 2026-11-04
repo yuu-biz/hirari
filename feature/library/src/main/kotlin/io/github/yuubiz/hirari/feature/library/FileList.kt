@@ -139,7 +139,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             }
                             if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
                         }
-                        PrefetchCovers(cells.coverRefs(covers), covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
+                        PrefetchCovers(cells.coverRefs(covers), covers.covers, focus, { grid.isScrollInProgress }) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
                         FastScroller(cells.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                     }
                     LibraryView.ThumbnailList, LibraryView.List -> {
@@ -156,7 +156,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             if (empty != null) item { EmptyRow(empty) }
                         }
                         if (covers != null) {
-                            PrefetchCovers(cells.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
+                            PrefetchCovers(cells.coverRefs(content.covers), content.covers.covers, focus, { list.isScrollInProgress }) { list.layoutInfo.visibleItemsInfo.visibleRange() }
                         }
                         FastScroller(cells.size, { list.firstVisibleItemIndex }, { list.isScrollInProgress }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                     }

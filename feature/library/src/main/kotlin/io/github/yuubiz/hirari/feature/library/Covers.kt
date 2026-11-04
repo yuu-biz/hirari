@@ -21,7 +21,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -76,11 +75,21 @@ class Covers(
      * from the middle of the screen; collect it while the row is bound.
      */
     fun show(ref: CoverRef, focus: CoverFocus? = null): Flow<CoverState<ImageBitmap>> =
-        loader.show(ref.key, request(ref, ThumbPriority.Visible, focus), recoveries(ref.spec))
+        focus?.show(ref.key) ?: loader.show(ref.key, request(ref, ThumbPriority.Visible), recoveries(ref.spec))
 
-    /** Prepares the covers of items near the screen, with the nearby priority and nearest first, until their jobs are cancelled. */
+    /** Reads only stored covers of items near the screen, until their jobs are cancelled. */
     fun prefetcher(scope: CoroutineScope, focus: CoverFocus): Prefetcher<CoverRef> =
         Prefetcher.forRefs(scope) { ref -> loader.warm(request(ref, ThumbPriority.Nearby, focus)).collect {} }
+
+    fun viewport(scope: CoroutineScope, focus: CoverFocus): CoverViewport =
+        CoverViewport(focus, visible(scope, focus), prefetcher(scope, focus))
+
+    /** Starts visible covers in viewport order, independently of row composition. */
+    fun visible(scope: CoroutineScope, focus: CoverFocus): Prefetcher<CoverRef> =
+        Prefetcher.forRefs(scope) { ref ->
+            loader.show(ref.key, request(ref, ThumbPriority.Visible, focus), recoveries(ref.spec))
+                .collect { focus.publish(ref.key, it) }
+        }
 
     /**
      * サムネイルを作り直す for [spec] at each of [sizes], the first being the one on screen: forgets it in the store,
@@ -178,15 +187,15 @@ class Covers(
     }
 
     /**
-     * When a cover of [spec] that could not be made is worth asking for again: its place has its connection back, or
-     * covers are made again after they were held.
+     * A place reconnecting makes its unavailable covers worth asking for again. The thumbnail source itself
+     * retains and observes whether making covers is held, including when a row starts collecting later.
      */
     private fun recoveries(spec: CoverSpec): Flow<Unit> {
         val place = when (spec) {
             is CoverSpec.Book -> spec.origin.place()
             is CoverSpec.Folder -> spec.place
         }
-        return merge(place?.let(books::reconnections) ?: emptyFlow(), source.resumptions)
+        return place?.let(books::reconnections) ?: emptyFlow()
     }
 
     private fun LibraryLocation.lane() = if (this is LibraryLocation.SmbShare) ThumbLane.Smb else ThumbLane.Local

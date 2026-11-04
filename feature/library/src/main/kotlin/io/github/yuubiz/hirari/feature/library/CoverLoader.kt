@@ -1,5 +1,8 @@
 package io.github.yuubiz.hirari.feature.library
 
+import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
 import io.github.yuubiz.hirari.core.ui.TraceSection
@@ -99,8 +102,13 @@ class CoverLoader<I : Any>(
         emitAll(merge(fresh, again).flatMapLatest { look(key, request, retry = it) }.onEach { unavailable.set(it == CoverState.Unavailable) })
     }
 
-    /** Keeps the thumbnail of [request] in the store and held, for an item the list will show soon. Nothing is decoded. */
-    fun warm(request: ThumbRequest): Flow<ThumbResult> = source.observe(request)
+    /** Looks up the thumbnail of [request] in the store and holds it, for an item the list will show soon. Nothing is decoded. */
+    fun warm(request: ThumbRequest): Flow<ThumbResult> = flow {
+        source.hold(request).use {
+            source.cached(request)?.let { emit(it) }
+            awaitCancellation()
+        }
+    }
 
     /** The thumbnail of [key] changed in the store: forgets the decoded one and makes every [show] of it look again. */
     fun refresh(key: CoverKey) {
@@ -152,6 +160,19 @@ const val TRACE_THUMBNAIL = "hirari.thumbnail"
  * nearest the middle of the screen are made first wherever the list has scrolled to.
  */
 class CoverFocus {
+    private val states = MutableStateFlow<Map<CoverKey, CoverState<ImageBitmap>>>(emptyMap())
+
+    fun show(key: CoverKey): Flow<CoverState<ImageBitmap>> =
+        states.map { it[key] ?: CoverState.Pending }.distinctUntilChanged()
+
+    fun publish(key: CoverKey, state: CoverState<ImageBitmap>) {
+        states.value = states.value + (key to state)
+    }
+
+    fun retain(keys: Set<CoverKey>) {
+        states.value = states.value.filterKeys { it in keys }
+    }
+
     @Volatile
     private var positions: Map<CoverKey, Int> = emptyMap()
 
@@ -209,3 +230,26 @@ fun nearbyWindow(first: Int, last: Int, total: Int): IntRange {
 
 const val MIN_MARGIN = 6
 const val MAX_MARGIN = 48
+
+/** Owns cover work for a viewport; composing a row alone never starts generation. */
+class CoverViewport(
+    private val focus: CoverFocus,
+    private val visible: Prefetcher<CoverRef>,
+    private val nearby: Prefetcher<CoverRef>,
+) {
+    fun update(refs: List<CoverRef?>, range: IntRange, scrolling: Boolean) {
+        focus.update(refs, range)
+        val shown = range.filter { it in refs.indices }.mapNotNull { refs[it] }
+            .sortedBy { focus.distance(it.key) }.toSet()
+        visible.update(if (scrolling) shown.intersect(visible.wanted) else shown)
+        focus.retain(shown.mapTo(HashSet()) { it.key })
+        val window = nearbyWindow(range.first, range.last, refs.size)
+        nearby.update(window.filter { it !in range }.mapNotNullTo(HashSet()) { refs[it] })
+    }
+
+    fun clear() {
+        visible.clear()
+        nearby.clear()
+        focus.retain(emptySet())
+    }
+}
