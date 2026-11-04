@@ -26,8 +26,11 @@ fun readerBackgroundColor(background: ReaderBackground): Color = when (backgroun
     is ReaderBackground.Custom -> Color(0xFF000000.toInt() or background.color.value)
 }
 
+/** Whether [background] is light, so black reads on it and white does not. */
+fun isLight(background: Color): Boolean = background.luminance() > 0.5f
+
 /** Black or white, whichever reads on [background]: for the text a reader sets straight on its background. */
-fun readableOn(background: Color): Color = if (background.luminance() > 0.5f) Color.Black else Color.White
+fun readableOn(background: Color): Color = if (isLight(background)) Color.Black else Color.White
 
 /**
  * The surface of a reader, filling the screen: [background] fills it around the pages and between them, also under

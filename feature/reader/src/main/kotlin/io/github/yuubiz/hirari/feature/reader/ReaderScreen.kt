@@ -60,6 +60,7 @@ import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
 import io.github.yuubiz.hirari.core.ui.ReaderBackdrop
 import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.announced
+import io.github.yuubiz.hirari.core.ui.isLight
 import io.github.yuubiz.hirari.core.ui.keepsAwake
 import io.github.yuubiz.hirari.core.ui.readableOn
 import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
@@ -262,7 +263,15 @@ private const val MESSAGE_MS = 1500L
 private fun ReaderWindowHold(viewModel: ReaderViewModel, ui: ReaderUi) {
     val setting = keepsAwake(viewModel.state?.config?.keepAwake ?: KeepAwake.System, ui.touched)
     val awake = setting || viewModel.state?.autoPlay != null || viewModel.breath.view is BreathView.Listening
-    HoldReaderWindow(ReaderWindow(hideSystemBars = viewModel.hideSystemBars, orientation = viewModel.orientation, brightness = viewModel.screenBrightness, keepScreenOn = awake))
+    HoldReaderWindow(
+        ReaderWindow(
+            hideSystemBars = viewModel.hideSystemBars,
+            orientation = viewModel.orientation,
+            brightness = viewModel.screenBrightness,
+            keepScreenOn = awake,
+            lightBackground = isLight(readerBackgroundColor(viewModel.background)),
+        ),
+    )
 }
 
 /** The screen state that is not the book's: the bars and the panels. */

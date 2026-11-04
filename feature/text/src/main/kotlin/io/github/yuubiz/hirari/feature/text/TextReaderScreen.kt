@@ -85,6 +85,7 @@ import io.github.yuubiz.hirari.core.ui.BarSemantics
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
 import io.github.yuubiz.hirari.core.ui.DefaultReaderBackground
 import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
+import io.github.yuubiz.hirari.core.ui.isLight
 import io.github.yuubiz.hirari.core.ui.keepsAwake
 import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
 import io.github.yuubiz.hirari.core.ui.readerInsets
@@ -162,6 +163,7 @@ fun TextReaderScreen(
             orientation = orientation ?: settings?.readerOrientation ?: ReaderOrientation.System,
             brightness = settings?.readerBrightness,
             keepScreenOn = keepsAwake(settings?.keepAwake ?: KeepAwake.System, touched),
+            lightBackground = isLight(settings?.let { readerBackgroundColor(it.readerBackground) } ?: DefaultReaderBackground),
         ),
     )
 

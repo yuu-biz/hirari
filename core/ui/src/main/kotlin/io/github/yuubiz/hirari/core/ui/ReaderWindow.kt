@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.ui
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.graphics.Color
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -18,13 +19,15 @@ import java.util.WeakHashMap
 
 /**
  * What a reader asks of the window while it is up (docs/spec.md section 4.10): システムバーを隠す, the orientation of
- * 画面の向き, 画面の明るさ in percent or `null` for the device's, and whether the screen stays on.
+ * 画面の向き, 画面の明るさ in percent or `null` for the device's, whether the screen stays on, and whether the reader's
+ * background is light, so the shown bars draw dark icons on it.
  */
 data class ReaderWindow(
     val hideSystemBars: Boolean,
     val orientation: ReaderOrientation,
     val brightness: Int?,
     val keepScreenOn: Boolean,
+    val lightBackground: Boolean,
 )
 
 /**
@@ -46,10 +49,44 @@ fun HoldReaderWindow(asked: ReaderWindow) {
 
 private val readerWindows = WeakHashMap<Activity, Claims<ReaderWindow>>()
 
-/** The claims reach their activity weakly, or they would keep their own key in [readerWindows] and the activity with it. */
+/**
+ * The claims reach their activity weakly, or they would keep their own key in [readerWindows] and the activity with it.
+ * The bars' look the theme gave is kept from the first claim and put back once no reader holds the window.
+ */
 private fun Activity.readerWindows(): Claims<ReaderWindow> = readerWindows.getOrPut(this) {
     val activity = WeakReference(this)
-    Claims { activity.get()?.give(it) }
+    var theme: BarLook? = null
+    Claims { asked ->
+        val held = activity.get() ?: return@Claims
+        if (asked != null && theme == null) theme = BarLook.of(held)
+        (if (asked == null) theme else BarLook.over(asked.lightBackground))?.applyTo(held)
+        if (asked == null) theme = null
+        held.give(asked)
+    }
+}
+
+/**
+ * Whether the status and navigation bars draw dark icons, and the navigation bar's color, which before Android 10 is a
+ * scrim the theme sets. A reader shows the icons that read on its background (docs/spec.md section 4.10, 背景色).
+ */
+private data class BarLook(val lightStatus: Boolean, val lightNavigation: Boolean, val navigationColor: Int) {
+    @Suppress("DEPRECATION")
+    fun applyTo(activity: Activity) {
+        val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        controller.isAppearanceLightStatusBars = lightStatus
+        controller.isAppearanceLightNavigationBars = lightNavigation
+        activity.window.navigationBarColor = navigationColor
+    }
+
+    companion object {
+        @Suppress("DEPRECATION")
+        fun of(activity: Activity): BarLook {
+            val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+            return BarLook(controller.isAppearanceLightStatusBars, controller.isAppearanceLightNavigationBars, activity.window.navigationBarColor)
+        }
+
+        fun over(lightBackground: Boolean) = BarLook(lightBackground, lightBackground, Color.TRANSPARENT)
+    }
 }
 
 private fun Activity.give(asked: ReaderWindow?) {
