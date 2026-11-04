@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -67,7 +68,8 @@ class Covers(
      * What a row on screen shows, with the visible priority and, in a list that has a [focus], before the rows farther
      * from the middle of the screen; collect it while the row is bound.
      */
-    fun show(ref: CoverRef, focus: CoverFocus? = null): Flow<CoverState<ImageBitmap>> = loader.show(ref.key, request(ref, ThumbPriority.Visible, focus))
+    fun show(ref: CoverRef, focus: CoverFocus? = null): Flow<CoverState<ImageBitmap>> =
+        loader.show(ref.key, request(ref, ThumbPriority.Visible, focus), reconnections(ref.spec))
 
     /** Prepares the covers of items near the screen, with the nearby priority and nearest first, until their jobs are cancelled. */
     fun prefetcher(scope: CoroutineScope, focus: CoverFocus): Prefetcher<CoverRef> =
@@ -159,11 +161,19 @@ class Covers(
             }
         }
 
-    private fun CoverOrigin.lane(): ThumbLane = when (this) {
-        is CoverOrigin.Archive -> place.lane()
-        is CoverOrigin.Image -> place.lane()
-        is CoverOrigin.ImageFolder -> place.lane()
-        is CoverOrigin.Document, is CoverOrigin.Tree -> ThumbLane.Local
+    private fun CoverOrigin.lane(): ThumbLane = place()?.lane() ?: ThumbLane.Local
+
+    private fun CoverOrigin.place(): LibraryLocation? = when (this) {
+        is CoverOrigin.Archive -> place
+        is CoverOrigin.Image -> place
+        is CoverOrigin.ImageFolder -> place
+        is CoverOrigin.Document, is CoverOrigin.Tree -> null
+    }
+
+    /** When the place of [spec] has its connection back, so a cover that failed for it is worth asking for again. */
+    private fun reconnections(spec: CoverSpec): Flow<Unit> = when (spec) {
+        is CoverSpec.Book -> spec.origin.place()?.let(books::reconnections) ?: emptyFlow()
+        is CoverSpec.Folder -> books.reconnections(spec.place)
     }
 
     private fun LibraryLocation.lane() = if (this is LibraryLocation.SmbShare) ThumbLane.Smb else ThumbLane.Local

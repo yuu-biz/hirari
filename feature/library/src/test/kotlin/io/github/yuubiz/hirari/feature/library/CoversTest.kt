@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.data.FolderCover
 import io.github.yuubiz.hirari.core.image.thumbnail.FolderEntry as ThumbEntry
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbLane
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject
 import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -79,6 +80,22 @@ class CoversTest {
         assertTrue(requests[8].distance() < requests[4].distance(), "the order did not follow the scroll")
         assertEquals(Int.MAX_VALUE, covers.request(CoverRef(book(saf, "s/gone.zip"), 320), ThumbPriority.Visible, focus).distance())
         assertEquals(0, covers.request(refs[9], ThumbPriority.Visible).distance())
+    }
+
+    @Test
+    fun `a row of an SMB place looks again when that place has its connection back, and not for another place`() = runTest(UnconfinedTestDispatcher()) {
+        val other = nas.copy(id = LocationId(3), host = "other.local")
+        val thumbnails = fixture.thumbnails
+        thumbnails.result = ThumbResult.Unavailable
+        val shown = launch { covers.show(CoverRef(book(nas, "s/1.zip"), 320)).collect {} }
+        val local = launch { covers.show(CoverRef(book(saf, "s/1.zip"), 320)).collect {} }
+        fixture.coverBooks.reconnections(other)
+        fixture.coverBooks.reconnected.getValue(other).emit(Unit)
+        assertTrue(thumbnails.retries.isEmpty(), "another place's connection made the row look again")
+        fixture.coverBooks.reconnected.getValue(nas).emit(Unit)
+        assertEquals(listOf(locationBookId(nas, "s/1.zip")), thumbnails.retries.map { it.request.subject.id })
+        shown.cancel()
+        local.cancel()
     }
 
     @Test

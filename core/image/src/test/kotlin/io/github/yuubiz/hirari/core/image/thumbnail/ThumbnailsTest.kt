@@ -293,6 +293,25 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun aRetryTriesAtOnceWhatFailedForAPassingReasonAndAFailureAgainBacksOff() = runTest {
+        val thumbnails = thumbnails()
+        maker.script = { Made.Unavailable }
+        val inFolder = folder(item("child", lane = ThumbLane.Smb))
+        assertEquals(ThumbResult.Unavailable, thumbnails.observe(request(book("a", lane = ThumbLane.Smb))).first())
+        assertEquals(ThumbResult.Unavailable, thumbnails.observe(request(inFolder)).first())
+        assertEquals(2, maker.calls.size)
+        maker.script = ::image
+        assertEquals(ThumbResult.Unavailable, thumbnails.observe(request(book("a", lane = ThumbLane.Smb))).first())
+        assertEquals(2, maker.calls.size)
+        assertEquals("a", shows(thumbnails.retry(request(book("a", lane = ThumbLane.Smb))).first()))
+        assertEquals("child", shows(thumbnails.retry(request(inFolder)).first()))
+        maker.script = { Made.Unavailable }
+        assertEquals(ThumbResult.Unavailable, thumbnails.retry(request(book("b", lane = ThumbLane.Smb))).first())
+        assertEquals(ThumbResult.Unavailable, thumbnails.observe(request(book("b", lane = ThumbLane.Smb))).first())
+        assertEquals("a failure after a retry was tried again at once", 5, maker.calls.size)
+    }
+
+    @Test
     fun aCoverOverSmbThatTakesLongerThanTheLimitGivesWayAndIsTriedAgainLater() = runTest {
         val thumbnails = thumbnails()
         maker.script = { book ->

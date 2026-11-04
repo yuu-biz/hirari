@@ -9,13 +9,19 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.math.abs
 
@@ -29,7 +35,10 @@ sealed interface CoverState<out I> {
     /** The cover cannot be made for this version of the file (docs/spec.md section 4.4): the placeholder stays. */
     data object Failed : CoverState<Nothing>
 
-    /** Reading failed for a reason that may pass; the placeholder shows until the row is bound again. */
+    /**
+     * Reading failed for a reason that may pass; the placeholder shows until the row is bound again, or until the
+     * reason passes, as when the connection of its place comes back.
+     */
     data object Unavailable : CoverState<Nothing>
 }
 
@@ -66,7 +75,8 @@ class MemoryImages<K : Any, I : Any>(private val maxBytes: Long, private val siz
 
 /**
  * Turns the results of the thumbnail source into what a row draws. [show] is for a row on screen: its collection
- * is the hold on the thumbnail, so collect it for as long as the row is bound and cancel it when the row leaves.
+ * is the hold on the thumbnail, so collect it for as long as the row is bound and cancel it when the row leaves. A
+ * row whose cover is unavailable looks again each time its `recoveries` emit (docs/spec.md section 4.4).
  * Decoding the stored WebP runs on [decodeContext], never on the caller's thread, and the decoded image is kept in
  * [memory] so a row scrolled back into view needs neither the store nor a decode.
  */
@@ -82,8 +92,12 @@ class CoverLoader<I : Any>(
     /** The decoded cover of [key] if it is in memory. Cheap enough to ask while binding a row. */
     fun peek(key: CoverKey): I? = memory[key]
 
-    fun show(key: CoverKey, request: ThumbRequest): Flow<CoverState<I>> =
-        refreshed.filter { it == key }.onStart { emit(key) }.flatMapLatest { look(key, request) }
+    fun show(key: CoverKey, request: ThumbRequest, recoveries: Flow<Unit> = emptyFlow()): Flow<CoverState<I>> = flow {
+        val unavailable = AtomicBoolean(false)
+        val fresh = refreshed.filter { it == key }.map { false }.onStart { emit(false) }
+        val again = recoveries.filter { unavailable.get() }.map { true }
+        emitAll(merge(fresh, again).flatMapLatest { look(key, request, retry = it) }.onEach { unavailable.set(it == CoverState.Unavailable) })
+    }
 
     /** Keeps the thumbnail of [request] in the store and held, for an item the list will show soon. Nothing is decoded. */
     fun warm(request: ThumbRequest): Flow<ThumbResult> = source.observe(request)
@@ -94,7 +108,7 @@ class CoverLoader<I : Any>(
         refreshed.tryEmit(key)
     }
 
-    private fun look(key: CoverKey, request: ThumbRequest): Flow<CoverState<I>> = flow {
+    private fun look(key: CoverKey, request: ThumbRequest, retry: Boolean): Flow<CoverState<I>> = flow {
         val trace = TraceSection.begin(TRACE_THUMBNAIL)
         try {
             memory[key]?.let {
@@ -104,7 +118,7 @@ class CoverLoader<I : Any>(
                     awaitCancellation()
                 }
             }
-            source.observe(request).collect { result ->
+            (if (retry) source.retry(request) else source.observe(request)).collect { result ->
                 val state = when (result) {
                     is ThumbResult.Ready -> loaded(key, result.file)
                     ThumbResult.Failed -> CoverState.Failed

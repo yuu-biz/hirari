@@ -13,6 +13,8 @@ import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -34,6 +36,12 @@ interface CoverBooks {
      * @throws IOException when the folder cannot be listed
      */
     suspend fun list(place: LibraryLocation, path: String, documentId: String?): List<FolderEntry>
+
+    /**
+     * Emits each time the connection to [place] comes back after it broke (docs/spec.md section 6.5), and never for a
+     * place that has no connection of its own.
+     */
+    fun reconnections(place: LibraryLocation): Flow<Unit>
 }
 
 /** The books of SAF places and picked documents through [resolver], and of SMB places through [smb]. */
@@ -94,6 +102,11 @@ class DeviceCoverBooks(
         val tree = Uri.parse(place.treeUri.value)
         val id = documentId ?: withContext(Dispatchers.IO) { resolver.locateDocument(tree, path) } ?: throw FileNotFoundException()
         return DocumentsContract.buildDocumentUriUsingTree(tree, id)
+    }
+
+    override fun reconnections(place: LibraryLocation): Flow<Unit> = when (place) {
+        is LibraryLocation.SafTree -> emptyFlow()
+        is LibraryLocation.SmbShare -> smb.reconnections(place)
     }
 
     override suspend fun list(place: LibraryLocation, path: String, documentId: String?): List<FolderEntry> {

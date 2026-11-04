@@ -16,6 +16,9 @@ interface ThumbnailSource {
     /** The result for [request], then the thumbnail held against eviction until the collector is cancelled. */
     fun observe(request: ThumbRequest): Flow<ThumbResult>
 
+    /** [observe] after the reason it could not be made passed: what failed for a passing reason is tried at once. */
+    fun retry(request: ThumbRequest): Flow<ThumbResult>
+
     /** Holds the thumbnail against eviction until the result is closed, without looking at the store or the files. */
     fun hold(request: ThumbRequest): Closeable
 
@@ -28,6 +31,8 @@ interface ThumbnailSource {
 
 class ThumbnailsSource(private val thumbnails: Thumbnails) : ThumbnailSource {
     override fun observe(request: ThumbRequest): Flow<ThumbResult> = thumbnails.observe(request)
+
+    override fun retry(request: ThumbRequest): Flow<ThumbResult> = thumbnails.retry(request)
 
     override fun hold(request: ThumbRequest): Closeable = thumbnails.hold(request)
 

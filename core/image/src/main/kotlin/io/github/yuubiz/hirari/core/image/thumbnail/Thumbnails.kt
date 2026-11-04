@@ -107,9 +107,18 @@ class Thumbnails internal constructor(
      * item is on screen and cancel it when the item leaves. Collecting only the first value releases the hold
      * at once.
      */
-    fun observe(request: ThumbRequest): Flow<ThumbResult> = flow {
+    fun observe(request: ThumbRequest): Flow<ThumbResult> = watch(request, Mode.Make)
+
+    /**
+     * [observe] once the reason a thumbnail could not be made has passed, as when the connection of its place came back
+     * (docs/spec.md section 4.4): the books whose last try failed for a reason that may pass are tried at once, not
+     * after [UNAVAILABLE_BACKOFF_MILLIS]. One that fails again backs off as before.
+     */
+    fun retry(request: ThumbRequest): Flow<ThumbResult> = watch(request, Mode.Retry)
+
+    private fun watch(request: ThumbRequest, mode: Mode): Flow<ThumbResult> = flow {
         hold(request).use {
-            emit(cached(request) ?: thumbnail(request))
+            emit(cached(request) ?: checkNotNull(resolve(request, mode)))
             awaitCancellation()
         }
     }
@@ -128,7 +137,8 @@ class Thumbnails internal constructor(
     /** Cancels all work. */
     fun close() = scope.cancel()
 
-    private enum class Mode { CacheOnly, Make, Remake }
+    /** [Retry] makes what is missing as [Make] does, without waiting out the back-off of a failure that may pass. */
+    private enum class Mode { CacheOnly, Make, Retry, Remake }
 
     /** A store or a folder listing that throws is the thumbnail being unavailable for now, not a crash of the list. */
     private suspend fun resolve(request: ThumbRequest, mode: Mode): ThumbResult? = try {
@@ -150,10 +160,8 @@ class Thumbnails internal constructor(
 
     private suspend fun book(book: ThumbSubject.Book, request: ThumbRequest, mode: Mode, urgency: Urgency): ThumbResult? {
         val key = keyOf(book, request)
-        if (mode == Mode.Remake) {
-            store.remove(key)
-            unavailableUntil.remove(key)
-        }
+        if (mode == Mode.Remake) store.remove(key)
+        if (mode == Mode.Remake || mode == Mode.Retry) unavailableUntil.remove(key)
         stored(key)?.let { return it }
         if (mode == Mode.CacheOnly) return null
         if (backingOff(key)) return ThumbResult.Unavailable

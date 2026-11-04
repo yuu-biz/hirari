@@ -16,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -121,6 +122,37 @@ class CoverLoaderTest {
         launch { broken.show(key, request()).collect { seen += it } }.cancel()
         assertEquals(listOf<CoverState<String>>(CoverState.Failed, CoverState.Unavailable, CoverState.Unavailable), seen)
         assertNull(memory[key])
+    }
+
+    @Test
+    fun `an unavailable cover is asked for again at once when its place has its connection back`() = runTest(UnconfinedTestDispatcher()) {
+        val recoveries = MutableSharedFlow<Unit>()
+        val seen = mutableListOf<CoverState<String>>()
+        source.result = ThumbResult.Unavailable
+        val job = launch { loader.show(key, request(), recoveries).collect { seen += it } }
+        source.result = ready("back.webp")
+        recoveries.emit(Unit)
+        assertEquals(listOf<CoverState<String>>(CoverState.Unavailable, CoverState.Loaded("image:back.webp")), seen)
+        assertEquals(1, source.retries.size, "the cover was not tried without the back-off")
+        assertTrue(source.watches.none { it.active }, "the first look kept its hold")
+        recoveries.emit(Unit)
+        assertEquals(1, source.retries.size, "a shown cover was looked at again")
+        job.cancel()
+    }
+
+    @Test
+    fun `a cover that fails again waits for the next time the connection comes back`() = runTest(UnconfinedTestDispatcher()) {
+        val recoveries = MutableSharedFlow<Unit>()
+        val seen = mutableListOf<CoverState<String>>()
+        source.result = ThumbResult.Unavailable
+        val job = launch { loader.show(key, request(), recoveries).collect { seen += it } }
+        recoveries.emit(Unit)
+        assertEquals(listOf<CoverState<String>>(CoverState.Unavailable, CoverState.Unavailable), seen)
+        source.result = ready("later.webp")
+        recoveries.emit(Unit)
+        assertEquals(CoverState.Loaded("image:later.webp"), seen.last())
+        assertEquals(2, source.retries.size)
+        job.cancel()
     }
 
     @Test

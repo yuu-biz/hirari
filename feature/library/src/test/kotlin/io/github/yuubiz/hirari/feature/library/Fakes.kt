@@ -61,6 +61,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -358,6 +359,11 @@ internal class FakeSmb : SmbPlaces {
         lost = false
     }
 
+    /** Every place's connection coming back, when the test emits. */
+    val reconnected = MutableSharedFlow<Unit>()
+
+    override fun reconnections(place: LibraryLocation.SmbShare): Flow<Unit> = reconnected
+
     override suspend fun test(server: SmbServer, password: CharArray?, stored: CredentialRef?): SmbTestResult {
         tests += Triple(server, password?.let(::String), stored)
         password?.fill('\u0000')
@@ -522,8 +528,14 @@ internal class FakeThumbnails : ThumbnailSource {
 
     fun active() = watches.filter { it.active }
 
-    override fun observe(request: ThumbRequest): Flow<ThumbResult> = flow {
-        val watch = Watch(request).also { it.active = true; it.starts++; watches += it }
+    val retries = mutableListOf<Watch>()
+
+    override fun observe(request: ThumbRequest): Flow<ThumbResult> = watched(request, watches)
+
+    override fun retry(request: ThumbRequest): Flow<ThumbResult> = watched(request, retries)
+
+    private fun watched(request: ThumbRequest, into: MutableList<Watch>): Flow<ThumbResult> = flow {
+        val watch = Watch(request).also { it.active = true; it.starts++; into += it }
         try {
             emit(result)
             awaitCancellation()
@@ -562,6 +574,11 @@ internal class FakeCoverBooks : CoverBooks {
     val stalls = mutableMapOf<String, CompletableDeferred<Unit>>()
 
     override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = BookResult.Failed(BookFailure.NotFound)
+
+    /** The places whose connection comes back when the test emits on their flow. */
+    val reconnected = mutableMapOf<LibraryLocation, MutableSharedFlow<Unit>>()
+
+    override fun reconnections(place: LibraryLocation): Flow<Unit> = reconnected.getOrPut(place) { MutableSharedFlow() }
 
     override suspend fun list(place: LibraryLocation, path: String, documentId: String?): List<FolderEntry> {
         listCalls += path

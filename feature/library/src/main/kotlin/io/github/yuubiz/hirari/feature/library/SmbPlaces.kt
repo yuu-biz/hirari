@@ -30,7 +30,10 @@ import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import java.io.FileNotFoundException
 import kotlin.coroutines.cancellation.CancellationException
 import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
@@ -70,6 +73,12 @@ interface SmbPlaces {
     suspend fun reconnect(place: LibraryLocation.SmbShare)
 
     /**
+     * Emits each time the connection of the place's server becomes connected again after it broke, from reconnecting
+     * or from lost (docs/spec.md section 6.5). A place whose password cannot be read never emits.
+     */
+    fun reconnections(place: LibraryLocation.SmbShare): Flow<Unit>
+
+    /**
      * Connects to the share of [server] and opens its folder. [password] is what the form holds, which this call
      * wipes; without one, [stored] is the password kept for the server, if any.
      */
@@ -91,6 +100,21 @@ interface SmbPlaces {
 
     /** Drops the connection of the place [id], so the next request logs on with what is stored now. */
     suspend fun forget(id: LocationId)
+}
+
+/** One value each time these states go from reconnecting or lost to connected (docs/spec.md section 6.5). */
+internal fun Flow<SmbConnectionState>.comebacks(): Flow<Unit> = flow {
+    var broken = false
+    collect { state ->
+        when (state) {
+            is SmbConnectionState.Reconnecting, SmbConnectionState.Lost -> broken = true
+            SmbConnectionState.Connected -> if (broken) {
+                broken = false
+                emit(Unit)
+            }
+            SmbConnectionState.Idle -> Unit
+        }
+    }
 }
 
 /** Whether the system lets the app open connections in the local network (docs/spec.md section 7, Q14). */
@@ -179,6 +203,17 @@ class SmbjPlaces(
         }
         server.retry()
         server.state.first { it !is SmbConnectionState.Reconnecting }
+    }
+
+    override fun reconnections(place: LibraryLocation.SmbShare): Flow<Unit> = flow {
+        val server = try {
+            shares.server(place)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return@flow
+        }
+        emitAll(server.state.comebacks())
     }
 
     override suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult {

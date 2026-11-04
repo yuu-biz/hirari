@@ -18,6 +18,7 @@ import io.github.yuubiz.hirari.feature.library.SmbPlaces
 import io.github.yuubiz.hirari.feature.library.SmbTestResult
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.Sibling
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -47,6 +48,8 @@ internal class Shares(private val listings: Map<String, List<FolderEntry>>) : Sm
     }
 
     override suspend fun reconnect(place: LibraryLocation.SmbShare) = error("not used")
+
+    override fun reconnections(place: LibraryLocation.SmbShare): Flow<Unit> = error("not used")
 
     override suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult = error("not used")
 
