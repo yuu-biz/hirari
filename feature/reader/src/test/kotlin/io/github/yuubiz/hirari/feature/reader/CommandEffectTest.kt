@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookOverrides
+import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.HalfPart
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.PageView
@@ -105,7 +106,7 @@ class CommandEffectTest {
         val followed = matching.following(other, BookOverrides())
         assertEquals(ReaderOrientation.Portrait, followed.orientation)
         assertEquals(StopOrder.ColumnsFirst, followed.stopOrder)
-        assertEquals(Gutter.Shadow, followed.gutter)
+        assertEquals(GutterStyle.Shadow, followed.gutter)
     }
 
     @Test
@@ -165,14 +166,14 @@ class CommandEffectTest {
     fun theGutterGoesFromGapToShadowToNoneAndBack() {
         val shadow = config.configured(ReaderCommand.Gutter)
         val none = shadow.configured(ReaderCommand.Gutter)
-        assertEquals(listOf(Gutter.Gap, Gutter.Shadow, Gutter.None, Gutter.Gap), listOf(config.gutter, shadow.gutter, none.gutter, none.configured(ReaderCommand.Gutter).gutter))
+        assertEquals(listOf(GutterStyle.Gap, GutterStyle.Shadow, GutterStyle.None, GutterStyle.Gap), listOf(config.gutter, shadow.gutter, none.gutter, none.configured(ReaderCommand.Gutter).gutter))
         assertEquals(listOf(2f, 0f, 0f), listOf(config.gutterPx, shadow.gutterPx, none.gutterPx))
     }
 
     @Test
     fun noGapPutsThePairEdgeToEdge() {
         val gap = readerOf(List(2) { TALL })
-        val none = gap.reduce(ReaderEvent.ConfigChanged(gap.config.copy(gutter = Gutter.None)))
+        val none = gap.reduce(ReaderEvent.ConfigChanged(gap.config.copy(gutter = GutterStyle.None)))
         assertEquals(PageView.Two(0, 1), none.current)
         val (left, right) = none.geometry()!!.pages.sortedBy { it.left }
         assertEquals(left.right, right.left, 0.01f)

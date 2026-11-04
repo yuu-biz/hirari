@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.TextAutoSize
+import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.ui.decorative
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -340,7 +341,7 @@ private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, 
             null -> Unit
         }
     }
-    if (state.config.gutter == Gutter.Shadow && layer.view is PageView.Two) {
+    if (state.config.gutter == GutterStyle.Shadow && layer.view is PageView.Two) {
         val (leftPage, rightPage) = geometry.pages.sortedBy { it.left }
         val dx = layer.shift - layer.position.x
         val dy = -layer.position.y

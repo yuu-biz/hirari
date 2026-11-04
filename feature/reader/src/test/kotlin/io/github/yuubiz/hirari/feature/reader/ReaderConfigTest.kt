@@ -1,14 +1,116 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BookEndAction
+import io.github.yuubiz.hirari.core.model.GutterStyle
+import io.github.yuubiz.hirari.core.model.LayoutMode
+import io.github.yuubiz.hirari.core.model.LoupeFrame
+import io.github.yuubiz.hirari.core.model.LoupeZoom
+import io.github.yuubiz.hirari.core.model.ReaderCommand
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
+import io.github.yuubiz.hirari.core.model.ReadingDirection
+import io.github.yuubiz.hirari.core.model.ScaleMode
+import io.github.yuubiz.hirari.core.model.StopOrder
+import io.github.yuubiz.hirari.core.model.TapLayout
+import io.github.yuubiz.hirari.core.model.TrimStrength
+import io.github.yuubiz.hirari.core.model.TurnEffect
+import io.github.yuubiz.hirari.core.model.VolumeKeys
+import java.lang.reflect.Modifier
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 
 class ReaderConfigTest {
+    /** Each global setting the image reader takes through [ReaderConfig.of], moved away from its default. */
+    private val readThroughConfig: Map<String, (GlobalSettings) -> GlobalSettings> = mapOf(
+        "readingDirection" to { it.copy(readingDirection = ReadingDirection.LeftToRight) },
+        "layoutMode" to { it.copy(layoutMode = LayoutMode.Single) },
+        "coverAlone" to { it.copy(coverAlone = true) },
+        "atBookEnd" to { it.copy(atBookEnd = BookEndAction.Stop) },
+        "scaleMode" to { it.copy(scaleMode = ScaleMode.FitWidth) },
+        "capAtOriginal" to { it.copy(capAtOriginal = true) },
+        "trimStrength" to { it.copy(trimStrength = TrimStrength.Strong) },
+        "gutterStyle" to { it.copy(gutterStyle = GutterStyle.Shadow) },
+        "adjustLevel" to { it.copy(adjustLevel = 2) },
+        "adjustSharpen" to { it.copy(adjustSharpen = true) },
+        "adjustMono" to { it.copy(adjustMono = true) },
+        "adjustNegative" to { it.copy(adjustNegative = true) },
+        "turnEffect" to { it.copy(turnEffect = TurnEffect.Fade) },
+        "turnDurationMs" to { it.copy(turnDurationMs = 300) },
+        "stopOrder" to { it.copy(stopOrder = StopOrder.ColumnsFirst) },
+        "stopMaxStepPercent" to { it.copy(stopMaxStepPercent = 50) },
+        "loupeZoom" to { it.copy(loupeZoom = LoupeZoom.Source300) },
+        "loupeFrame" to { it.copy(loupeFrame = LoupeFrame.Large) },
+        "loupeHoldMs" to { it.copy(loupeHoldMs = 1600) },
+        "tapLayout" to { it.copy(tapLayout = TapLayout.TopAndBottomBands) },
+        "tapBandPercent" to { it.copy(tapBandPercent = 30) },
+        "mirrorControls" to { it.copy(mirrorControls = true) },
+        "tapAdvancesStops" to { it.copy(tapAdvancesStops = false) },
+        "swipeToTurn" to { it.copy(swipeToTurn = false) },
+        "volumeKeys" to { it.copy(volumeKeys = VolumeKeys.UpAdvances) },
+        "turnHaptics" to { it.copy(turnHaptics = true) },
+        "barHeightDp" to { it.copy(barHeightDp = 80) },
+        "commandBarItems" to { it.copy(commandBarItems = listOf(ReaderCommand.Settings)) },
+        "autoPlaySeconds" to { it.copy(autoPlaySeconds = 2.5) },
+        "readerOrientation" to { it.copy(readerOrientation = ReaderOrientation.Landscape) },
+        "readerBrightness" to { it.copy(readerBrightness = 70) },
+    )
+
+    /** Global settings the image reader reads from the settings themselves, outside [ReaderConfig]. */
+    private val readBesideConfig = setOf(
+        "readerBackground",
+        "hideSystemBars",
+        "historyLimit",
+        "fallbackCharset",
+        "showDotFiles",
+        "breathControl",
+        "breathSensitivity",
+    )
+
+    /**
+     * Settings of the image reader in docs/spec.md section 4.10 that it does not read yet: 重ねて表示する情報 (section
+     * 4.8) and 画面を消さない, which only the text reader follows, and 書庫内の並び, which no page list follows.
+     */
+    private val notReadYet = setOf("pageNumberSpot", "statusSpot", "overlayTextSize", "keepAwake", "entryOrder")
+
+    /** Settings of the text reader, the lists, and the whole app. */
+    private val otherScreens = setOf(
+        "textTypeface", "textSizeSp", "textLineGap", "textLetterGap", "textMargin", "textLayout", "textLatinMode",
+        "textPaper", "textInkOverride", "textPaperOverride",
+        "libraryView", "thumbSize", "librarySort", "foldersFirst", "allowFileEdits", "reopenLastFolder",
+        "reopenLastBook", "historySort", "bookmarkSort",
+        "appTheme", "dynamicColor",
+    )
+
     @Test
     fun theReaderStartsFromTheDefaultsOfTheGlobalSettings() {
         assertEquals(ReaderConfig.of(GlobalSettings()), ReaderConfig())
+    }
+
+    @Test
+    fun everyGlobalSettingIsSortedIntoWhereTheReaderReadsIt() {
+        val settings = GlobalSettings::class.java.declaredFields.filterNot { Modifier.isStatic(it.modifiers) }.map { it.name }.toSet()
+        val groups = listOf(readThroughConfig.keys, readBesideConfig, notReadYet, otherScreens)
+        assertEquals(settings, groups.flatten().toSet(), "a setting is missing from the groups, or a group names one that is gone")
+        assertEquals(groups.sumOf { it.size }, groups.flatten().toSet().size, "a setting is in two groups")
+    }
+
+    @Test
+    fun eachSettingReadThroughTheConfigChangesTheConfig() {
+        val defaults = GlobalSettings()
+        for ((name, change) in readThroughConfig) {
+            assertNotEquals(defaults, change(defaults).normalized(), "the change of $name is not a change")
+            assertNotEquals(ReaderConfig.of(defaults), ReaderConfig.of(change(defaults)), "$name does not reach the reader")
+        }
+    }
+
+    @Test
+    fun capAtOriginalAndTheGutterComeFromTheSettings() {
+        val config = ReaderConfig.of(GlobalSettings(capAtOriginal = true, gutterStyle = GutterStyle.None))
+        assertEquals(true, config.capAtOriginal)
+        assertEquals(GutterStyle.None, config.gutter)
+        assertEquals(0f, config.gutterPx)
     }
 
     @Test

@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.reader
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookOverrides
+import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.KeyBindings
 import io.github.yuubiz.hirari.core.model.LayoutMode
@@ -40,7 +41,7 @@ data class ReaderConfig(
     val swipeToTurn: Boolean = true,
     val volumeKeys: VolumeKeys = VolumeKeys.DownAdvances,
     val barHeightDp: Float = 60f,
-    val gutter: Gutter = Gutter.Gap,
+    val gutter: GutterStyle = GutterStyle.Gap,
     val commandBarItems: List<ReaderCommand> = ReaderCommand.Defaults,
     /** The book's rotation (docs/spec.md section 2.9), which has no global setting. */
     val rotation: Rotation = Rotation.None,
@@ -65,7 +66,7 @@ data class ReaderConfig(
     val switched: Set<SessionSwitch> = emptySet(),
 ) {
     /** The gap between the pages of a pair, in screen pixels (docs/spec.md section 4.8, 見開き). */
-    val gutterPx: Float get() = if (gutter == Gutter.Gap) 2f else 0f
+    val gutterPx: Float get() = if (gutter == GutterStyle.Gap) 2f else 0f
     val direction: ReadingDirection get() = layout.direction
     val mirrored: Boolean get() = tapZones.mirrored
     val keys: KeyBindings get() = KeyBindings(direction, mirrored, volumeKeys, vertical)
@@ -81,6 +82,7 @@ data class ReaderConfig(
                 overrides.coverAlone ?: settings.coverAlone,
             ),
             scaleMode = overrides.scaleMode ?: settings.scaleMode,
+            capAtOriginal = settings.capAtOriginal,
             turnEffect = settings.turnEffect,
             turnDurationMs = settings.turnDurationMs.toLong(),
             stopOrder = settings.stopOrder,
@@ -90,6 +92,7 @@ data class ReaderConfig(
             swipeToTurn = settings.swipeToTurn,
             volumeKeys = settings.volumeKeys,
             barHeightDp = settings.barHeightDp.toFloat(),
+            gutter = settings.gutterStyle,
             commandBarItems = settings.commandBarItems,
             rotation = overrides.rotation ?: Rotation.None,
             orientation = settings.readerOrientation,
@@ -149,9 +152,6 @@ val GlobalSettings.adjust: ImageAdjust
 
 /** A value the command bar switches for this book's reading session only (docs/spec.md section 2.9), and never stores. */
 enum class SessionSwitch { Orientation, MirrorControls, Gutter, StopOrder }
-
-/** 綴じ目の表示 (docs/spec.md section 4.8, 見開き). [Shadow] darkens the bound edge of each page of a pair. */
-enum class Gutter { None, Gap, Shadow }
 
 /** The reader's drawing area in pixels, and the pixels per dp. */
 data class Viewport(val width: Float, val height: Float, val density: Float) {

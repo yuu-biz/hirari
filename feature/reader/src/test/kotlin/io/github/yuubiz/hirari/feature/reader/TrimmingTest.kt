@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.image.PixelRect
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.scanMargins
 import io.github.yuubiz.hirari.core.model.BookOverrides
+import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.HalfPart
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
@@ -189,7 +190,7 @@ class TrimmingTest {
         val kept = BookOverrides(rotation = Rotation.Quarter).changedBy(global, stronger, global)
         assertEquals(BookOverrides(rotation = Rotation.Quarter, trim = TrimStrength.Strong), kept)
         assertEquals(BookOverrides(rotation = Rotation.Quarter), kept.changedBy(stronger, global, global))
-        assertEquals(kept, kept.changedBy(stronger, stronger.copy(gutter = Gutter.None), global))
+        assertEquals(kept, kept.changedBy(stronger, stronger.copy(gutter = GutterStyle.None), global))
     }
 
     @Test
