@@ -82,7 +82,7 @@ class BreathScrollTest {
     @Test
     fun aScrollCrossesTheBoundaryOfASpreadWithoutGoingBack() {
         val stops = spread.geometry()!!.stops(spread.config).stops
-        assertTrue(stops.map { it.page }.toSet().size == 2)
+        assertTrue(stops.map { it.part }.toSet().size == 2)
         val path = stops.zipWithNext().sumOf { (a, b) -> hypot((b.point.x - a.point.x).toDouble(), (b.point.y - a.point.y).toDouble()) }
         val walked = walk(spread, Turn.Forward, 8f, (path / 8).toInt() + stops.size + 2)
         assertEquals(stops.last().point, walked.last().position())

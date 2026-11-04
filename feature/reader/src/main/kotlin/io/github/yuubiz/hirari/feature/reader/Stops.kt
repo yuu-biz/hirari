@@ -17,13 +17,13 @@ import kotlin.math.roundToLong
 /** Positions closer than this, in pixels, count as the same. */
 private const val SAME_PX = 0.5f
 
-/** A stop and the page it reads, counted in reading order within the view. */
-data class Stop(val point: Point, val page: Int)
+/** A stop and the part of the view it reads: a page of a pair or a half of a wide page, counted in reading order. */
+data class Stop(val point: Point, val part: Int)
 
 /**
  * The stops of one view in screen pixels (docs/spec.md section 2.6). A view wider than the screen
- * is read page by page. A view that fits across is read as a whole, and every stop keeps the
- * screen inside the view.
+ * is read part by part: page by page for a pair, half by half for a wide page. A view that fits
+ * across is read as a whole, and every stop keeps the screen inside the view.
  */
 data class StopPath(val stops: List<Stop>, val order: StopOrder, val direction: ReadingDirection) {
     init {
@@ -34,21 +34,21 @@ data class StopPath(val stops: List<Stop>, val order: StopOrder, val direction: 
 
     /** The first stop past [position], the screen's top-left corner, or `null` when none is left. */
     fun nextAfter(position: Point): Int? {
-        val page = pageAt(position.x)
+        val part = partAt(position.x)
         return stops.indices.firstOrNull { index ->
             val stop = stops[index]
-            stop.page > page || stop.page == page && isAfter(stop.point, position)
+            stop.part > part || stop.part == part && isAfter(stop.point, position)
         }
     }
 
-    /** The page whose stops lie nearest to [x] across, the earlier one on a tie. */
-    private fun pageAt(x: Float): Int {
+    /** The part whose stops lie nearest to [x] across, the earlier one on a tie. */
+    private fun partAt(x: Float): Int {
         fun outside(stops: List<Stop>): Float {
             val low = stops.minOf { it.point.x }
             val high = stops.maxOf { it.point.x }
             return if (x < low) low - x else if (x > high) x - high else 0f
         }
-        return stops.groupBy { it.page }.entries.minWith(compareBy({ outside(it.value) }, { it.key })).key
+        return stops.groupBy { it.part }.entries.minWith(compareBy({ outside(it.value) }, { it.key })).key
     }
 
     private fun isAfter(stop: Point, position: Point): Boolean {
@@ -67,12 +67,24 @@ data class StopPath(val stops: List<Stop>, val order: StopOrder, val direction: 
          */
         fun of(pages: List<Rect>, viewport: Size, maxStep: Float, order: StopOrder, direction: ReadingDirection): StopPath {
             val view = Rect(pages.minOf { it.left }, pages.minOf { it.top }, pages.maxOf { it.right }, pages.maxOf { it.bottom })
-            val parts = if (view.width > viewport.width + SAME_PX) pages else listOf(view)
-            val stops = parts.flatMapIndexed { page, rect ->
-                scrollStops(rect, viewport, maxStep, order, direction).map { Stop(inside(it, view, viewport), page) }
+            val parts = when {
+                view.width <= viewport.width + SAME_PX -> listOf(view)
+                pages.size == 1 && view.width > view.height -> halves(view, direction)
+                else -> pages
+            }
+            val stops = parts.flatMapIndexed { part, rect ->
+                scrollStops(rect, viewport, maxStep, order, direction).map { Stop(inside(it, view, viewport), part) }
             }
             val distinct = stops.filterIndexed { index, stop -> index == 0 || stop.point != stops[index - 1].point }
             return StopPath(distinct, order, direction)
+        }
+
+        /** The two halves of a wide page, the half read first first. */
+        private fun halves(page: Rect, direction: ReadingDirection): List<Rect> {
+            val middle = (page.left + page.right) / 2f
+            val left = Rect(page.left, page.top, middle, page.bottom)
+            val right = Rect(middle, page.top, page.right, page.bottom)
+            return if (direction == ReadingDirection.RightToLeft) listOf(right, left) else listOf(left, right)
         }
 
         private fun inside(point: Point, view: Rect, viewport: Size) =

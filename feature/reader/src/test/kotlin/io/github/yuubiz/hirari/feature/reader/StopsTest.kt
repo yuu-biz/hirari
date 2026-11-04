@@ -33,9 +33,19 @@ class StopsTest {
     }
 
     @Test
-    fun aWidePageIsReadFromTheRightInARightToLeftBook() {
-        assertEquals(listOf(Point(1000f, 0f), Point(500f, 0f), Point(0f, 0f)), path(Rect(0f, 0f, 2000f, 1000f)).points())
-        assertEquals(listOf(Point(0f, 0f), Point(500f, 0f), Point(1000f, 0f)), path(Rect(0f, 0f, 2000f, 1000f), direction = LeftToRight).points())
+    fun aWidePageIsReadHalfByHalfFromTheRightHalfInARightToLeftBook() {
+        assertEquals(listOf(Stop(Point(1000f, 0f), 0), Stop(Point(0f, 0f), 1)), path(Rect(0f, 0f, 2000f, 1000f)).stops)
+        assertEquals(listOf(Stop(Point(0f, 0f), 0), Stop(Point(1000f, 0f), 1)), path(Rect(0f, 0f, 2000f, 1000f), direction = LeftToRight).stops)
+    }
+
+    @Test
+    fun aWidePageReadsOutItsFirstHalfAndCrossesTheMiddleInOneMove() {
+        assertEquals(listOf(Point(2000f, 0f), Point(1500f, 0f), Point(500f, 0f), Point(0f, 0f)), path(Rect(0f, 0f, 3000f, 1000f)).points())
+    }
+
+    @Test
+    fun aWidePageThatFitsAcrossIsReadAsAWhole() {
+        assertEquals(listOf(Point(-100f, -200f)), path(Rect(0f, 0f, 800f, 600f)).points())
     }
 
     @Test
