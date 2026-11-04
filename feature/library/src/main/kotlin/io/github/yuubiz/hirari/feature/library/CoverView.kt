@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,21 +36,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  */
 @Composable
 internal fun CoverBox(ref: CoverRef?, covers: Covers, badge: CoverBadge?, modifier: Modifier, faded: Boolean = false, focus: CoverFocus? = null) {
-    var state by remember(ref) {
-        mutableStateOf<CoverState<ImageBitmap>>(ref?.let(covers::peek)?.let { CoverState.Loaded(it) } ?: CoverState.Pending)
-    }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var onScreen by remember(ref) { mutableStateOf(false) }
-    if (ref != null && (focus != null || onScreen)) LaunchedEffect(ref, focus, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            covers.show(ref, focus).collect { state = it }
-        }
-    }
+    val shown = rememberCoverState(ref, covers, focus, onScreen).value
     val slotModifier = if (focus != null) modifier else modifier.onGloballyPositioned {
         val bounds = it.boundsInWindow()
         onScreen = bounds.width > 0f && bounds.height > 0f
     }
-    val shown = state
     CoverSlot(badge, slotModifier, faded, centered = shown is CoverState.Failed || shown is CoverState.Unavailable) {
         when (shown) {
             is CoverState.Loaded -> Image(shown.image, contentDescription = null, Modifier.fillMaxSize().alpha(if (faded) FADED_ALPHA else 1f), contentScale = ContentScale.Fit)
@@ -57,6 +49,26 @@ internal fun CoverBox(ref: CoverRef?, covers: Covers, badge: CoverBadge?, modifi
             CoverState.Failed, CoverState.Unavailable -> Unit
         }
     }
+}
+
+/** Reads memory during composition, before any flow can supply the viewport's state. */
+@Composable
+internal fun rememberCoverState(ref: CoverRef?, covers: Covers, focus: CoverFocus?, onScreen: Boolean): State<CoverState<ImageBitmap>> {
+    val state = remember(ref, covers) {
+        mutableStateOf<CoverState<ImageBitmap>>(ref?.let(covers::peek)?.let { CoverState.Loaded(it) } ?: CoverState.Pending)
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    if (ref != null && (focus != null || onScreen)) LaunchedEffect(ref, covers, focus, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            covers.show(ref, focus).collect { next ->
+                // A row can compose before the viewport publishes it. Do not hide its cached cover meanwhile.
+                state.value = if (next == CoverState.Pending) {
+                    covers.peek(ref)?.let { CoverState.Loaded(it) } ?: next
+                } else next
+            }
+        }
+    }
+    return state
 }
 
 @Composable

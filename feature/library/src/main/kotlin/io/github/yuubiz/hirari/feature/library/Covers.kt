@@ -107,7 +107,7 @@ class Covers(
 
     /** Reads only stored covers of items near the screen, until their jobs are cancelled. */
     fun prefetcher(scope: CoroutineScope, focus: CoverFocus): Prefetcher<CoverRef> =
-        Prefetcher.forRefs(scope) { ref -> loader.warm(request(ref, ThumbPriority.Nearby, focus)).collect {} }
+        Prefetcher.forRefs(scope) { ref -> loader.warm(ref.key, request(ref, ThumbPriority.Nearby, focus)).collect {} }
 
     fun viewport(scope: CoroutineScope, focus: CoverFocus): CoverViewport =
         CoverViewport(focus, visible(scope, focus), prefetcher(scope, focus))

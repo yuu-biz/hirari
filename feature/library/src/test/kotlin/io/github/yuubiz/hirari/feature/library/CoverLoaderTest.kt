@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -216,15 +217,64 @@ class CoverLoaderTest {
     }
 
     @Test
-    fun `warming reads only the store and holds the cover without observing or decoding`() = runTest(UnconfinedTestDispatcher()) {
+    fun `warming decodes only the store and holds the cover without observing`() = runTest(UnconfinedTestDispatcher()) {
         source.result = ready("a.webp")
-        val job = launch { loader.warm(request(ThumbPriority.Nearby)).collect {} }
+        val job = launch { loader.warm(key, request(ThumbPriority.Nearby)).collect {} }
         assertEquals(ThumbPriority.Nearby, source.cached.single().priority)
         assertTrue(source.watches.isEmpty())
         assertTrue(source.holds.single().active)
-        assertTrue(decoded.isEmpty())
+        assertEquals(listOf(File("a.webp")), decoded)
+        assertEquals("image:a.webp", loader.peek(key))
         job.cancel()
         assertTrue(source.holds.none { it.active })
+    }
+
+    @Test
+    fun `nearby work with no stored cover never starts generation`() = runTest(UnconfinedTestDispatcher()) {
+        source.result = ThumbResult.Unavailable
+        val job = launch { loader.warm(key, request(ThumbPriority.Nearby)).collect {} }
+        assertEquals(1, source.cached.size)
+        assertTrue(decoded.isEmpty())
+        assertNull(loader.peek(key))
+        assertTrue(source.watches.isEmpty())
+        assertTrue(source.regenerated.isEmpty())
+        job.cancel()
+        assertTrue(source.holds.none { it.active })
+    }
+
+    @Test
+    fun `cancelling nearby work before its IO turn releases the hold without decoding`() = runTest(UnconfinedTestDispatcher()) {
+        source.result = ready("a.webp")
+        val queued = CoverLoader(source, memory, StandardTestDispatcher(testScheduler)) {
+            decoded += it
+            "decoded"
+        }
+        val job = launch { queued.warm(key, request(ThumbPriority.Nearby)).collect {} }
+        assertTrue(source.holds.single().active)
+        job.cancel()
+        runCurrent()
+        assertTrue(decoded.isEmpty())
+        assertNull(memory[key])
+        assertTrue(source.holds.none { it.active })
+    }
+
+    @Test
+    fun `queued visible decodes go ahead of nearby decodes`() = runTest(UnconfinedTestDispatcher()) {
+        val nearbySource = object : ThumbnailSource by source {
+            override suspend fun cached(request: ThumbRequest): ThumbResult = ready("nearby.webp")
+        }
+        val queued = CoverLoader(nearbySource, memory, StandardTestDispatcher(testScheduler)) {
+            decoded += it
+            "image:${it.name}"
+        }
+        val nearbyKey = key.copy(sizePx = 301)
+        val nearby = launch { queued.warm(nearbyKey, request(ThumbPriority.Nearby)).collect {} }
+        source.result = ready("visible.webp")
+        val visible = launch { queued.show(key, request()).collect {} }
+        runCurrent()
+        assertEquals(listOf(File("visible.webp"), File("nearby.webp")), decoded)
+        nearby.cancel()
+        visible.cancel()
     }
 
     @Test
@@ -241,6 +291,34 @@ class CoverLoaderTest {
         images.put("a", "xx")
         images.remove("c")
         assertEquals(1, images.size)
+    }
+
+    @Test
+    fun `two dense screens on each side are decoded from the store without generation`() = runTest(UnconfinedTestDispatcher()) {
+        val images = MemoryImages<CoverKey, String>(100_000) { it.length }
+        val cachedLoader = CoverLoader(source, images, Dispatchers.Unconfined) { "image:${it.name}" }
+        source.result = ready("stored.webp")
+        val refs = (0 until 220).map { CoverRef(spec.copy(id = BookId("book:$it")), 300) }
+        val nearby = Prefetcher.forRefs(this) { ref ->
+            val nearbyRequest = ThumbRequest(
+                ThumbSubject.Book(ref.spec.id, spec.modified, spec.byteSize) { error("must not generate") },
+                300, spec.direction, ThumbPriority.Nearby,
+            )
+            cachedLoader.warm(ref.key, nearbyRequest).collect {}
+        }
+        val visible = Prefetcher.forRefs(this) { awaitCancellation() }
+        val viewport = CoverViewport(CoverFocus(), visible, nearby)
+        viewport.update(refs, 72..107, scrolling = false)
+        assertEquals(144, source.cached.size)
+        assertEquals("image:stored.webp", images[refs[0].key])
+        assertEquals("image:stored.webp", images[refs[179].key])
+        assertNull(images[refs[180].key])
+        assertTrue(source.cached.all { it.priority == ThumbPriority.Nearby })
+        assertTrue(source.watches.isEmpty())
+        assertTrue(source.retries.isEmpty())
+        assertTrue(source.regenerated.isEmpty())
+        viewport.clear()
+        assertTrue(source.holds.none { it.active })
     }
 
     @Test
@@ -262,10 +340,10 @@ class CoverLoaderTest {
     }
 
     @Test
-    fun `the window around the visible items is a screenful either side, within the list`() {
-        assertEquals(0..29, nearbyWindow(10, 19, 100))
-        assertEquals(0..8, nearbyWindow(0, 2, 100))
-        assertEquals(28..45, nearbyWindow(34, 39, 46))
+    fun `the window around the visible items is two screenfuls either side within the list`() {
+        assertEquals(0..39, nearbyWindow(10, 19, 100))
+        assertEquals(0..14, nearbyWindow(0, 2, 100))
+        assertEquals(22..45, nearbyWindow(34, 39, 46))
         assertTrue(nearbyWindow(0, -1, 10).isEmpty())
         assertTrue(nearbyWindow(0, 0, 0).isEmpty())
         assertEquals(99 + MAX_MARGIN, nearbyWindow(0, 99, 1000).last)

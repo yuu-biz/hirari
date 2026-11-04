@@ -18,6 +18,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
 import io.github.yuubiz.hirari.feature.library.Covers
+import io.github.yuubiz.hirari.feature.library.CoverMemoryBudget
 import io.github.yuubiz.hirari.feature.library.DeviceArchives
 import io.github.yuubiz.hirari.feature.library.DeviceCoverBooks
 import io.github.yuubiz.hirari.feature.library.DeviceSaves
@@ -45,9 +46,6 @@ import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "HirariApp"
-
-/** docs/spec.md section 5.4, メモリ: the decoded covers take 1/8 of the memory budget. */
-private const val COVER_MEMORY_SHARE = 8
 
 class HirariApp : Application() {
     /** Outlives every screen; the progress writer finishes its writes here after the reader is gone. */
@@ -103,7 +101,7 @@ class HirariApp : Application() {
             val covers = Covers(
                 source = ThumbnailsSource(thumbnails),
                 books = DeviceCoverBooks(contentResolver, cacheDir, folders, smb),
-                memoryBytes = ImageDecoding.deviceBudget(this@HirariApp) / COVER_MEMORY_SHARE,
+                memoryBytes = CoverMemoryBudget.forDevice(this@HirariApp),
                 density = { resources.displayMetrics.density },
             )
             LibraryServices(
