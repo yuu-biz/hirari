@@ -18,6 +18,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.image.BookFailure
@@ -257,6 +258,9 @@ class ReaderViewModel(
 
     private var opened: Opened? = null
 
+    /** The record of the book this reader opens (docs/spec.md section 6.1), from the moment it is written. */
+    private var openingRecord: OpeningRecord? = null
+
     /** Holds the book from the moment it opens, so leaving the screen closes it whatever the open was waiting on. */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val stops = StopRelay()
@@ -470,6 +474,17 @@ class ReaderViewModel(
 
     fun preparedView(view: PageView) = opened?.prefetcher?.get(view)
 
+    /**
+     * The reader shows the pages of its first view, or their failures, or why the book did not open (docs/spec.md
+     * sections 4.3 and 6.1). A book that opened has not shown anything yet; its first decode may still fail.
+     */
+    val showsContent: Boolean
+        get() = when (phase) {
+            ReaderPhase.Opening -> false
+            ReaderPhase.Reading -> prepared.let { state?.let { preparedView(it.current) } != null }
+            is ReaderPhase.Failed, ReaderPhase.NoPages -> true
+        }
+
     val failedPages: Map<Int, PageResult<Nothing>> get() = opened?.prefetcher?.failedPages.orEmpty()
 
     /** Every page failed, so the book shows one error for all of it (docs/spec.md section 4.8, ページのエラー表示). */
@@ -626,9 +641,15 @@ class ReaderViewModel(
     fun onStop() {
         dispatch(ReaderEvent.AutoPlayStopped)
         stops.stop()
+        openingRecord?.stopped()
+    }
+
+    fun onStart() {
+        openingRecord?.started()
     }
 
     override fun onCleared() {
+        openingRecord?.left()
         traces.close()
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
@@ -652,6 +673,8 @@ class ReaderViewModel(
         orientation = settings.readerOrientation
         background = settings.readerBackground
         hideSystemBars = settings.hideSystemBars
+        val name = request.book.initialPath().substringAfterLast('/')
+        OpeningRecord(services.appScope, services.storage.launch, OpeningBook(request.book, name)).also { openingRecord = it }.begin()
         val located = withContext(Dispatchers.IO) {
             openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder(settings.entryOrder).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
@@ -659,6 +682,7 @@ class ReaderViewModel(
         val book = when (val result = located.result) {
             is BookResult.Failed -> {
                 phase = ReaderPhase.Failed(result.reason)
+                openingRecord?.shown()
                 return
             }
             is BookResult.Opened -> result.book
@@ -666,6 +690,7 @@ class ReaderViewModel(
         if (book.pages.isEmpty()) {
             bookOwner.release()
             phase = ReaderPhase.NoPages
+            openingRecord?.shown()
             return
         }
         // A reader closed moments ago may still hold this book's latest position in the writer's window.
@@ -683,6 +708,7 @@ class ReaderViewModel(
 
             override fun onChanged() {
                 prepared++
+                if (showsContent) openingRecord?.shown()
                 prefetchToDisk()
             }
 

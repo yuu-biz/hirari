@@ -14,6 +14,7 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import io.github.yuubiz.hirari.core.data.LastFolder
+import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.feature.library.Notice
 import io.github.yuubiz.hirari.feature.library.Reopen
@@ -43,11 +44,15 @@ internal class AppStart(val restoring: Boolean, val plan: Deferred<StartPlan>, s
     /** What home says once it shows, taken when it is shown. */
     var notice by mutableStateOf<Notice?>(null)
 
+    /** The book the app ended while opening, named until the user closes the notice (docs/spec.md section 6.1). */
+    var ended by mutableStateOf<OpeningBook?>(null)
+
     fun apply(nav: NavController, plan: StartPlan) {
-        kept.decide(adopt = plan is StartPlan.Restore)
+        val died = plan.diedOpening
+        kept.decide(adopt = plan is StartPlan.Restore, dropReaders = died != null)
         if (restoring && plan !is StartPlan.Restore) nav.popBackStack<HomeRoute>(inclusive = false)
         when (plan) {
-            StartPlan.Restore -> Unit
+            is StartPlan.Restore -> if (died != null) nav.popBackStack<ReaderRoute>(inclusive = true)
             StartPlan.Unplanned -> notice = Notice.StartUnplanned
             is StartPlan.Open -> {
                 plan.folder?.let { nav.navigate(it.toRoute(reveal = plan.reveal)) }
@@ -58,6 +63,8 @@ internal class AppStart(val restoring: Boolean, val plan: Deferred<StartPlan>, s
                 }
             }
         }
+        val asked = (plan as? StartPlan.Open)?.reopen as? Reopen.Ask
+        ended = died?.takeUnless { asked?.suspect == true && it.isBook(asked.request.book) }
         applied = true
     }
 }
@@ -81,11 +88,20 @@ internal fun StartUp(nav: NavController, app: HirariApp, start: AppStart?) {
             .distinctUntilChanged()
             .collect { library.launch.setLastFolder(it.folder) }
     }
-    start?.asking?.let { reopen ->
+    val ended = start?.ended
+    if (ended != null) {
+        AlertDialog(
+            onDismissRequest = { start.ended = null },
+            title = { Text(stringResource(R.string.opening_ended_title)) },
+            text = { Text(stringResource(R.string.opening_ended_text, ended.name)) },
+            confirmButton = { TextButton(onClick = { start.ended = null }) { Text(stringResource(R.string.opening_ended_close)) } },
+        )
+    }
+    start?.asking?.takeIf { ended == null }?.let { reopen ->
         AlertDialog(
             onDismissRequest = { start.asking = null },
             title = { Text(stringResource(R.string.reopen_title)) },
-            text = { Text(reopen.title) },
+            text = { Text(if (reopen.suspect) stringResource(R.string.reopen_after_ending, reopen.title) else reopen.title) },
             confirmButton = {
                 TextButton(onClick = {
                     start.asking = null
@@ -106,10 +122,10 @@ private fun NavBackStackEntry.lastFolder(): TopFolder? = when {
     else -> null
 }
 
-/** The screen of [entry], which loads a folder or a book, composed only when the start lets it load. */
+/** The screen of [entry], which loads a folder or a book, or is the image [reader], composed only when the start lets it load. */
 @Composable
-internal fun Kept(app: HirariApp, entry: NavBackStackEntry, content: @Composable () -> Unit) {
-    if (app.start?.kept?.loads(entry.id) != false) content()
+internal fun Kept(app: HirariApp, entry: NavBackStackEntry, reader: Boolean = false, content: @Composable () -> Unit) {
+    if (app.start?.kept?.loads(entry.id, reader) != false) content()
 }
 
 /** Tells the start in progress that the screen of [entry] has shown its content, once [settles] returns. */

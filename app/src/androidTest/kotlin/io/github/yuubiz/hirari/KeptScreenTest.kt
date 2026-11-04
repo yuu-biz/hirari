@@ -73,7 +73,7 @@ class KeptScreenTest {
     @Test
     fun aKeptScreenTheStartKeepsLoadsOnce() {
         val (start, nav) = keptScreen()
-        compose.runOnIdle { start.apply(nav, StartPlan.Restore) }
+        compose.runOnIdle { start.apply(nav, StartPlan.Restore()) }
         compose.waitForIdle()
         assertTrue("the kept screen stayed on top", nav.currentDestination!!.hasRoute<LicensesRoute>())
         assertEquals(1, loads)

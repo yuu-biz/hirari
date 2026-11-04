@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.LastFolder
 import io.github.yuubiz.hirari.core.data.LaunchRecord
+import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.HistoryEntry
@@ -109,12 +110,46 @@ class StartUpTest {
     @Test
     fun `a start over the screens the system kept keeps them, and counts itself`() = runTest {
         given(ReopenLastBook.Immediately, unfinished = FAILED_STARTS - 1)
-        assertEquals(StartPlan.Restore, fixture.services.planStart(restoring = true))
+        assertEquals(StartPlan.Restore(), fixture.services.planStart(restoring = true))
         assertEquals(FAILED_STARTS, fixture.launch.record.unfinishedStarts)
 
         assertEquals(StartPlan.Open(), fixture.services.planStart(restoring = true))
         assertEquals(null, fixture.launch.record.lastFolder)
         assertEquals(LibraryView.Grid, fixture.settings.value.value.libraryView)
+    }
+
+    private val died = OpeningBook(BookAddress.InLocation(place.id, "作品//2巻.zip", folder = false, documentId = "doc:2"), "2巻.zip")
+
+    @Test
+    fun `the last book the app ended opening is asked about, never opened at once, and the start right after names it`() = runTest {
+        given(ReopenLastBook.Immediately, reopenFolder = false)
+        fixture.launch.record = LaunchRecord(diedOpening = died, suspect = died)
+        assertEquals(StartPlan.Open(reopen = Reopen.Ask("2巻.zip", request, suspect = true), diedOpening = died), fixture.services.planStart())
+
+        fixture.launch.record = LaunchRecord(suspect = died)
+        assertEquals(StartPlan.Open(reopen = Reopen.Ask("2巻.zip", request, suspect = true)), fixture.services.planStart())
+
+        given(ReopenLastBook.Ask, reopenFolder = false)
+        fixture.launch.record = LaunchRecord(suspect = died)
+        assertEquals(StartPlan.Open(reopen = Reopen.Ask("2巻.zip", request, suspect = true)), fixture.services.planStart())
+    }
+
+    @Test
+    fun `another book the app ended opening is named and leaves the last book as the setting says`() = runTest {
+        given(ReopenLastBook.Immediately, reopenFolder = false)
+        val other = OpeningBook(BookAddress.Document(UriString("content://downloads/9")), "9.zip")
+        fixture.launch.record = LaunchRecord(diedOpening = other, suspect = other)
+        assertEquals(StartPlan.Open(reopen = Reopen.Now(request), diedOpening = other), fixture.services.planStart())
+    }
+
+    @Test
+    fun `a start over kept screens after the app ended opening a book names it, and so does the start at home after three`() = runTest {
+        given(ReopenLastBook.Off)
+        fixture.launch.record = LaunchRecord(diedOpening = died, suspect = died)
+        assertEquals(StartPlan.Restore(died), fixture.services.planStart(restoring = true))
+
+        fixture.launch.record = LaunchRecord(unfinishedStarts = FAILED_STARTS, diedOpening = died, suspect = died)
+        assertEquals(StartPlan.Open(diedOpening = died), fixture.services.planStart(restoring = true))
     }
 
     @Test

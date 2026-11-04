@@ -96,6 +96,7 @@ fun ReaderScreen(
     val stoppingKey = remember { StoppingKey() }
     val close by rememberUpdatedState(onClose)
     ReaderWindowHold(viewModel, ui)
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onStart() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
 
     fun dismiss() {

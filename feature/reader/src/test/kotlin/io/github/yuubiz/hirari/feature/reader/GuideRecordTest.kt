@@ -1,8 +1,10 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.data.BookOpening
 import io.github.yuubiz.hirari.core.data.LastFolder
 import io.github.yuubiz.hirari.core.data.LaunchRecord
 import io.github.yuubiz.hirari.core.data.LaunchRepository
+import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +26,10 @@ class GuideRecordTest {
         override suspend fun finishStart() = Unit
 
         override suspend fun setLastFolder(folder: LastFolder?) = Unit
+
+        override suspend fun beginOpening(book: OpeningBook): BookOpening = BookOpening(0, book)
+
+        override suspend fun endOpening(opening: BookOpening, shown: Boolean) = Unit
 
         override suspend fun readerGuideSeen(): Boolean = marks > 0
 

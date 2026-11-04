@@ -65,6 +65,25 @@ class StartGateTest {
     }
 
     @Test
+    fun aStartThatDropsTheKeptReaderKeepsTheOtherKeptScreensAndLoadsReadersOpenedAfterIt() {
+        val kept = KeptScreens(restoring = true)
+        assertEquals(false, kept.loads("folder"))
+        assertEquals(false, kept.loads("reader", reader = true))
+        kept.decide(adopt = true, dropReaders = true)
+        assertEquals(true, kept.loads("folder"))
+        assertEquals("the reader that may have failed loaded", false, kept.loads("reader", reader = true))
+        assertEquals(true, kept.loads("next reader", reader = true))
+    }
+
+    @Test
+    fun aStartThatKeepsTheScreensLoadsTheKeptReader() {
+        val kept = KeptScreens(restoring = true)
+        kept.loads("reader", reader = true)
+        kept.decide(adopt = true)
+        assertEquals(true, kept.loads("reader", reader = true))
+    }
+
+    @Test
     fun anActivityWithNoKeptStateStartsEvenWhileTheProcessLives() {
         assertEquals(StartKind.Fresh, startKind(savedState = false, startInProcess = false))
         assertEquals(StartKind.Fresh, startKind(savedState = false, startInProcess = true))

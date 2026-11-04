@@ -6,8 +6,10 @@ import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
+import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.normalizePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,21 +23,65 @@ import java.io.OutputStream
 /** The folder of a SAF place the file list showed last. [documentId] saves looking the path up again. */
 data class LastFolder(val location: LocationId, val path: String, val documentId: String?)
 
+/**
+ * A book a reader opens (docs/spec.md section 6.1), by its address without the provider's document id and with its
+ * path normalized, so every way of opening the same book names it alike. [name] is what a notice calls it.
+ */
+class OpeningBook(book: BookAddress, val name: String) {
+    val book: BookAddress = identity(book)
+
+    /** Whether [address] is this book, however it was reached. */
+    fun isBook(address: BookAddress): Boolean = identity(address) == book
+
+    override fun equals(other: Any?): Boolean = other is OpeningBook && other.book == book && other.name == name
+
+    override fun hashCode(): Int = 31 * book.hashCode() + name.hashCode()
+
+    override fun toString(): String = "OpeningBook($book, $name)"
+}
+
+private fun identity(book: BookAddress): BookAddress = when (book) {
+    is BookAddress.InLocation -> book.copy(path = normalizePath(book.path), documentId = null)
+    is BookAddress.Document, is BookAddress.Tree -> book
+}
+
+/** One reader's record of the book it opens, which [LaunchRepository.endOpening] ends. */
+data class BookOpening(val serial: Long, val book: OpeningBook)
+
 /** What the app knows at start-up about the starts before it (docs/spec.md section 4.3, 起動時の動作). */
 data class LaunchRecord(
     /** Starts in a row that never reached their first screen. */
     val unfinishedStarts: Int = 0,
     val lastFolder: LastFolder? = null,
+    /** The book a reader was opening when the app ended since the last start (docs/spec.md section 6.1). */
+    val diedOpening: OpeningBook? = null,
+    /**
+     * The last book the app ended while opening, this start's [diedOpening] or one of an earlier start, which has
+     * not shown its content in a reader since. A start does not open it by itself.
+     */
+    val suspect: OpeningBook? = null,
 )
 
 /** The start-up record. Device-local: it is not backed up and not exported (docs/spec.md section 7). */
 interface LaunchRepository {
-    /** Counts this start as unfinished until [finishStart], and returns the record from before it. */
+    /**
+     * Counts this start as unfinished until [finishStart], and returns the record from before it. A book a reader was
+     * still opening becomes the [LaunchRecord.suspect] from here on.
+     */
     suspend fun beginStart(): LaunchRecord
 
     suspend fun finishStart()
 
     suspend fun setLastFolder(folder: LastFolder?)
+
+    /** Records that a reader opens [book], in place of any book recorded so (docs/spec.md section 6.1). */
+    suspend fun beginOpening(book: OpeningBook): BookOpening
+
+    /**
+     * Ends [opening], unless another reader recorded its own book since. [shown]: the reader showed the book's
+     * content or why it did not open, which also clears the book as the suspect.
+     */
+    suspend fun endOpening(opening: BookOpening, shown: Boolean)
 
     /** Whether the reader's operation guide has been shown to the end on this device (docs/spec.md section 4.8). */
     suspend fun readerGuideSeen(): Boolean
@@ -48,6 +94,39 @@ interface LaunchRepository {
     suspend fun setLastSaveFolder(folder: UriString?)
 }
 
+/** An [OpeningBook] in the file, flattened as the reader's route is. A [kind] this version does not know reads as none. */
+@Serializable
+internal data class StoredBook(
+    val kind: String,
+    val name: String,
+    val uri: String? = null,
+    val location: Long? = null,
+    val path: String? = null,
+    val folder: Boolean = false,
+) {
+    fun toBook(): OpeningBook? {
+        val address = when (kind) {
+            DOCUMENT -> uri?.let { BookAddress.Document(UriString(it)) }
+            TREE -> uri?.let { BookAddress.Tree(UriString(it)) }
+            IN_LOCATION -> if (location != null && path != null) BookAddress.InLocation(LocationId(location), path, folder) else null
+            else -> null
+        }
+        return address?.let { OpeningBook(it, name) }
+    }
+
+    companion object {
+        private const val DOCUMENT = "document"
+        private const val TREE = "tree"
+        private const val IN_LOCATION = "inLocation"
+
+        fun of(book: OpeningBook): StoredBook = when (val address = book.book) {
+            is BookAddress.Document -> StoredBook(DOCUMENT, book.name, uri = address.uri.value)
+            is BookAddress.Tree -> StoredBook(TREE, book.name, uri = address.uri.value)
+            is BookAddress.InLocation -> StoredBook(IN_LOCATION, book.name, location = address.location.value, path = address.path, folder = address.folder)
+        }
+    }
+}
+
 @Serializable
 internal data class StoredLaunch(
     val unfinishedStarts: Int = 0,
@@ -56,6 +135,10 @@ internal data class StoredLaunch(
     val lastFolderDocumentId: String? = null,
     val readerGuideSeen: Boolean = false,
     val lastSaveFolder: String? = null,
+    /** The book a reader opens now, and the serial of that reader's record. */
+    val opening: StoredBook? = null,
+    val openingSerial: Long = 0,
+    val suspect: StoredBook? = null,
 ) {
     fun toRecord() = LaunchRecord(
         unfinishedStarts = unfinishedStarts.coerceAtLeast(0),
@@ -64,6 +147,8 @@ internal data class StoredLaunch(
         } else {
             null
         },
+        diedOpening = opening?.toBook(),
+        suspect = (opening ?: suspect)?.toBook(),
     )
 }
 
@@ -72,9 +157,22 @@ internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaun
         var before = StoredLaunch()
         store.updateData {
             before = it
-            it.copy(unfinishedStarts = it.unfinishedStarts.coerceAtLeast(0) + 1)
+            it.copy(unfinishedStarts = it.unfinishedStarts.coerceAtLeast(0) + 1, opening = null, suspect = it.opening ?: it.suspect)
         }
         return before.toRecord()
+    }
+
+    override suspend fun beginOpening(book: OpeningBook): BookOpening {
+        val serial = store.updateData { it.copy(opening = StoredBook.of(book), openingSerial = it.openingSerial + 1) }.openingSerial
+        return BookOpening(serial, book)
+    }
+
+    override suspend fun endOpening(opening: BookOpening, shown: Boolean) {
+        store.updateData {
+            val own = it.opening != null && it.openingSerial == opening.serial
+            val cleared = shown && it.suspect?.toBook()?.book == opening.book.book
+            if (!own && !cleared) it else it.copy(opening = it.opening.takeUnless { own }, suspect = it.suspect.takeUnless { cleared })
+        }
     }
 
     override suspend fun finishStart() {

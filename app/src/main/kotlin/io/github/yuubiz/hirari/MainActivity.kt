@@ -56,7 +56,6 @@ import io.github.yuubiz.hirari.feature.library.Notice
 import io.github.yuubiz.hirari.feature.library.SmbServerScreen
 import io.github.yuubiz.hirari.feature.library.SmbServerViewModel
 import io.github.yuubiz.hirari.feature.reader.KeyRelay
-import io.github.yuubiz.hirari.feature.reader.ReaderPhase
 import io.github.yuubiz.hirari.feature.reader.ReaderScreen
 import io.github.yuubiz.hirari.feature.reader.ReaderViewModel
 import io.github.yuubiz.hirari.feature.settings.LicenseScreen
@@ -223,10 +222,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     composable<ReaderRoute> { entry ->
-                        Kept(app, entry) {
+                        Kept(app, entry, reader = true) {
                             val request = entry.toRoute<ReaderRoute>().toRequest()
                             val reader = viewModel { ReaderViewModel(app, app.services, request) }
-                            ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent() }.first { it } }
+                            ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent }.first { it } }
                             ReaderScreen(
                                 reader,
                                 keys,
@@ -324,16 +323,6 @@ class MainActivity : ComponentActivity() {
         } catch (_: SecurityException) {
         }
     }
-}
-
-/**
- * The reader shows the pages of its first view, or their failures, or why the book did not open (docs/spec.md
- * section 4.3, 起動時の動作). A book that opened has not shown anything yet; its first decode may still fail.
- */
-private fun ReaderViewModel.showsContent(): Boolean = when (phase) {
-    ReaderPhase.Opening -> false
-    ReaderPhase.Reading -> prepared.let { state?.let { preparedView(it.current) } != null }
-    is ReaderPhase.Failed, ReaderPhase.NoPages -> true
 }
 
 /** A book opens without registering a place from here (docs/spec.md section 4.2). */

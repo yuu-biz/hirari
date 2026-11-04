@@ -92,25 +92,33 @@ private enum class Verdict { Pending, Adopted, Discarded }
 /**
  * The screens the system kept, which wait until the start's plan adopts or discards them: a kept folder or book
  * that made the app fail must not load before then. A discarded screen never loads, even while it is composed
- * to leave. Screens are known by back stack entry id. Main thread only.
+ * to leave. A plan may adopt the screens but for the readers. Screens are known by back stack entry id. Main thread
+ * only.
  */
 internal class KeptScreens(restoring: Boolean) {
     private var verdict by mutableStateOf(if (restoring) Verdict.Pending else Verdict.Adopted)
+    private var readersDropped by mutableStateOf(false)
 
     /** The screens shown before the verdict; only screens the system kept are on the back stack then. */
     private val restored = HashSet<String>()
 
-    /** Whether the screen of [entry] may load now. A screen asking before the verdict is one the system kept. */
-    fun loads(entry: String): Boolean = when (verdict) {
+    /**
+     * Whether the screen of [entry], a [reader] or not, may load now. A screen asking before the verdict is one the
+     * system kept.
+     */
+    fun loads(entry: String, reader: Boolean = false): Boolean = when (verdict) {
         Verdict.Pending -> {
             restored += entry
             false
         }
-        Verdict.Adopted -> true
+        Verdict.Adopted -> !(reader && readersDropped && entry in restored)
         Verdict.Discarded -> entry !in restored
     }
 
-    fun decide(adopt: Boolean) {
-        if (verdict == Verdict.Pending) verdict = if (adopt) Verdict.Adopted else Verdict.Discarded
+    /** Adopts or discards the kept screens; [dropReaders] discards the kept readers of adopted screens. */
+    fun decide(adopt: Boolean, dropReaders: Boolean = false) {
+        if (verdict != Verdict.Pending) return
+        readersDropped = dropReaders
+        verdict = if (adopt) Verdict.Adopted else Verdict.Discarded
     }
 }

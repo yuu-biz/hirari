@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.data.BookOpening
 import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.data.CoverIndex
 import io.github.yuubiz.hirari.core.image.BookFailure
@@ -25,6 +26,7 @@ import io.github.yuubiz.hirari.core.data.LaunchRecord
 import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.LibraryBook
 import io.github.yuubiz.hirari.core.data.LocationRepository
+import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.data.PasswordChange
 import io.github.yuubiz.hirari.core.data.PinnedFolder
 import io.github.yuubiz.hirari.core.data.ProgressRepository
@@ -452,6 +454,10 @@ internal class FakeLaunch : LaunchRepository {
     override suspend fun setLastFolder(folder: LastFolder?) {
         record = record.copy(lastFolder = folder)
     }
+
+    override suspend fun beginOpening(book: OpeningBook): BookOpening = BookOpening(0, book)
+
+    override suspend fun endOpening(opening: BookOpening, shown: Boolean) = Unit
 
     var guideSeen = false
 

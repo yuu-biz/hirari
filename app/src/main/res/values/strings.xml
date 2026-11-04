@@ -8,6 +8,10 @@
     <string name="reopen_title">前回の本を開きますか</string>
     <string name="reopen_open">開く</string>
     <string name="reopen_skip">開かない</string>
+    <string name="reopen_after_ending">%1$s\n\n前回、この本を開く途中でアプリが終了しました。もう一度開きますか。</string>
+    <string name="opening_ended_title">本を開く途中でアプリが終了しました</string>
+    <string name="opening_ended_text">前回、「%1$s」を開く途中でアプリが終了しました。この本は自動では開きません。</string>
+    <string name="opening_ended_close">閉じる</string>
     <string name="save_channel_progress">端末への保存の進み具合</string>
     <string name="save_channel_result">端末への保存の結果</string>
     <string name="save_notification_idle">保存しています</string>
