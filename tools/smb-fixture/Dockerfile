@@ -1,5 +1,5 @@
 FROM alpine:3.20
-RUN apk add --no-cache samba openssl
+RUN apk add --no-cache samba openssl zip
 COPY smb.conf /etc/samba/smb.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

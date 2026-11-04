@@ -36,5 +36,16 @@ mkdir -p /srv/books/シリーズ/おまけ /srv/books/シリーズ/空
 : > /srv/books/シリーズ/第10巻.pdf
 png 1000 /srv/books/シリーズ/おまけ/01.png
 printf 'memo' > /srv/books/シリーズ/空/説明.txt
+# A book of 200 stored pages of 150,000 bytes for the SMB cover target (docs/spec.md section 5.2). The pages go in
+# out of name order, so the cover, p000.jpg, is the 101st entry and sits in the middle of the archive.
+mkdir -p /tmp/cover
+i=0
+while [ $i -lt 200 ]; do
+  pattern 150000 > /tmp/cover/$(printf 'p%03d.jpg' $i)
+  i=$((i + 1))
+done
+rm -f /srv/books/cover.zip
+(cd /tmp/cover && zip -q -0 -X /srv/books/cover.zip p1*.jpg p0*.jpg)
+rm -rf /tmp/cover
 chmod -R a+rX /srv/books
 exec smbd --foreground --no-process-group --debug-stdout

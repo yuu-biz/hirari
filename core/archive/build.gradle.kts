@@ -65,4 +65,6 @@ tasks.withType<Test>().configureEach {
     val corpus = project(":tools:corpus").tasks.named("generateCorpus")
     inputs.files(corpus).withPropertyName("corpus")
     systemProperty("hirari.corpus", corpus.get().outputs.files.singleFile.absolutePath)
+    // The SMB cover test reads the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skips without it.
+    systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
 }
