@@ -111,6 +111,7 @@ internal class TextReaderModel(
     private val clock: () -> Instant = Instant::now,
     private val heapBudget: Long = textHeapBudget(),
     private val startAt: NeighborStart = NeighborStart.Saved,
+    private val startOffset: Long? = null,
     /** A turn that waited for the layout and then ran into an end of the text (docs/spec.md section 4.9). */
     private val onEdge: (BookEdge) -> Unit = {},
     /** The view changed by a turn, a jump or a step, and 「めくりで振動」 is on (docs/spec.md section 4.10). */
@@ -181,7 +182,7 @@ internal class TextReaderModel(
         val saved = progress.get(text.id)
         val length = parsed.first.sourceLength
         before = saved
-        anchor = when (startAt) {
+        anchor = startOffset?.coerceIn(0L, length.toLong())?.toInt() ?: when (startAt) {
             NeighborStart.Saved -> ((saved?.position as? ReadingPosition.Text)?.charOffset ?: 0L).coerceIn(0L, length.toLong()).toInt()
             NeighborStart.First -> 0
             NeighborStart.Last -> maxOf(0, length - 1)

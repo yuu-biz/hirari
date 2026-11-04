@@ -14,10 +14,11 @@ import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
-import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ReadState
+import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.model.TextEntry
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
 import kotlinx.coroutines.flow.first
@@ -267,6 +268,27 @@ class LibraryRepositoriesTest {
         assertEquals("Manga", ascending.first().location?.displayName)
         assertNull(ascending.last().book)
         assertEquals(listOf("gone", "other", "v10", "v2"), history.observe(HistorySort.PathDescending).first().map { it.entry.book.value })
+    }
+
+    @Test
+    fun `archive text bookmarks keep the archive address and entry when loaded from Room`() = runTest {
+        val place = locations.addSafTree("Books", UriString("content://tree/books"))
+        val sources = listOf(BookSource.InLocation(place, "novels.zip"), BookSource.External(UriString("content://other/novels.zip")))
+        for ((index, source) in sources.withIndex()) {
+            val text = book("entry$index", null, "novel.txt").copy(
+                source = source, format = BookFormat.Text(null),
+                textEntry = TextEntry(BookId("archive$index"), 3),
+            )
+            books.record(text)
+            val position = ReadingPosition.Text(250, 1000)
+            bookmarks.add(text.id, position, "chapter", at(1))
+            val loaded = bookmarks.observe(BookmarkSort.Newest).first().single { it.book == text.id }
+            assertEquals(text, loaded.info)
+            assertEquals(position, loaded.bookmarks.single().position)
+            assertEquals(text, books.get(text.id)!!.book)
+        }
+        // An entry's progress must not replace the state of its containing archive in the folder list.
+        assertEquals(emptyList(), books.inFolder(place, "").first())
     }
 
     @Test

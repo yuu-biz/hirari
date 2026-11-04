@@ -240,7 +240,7 @@ class MainActivity : ComponentActivity() {
                         Kept(app, entry) {
                             val route = entry.toRoute<TextRoute>()
                             val ref = route.toRef()
-                            val reader = viewModel(key = ref.toString()) { TextReaderViewModel(application, app.text, ref, route.start) }
+                            val reader = viewModel(key = ref.toString()) { TextReaderViewModel(application, app.text, ref, route.start, route.startOffset) }
                             ReportSettled(nav, entry, app) { reader.state.first { it !is TextReaderUiState.Opening } }
                             TextReaderScreen(
                                 reader,

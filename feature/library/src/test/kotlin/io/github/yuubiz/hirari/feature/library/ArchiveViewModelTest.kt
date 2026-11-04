@@ -192,10 +192,10 @@ class ArchiveViewModelTest {
     }
 
     @Test
-    fun `a text opens as an entry of the archive document with the id the list marks the archive by`() = runTest {
+    fun `a text opens as an entry of the archive in its place with the id the list marks the archive by`() = runTest {
         val list = viewModel()
         assertEquals(
-            ArchiveTarget.Text(TextAddress.ArchiveEntry(ArchiveFile.Document(UriString("content://tree/manga/document/book.zip")), 2, id)),
+            ArchiveTarget.Text(TextAddress.ArchiveEntry(ArchiveFile.InLocation(place.id, "作品/book.zip"), 2, id)),
             list.open(list.shown().texts.single().text),
         )
     }
@@ -214,7 +214,7 @@ class ArchiveViewModelTest {
             list.open(shown.pages[1].page),
         )
         assertEquals(
-            ArchiveTarget.Text(TextAddress.ArchiveEntry(ArchiveFile.OnServer(server.id, "作品/book.zip"), 2, locationBookId(server, "作品/book.zip"))),
+            ArchiveTarget.Text(TextAddress.ArchiveEntry(ArchiveFile.InLocation(server.id, "作品/book.zip"), 2, locationBookId(server, "作品/book.zip"))),
             list.open(shown.texts.single().text),
         )
     }

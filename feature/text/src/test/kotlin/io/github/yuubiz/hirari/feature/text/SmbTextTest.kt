@@ -93,7 +93,7 @@ class SmbTextTest {
 
     @Test
     fun anEntryOfAnArchiveOfAPlaceThatIsGoneIsNotFound() {
-        val ref = TextBookRef.ArchiveEntry(EntryArchive.OnServer(LocationId(9), "a.zip"), entryIndex = 0, archiveId = BookId("a"))
+        val ref = TextBookRef.ArchiveEntry(EntryArchive.InLocation(LocationId(9), "a.zip"), entryIndex = 0, archiveId = BookId("a"))
         assertEquals(TextOpenResult.Failed(TextFailure.NotFound), open(ref) { error("not asked") })
         assertEquals(emptyList(), asked)
     }

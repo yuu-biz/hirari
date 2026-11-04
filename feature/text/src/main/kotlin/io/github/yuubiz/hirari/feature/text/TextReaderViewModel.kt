@@ -58,6 +58,7 @@ class TextReaderViewModel(
     private val services: Deferred<TextReaderServices>,
     private val ref: TextBookRef,
     private val startAt: NeighborStart = NeighborStart.Saved,
+    private val startOffset: Long? = null,
 ) : ViewModel() {
     private val pending = MutableStateFlow<TextReaderUiState>(TextReaderUiState.Opening)
     private var model: TextReaderModel? = null
@@ -99,6 +100,7 @@ class TextReaderViewModel(
                 fonts = fonts,
                 history = RepositoryTextHistory(services.storage.books, services.storage.history, services.appScope),
                 startAt = startAt,
+                startOffset = startOffset,
                 onEdge = ::edgeReached,
                 onTurned = { turnHaptics.trySend(Unit) },
             )

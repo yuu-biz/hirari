@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
+import io.github.yuubiz.hirari.core.model.TextEntry
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -46,6 +47,29 @@ class MigrationTest {
             )
             extra(db)
             db.version = version
+        }
+    }
+
+    @Test
+    fun `version 4 bookmarks survive and archive entry addresses can be saved after migration`() = runTest {
+        writeVersion(4) { db ->
+            db.execSQL("INSERT INTO books (book_id, uri, format, title, byte_size, modified) VALUES ('text', 'content://books/novel.txt', 'Text', 'novel.txt', 1000, 0)")
+            db.execSQL("INSERT INTO bookmarks (id, book_id, position_kind, position_at, position_total, label, created_at) VALUES (1, 'text', 'Text', 250, 1000, 'chapter', 1)")
+        }
+        val database = openDatabase(context)
+        try {
+            val books = RoomBookRepository(database)
+            val marks = RoomBookmarkRepository(database)
+            val before = marks.observe(io.github.yuubiz.hirari.core.model.BookmarkSort.Newest).first().single()
+            assertEquals(ReadingPosition.Text(250, 1000), before.bookmarks.single().position)
+            assertEquals(null, before.info!!.textEntry)
+            val entry = before.info!!.copy(textEntry = TextEntry(BookId("archive"), 3))
+            books.record(entry)
+            val after = marks.observe(io.github.yuubiz.hirari.core.model.BookmarkSort.Newest).first().single()
+            assertEquals(entry, after.info)
+            assertEquals(before.bookmarks, after.bookmarks)
+        } finally {
+            database.close()
         }
     }
 

@@ -60,7 +60,7 @@ class TextFolderSiblingsTest {
         assertEquals(Sibling.NoFolder, siblings.beside(text("作品/ない.txt"), BookEdge.End))
         assertEquals(
             Sibling.NoFolder,
-            siblings.beside(TextBookRef.ArchiveEntry(EntryArchive.OnServer(PLACE, "作品/第3巻.zip"), 0, BookId("zip")), BookEdge.End),
+            siblings.beside(TextBookRef.ArchiveEntry(EntryArchive.InLocation(PLACE, "作品/第3巻.zip"), 0, BookId("zip")), BookEdge.End),
         )
     }
 

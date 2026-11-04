@@ -14,6 +14,7 @@ import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.PasswordChange
 import io.github.yuubiz.hirari.core.data.PinnedFolder
 import io.github.yuubiz.hirari.core.data.SmbServer
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
@@ -33,6 +34,7 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
@@ -100,6 +102,15 @@ class OpenInLocationTest {
     private val provider = Robolectric.buildContentProvider(HangingTreeProvider::class.java).create(AUTHORITY).get()
     private val resolver: ContentResolver = ApplicationProvider.getApplicationContext<Context>().contentResolver
     private val place = LibraryLocation.SafTree(LocationId(1), "shelf", UriString("content://$AUTHORITY/tree/root"))
+
+    @Test
+    fun `an archive text in a device place without its grant explains the missing permission`() = runBlocking {
+        val ref = TextBookRef.ArchiveEntry(EntryArchive.InLocation(place.id, "novels.zip"), 1, BookId("archive"))
+        val sources = TextSources(resolver, OnePlace(place.copy(permissionHeld = false)), { _, _ -> error("no server") }, temp.newFolder()) {
+            EntryCharsets(null, Charsets.UTF_8)
+        }
+        assertEquals(TextOpenResult.Failed(TextFailure.NoPermission), opener(ref, sources).open())
+    }
 
     @Test
     fun `leaving the reader cancels the lookup of a text opened from the history by its path`() = runBlocking {

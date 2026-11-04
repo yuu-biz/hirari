@@ -1,5 +1,9 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.data.BookmarkGroup
+import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.ReadingPosition
+import io.github.yuubiz.hirari.core.model.TextEntry
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookSource
@@ -35,6 +39,47 @@ class HomeViewModelTest {
     fun reset() = Dispatchers.resetMain()
 
     private fun viewModel() = HomeViewModel(CompletableDeferred(fixture.services))
+
+    @Test
+    fun `text bookmarks dispatch to a text address with their character offset`() = runTest {
+        val text = book(place.id, "novel.txt").copy(format = BookFormat.Text(null))
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas", 445, "books", "", null, null, null)
+        fixture.locations.rows.value = listOf(place, server)
+        val home = viewModel()
+        watch(home.state)
+        val external = BookSource.External(UriString("content://books/novel.txt"))
+        val entry = TextEntry(BookId("archive"), 3)
+        val cases = listOf(
+            text to TextAddress.InLocation(place.id, "novel.txt", startOffset = 120),
+            text.copy(source = BookSource.InLocation(server.id, "novel.txt")) to TextAddress.InLocation(server.id, "novel.txt", startOffset = 120),
+            text.copy(source = external) to TextAddress.Document(external.uri, startOffset = 120),
+            text.copy(source = BookSource.InLocation(place.id, "novels.zip"), textEntry = entry) to
+                TextAddress.ArchiveEntry(ArchiveFile.InLocation(place.id, "novels.zip"), 3, entry.archiveId, 120),
+            text.copy(source = BookSource.InLocation(server.id, "novels.zip"), textEntry = entry) to
+                TextAddress.ArchiveEntry(ArchiveFile.InLocation(server.id, "novels.zip"), 3, entry.archiveId, 120),
+            text.copy(source = external, textEntry = entry) to
+                TextAddress.ArchiveEntry(ArchiveFile.Document(external.uri), 3, entry.archiveId, 120),
+        )
+        for ((book, address) in cases) {
+            assertEquals(HomeTarget.Text(address), home.request(BookmarkGroup(book.id, book, null, emptyList()), ReadingPosition.Text(120, 1000)))
+        }
+    }
+
+    @Test
+    fun `text bookmarks explain a missing book or an unavailable place like image bookmarks`() = runTest {
+        fixture.locations.rows.value = listOf(place.copy(permissionHeld = false))
+        val home = viewModel()
+        watch(home.state)
+        val text = book(place.id, "novels.zip").copy(format = BookFormat.Text(null), textEntry = TextEntry(BookId("archive"), 3))
+        val position = ReadingPosition.Text(120, 1000)
+        assertNull(home.request(BookmarkGroup(text.id, null, null, emptyList()), position))
+        assertEquals(Notice.BookMissing, home.state.value.notice)
+        assertNull(home.request(BookmarkGroup(text.id, text, null, emptyList()), position))
+        assertEquals(Notice.PlaceUnavailable, home.state.value.notice)
+        val removed = text.copy(source = BookSource.InLocation(LocationId(99), "novels.zip"))
+        assertNull(home.request(BookmarkGroup(removed.id, removed, null, emptyList()), position))
+        assertEquals(Notice.PlaceUnavailable, home.state.value.notice)
+    }
 
     @Test
     fun `the shelf lists books being read with their progress and leaves out finished ones`() = runTest {

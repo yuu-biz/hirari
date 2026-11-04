@@ -202,7 +202,7 @@ class ArchiveViewModel(
     /** What tapping [text] opens. An archive of an SMB place has no document, so the text reader opens it by its path. */
     fun open(text: ArchiveText): ArchiveTarget? {
         val opened = opened ?: return null
-        val archive = opened.contents.documentUri?.let(ArchiveFile::Document) ?: ArchiveFile.OnServer(book.location, normalizePath(book.path))
+        val archive = ArchiveFile.InLocation(book.location, normalizePath(book.path))
         return ArchiveTarget.Text(TextAddress.ArchiveEntry(archive, text.entryIndex, opened.id))
     }
 

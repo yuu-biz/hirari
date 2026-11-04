@@ -20,6 +20,7 @@ import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.TextEntry
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.normalizePath
 import kotlinx.coroutines.flow.Flow
@@ -112,6 +113,8 @@ internal data class BookRow(
     @ColumnInfo(name = "cover_entry") val coverEntry: Int?,
     /** The range of that page the user chose, as [CoverCrop.encode] writes it. */
     @ColumnInfo(name = "cover_crop") val coverCrop: String? = null,
+    @ColumnInfo(name = "text_archive_id") val textArchiveId: String? = null,
+    @ColumnInfo(name = "text_entry_index") val textEntryIndex: Int? = null,
 )
 
 internal fun Book.toRow(coverEntry: Int?): BookRow {
@@ -134,6 +137,8 @@ internal fun Book.toRow(coverEntry: Int?): BookRow {
         modified = modified.toEpochMilli(),
         pageCount = pageCount,
         coverEntry = coverEntry,
+        textArchiveId = textEntry?.archiveId?.value,
+        textEntryIndex = textEntry?.entryIndex,
     )
 }
 
@@ -148,6 +153,7 @@ internal fun BookRow.toModel(): Book = Book(
     byteSize = byteSize,
     modified = Instant.ofEpochMilli(modified),
     pageCount = pageCount,
+    textEntry = textArchiveId?.let { archive -> textEntryIndex?.let { TextEntry(BookId(archive), it) } },
 )
 
 internal data class BookWithProgress(
@@ -174,7 +180,7 @@ internal interface BookDao {
     suspend fun setCover(bookId: String, entry: Int?, crop: String?)
 
     @Transaction
-    @Query("SELECT * FROM books WHERE location_id = :locationId AND folder = :folder")
+    @Query("SELECT * FROM books WHERE location_id = :locationId AND folder = :folder AND text_entry_index IS NULL")
     fun observeFolder(locationId: Long, folder: String): Flow<List<BookWithProgress>>
 
     @Transaction

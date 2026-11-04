@@ -100,14 +100,16 @@ sealed interface FileTarget {
  * the reader, the history and a shortcut keep its progress under one id.
  */
 sealed interface TextAddress {
+    val startOffset: Long?
+
     /** A document picked or handed over outside a place; its id comes from its first bytes. */
-    data class Document(val uri: UriString) : TextAddress
+    data class Document(val uri: UriString, override val startOffset: Long? = null) : TextAddress
 
     /** The text at [path] of a place. [documentId] is the provider's id when the caller knows it. */
-    data class InLocation(val location: LocationId, val path: String, val documentId: String? = null) : TextAddress
+    data class InLocation(val location: LocationId, val path: String, val documentId: String? = null, override val startOffset: Long? = null) : TextAddress
 
     /** The entry at [entryIndex], in the stored order, of [archive], whose id is [archiveId]. */
-    data class ArchiveEntry(val archive: ArchiveFile, val entryIndex: Int, val archiveId: BookId) : TextAddress
+    data class ArchiveEntry(val archive: ArchiveFile, val entryIndex: Int, val archiveId: BookId, override val startOffset: Long? = null) : TextAddress
 }
 
 /** The archive a text entry is read from. */
@@ -115,8 +117,8 @@ sealed interface ArchiveFile {
     /** The archive's document, of a SAF place. */
     data class Document(val uri: UriString) : ArchiveFile
 
-    /** The archive at [path] of an SMB place, which has no document. */
-    data class OnServer(val location: LocationId, val path: String) : ArchiveFile
+    /** The archive at [path] of a device or SMB place. */
+    data class InLocation(val location: LocationId, val path: String) : ArchiveFile
 }
 
 private sealed interface ListingState {

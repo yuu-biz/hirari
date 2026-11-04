@@ -71,7 +71,7 @@ private class CoverEnv(val layout: CoverLayout, val directions: Map<BookId, Read
 data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 
 /** A one-time message for a snackbar. */
-enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, TextNotReady, ShortcutMissing, ShortcutUnsupported, IncomingUnreadable, SaveStarted, StartUnplanned }
+enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, ShortcutMissing, ShortcutUnsupported, IncomingUnreadable, SaveStarted, StartUnplanned }
 
 /** What a tap on a book of the home screen opens: the image reader, or the text reader for a text. */
 sealed interface HomeTarget {
@@ -189,24 +189,30 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
      * it, or its place is gone or lost its grant (docs/spec.md section 7). A text opens in the text reader at its
      * stored position.
      */
-    fun request(book: Book?, start: StartAt = StartAt.Saved): HomeTarget? {
+    fun request(book: Book?, start: StartAt = StartAt.Saved, textOffset: Long? = null): HomeTarget? {
         if (book == null) return null.also { notice.value = Notice.BookMissing }
         val source = book.source
         if (source is BookSource.InLocation && !usable(source.location)) return null.also { notice.value = Notice.PlaceUnavailable }
         if (book.format is BookFormat.Text) {
-            return HomeTarget.Text(
-                when (source) {
-                    is BookSource.InLocation -> TextAddress.InLocation(source.location, source.path)
-                    is BookSource.External -> TextAddress.Document(source.uri)
-                },
-            )
+            val entry = book.textEntry
+            val address = if (entry != null) {
+                val archive = when (source) {
+                    is BookSource.InLocation -> ArchiveFile.InLocation(source.location, source.path)
+                    is BookSource.External -> ArchiveFile.Document(source.uri)
+                }
+                TextAddress.ArchiveEntry(archive, entry.entryIndex, entry.archiveId, textOffset)
+            } else when (source) {
+                is BookSource.InLocation -> TextAddress.InLocation(source.location, source.path, startOffset = textOffset)
+                is BookSource.External -> TextAddress.Document(source.uri, startOffset = textOffset)
+            }
+            return HomeTarget.Text(address)
         }
         return HomeTarget.Book(OpenBookRequest(book.address(), start))
     }
 
     fun request(group: BookmarkGroup, position: ReadingPosition): HomeTarget? = when (position) {
         is ReadingPosition.Image -> request(group.info, StartAt.Page(position.viewStart))
-        is ReadingPosition.Text -> null.also { notice.value = Notice.TextNotReady }
+        is ReadingPosition.Text -> request(group.info, textOffset = position.charOffset)
     }
 
     /** フォルダを開く of docs/spec.md section 4.6: the folder that holds [book] in its place. */

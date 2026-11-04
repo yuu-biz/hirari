@@ -19,6 +19,7 @@ import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.TextEntry
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.documentBookId
@@ -69,8 +70,8 @@ sealed interface EntryArchive {
     /** The archive's document, of a SAF place or picked outside a place. */
     data class Document(val uri: Uri) : EntryArchive
 
-    /** The archive at [path] of an SMB place, which has no document. */
-    data class OnServer(val location: LocationId, val path: String) : EntryArchive
+    /** The archive at [path] of a device or SMB place. */
+    data class InLocation(val location: LocationId, val path: String) : EntryArchive
 }
 
 /** The files of the SMB places, through the connection the library and the image reader share (docs/spec.md section 6.5). */
@@ -113,7 +114,7 @@ internal fun opener(ref: TextBookRef, sources: TextSources): TextOpener = TextOp
                 is TextBookRef.InLocation -> openInLocation(sources, ref)
                 is TextBookRef.ArchiveEntry -> {
                     val charsets = sources.charsets(ref.archiveId)
-                    openEntry(sources.archive(ref.archive), ref.archiveId, ref.entryIndex, charsets)
+                    openEntry(sources.archive(ref.archive), ref.archiveId, ref.entryIndex, charsets, ref.archive)
                 }
             }
         }
@@ -138,9 +139,17 @@ private suspend fun openInLocation(sources: TextSources, ref: TextBookRef.InLoca
 
 private suspend fun TextSources.archive(archive: EntryArchive): ByteSource = when (archive) {
     is EntryArchive.Document -> resolver.openByteSource(archive.uri, copyDir)
-    is EntryArchive.OnServer -> {
-        val place = locations.get(archive.location) as? LibraryLocation.SmbShare ?: throw FileNotFoundException(archive.path)
-        smb.open(place, normalizePath(archive.path))
+    is EntryArchive.InLocation -> {
+        when (val place = locations.get(archive.location)) {
+            null -> throw FileNotFoundException(archive.path)
+            is LibraryLocation.SmbShare -> smb.open(place, normalizePath(archive.path))
+            is LibraryLocation.SafTree -> {
+                if (!place.permissionHeld) throw SecurityException("Place permission lost")
+                val tree = Uri.parse(place.treeUri.value)
+                val document = resolver.locateDocument(tree, normalizePath(archive.path)) ?: throw FileNotFoundException(archive.path)
+                resolver.openByteSource(DocumentsContract.buildDocumentUriUsingTree(tree, document), copyDir)
+            }
+        }
     }
 }
 
@@ -188,10 +197,10 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId
 
 /**
  * The bytes of entry [entryIndex] of the archive in [source], which the text owns from here on, and a reader of its
- * 挿絵 from the same archive, which stays open with the text. The names are decoded in [charsets]. The entry has no
- * form in the library index (`BookSource` names no entry), so it gets none; its progress and bookmarks still keep.
+ * 挿絵 from the same archive, which stays open with the text. The index keeps [archive] and the entry so home
+ * bookmarks reopen the text (docs/spec.md section 4.6). The names are decoded in [charsets].
  */
-internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int, charsets: EntryCharsets): TextOpenResult = guarded {
+internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int, charsets: EntryCharsets, archive: EntryArchive): TextOpenResult = guarded {
     val session = when (val opened = ArchiveSession.open(source)) {
         is OpenResult.Failed -> return@guarded TextOpenResult.Failed(TextFailure.ReadError)
         OpenResult.Encrypted -> return@guarded TextOpenResult.Failed(TextFailure.Encrypted)
@@ -215,7 +224,16 @@ internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex
             (session.read(picture.entryIndex) as? EntryResult.Data)?.bytes
         }
         val id: BookId = entryBookId(archiveId, entry.rawName)
-        TextOpenResult.Opened(OpenedText(id, name.substringAfterLast('/'), normalizePath(name), book = null, pictures, session::close), bytes)
+        val bookSource = when (archive) {
+            is EntryArchive.Document -> BookSource.External(UriString(archive.uri.toString()))
+            is EntryArchive.InLocation -> BookSource.InLocation(archive.location, normalizePath(archive.path))
+        }
+        val book = Book(
+            id, bookSource, BookFormat.Text(charset = null), name.substringAfterLast('/'),
+            bytes.size.toLong(), Instant.EPOCH, pageCount = null,
+            textEntry = TextEntry(archiveId, entry.entryIndex),
+        )
+        TextOpenResult.Opened(OpenedText(id, book.title, normalizePath(name), book, pictures, session::close), bytes)
     } catch (e: Throwable) {
         session.close()
         throw e

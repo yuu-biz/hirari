@@ -46,6 +46,7 @@ class TextReaderModelTest {
         bytes: ByteArray = text.toByteArray(Charsets.UTF_8),
         heapBudget: Long = textHeapBudget(),
         startAt: NeighborStart = NeighborStart.Saved,
+        startOffset: Long? = null,
         work: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
         onEdge: (BookEdge) -> Unit = {},
         onTurned: () -> Unit = {},
@@ -64,6 +65,7 @@ class TextReaderModelTest {
             clock = { Instant.ofEpochSecond(testScheduler.currentTime) },
             heapBudget = heapBudget,
             startAt = startAt,
+            startOffset = startOffset,
             onEdge = onEdge,
             onTurned = onTurned,
         ).also {
@@ -156,6 +158,17 @@ class TextReaderModelTest {
         settle()
         assertTrue(offset in model.page)
         assertEquals(emptyList(), progress.writes)
+    }
+
+    @Test
+    fun `opening a bookmark uses its offset instead of the saved reading position`() = runTest {
+        val offset = source.indexOf("名前はまだ3章の10 番目")
+        assertTrue(offset > 0)
+        progress.stored.value = mapOf(id to BookProgress(id, ReadState.Reading, ReadingPosition.Text(0, source.length.toLong()), Instant.EPOCH))
+        val model = model(startOffset = offset.toLong())
+        settle()
+        assertTrue(offset in model.page)
+        assertEquals(offset.toLong(), (progress.stored.value.getValue(id).position as ReadingPosition.Text).charOffset)
     }
 
     @Test

@@ -23,6 +23,7 @@ import io.github.yuubiz.hirari.feature.text.TextBookRef
 import io.github.yuubiz.hirari.feature.library.childToward
 import io.github.yuubiz.hirari.feature.reader.SettingsTarget
 import io.github.yuubiz.hirari.feature.settings.SettingsOpening
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -168,27 +169,34 @@ internal data class TextRoute(
     val archiveId: String = "",
     /** Where the text opens: the neighboring text of 本の端での動作 opens at its start or end. */
     val start: NeighborStart = NeighborStart.Saved,
+    val startOffset: Long? = null,
 ) {
-    /** [ServerArchiveEntry] is an entry of an archive of an SMB place, which has no document [uri]. */
-    enum class Kind { Document, InLocation, ArchiveEntry, ServerArchiveEntry }
+    /** [LocationArchiveEntry] addresses an archive through its device or SMB place. */
+    enum class Kind {
+        Document, InLocation, ArchiveEntry,
+        @SerialName("ServerArchiveEntry") LocationArchiveEntry,
+    }
 
     fun toRef(): TextBookRef = when (kind) {
         Kind.Document -> TextBookRef.Document(Uri.parse(uri))
         Kind.InLocation -> TextBookRef.InLocation(LocationId(location), path, documentId)
         Kind.ArchiveEntry -> TextBookRef.ArchiveEntry(EntryArchive.Document(Uri.parse(uri)), entryIndex, BookId(archiveId))
-        Kind.ServerArchiveEntry -> TextBookRef.ArchiveEntry(EntryArchive.OnServer(LocationId(location), path), entryIndex, BookId(archiveId))
+        Kind.LocationArchiveEntry -> TextBookRef.ArchiveEntry(EntryArchive.InLocation(LocationId(location), path), entryIndex, BookId(archiveId))
     }
 }
 
 internal fun NeighborOpening<TextBookRef.InLocation>.toRoute(): TextRoute =
     TextRoute(TextRoute.Kind.InLocation, location = book.location.value, path = book.path, documentId = book.documentId, start = start)
 
-internal fun TextAddress.toRoute(): TextRoute = when (this) {
-    is TextAddress.Document -> TextRoute(TextRoute.Kind.Document, uri = uri.value)
-    is TextAddress.InLocation -> TextRoute(TextRoute.Kind.InLocation, location = location.value, path = path, documentId = documentId)
-    is TextAddress.ArchiveEntry -> when (val archive = archive) {
-        is ArchiveFile.Document -> TextRoute(TextRoute.Kind.ArchiveEntry, uri = archive.uri.value, entryIndex = entryIndex, archiveId = archiveId.value)
-        is ArchiveFile.OnServer ->
-            TextRoute(TextRoute.Kind.ServerArchiveEntry, location = archive.location.value, path = archive.path, entryIndex = entryIndex, archiveId = archiveId.value)
+internal fun TextAddress.toRoute(): TextRoute {
+    val route = when (this) {
+        is TextAddress.Document -> TextRoute(TextRoute.Kind.Document, uri = uri.value)
+        is TextAddress.InLocation -> TextRoute(TextRoute.Kind.InLocation, location = location.value, path = path, documentId = documentId)
+        is TextAddress.ArchiveEntry -> when (val archive = archive) {
+            is ArchiveFile.Document -> TextRoute(TextRoute.Kind.ArchiveEntry, uri = archive.uri.value, entryIndex = entryIndex, archiveId = archiveId.value)
+            is ArchiveFile.InLocation ->
+                TextRoute(TextRoute.Kind.LocationArchiveEntry, location = archive.location.value, path = archive.path, entryIndex = entryIndex, archiveId = archiveId.value)
+        }
     }
+    return route.copy(startOffset = startOffset)
 }

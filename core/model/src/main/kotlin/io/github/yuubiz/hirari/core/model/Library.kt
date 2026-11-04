@@ -68,4 +68,9 @@ data class Book(
     val modified: Instant,
     /** Unknown until the book is opened once. */
     val pageCount: Int?,
+    /** For an archive text, [source] addresses its archive. */
+    val textEntry: TextEntry? = null,
 )
+
+/** The stored entry of the archive whose address is in [Book.source]. */
+data class TextEntry(val archiveId: BookId, val entryIndex: Int)
