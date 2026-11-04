@@ -68,6 +68,7 @@ class StashTest {
         val stash = opened.stash!!
         assertFalse(stash.holds(2))
         assertEquals(listOf<Byte>(2, 2, 2), opened.raw(2).bytes())
+        assertEquals(Fill.OnDisk, stash.fill(2))
         assertTrue(stash.holds(2))
         opened.close()
 
@@ -80,7 +81,7 @@ class StashTest {
 
     @Test
     fun anArchiveReplacedByOneOfTheSameSizeIsReadFromTheServerAgain() = runBlocking {
-        book(Server()).raw(2)
+        book(Server()).stash!!.fill(2)
         val replaced = Server()
         val opened = book(replaced, modified = written.plusSeconds(60))
         assertFalse(opened.stash!!.holds(2))
@@ -107,6 +108,7 @@ class StashTest {
         val filling = async { opened.stash!!.fill(0) }
         while (server.reads.get() == 0) kotlinx.coroutines.yield()
         val reading = async { opened.raw(0) }
+        kotlinx.coroutines.yield()
         server.gate!!.complete(Unit)
         assertEquals(Fill.OnDisk, filling.await())
         assertEquals(listOf<Byte>(0), reading.await().bytes())
@@ -115,14 +117,15 @@ class StashTest {
 
     @Test
     fun aViewWaitingOnThePrefetchOfItsPageGetsItOnceEvenWhenTheDiskCannotKeepIt() = runBlocking {
-        val full = SmbPrefetchCache(temp.root.resolve("full"), maxBytes = 1, reserveBytes = 0)
+        val full = SmbPrefetchCache(temp.root.resolve("full"), maxBytes = 2L shl 20, reserveBytes = 0)
         val server = Server().apply { gate = CompletableDeferred() }
-        val opened = OpenBook(BookContent.Images(StashedPages(server, DiskStash(full, BookId("book"), 1000, written))), Container.Zip, pages, indexError = null, decoding)
+        val opened = OpenBook(BookContent.Images(StashedPages(server, DiskStash(full, BookId("book"), 1000, written)) { _, _ -> false }), Container.Zip, pages, indexError = null, decoding)
         val filling = async { opened.stash!!.fill(2) }
         while (server.reads.get() == 0) kotlinx.coroutines.yield()
         val reading = async { opened.raw(2) }
+        kotlinx.coroutines.yield()
         server.gate!!.complete(Unit)
-        assertEquals(Fill.NotKept, filling.await())
+        assertEquals(Fill.NoCapacity, filling.await())
         assertEquals(listOf<Byte>(2, 2, 2), reading.await().bytes())
         assertEquals(1, server.reads.get())
     }
@@ -138,6 +141,7 @@ class StashTest {
         filling.cancel()
         server.gate!!.complete(Unit)
         assertEquals(listOf<Byte>(1, 1), reading.await().bytes())
+        assertEquals(Fill.OnDisk, opened.stash!!.fill(1))
         assertTrue(opened.stash!!.holds(1))
     }
 
@@ -201,5 +205,47 @@ class StashTest {
         assertFalse("the waiter spun on the cancelled read", worker.isAlive)
         assertEquals(listOf<Byte>(0), (result.get() as PageResult.Ready).image.toList())
     }
+
+    @Test
+    fun aMissReachesTheDecoderBeforeTheDiskWriteFinishes() = runBlocking {
+        val writing = CompletableDeferred<Unit>()
+        val allowWrite = CompletableDeferred<Unit>()
+        val stashed = StashedPages(Server(), DiskStash(cache, BookId("delayed"), 1000, written)) { key, bytes ->
+            writing.complete(Unit)
+            allowWrite.await()
+            cache.put(key, bytes)
+        }
+        val bytes = kotlinx.coroutines.withTimeout(5000) { stashed.read(pages[0]) }
+        writing.await()
+        assertTrue(bytes is PageResult.Ready)
+        assertFalse(stashed.holds(pages[0]))
+        allowWrite.complete(Unit)
+        assertEquals(Fill.OnDisk, stashed.fill(pages[0]))
+        stashed.close()
+    }
+
+    @Test
+    fun wrongSizedCacheIsDroppedBeforeItCanReachTheDecoder() = runBlocking {
+        val server = Server()
+        val stashed = StashedPages(server, DiskStash(cache, BookId("size"), 1000, written))
+        assertEquals(Fill.OnDisk, stashed.fill(pages[1]))
+        stashed.close()
+        val reopened = StashedPages(server, DiskStash(cache, BookId("size"), 1000, written))
+        val entry = pages[1].copy(declaredSize = 1)
+        assertEquals(listOf<Byte>(1, 1), (reopened.read(entry) as PageResult.Ready).image.toList())
+        assertEquals(2, server.reads.get())
+        reopened.close()
+    }
+
+    @Test
+    fun noCapacityIsReportedBeforeReadingTheServer() = runBlocking {
+        val full = SmbPrefetchCache(temp.root.resolve("no-space"), reserveBytes = Long.MAX_VALUE)
+        val server = Server()
+        val stashed = StashedPages(server, DiskStash(full, BookId("full"), 1000, written))
+        assertEquals(Fill.NoCapacity, stashed.fill(pages[0]))
+        assertEquals(0, server.reads.get())
+        stashed.close()
+    }
+
 }
 

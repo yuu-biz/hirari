@@ -29,11 +29,22 @@ fun diskOrder(shown: IntRange, pageCount: Int, travel: Turn, depth: Int = DISK_P
 class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageStash, private val pageCount: Int) {
     private var around: Pair<IntRange, Turn>? = null
     private var running: Job? = null
+    private var refused: Int? = null
 
     /** Reads around the [shown] pages toward [travel]. Null [shown] stops the reads, as when the current view is not prepared. */
     fun update(shown: IntRange?, travel: Turn) {
         if (shown == null) return stop()
-        if (around == shown to travel) return
+        if (around == shown to travel) {
+            val page = refused ?: return
+            if (running?.isActive == true) return
+            running = scope.launch {
+                if (stash.canFill(page)) {
+                    refused = null
+                    read(shown, travel)
+                }
+            }
+            return
+        }
         around = shown to travel
         read(shown, travel)
     }
@@ -47,6 +58,7 @@ class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageSta
     /** Stops reading ahead. What is on disk stays, and the next [update] starts over. */
     fun stop() {
         around = null
+        refused = null
         running?.cancel()
     }
 
@@ -56,6 +68,7 @@ class DiskPrefetch(private val scope: CoroutineScope, private val stash: PageSta
             for (page in diskOrder(shown, pageCount, travel)) {
                 when (stash.fill(page)) {
                     Fill.OnDisk, Fill.NotKept -> Unit
+                    Fill.NoCapacity -> { refused = page; break }
                     Fill.OutOfMemory, Fill.ConnectionLost -> break
                 }
             }

@@ -315,6 +315,12 @@ internal fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
 }
 
 private class ArchivePages(private val session: ArchiveSession) : PageBytes {
+    override suspend fun prefix(page: PageEntry, count: Int): PageResult<ByteArray> =
+        when (val result = session.readPrefix(page.entryIndex, count)) {
+            is EntryResult.Data -> PageResult.Ready(result.bytes)
+            else -> result.pageFailure()!!
+        }
+
     override suspend fun read(page: PageEntry): PageResult<ByteArray> =
         when (val result = session.read(page.entryIndex)) {
             is EntryResult.Data -> PageResult.Ready(result.bytes)
@@ -325,6 +331,9 @@ private class ArchivePages(private val session: ArchiveSession) : PageBytes {
 }
 
 private class FolderPages(private val files: List<FolderFile>) : PageBytes {
+    override suspend fun prefix(page: PageEntry, count: Int): PageResult<ByteArray> =
+        readSafely { files[page.entryIndex].open().use { readBounded(it, count) } }
+
     override suspend fun read(page: PageEntry): PageResult<ByteArray> = readSafely { files[page.entryIndex].open().use(::readAll) }
 
     override fun close() = Unit
@@ -332,6 +341,8 @@ private class FolderPages(private val files: List<FolderFile>) : PageBytes {
 
 /** The one page of a single image, read from the [source] the book holds open. */
 private class SinglePage(private val source: ByteSource) : PageBytes {
+    override suspend fun prefix(page: PageEntry, count: Int): PageResult<ByteArray> = readSafely { readBounded(source, count) }
+
     override suspend fun read(page: PageEntry): PageResult<ByteArray> = readSafely { readAll(source) }
 
     override fun close() = source.close()
@@ -351,6 +362,14 @@ private suspend fun readSafely(read: () -> PageResult<ByteArray>): PageResult<By
     } catch (_: Exception) {
         readError
     }
+}
+
+private fun readBounded(source: ByteSource, count: Int): PageResult<ByteArray> {
+    val buffer = ByteBuffer.allocate(minOf(source.size, count.toLong()).toInt())
+    while (buffer.hasRemaining()) {
+        if (source.read(buffer.position().toLong(), buffer) <= 0) break
+    }
+    return PageResult.Ready(buffer.array().copyOf(buffer.position()))
 }
 
 /** All of [source], as long as it fits the limit of an entry (docs/spec.md section 3.7). */

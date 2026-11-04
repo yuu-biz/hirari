@@ -24,6 +24,9 @@ import kotlin.coroutines.cancellation.CancellationException
 /** Where the bytes of the pages of an open book come from: an archive session, or the files of a folder. */
 internal interface PageBytes : Closeable {
     fun prioritize(entries: List<Int>) = Unit
+    suspend fun prefix(page: PageEntry, count: Int): PageResult<ByteArray> = read(page)
+    suspend fun invalidate(page: PageEntry) = Unit
+    fun fromStash(bytes: ByteArray): Boolean = false
 
     /** The bytes of [page], as [PageResult.Ready], or why they cannot be read. */
     suspend fun read(page: PageEntry): PageResult<ByteArray>
@@ -66,6 +69,8 @@ class OpenBook internal constructor(
         object : PageStash {
             override suspend fun holds(index: Int): Boolean = stashed.holds(pages[index])
 
+            override suspend fun canFill(index: Int): Boolean = stashed.canFill(pages[index])
+
             override suspend fun fill(index: Int): Fill = stashed.fill(pages[index])
         }
     }
@@ -79,6 +84,11 @@ class OpenBook internal constructor(
         val own = if (container == Container.Folder) order.copy(entries = EntryOrder.Natural) else order
         return OpenBook(content, container, sortedPages(pages, own), indexError, decoding)
     }
+
+    suspend fun invalidate(index: Int) { (content as? BookContent.Images)?.bytes?.invalidate(pages[index]) }
+
+    fun fromStash(raw: RawPage): Boolean = raw is RawPage.Encoded &&
+        (content as? BookContent.Images)?.bytes?.fromStash(raw.bytes) == true
 
     /** The page order for every queued read of this book, including shape and disk-stash reads. */
     fun prioritize(pagesInOrder: List<Int>) {
@@ -130,7 +140,12 @@ class OpenBook internal constructor(
     /** The size of the page at [index], from the image header alone (docs/spec.md sections 2.5 and 5.3). */
     suspend fun shape(index: Int, raw: RawPage? = null): PageResult<PageShape.Known> = when (content) {
         is BookContent.Pdf -> PageResult.Ready(content.document.shapes[pages[index].entryIndex])
-        is BookContent.Images -> withBytes(content, index, raw) { data, _ -> decodeShape(data) }
+        is BookContent.Images -> if (raw != null) withBytes(content, index, raw) { data, _ -> decodeShape(data) }
+        else guarded {
+            probeShape(content.bytes, pages[index]) { data ->
+                decodeWithTimeout(scope, decoding.dispatcher) { decodeShape(data) }
+            }
+        }
     }
 
     /** Stops the decodes in progress at their next check. A decode past its header finishes and is dropped. */
@@ -151,7 +166,15 @@ class OpenBook internal constructor(
             is PageResult.Failed -> return@guarded read
             is PageResult.Unsupported -> return@guarded read
         }
-        decodeWithTimeout(scope, decoding.dispatcher) { isActive -> decode(data, isActive) }
+        val result = decodeWithTimeout(scope, decoding.dispatcher) { isActive -> decode(data, isActive) }
+        if (result !is PageResult.Ready && raw == null && images.bytes.fromStash(data)) {
+            images.bytes.invalidate(pages[index])
+            when (val fresh = images.bytes.read(pages[index])) {
+                is PageResult.Ready -> decodeWithTimeout(scope, decoding.dispatcher) { isActive -> decode(fresh.image, isActive) }
+                is PageResult.Failed -> fresh
+                is PageResult.Unsupported -> fresh
+            }
+        } else result
     }
 
     private suspend inline fun <T> guarded(block: () -> PageResult<T>): PageResult<T> = try {
@@ -163,6 +186,39 @@ class OpenBook internal constructor(
         readError
     } catch (_: OutOfMemoryError) {
         readError
+    }
+}
+
+/** Bounded probes share the page reader's queue. Only an inconclusive header needs the full entry. */
+internal suspend fun probeShape(
+    bytes: PageBytes,
+    page: PageEntry,
+    decode: suspend (ByteArray) -> PageResult<PageShape.Known>,
+): PageResult<PageShape.Known> {
+    for (limit in listOf(64 * 1024, 128 * 1024)) {
+        when (val read = bytes.prefix(page, limit)) {
+            is PageResult.Ready -> {
+                val shape = decode(read.image)
+                if (shape is PageResult.Ready || read.image.size < limit) return shape
+            }
+            is PageResult.Failed -> return read
+            is PageResult.Unsupported -> return read
+        }
+    }
+    return when (val read = bytes.read(page)) {
+        is PageResult.Ready -> {
+            val result = decode(read.image)
+            if (result !is PageResult.Ready && bytes.fromStash(read.image)) {
+                bytes.invalidate(page)
+                when (val fresh = bytes.read(page)) {
+                    is PageResult.Ready -> decode(fresh.image)
+                    is PageResult.Failed -> fresh
+                    is PageResult.Unsupported -> fresh
+                }
+            } else result
+        }
+        is PageResult.Failed -> read
+        is PageResult.Unsupported -> read
     }
 }
 

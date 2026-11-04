@@ -127,7 +127,7 @@ private class Candidates(private val request: PrefetchRequest) {
 
     fun addCurrent(view: PageView) {
         for (page in view.pages) {
-            if (request.shapes[page] is PageShape.Unknown) list += Candidate(PrefetchJob.ReadShape(page), 0)
+            if (request.shapes[page] is PageShape.Unknown) list += Candidate(PrefetchJob.ReadShape(page), request.rawBytes(page), current = true)
         }
         if (view !in request.resident.views) view.pages.forEach(::addRaw)
         if (view.pages.all { request.shapes[it] is PageShape.Known }) {
@@ -147,7 +147,7 @@ private class Candidates(private val request: PrefetchRequest) {
         for ((step, way) in steps) {
             val page = step.page ?: continue
             if (step.distance <= request.depths.shapePages.toward(request.travel, way) && request.shapes[page] is PageShape.Unknown) {
-                list += Candidate(PrefetchJob.ReadShape(page), 0)
+                list += Candidate(PrefetchJob.ReadShape(page), request.rawBytes(page))
             }
         }
     }
@@ -183,6 +183,9 @@ private class Candidates(private val request: PrefetchRequest) {
     fun select(shown: List<PageView>, focus: Int): PrefetchPlan {
         val budget = request.budgetBytes
         var total = list.filter { it.current }.sumOf { it.bytes }
+        // A shape decoded from a raw job shares its bytes; charge the larger read once.
+        val pageBytes = list.filter { it.current && it.job is PrefetchJob.ReadShape }
+            .associate { (it.job as PrefetchJob.ReadShape).page to it.bytes }.toMutableMap()
         var raw = 0L
         var viewsOpen = true
         var rawOpen = true
@@ -206,7 +209,15 @@ private class Candidates(private val request: PrefetchRequest) {
         for (slot in list) {
             val candidate = if (slot.job is PrefetchJob.ReadRaw) nearestRaws.next() else slot
             val admitted = when (val job = candidate.job) {
-                is PrefetchJob.ReadShape -> true
+                is PrefetchJob.ReadShape -> {
+                    val extra = maxOf(0L, candidate.bytes - (pageBytes[job.page] ?: 0L))
+                    val fits = candidate.current || total + extra <= budget
+                    if (fits) {
+                        total += extra
+                        pageBytes[job.page] = candidate.bytes
+                    }
+                    fits
+                }
                 is PrefetchJob.PrepareView -> {
                     if (!candidate.current) {
                         viewsOpen = viewsOpen && total + candidate.bytes <= budget
@@ -217,10 +228,12 @@ private class Candidates(private val request: PrefetchRequest) {
                     fits
                 }
                 is PrefetchJob.ReadRaw -> {
-                    rawOpen = rawOpen && raw + candidate.bytes <= budget / 2 && total + candidate.bytes <= budget
+                    val extra = maxOf(0L, candidate.bytes - (pageBytes[job.page] ?: 0L))
+                    rawOpen = rawOpen && raw + candidate.bytes <= budget / 2 && total + extra <= budget
                     if (rawOpen) {
                         raw += candidate.bytes
-                        total += candidate.bytes
+                        total += extra
+                        pageBytes[job.page] = candidate.bytes
                         keptRaw += job.page
                     }
                     rawOpen

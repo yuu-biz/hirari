@@ -63,6 +63,15 @@ private class FakeLoader(
     /** How long each raw read takes, so a test can stop a run of reads at a moment. */
     var rawDelay = 0L
     val rawReads = mutableListOf<Int>()
+    val stashed = mutableSetOf<Int>()
+    val invalidated = mutableListOf<Int>()
+    var repairOnInvalidate = false
+    override fun fromStash(raw: String): Boolean = raw.startsWith("cached")
+    override suspend fun invalidate(page: Int) {
+        invalidated += page
+        stashed.remove(page)
+        if (repairOnInvalidate) failing.remove(page)
+    }
 
     /** The raw data each prepared page was given, `null` for one read from the book. */
     val preparedFrom = mutableMapOf<Int, String?>()
@@ -71,14 +80,17 @@ private class FakeLoader(
         rawReads += page
         rawGate?.await()
         delay(rawDelay)
-        return rawFailing[page] ?: PageResult.Ready("raw$page")
+        return rawFailing[page] ?: PageResult.Ready(if (page in stashed) "cached$page" else "raw$page")
     }
 
     override fun bytesOf(raw: String): Long = readRawBytes
 
     override fun rawEstimate(page: Int): Long = rawBytes
 
-    override suspend fun shape(page: Int, raw: String?): PageResult<PageShape.Known> = shapes[page] ?: PageResult.Ready(TALL)
+    var corruptCachedShape = false
+    override suspend fun shape(page: Int, raw: String?): PageResult<PageShape.Known> =
+        if (corruptCachedShape && raw != null && fromStash(raw)) PageResult.Failed(FailureReason.Corrupt, false)
+        else shapes[page] ?: PageResult.Ready(TALL)
 
     /** The margins each page reads as, and how many times each was read. */
     val margins = mutableMapOf<Int, MarginScan>()
@@ -501,4 +513,57 @@ class PrefetcherTest {
         advanceUntilIdle()
         assertEquals(reads, loader.rawReads.size)
     }
+
+    @Test
+    fun aCorruptStashedPageIsInvalidatedAndFetchedFreshOnce() = runTest {
+        val loader = FakeLoader(failing = mutableMapOf(0 to PageResult.Failed(FailureReason.Corrupt, false)))
+        loader.stashed += 0
+        loader.repairOnInvalidate = true
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        assertEquals(listOf(0), loader.invalidated)
+        assertEquals(2, loader.rawReads.count { it == 0 })
+        assertEquals("raw0", loader.preparedFrom[0])
+        assertTrue(reader.prefetcher.failedPages[0] == null)
+    }
+
+    @Test
+    fun aFreshPageThatAlsoFailsIsNotAutomaticallyFetchedAgainAndRetryDropsItsRawBytes() = runTest {
+        val loader = FakeLoader(failing = mutableMapOf(0 to PageResult.Failed(FailureReason.Corrupt, false)))
+        loader.stashed += 0
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        assertEquals(2, loader.rawReads.count { it == 0 })
+        assertEquals(listOf(0), loader.invalidated)
+        reader.prefetcher.retry(0)
+        advanceUntilIdle()
+        assertEquals(listOf(0, 0), loader.invalidated)
+        assertEquals(3, loader.rawReads.count { it == 0 })
+    }
+
+    @Test
+    fun pausingCancelsMemoryPrefetchAndReturningResumesFromTheSameView() = runTest {
+        val loader = FakeLoader().apply { rawDelay = 100 }
+        val reader = reader(pages = 60, loader = loader)
+        advanceTimeBy(10)
+        reader.prefetcher.onStop()
+        advanceUntilIdle()
+        val pausedReads = loader.rawReads.toList()
+        advanceTimeBy(1000)
+        assertEquals(pausedReads, loader.rawReads)
+        reader.prefetcher.onStart()
+        advanceUntilIdle()
+        assertTrue(loader.rawReads.size > pausedReads.size)
+    }
+
+    @Test
+    fun aCorruptCachedHeaderAlsoGetsOneFreshReadBeforeLayoutFails() = runTest {
+        val loader = FakeLoader().apply { stashed += 0; corruptCachedShape = true }
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        assertEquals(listOf(0), loader.invalidated)
+        assertEquals(2, loader.rawReads.count { it == 0 })
+        assertTrue(reader.prefetcher.failedPages.isEmpty())
+    }
+
 }

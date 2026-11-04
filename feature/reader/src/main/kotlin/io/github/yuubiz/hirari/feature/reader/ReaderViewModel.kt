@@ -335,7 +335,7 @@ class ReaderViewModel(
         if (stripShown == shown) return
         stripShown = shown
         val current = state ?: return
-        opened?.prefetcher?.update(current.prefetchInput(paused = shown))
+        opened?.prefetcher?.update(current.prefetchInput(paused = shown || !onScreen))
         prefetchToDisk()
     }
 
@@ -646,11 +646,16 @@ class ReaderViewModel(
         dispatch(ReaderEvent.AutoPlayStopped)
         stops.stop()
         onScreen = false
+        opened?.prefetcher?.onStop()
+        opened?.disk?.stop()
         openingRecord?.stopped()
     }
 
     fun onStart() {
         onScreen = true
+        opened?.prefetcher?.onStart()
+        state?.let { opened?.prefetcher?.update(it.prefetchInput(paused = stripShown)) }
+        prefetchToDisk()
         openingRecord?.started()
     }
 
@@ -796,7 +801,7 @@ class ReaderViewModel(
         if (before == null || before.pagination !== after.pagination || before.shownViews != after.shownViews ||
             before.viewport != after.viewport || before.config != after.config || before.margins !== after.margins
         ) {
-            book.prefetcher.update(after.prefetchInput(paused = stripShown))
+            book.prefetcher.update(after.prefetchInput(paused = stripShown || !onScreen))
         }
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
         orientation = after.config.orientation
@@ -810,7 +815,7 @@ class ReaderViewModel(
         prefetchToDisk()
         if (reconnected(before?.connection, after.connection)) {
             book.prefetcher.retryLost()
-            book.disk?.restart()
+            if (onScreen && !stripShown) book.disk?.restart()
             stripTiles.retry()
         }
         val hit = after.edgeHit
@@ -835,7 +840,7 @@ class ReaderViewModel(
         val book = opened ?: return
         val disk = book.disk ?: return
         val current = state ?: return
-        if (stripShown || !book.prefetcher.canPrefetch) return disk.stop()
+        if (!onScreen || stripShown || !book.prefetcher.canPrefetch) return disk.stop()
         val view = current.current
         val shown = (view.pages.min()..view.pages.max()).takeIf { book.prefetcher.get(view) != null }
         disk.update(shown, travelDirection(current.recentTurns))

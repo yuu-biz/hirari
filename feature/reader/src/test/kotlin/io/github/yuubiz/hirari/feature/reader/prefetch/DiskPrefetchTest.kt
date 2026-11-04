@@ -30,6 +30,8 @@ class DiskPrefetchTest {
         val filled = mutableListOf<Int>()
         val outcomes = mutableMapOf<Int, Fill>()
         var next = CompletableDeferred<Unit>()
+        var capacity = true
+        override suspend fun canFill(index: Int) = capacity
 
         override suspend fun holds(index: Int) = index in filled
 
@@ -137,4 +139,35 @@ class DiskPrefetchTest {
         letThrough(stash, 3)
         assertEquals(listOf(11, 12, 11, 12, 13), stash.filled)
     }
+
+    @Test
+    fun aRefusedWriteStopsWithoutDownloadingTheRemainingPages() = runTest {
+        val stash = Stash().apply { outcomes[11] = Fill.NoCapacity }
+        val prefetch = DiskPrefetch(backgroundScope, stash, pageCount = 200)
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        letThrough(stash, 5)
+        assertEquals(listOf(11), stash.filled)
+    }
+
+
+    @Test
+    fun refusedCapacityIsCheckedAgainOnReturnAndDownloadsResumeOnlyWhenItIsBack() = runTest {
+        val stash = Stash().apply { outcomes[11] = Fill.NoCapacity; capacity = false }
+        val prefetch = DiskPrefetch(backgroundScope, stash, pageCount = 200)
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        letThrough(stash, 1)
+        prefetch.update(10..10, Turn.Forward)
+        letThrough(stash, 2)
+        assertEquals(listOf(11), stash.filled)
+        stash.capacity = true
+        stash.outcomes.clear()
+        stash.next = CompletableDeferred()
+        prefetch.update(10..10, Turn.Forward)
+        runCurrent()
+        letThrough(stash, 1)
+        assertEquals(listOf(11, 11), stash.filled)
+    }
+
 }

@@ -100,6 +100,9 @@ fun ReaderScreen(
     ReaderWindowHold(viewModel, ui)
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onStart() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.onStop() }
+    }
 
     fun dismiss() {
         val panelOpen = ui.commandBar.panelVisible || ui.sheet != null

@@ -67,6 +67,9 @@ interface PageLoader<R, T> {
     /** Updates the order of queued raw reads, including reads for shapes and the disk stash. */
     fun prioritize(pages: List<Int>) = Unit
 
+    suspend fun invalidate(page: Int) = Unit
+    fun fromStash(raw: R): Boolean = false
+
     suspend fun raw(page: Int): PageResult<R>
 
     /** What holding [raw] takes from the memory budget. */
@@ -140,6 +143,7 @@ class Prefetcher<R, T>(
     /** Pages whose raw data failed to read. They are not read again until a [retry]. */
     private val failedRaws = HashSet<Int>()
     private val raws = HashMap<Int, R>()
+    private val recovering = HashMap<Int, Deferred<PageResult<R>>>()
 
     /** What the data of each page took once read. It still counts after the data is dropped, so a page that does not fit is not read again. */
     private val rawSizes = HashMap<Int, Long>()
@@ -148,6 +152,17 @@ class Prefetcher<R, T>(
     private val failedSteps = HashMap<Int, PageSteps>()
     private var last: PrefetchInput? = null
     private var firstViewDrawn = false
+    private var visible = true
+
+    fun onStop() {
+        visible = false
+        last?.let(::update)
+    }
+
+    fun onStart() {
+        visible = true
+        last?.let(::update)
+    }
 
     val canPrefetch: Boolean get() = firstViewDrawn
 
@@ -198,7 +213,7 @@ class Prefetcher<R, T>(
                 rawBytes = { page -> rawSizes[page] ?: loader.rawEstimate(page) },
                 resident = resident.copy(rawPages = raws.keys.toSet()),
                 depths = depths,
-                paused = input.paused || trimmedOn != null,
+                paused = !visible || input.paused || trimmedOn != null,
                 visible = input.visible,
             ),
         )
@@ -206,6 +221,7 @@ class Prefetcher<R, T>(
         dropped.forEach(::evict)
         val shownPages = input.shown.flatMapTo(HashSet()) { it.pages }
         raws.keys.retainAll { it in plan.keep.rawPages || it in shownPages }
+        recovering.keys.retainAll { it in raws || recovering[it]?.isActive == true }
         val forward = input.travel == Turn.Forward
         val ahead = if (forward) (input.visible.last + 1..input.views.lastIndex).toList()
             else (input.visible.first - 1 downTo 0).toList()
@@ -234,6 +250,18 @@ class Prefetcher<R, T>(
                 is PrefetchJob.ReadRaw -> if (job.page !in failedRaws) wanted[job] = { launchRaw(job.page) }
             }
         }
+        val wantedPages = wanted.keys.flatMapTo(HashSet()) { key ->
+            when (key) {
+                is PrefetchJob.ReadRaw -> listOf(key.page)
+                is PrefetchJob.ReadShape -> listOf(key.page)
+                is Preparation -> key.target.view.pages
+                else -> emptyList()
+            }
+        }
+        recovering.entries.filter { it.key !in wantedPages && it.value.isActive }.forEach { (page, job) ->
+            job.cancel()
+            recovering.remove(page)
+        }
         for ((key, job) in running.entries.toList()) {
             if (key !in wanted) {
                 job.cancel()
@@ -258,15 +286,26 @@ class Prefetcher<R, T>(
         dropped.forEach(::evict)
         val shownPages = input.shown.flatMapTo(HashSet()) { it.pages }
         raws.keys.retainAll { it in shownPages }
+        recovering.entries.filter { it.key !in shownPages }.forEach { (page, job) ->
+            job.cancel()
+            recovering.remove(page)
+        }
         if (dropped.isNotEmpty()) listener.onChanged()
         update(input)
     }
 
     /** Reads [page] again: its shape if that failed, then the views that hold it. */
     fun retry(page: Int) {
-        if (!forget(page)) return
-        listener.onChanged()
-        last?.let(::update)
+        if (page !in failures) return
+        scope.launch {
+            running.remove(PrefetchJob.ReadRaw(page))?.cancel()
+            recovering.remove(page)?.cancel()
+            raws.remove(page)
+            loader.invalidate(page)
+            forget(page)
+            listener.onChanged()
+            last?.let(::update)
+        }
     }
 
     /**
@@ -297,6 +336,8 @@ class Prefetcher<R, T>(
         running.clear()
         cache.keys.toList().forEach(::evict)
         raws.clear()
+        recovering.values.forEach { it.cancel() }
+        recovering.clear()
     }
 
     private fun evict(view: PageView) {
@@ -304,7 +345,7 @@ class Prefetcher<R, T>(
     }
 
     private fun launchRaw(page: Int): Deferred<R?> = scope.async {
-        val result = loader.raw(page)
+        val result = recovering[page]?.await() ?: loader.raw(page)
         running.remove(PrefetchJob.ReadRaw(page))
         when (result) {
             is PageResult.Ready -> result.image.also { raw ->
@@ -339,7 +380,15 @@ class Prefetcher<R, T>(
     }
 
     private fun launchShape(page: Int): Job = scope.launch {
-        val result = loader.shape(page, rawFor(page))
+        val raw = rawFor(page)
+        var result = loader.shape(page, raw)
+        if (result !is PageResult.Ready && raw != null && loader.fromStash(raw)) {
+            result = when (val fresh = recover(page)) {
+                is PageResult.Ready -> loader.shape(page, fresh.image)
+                is PageResult.Failed -> fresh
+                is PageResult.Unsupported -> fresh
+            }
+        }
         running.remove(PrefetchJob.ReadShape(page))
         val reshaped = reshaping.remove(page)
         when (result) {
@@ -387,7 +436,15 @@ class Prefetcher<R, T>(
         val made = steps.copy(part = PagePart.Whole)
         val raw = rawFor(page)
         failures[page]?.let { if (page in failedShapes || page in failedRaws || failedSteps[page] == made) return PreparedPage.Error(it) }
-        return when (val result = loader.prepare(page, size, steps, raw, readMargins)) {
+        var result = loader.prepare(page, size, steps, raw, readMargins)
+        if (result !is PageResult.Ready && raw != null && loader.fromStash(raw)) {
+            when (val fresh = recover(page)) {
+                is PageResult.Ready -> result = loader.prepare(page, size, steps, fresh.image, readMargins)
+                is PageResult.Failed -> result = fresh
+                is PageResult.Unsupported -> result = fresh
+            }
+        }
+        return when (val result = result) {
             is PageResult.Ready -> PreparedPage.Image(result.image.image).also {
                 result.image.margins?.let(read)
                 failures.remove(page)
@@ -396,6 +453,25 @@ class Prefetcher<R, T>(
             is PageResult.Failed -> failed(page, made, result)
             is PageResult.Unsupported -> failed(page, made, result)
         }
+    }
+
+    /** Both halves and shape probes share one replacement of a corrupt cached entry. */
+    private suspend fun recover(page: Int): PageResult<R> {
+        val fresh = recovering.getOrPut(page) {
+            scope.async {
+                raws.remove(page)
+                loader.invalidate(page)
+                loader.raw(page)
+            }
+        }.await()
+        if (fresh is PageResult.Ready) {
+            val counted = rawSizes[page] ?: loader.rawEstimate(page)
+            raws[page] = fresh.image
+            val size = loader.bytesOf(fresh.image)
+            rawSizes[page] = size
+            if (size > counted) last?.let(::update)
+        }
+        return fresh
     }
 
     private fun failed(page: Int, steps: PageSteps, result: PageResult<Nothing>): PreparedPage<Nothing> {

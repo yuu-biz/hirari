@@ -375,4 +375,12 @@ class PrefetchPlanTest {
             }
         }
     }
+
+    @Test
+    fun shapeProbesConsumeBudgetInsteadOfAdmittingEveryUnknownPageForFree() {
+        val plan = planPrefetch(request(single(10), 0, shapes = List(10) { PageShape.Unknown },
+            budget = 300, rawBytes = 200))
+        assertEquals(listOf(ReadShape(0)), plan.jobs.filterIsInstance<ReadShape>())
+    }
+
 }

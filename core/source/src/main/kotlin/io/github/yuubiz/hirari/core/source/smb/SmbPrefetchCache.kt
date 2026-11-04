@@ -38,11 +38,15 @@ class SmbPrefetchCache(
 
     /** The bytes of [key], or null when the cache does not hold them. Counts as a use. */
     @Synchronized
-    fun get(key: Key): ByteArray? {
+    fun get(key: Key, expectedSize: Long? = null): ByteArray? {
         load()
         val name = key.fileName()
         if (sizes[name] == null) return null
         val file = dir.resolve(name)
+        if (expectedSize != null && file.length() != expectedSize) {
+            remove(key)
+            return null
+        }
         return try {
             file.readBytes().also { file.setLastModified(System.currentTimeMillis()) }
         } catch (e: IOException) {
@@ -78,6 +82,24 @@ class SmbPrefetchCache(
         sizes[name] = bytes.size.toLong()
         trim()
         return true
+    }
+
+    /** Whether one entry can ever fit, independent of the available disk space. */
+    fun fits(bytes: Long): Boolean = bytes <= maxBytes
+
+    /** Checks capacity before downloading an entry. */
+    @Synchronized
+    fun canWrite(bytes: Long): Boolean {
+        load()
+        dir.mkdirs()
+        return bytes <= maxBytes && dir.usableSpace - bytes >= reserveBytes
+    }
+
+    @Synchronized
+    fun remove(key: Key) {
+        load()
+        dir.resolve(key.fileName()).delete()
+        sizes.remove(key.fileName())
     }
 
     /** Drops every entry of [book]. */

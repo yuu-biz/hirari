@@ -7,7 +7,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.yield
 
-/** One ordered step includes the disk lookup, archive read and disk write. */
+/** One ordered step includes the disk lookup and archive read. */
 internal class PageReadQueue {
     private class Request(val entry: Int) {
         val turn = CompletableDeferred<Unit>()
@@ -52,5 +52,6 @@ internal class OrderedPages(private val source: PageBytes) : PageBytes {
     private val queue = PageReadQueue()
     override fun prioritize(entries: List<Int>) = queue.prioritize(entries)
     override suspend fun read(page: PageEntry): PageResult<ByteArray> = queue.read(page.entryIndex) { source.read(page) }
+    override suspend fun prefix(page: PageEntry, count: Int): PageResult<ByteArray> = queue.read(page.entryIndex) { source.prefix(page, count) }
     override fun close() = source.close()
 }

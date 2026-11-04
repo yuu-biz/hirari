@@ -29,6 +29,9 @@ import kotlin.math.roundToInt
 class BookPageLoader(private val book: OpenBook, private val dispatcher: CoroutineDispatcher) : PageLoader<RawPage, Bitmap> {
     override fun prioritize(pages: List<Int>) = book.prioritize(pages)
 
+    override suspend fun invalidate(page: Int) = book.invalidate(page)
+    override fun fromStash(raw: RawPage): Boolean = book.fromStash(raw)
+
     override suspend fun raw(page: Int): RawResult = book.raw(page)
 
     override fun bytesOf(raw: RawPage): Long = raw.byteCount
