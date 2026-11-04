@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
 import io.github.yuubiz.hirari.core.model.EntryOrder
+import io.github.yuubiz.hirari.core.model.FileFormats
 import io.github.yuubiz.hirari.core.model.NaturalPageOrder
 import io.github.yuubiz.hirari.core.model.PageEntry
 import java.util.Locale
@@ -25,7 +26,8 @@ fun pageCandidate(name: String, isDirectory: Boolean): PageCandidate {
     if (fileName in EXCLUDED_NAMES) return PageCandidate.Excluded
     val extension = fileName.substringAfterLast('.', "")
     return when (extension) {
-        in IMAGE_EXTENSIONS -> PageCandidate.Image
+        in FileFormats.imagePages -> PageCandidate.Image
+        in FileFormats.texts -> PageCandidate.Excluded
         in EXCLUDED_EXTENSIONS -> PageCandidate.Excluded
         else -> PageCandidate.Sniff
     }
@@ -46,6 +48,5 @@ fun sortedPages(entries: List<PageEntry>, order: PageOrder = PageOrder()): List<
     return (if (order.reversed) sorted.asReversed() else sorted).mapIndexed { i, entry -> entry.copy(index = i) }
 }
 
-private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "jpe", "jfif", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "jxl")
-private val EXCLUDED_EXTENSIONS = setOf("txt", "nfo", "xml", "sfv", "md5", "url")
+private val EXCLUDED_EXTENSIONS = setOf("nfo", "xml", "sfv", "md5", "url")
 private val EXCLUDED_NAMES = setOf("thumbs.db", "desktop.ini")

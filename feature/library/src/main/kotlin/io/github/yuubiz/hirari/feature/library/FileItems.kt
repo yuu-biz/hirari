@@ -4,6 +4,8 @@ import io.github.yuubiz.hirari.core.data.LibraryBook
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.FileFormats
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.NaturalOrder
@@ -32,29 +34,26 @@ sealed interface FileItem {
     data class Image(override val entry: FolderEntry) : FileItem
 }
 
-private val ARCHIVES = mapOf(
-    "zip" to ArchiveKind.Zip,
-    "cbz" to ArchiveKind.Zip,
-    "rar" to ArchiveKind.Rar,
-    "cbr" to ArchiveKind.Rar,
-    "7z" to ArchiveKind.SevenZip,
-    "cb7" to ArchiveKind.SevenZip,
-    "tar" to ArchiveKind.Tar,
-    "cbt" to ArchiveKind.Tar,
-    "pdf" to ArchiveKind.Pdf,
-)
-
-private val IMAGES = setOf("jpg", "jpeg", "jpe", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "jxl")
-
 /** The kind of [entry], or `null` for a file the list leaves out. */
 fun FolderEntry.toItem(showDotFiles: Boolean): FileItem? {
     if (!showDotFiles && name.startsWith('.')) return null
     if (directory) return FileItem.Folder(this)
     val extension = name.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)
-    ARCHIVES[extension]?.let { return FileItem.Archive(this, it) }
+    FileFormats.archiveBooks[extension]?.let { container ->
+        val kind = when (container) {
+            Container.Zip -> ArchiveKind.Zip
+            Container.Rar -> ArchiveKind.Rar
+            Container.SevenZip -> ArchiveKind.SevenZip
+            Container.Tar -> ArchiveKind.Tar
+            else -> error("Not an archive container: $container")
+        }
+        return FileItem.Archive(this, kind)
+    }
+    // A PDF is shown as a book, but has no archive-entry listing.
     return when (extension) {
-        in IMAGES -> FileItem.Image(this)
-        "txt" -> FileItem.Text(this)
+        in FileFormats.pdfs -> FileItem.Archive(this, ArchiveKind.Pdf)
+        in FileFormats.imagePages -> FileItem.Image(this)
+        in FileFormats.texts -> FileItem.Text(this)
         else -> null
     }
 }
