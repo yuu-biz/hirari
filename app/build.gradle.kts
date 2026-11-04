@@ -11,6 +11,7 @@ android {
         versionCode = 1
         versionName = "0.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["clearPackageData"] = "true"
     }
     buildTypes {
         create("benchmark") {
@@ -26,6 +27,9 @@ android {
         }
     }
     testOptions {
+        // Each device test gets a process of its own and empty app data, so a test that starts the app cold is cold
+        // whatever ran before it (the cold start tests of docs/spec.md section 6.2).
+        execution = "ANDROIDX_TEST_ORCHESTRATOR"
         unitTests.all { test ->
             // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
             // without it.
@@ -68,6 +72,7 @@ dependencies {
     testImplementation(libs.kotlinx.serialization.json)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.core)
+    androidTestUtil(libs.androidx.test.orchestrator)
     androidTestImplementation(libs.junit)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
