@@ -29,7 +29,7 @@ import kotlin.math.roundToLong
  */
 data class ReaderConfig(
     val layout: LayoutSettings = LayoutSettings(LayoutMode.Auto, ReadingDirection.RightToLeft, coverAlone = true),
-    val scaleMode: ScaleMode = ScaleMode.FitScreen,
+    val scaleMode: ScaleMode = ScaleMode.FitPage,
     val capAtOriginal: Boolean = false,
     val turnEffect: TurnEffect = TurnEffect.Cover,
     val turnDurationMs: Long = 150,

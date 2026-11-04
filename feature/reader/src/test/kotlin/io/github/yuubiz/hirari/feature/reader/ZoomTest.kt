@@ -43,6 +43,35 @@ class ZoomTest {
     }
 
     @Test
+    fun fitPageGivesEachPageOfAPairAPortraitScreen() {
+        val portrait = Size(1080f, 1920f)
+        assertEquals(Scale(1.08f, 1.08f), modeScale(ScaleMode.FitPage, Size(2000f, 1500f), portrait, capAtOriginal = false))
+        assertEquals(Scale(1.08f, 1.08f), modeScale(ScaleMode.FitPage, Size(1000f, 1500f), portrait, capAtOriginal = false))
+        assertEquals(Scale(1.08f, 1.08f), modeScale(ScaleMode.FitPage, Size(1000f, 1000f), Size(1080f, 1280f), capAtOriginal = false), "a square page counts as one frame")
+        assertEquals(Scale(1f, 1f), modeScale(ScaleMode.FitPage, Size(2000f, 1500f), portrait, capAtOriginal = true))
+    }
+
+    @Test
+    fun fitPageFitsAPairIntoALandscapeScreenAndAPageIntoHalfOfIt() {
+        val landscape = Size(1920f, 1080f)
+        assertEquals(Scale(0.72f, 0.72f), modeScale(ScaleMode.FitPage, Size(2000f, 1500f), landscape, capAtOriginal = false))
+        assertEquals(Scale(0.8f, 0.8f), modeScale(ScaleMode.FitPage, Size(1200f, 1300f), landscape, capAtOriginal = false), "half the screen is 960 wide")
+        assertEquals(modeScale(ScaleMode.FitScreen, Size(2000f, 1500f), landscape, false), modeScale(ScaleMode.FitPage, Size(2000f, 1500f), landscape, false))
+    }
+
+    @Test
+    fun aPairInFitPageOnAPortraitScreenIsReadRightPageThenLeftPage() {
+        val state = readerOf(List(2) { PageShape.Known(1000, 1500) }, spreadConfig(), PORTRAIT)
+        val geometry = state.geometry()!!
+        assertEquals(1080f, geometry.pages[0].width, 2f)
+        assertEquals(geometry.pages[0].width, geometry.pages[1].width, 0.5f)
+        assertEquals(2 * 1080f, geometry.size.width, 0.5f)
+        val stops = geometry.stops(state.config).stops
+        assertEquals(listOf(0, 1), stops.map { it.part })
+        assertEquals(listOf(1080f, 0f), stops.map { it.point.x }, "the right page whole, then the left page whole")
+    }
+
+    @Test
     fun pagesScaleIntoScreenPixels() {
         val pair = viewContent(PageView.Two(0, 1), shapes::getValue, RightToLeft, gapPx = 2f)
         assertEquals(listOf(Rect(376f, 0f, 726f, 500f), Rect(0f, 0f, 375f, 500f)), pair.pagesAt(Scale(0.5f, 0.5f)))

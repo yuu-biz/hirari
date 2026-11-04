@@ -133,6 +133,7 @@
     <string name="layout_split_wide">横長を分割</string>
     <string name="layout_auto">自動</string>
     <string name="layout_vertical">縦に連続</string>
+    <string name="scale_fit_page">ページを画面に収める</string>
     <string name="scale_fit_screen">画面に収める</string>
     <string name="scale_fit_width">幅に合わせる</string>
     <string name="scale_fit_height">高さに合わせる</string>

@@ -293,6 +293,7 @@ private val LayoutMode.label: Int
 
 private val ScaleMode.label: Int
     get() = when (this) {
+        ScaleMode.FitPage -> R.string.scale_fit_page
         ScaleMode.FitScreen -> R.string.scale_fit_screen
         ScaleMode.FitWidth -> R.string.scale_fit_width
         ScaleMode.FitHeight -> R.string.scale_fit_height

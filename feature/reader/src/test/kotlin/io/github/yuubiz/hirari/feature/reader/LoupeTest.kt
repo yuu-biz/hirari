@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.model.LoupeZoom
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
+import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Rotation
@@ -145,7 +146,7 @@ class LoupeTest {
 
     @Test
     fun theSourceMagnificationsReadThePageUnderTheFingerAtItsOwnSize() {
-        val config = spreadConfig().copy(loupeZoom = LoupeZoom.Source100)
+        val config = spreadConfig().copy(loupeZoom = LoupeZoom.Source100, scaleMode = ScaleMode.FitScreen)
         val big = PageShape.Known(3000, 4500)
         val state = readerOf(List(2) { big }, config, PORTRAIT).reduce(ReaderEvent.LoupeShown(Point(100f, 1000f)))
         assertEquals(PageView.Two(0, 1), state.current)

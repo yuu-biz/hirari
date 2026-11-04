@@ -63,6 +63,7 @@ fun modeScale(mode: ScaleMode, content: Size, viewport: Size, capAtOriginal: Boo
     val byWidth = viewport.width / content.width
     val byHeight = viewport.height / content.height
     val scale = when (mode) {
+        ScaleMode.FitPage -> min(viewport.width * frames(content) / frames(viewport) / content.width, byHeight).let { Scale(it, it) }
         ScaleMode.FitScreen -> min(byWidth, byHeight).let { Scale(it, it) }
         ScaleMode.FitWidth -> Scale(byWidth, byWidth)
         ScaleMode.FitHeight -> Scale(byHeight, byHeight)
@@ -71,6 +72,12 @@ fun modeScale(mode: ScaleMode, content: Size, viewport: Size, capAtOriginal: Boo
     }
     return if (capAtOriginal) Scale(min(scale.x, 1f), min(scale.y, 1f)) else scale
 }
+
+/**
+ * The frames of [size] in [ScaleMode.FitPage]: two for a landscape shape, one for any other. A view is fitted into as
+ * many frames as it has, each a screen wide on a portrait screen and half a screen on a landscape one.
+ */
+private fun frames(size: Size): Int = if (size.width > size.height) 2 else 1
 
 const val PINCH_START_DP = 20f
 const val PINCH_MIN_OF_FIT = 0.5f

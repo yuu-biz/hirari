@@ -53,7 +53,7 @@ data class GlobalSettings(
     val entryOrder: EntryOrder = EntryOrder.Natural,
     val atBookEnd: BookEndAction = BookEndAction.Ask,
 
-    val scaleMode: ScaleMode = ScaleMode.FitScreen,
+    val scaleMode: ScaleMode = ScaleMode.FitPage,
     val capAtOriginal: Boolean = false,
     val trimStrength: TrimStrength = TrimStrength.Off,
     val gutterStyle: GutterStyle = GutterStyle.Gap,

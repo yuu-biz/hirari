@@ -2,7 +2,8 @@ package io.github.yuubiz.hirari.core.model
 
 import java.nio.charset.Charset
 
-enum class ScaleMode { FitScreen, FitWidth, FitHeight, Original, Stretch }
+/** [FitPage] is ページを画面に収める: each page of a pair, or each half of a wide page, fills a screen (docs/spec.md section 4.8). */
+enum class ScaleMode { FitPage, FitScreen, FitWidth, FitHeight, Original, Stretch }
 
 enum class TrimStrength { Off, Weak, Medium, Strong, Strongest }
 

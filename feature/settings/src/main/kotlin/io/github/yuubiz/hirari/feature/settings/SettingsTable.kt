@@ -105,7 +105,7 @@ val SettingsTable: List<Setting> = buildList {
 
     val image = SettingGroup.ImageDisplay
     add(choice(GlobalSettings::scaleMode, image, "拡大モード", { s, v -> s.copy(scaleMode = v) },
-        ScaleMode.FitScreen to "画面に収める", ScaleMode.FitWidth to "幅に合わせる", ScaleMode.FitHeight to "高さに合わせる",
+        ScaleMode.FitPage to "ページを画面に収める", ScaleMode.FitScreen to "画面に収める", ScaleMode.FitWidth to "幅に合わせる", ScaleMode.FitHeight to "高さに合わせる",
         ScaleMode.Original to "原寸", ScaleMode.Stretch to "画面いっぱい"))
     add(toggle(GlobalSettings::capAtOriginal, image, "拡大は原寸まで") { s, v -> s.copy(capAtOriginal = v) })
     add(choice(GlobalSettings::trimStrength, image, "余白トリミング", { s, v -> s.copy(trimStrength = v) },
