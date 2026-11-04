@@ -87,7 +87,7 @@ internal class StashedPages(
 
     override fun prioritize(entries: List<Int>) = queue.prioritize(entries)
 
-    override suspend fun read(page: PageEntry): PageResult<ByteArray> = fetch(page).result
+    override suspend fun read(page: PageEntry): PageResult<ByteArray> = checkNotNull(fetch(page)).result
 
     suspend fun canFill(page: PageEntry): Boolean = withContext(Dispatchers.IO) {
         stash.cache.canWrite(page.declaredSize ?: (1536L * 1024))
@@ -99,8 +99,8 @@ internal class StashedPages(
         return try {
             val estimated = page.declaredSize ?: (1536L * 1024)
             if (!stash.cache.fits(estimated)) return Fill.NotKept
-            if (!holds(page) && !canFill(page)) return Fill.NoCapacity
-            val fetched = fetch(page)
+            // Checked in the page's turn of the queue, so a fill takes its place in the order before any disk I/O.
+            val fetched = fetch(page) { holds(page) || canFill(page) } ?: return Fill.NoCapacity
             when {
                 fetched.kept.await() -> Fill.OnDisk
                 fetched.result is PageResult.Ready ->
@@ -122,7 +122,8 @@ internal class StashedPages(
         server.close()
     }
 
-    private suspend fun fetch(page: PageEntry): Fetched {
+    /** The entry's bytes, or null when [admit], asked in the entry's turn, refuses to read it. */
+    private suspend fun fetch(page: PageEntry, admit: (suspend () -> Boolean)? = null): Fetched? {
         while (true) {
             val mine = CompletableDeferred<Fetched?>()
             val running = reading.putIfAbsent(page.entryIndex, mine)
@@ -132,7 +133,7 @@ internal class StashedPages(
             }
             var fetched: Fetched? = null
             try {
-                return queue.read(page.entryIndex) { readThrough(page) }.also { fetched = it }
+                return queue.read(page.entryIndex) { if (admit?.invoke() == false) null else readThrough(page) }.also { fetched = it }
             } finally {
                 // Removed before completing: a waiter can resume inside complete() on this thread (the main thread's
                 // immediate dispatcher) and must not find this finished read again, or it loops without end.
