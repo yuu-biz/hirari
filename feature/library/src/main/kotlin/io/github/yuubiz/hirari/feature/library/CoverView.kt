@@ -27,14 +27,15 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * The thumbnail slot (docs/spec.md section 4.4). While the row is bound it collects the cover of [ref], which holds
  * the thumbnail against eviction, and leaving the screen cancels that. A cover in memory shows at once; otherwise a
  * pale square shows, with a progress mark once the wait is long, and [label] stands in when the cover cannot be made.
- * Binding reads memory only: the store, the decode and the making all run elsewhere.
+ * Binding reads memory only: the store, the decode and the making all run elsewhere. In a list with a [focus], the
+ * covers nearest the middle of the screen are made first.
  */
 @Composable
-internal fun CoverBox(ref: CoverRef?, covers: Covers, label: String?, modifier: Modifier, faded: Boolean = false) {
+internal fun CoverBox(ref: CoverRef?, covers: Covers, label: String?, modifier: Modifier, faded: Boolean = false, focus: CoverFocus? = null) {
     var state by remember(ref) {
         mutableStateOf<CoverState<ImageBitmap>>(ref?.let(covers::peek)?.let { CoverState.Loaded(it) } ?: CoverState.Pending)
     }
-    if (ref != null) LaunchedEffect(ref) { covers.show(ref).collect { state = it } }
+    if (ref != null) LaunchedEffect(ref) { covers.show(ref, focus).collect { state = it } }
     val shown = state
     CoverSlot(label, modifier, faded, centered = shown is CoverState.Failed || shown is CoverState.Unavailable) {
         when (shown) {
@@ -58,15 +59,17 @@ private fun BoxScope.PendingMark(ref: CoverRef) {
 /**
  * Keeps the covers of the items around the screen made and held (docs/spec.md section 4.4), with the nearby
  * priority. [refs] has one entry per item of the list, `null` for an item without a cover; [visible] is the range of
- * items on screen. The window follows it: what stays inside keeps its work, and what leaves is cancelled.
+ * items on screen. The window follows it: what stays inside keeps its work, and what leaves is cancelled. It keeps
+ * [focus] on the screen, so the rows of the list that share it are made nearest the middle first, and so is the window.
  */
 @Composable
-internal fun PrefetchCovers(refs: List<CoverRef?>, covers: Covers, visible: () -> IntRange) {
+internal fun PrefetchCovers(refs: List<CoverRef?>, covers: Covers, focus: CoverFocus, visible: () -> IntRange) {
     val scope = rememberCoroutineScope()
-    val prefetcher = remember(covers, scope) { covers.prefetcher(scope) }
+    val prefetcher = remember(covers, scope, focus) { covers.prefetcher(scope, focus) }
     DisposableEffect(prefetcher) { onDispose { prefetcher.clear() } }
     LaunchedEffect(refs, prefetcher) {
         snapshotFlow { visible() }.distinctUntilChanged().collect { range ->
+            focus.update(refs, range)
             val window = nearbyWindow(range.first, range.last, refs.size)
             prefetcher.update(window.mapNotNullTo(HashSet()) { refs[it] })
         }

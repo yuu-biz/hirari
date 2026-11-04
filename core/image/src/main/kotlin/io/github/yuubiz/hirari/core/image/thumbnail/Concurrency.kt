@@ -9,17 +9,19 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * How soon a piece of work is wanted: the best of its own priority and of the urgencies it follows now, read anew
- * at each turn of a [PriorityGate]. A flight follows each request for as long as the request waits for it, and a
- * folder lends the urgency of its flight to the book its search tries, so they rise with the folder and fall back
- * when the request that raised them leaves.
+ * How soon a piece of work is wanted: the best of its own and of the urgencies it follows now, read anew at each
+ * turn of a [PriorityGate]. Its own is its priority, and within a priority its distance from the middle of the
+ * screen, which moves as the list scrolls. A flight follows each request for as long as the request waits for it,
+ * and a folder lends the urgency of its flight to the book its search tries, so they rise with the folder and fall
+ * back when the request that raised them leaves. A lower rank is sooner.
  */
-internal class Urgency private constructor(private val own: Int) {
-    constructor(priority: ThumbPriority) : this(priority.ordinal)
+internal class Urgency private constructor(private val own: () -> Long) {
+    constructor(priority: ThumbPriority, distance: () -> Int = { 0 }) :
+        this({ (priority.ordinal.toLong() shl Int.SIZE_BITS) + distance().coerceAtLeast(0) })
 
     private val followed = CopyOnWriteArrayList<Urgency>()
 
-    val rank: Int get() = followed.fold(own) { best, other -> minOf(best, other.rank) }
+    val rank: Long get() = followed.fold(own()) { best, other -> minOf(best, other.rank) }
 
     fun follow(other: Urgency) {
         followed += other
@@ -31,7 +33,7 @@ internal class Urgency private constructor(private val own: Int) {
 
     companion object {
         /** An urgency with no priority of its own: as high as what it follows, and the lowest when it follows nothing. */
-        fun borrowed() = Urgency(Int.MAX_VALUE)
+        fun borrowed() = Urgency { Long.MAX_VALUE }
     }
 }
 
@@ -81,8 +83,8 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
 }
 
 /**
- * At most [permits] blocks run at once. A free permit goes to the waiter with the best [Urgency], and to the one
- * that came first among equals.
+ * At most [permits] blocks run at once. A free permit goes to the waiter with the best [Urgency] at that moment, and
+ * to the one that came first among equals.
  */
 internal class PriorityGate(permits: Int) {
     private class Waiter(val urgency: Urgency, val order: Long, val continuation: CancellableContinuation<Unit>)

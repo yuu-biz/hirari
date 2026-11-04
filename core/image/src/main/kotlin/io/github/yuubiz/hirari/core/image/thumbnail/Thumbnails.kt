@@ -133,7 +133,7 @@ class Thumbnails internal constructor(
     /** A store or a folder listing that throws is the thumbnail being unavailable for now, not a crash of the list. */
     private suspend fun resolve(request: ThumbRequest, mode: Mode): ThumbResult? = try {
         when (val subject = request.subject) {
-            is ThumbSubject.Book -> book(subject, request, mode, Urgency(request.priority))
+            is ThumbSubject.Book -> book(subject, request, mode, Urgency(request.priority, request.distance))
             is ThumbSubject.Folder -> folder(subject, request, mode)
         }
     } catch (e: CancellationException) {
@@ -241,7 +241,7 @@ class Thumbnails internal constructor(
     /** A folder is stored like a book, under a key of its own, so finding it never lists the folder. */
     private suspend fun folder(folder: ThumbSubject.Folder, request: ThumbRequest, mode: Mode): ThumbResult? {
         val key = keyOf(folder, request)
-        val urgency = Urgency(request.priority)
+        val urgency = Urgency(request.priority, request.distance)
         val flight = if (mode == Mode.Remake) {
             folderWrites.withLock {
                 store.remove(key)

@@ -56,17 +56,22 @@ class Covers(
      * The request for [ref]. The only place a request is made, so showing, preparing and regenerating a cover name
      * the same thumbnail in the store.
      */
-    fun request(ref: CoverRef, priority: ThumbPriority): ThumbRequest =
-        ThumbRequest(subject(ref.spec), ref.sizePx, ref.spec.direction, priority)
+    fun request(ref: CoverRef, priority: ThumbPriority, focus: CoverFocus? = null): ThumbRequest {
+        val key = ref.key
+        return ThumbRequest(subject(ref.spec), ref.sizePx, ref.spec.direction, priority) { focus?.distance(key) ?: 0 }
+    }
 
     fun peek(ref: CoverRef): ImageBitmap? = loader.peek(ref.key)
 
-    /** What a row on screen shows, with the visible priority; collect it while the row is bound. */
-    fun show(ref: CoverRef): Flow<CoverState<ImageBitmap>> = loader.show(ref.key, request(ref, ThumbPriority.Visible))
+    /**
+     * What a row on screen shows, with the visible priority and, in a list that has a [focus], before the rows farther
+     * from the middle of the screen; collect it while the row is bound.
+     */
+    fun show(ref: CoverRef, focus: CoverFocus? = null): Flow<CoverState<ImageBitmap>> = loader.show(ref.key, request(ref, ThumbPriority.Visible, focus))
 
-    /** Prepares the covers of items near the screen, with the nearby priority, until their jobs are cancelled. */
-    fun prefetcher(scope: CoroutineScope): Prefetcher<CoverRef> =
-        Prefetcher.forRefs(scope) { ref -> loader.warm(request(ref, ThumbPriority.Nearby)).collect {} }
+    /** Prepares the covers of items near the screen, with the nearby priority and nearest first, until their jobs are cancelled. */
+    fun prefetcher(scope: CoroutineScope, focus: CoverFocus): Prefetcher<CoverRef> =
+        Prefetcher.forRefs(scope) { ref -> loader.warm(request(ref, ThumbPriority.Nearby, focus)).collect {} }
 
     /**
      * サムネイルを作り直す for [spec] at each of [sizes], the first being the one on screen: forgets it in the store,

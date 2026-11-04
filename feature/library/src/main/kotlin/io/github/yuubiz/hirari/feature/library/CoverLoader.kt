@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.CoroutineContext
+import kotlin.math.abs
 
 /** What a row shows of its cover. */
 sealed interface CoverState<out I> {
@@ -130,6 +131,34 @@ class CoverLoader<I : Any>(
 
 /** The trace section of docs/spec.md section 5.2, P8: a bound row from the lookup of its cover to the cover or its failure. */
 const val TRACE_THUMBNAIL = "hirari.thumbnail"
+
+/**
+ * Where one list stands (docs/spec.md section 4.4): the cover of each of its items and the items on screen. The
+ * list [update]s it as it scrolls, and the lanes read [distance] each time they pick the next cover, so the covers
+ * nearest the middle of the screen are made first wherever the list has scrolled to.
+ */
+class CoverFocus {
+    @Volatile
+    private var positions: Map<CoverKey, Int> = emptyMap()
+
+    @Volatile
+    private var refs: List<CoverRef?> = emptyList()
+
+    /** The first plus the last index on screen: twice the middle, which keeps distances whole. */
+    @Volatile
+    private var middleTwice = 0
+
+    fun update(refs: List<CoverRef?>, visible: IntRange) {
+        if (refs !== this.refs) {
+            positions = refs.withIndex().mapNotNull { (index, ref) -> ref?.let { it.key to index } }.toMap()
+            this.refs = refs
+        }
+        if (!visible.isEmpty()) middleTwice = visible.first + visible.last
+    }
+
+    /** How far the item of [key] is from the middle of the screen, in halves of an item; the farthest for one not in the list. */
+    fun distance(key: CoverKey): Int = positions[key]?.let { abs(2 * it - middleTwice) } ?: Int.MAX_VALUE
+}
 
 /**
  * The items the list prepares ahead (docs/spec.md section 4.4): [update] starts what is newly wanted and cancels

@@ -73,6 +73,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
         val at = content.rows.indexOfFirst { it.path == reveal }
         if (at >= 0) scrollTo(at)
     }
+    val focus = remember { CoverFocus() }
     Box(Modifier.fillMaxSize()) {
         when (content.view) {
             LibraryView.Grid -> {
@@ -83,9 +84,9 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     state = grid,
                     modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH),
                 ) {
-                    items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, onOpen, onLongPress) }
+                    items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, focus, onOpen, onLongPress) }
                 }
-                PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
+                PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
                 FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
             }
             LibraryView.ThumbnailList, LibraryView.List -> {
@@ -93,11 +94,11 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                 LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
                 LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH)) {
                     items(content.rows, key = { it.path }) { row ->
-                        ListRow(row, content.covers.takeIf { content.view == LibraryView.ThumbnailList }, content.thumbSize, onOpen, onLongPress)
+                        ListRow(row, content.covers.takeIf { content.view == LibraryView.ThumbnailList }, focus, content.thumbSize, onOpen, onLongPress)
                     }
                 }
                 if (content.view == LibraryView.ThumbnailList) {
-                    PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers) { list.layoutInfo.visibleItemsInfo.visibleRange() }
+                    PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
                 }
                 FastScroller(content.rows.size, { list.firstVisibleItemIndex }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
             }
@@ -112,9 +113,9 @@ private val ThumbSize.listCoverWidth get() = when (this) {
 }
 
 @Composable
-private fun GridCell(row: FileRow, covers: CoverLayout, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     Column(Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).padding(6.dp)) {
-        Cover(row, covers, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
+        Cover(row, covers, focus, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
         Text(
             row.item.entry.name,
             Modifier.padding(top = 4.dp),
@@ -127,14 +128,14 @@ private fun GridCell(row: FileRow, covers: CoverLayout, onOpen: (FileRow) -> Uni
 }
 
 @Composable
-private fun ListRow(row: FileRow, covers: CoverLayout?, size: ThumbSize, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+private fun ListRow(row: FileRow, covers: CoverLayout?, focus: CoverFocus, size: ThumbSize, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
     Row(
         Modifier.fillMaxWidth().rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).minTouchTarget().padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (covers != null) {
-            Cover(row, covers, Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO))
+            Cover(row, covers, focus, Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO))
         } else {
             Box(Modifier.width(32.dp).decorative(), contentAlignment = Alignment.Center) { MarkGlyph(row.mark) }
         }
@@ -150,11 +151,11 @@ private fun ListRow(row: FileRow, covers: CoverLayout?, size: ThumbSize, onOpen:
 
 /** The thumbnail slot with the kind label and the read-state mark (docs/spec.md sections 4.3 and 4.4). */
 @Composable
-private fun Cover(row: FileRow, covers: CoverLayout, modifier: Modifier) {
+private fun Cover(row: FileRow, covers: CoverLayout, focus: CoverFocus, modifier: Modifier) {
     val mark = row.mark
     Box(modifier.decorative()) {
         val ref = remember(row.cover, covers.sizePx) { row.cover?.let { CoverRef(it, covers.sizePx) } }
-        CoverBox(ref, covers.covers, row.kindLabel(), Modifier.fillMaxSize(), faded = mark == ReadMark.Read)
+        CoverBox(ref, covers.covers, row.kindLabel(), Modifier.fillMaxSize(), faded = mark == ReadMark.Read, focus = focus)
         Box(Modifier.align(Alignment.TopStart).padding(4.dp)) { MarkGlyph(mark) }
         if (mark is ReadMark.Reading) {
             LinearProgressIndicator(

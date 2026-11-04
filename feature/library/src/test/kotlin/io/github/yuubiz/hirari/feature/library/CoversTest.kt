@@ -68,6 +68,20 @@ class CoversTest {
     }
 
     @Test
+    fun `a request of a list with a focus is nearer the sooner its row is to the middle of the screen as the list scrolls`() {
+        val refs = (0 until 10).map { CoverRef(book(saf, "s/$it.zip"), 320) }
+        val focus = CoverFocus()
+        val requests = refs.map { covers.request(it, ThumbPriority.Visible, focus) }
+        focus.update(refs, 2..6)
+        assertEquals(listOf(4, 3, 5), listOf(4, 3, 5).sortedBy { requests[it].distance() })
+        assertEquals(requests[3].distance(), requests[5].distance())
+        focus.update(refs, 6..9)
+        assertTrue(requests[8].distance() < requests[4].distance(), "the order did not follow the scroll")
+        assertEquals(Int.MAX_VALUE, covers.request(CoverRef(book(saf, "s/gone.zip"), 320), ThumbPriority.Visible, focus).distance())
+        assertEquals(0, covers.request(refs[9], ThumbPriority.Visible).distance())
+    }
+
+    @Test
     fun `a book of an SMB place is made in the SMB lane`() {
         val request = covers.request(CoverRef(book(nas, "s/1.zip"), 320), ThumbPriority.Visible)
         assertEquals(ThumbLane.Smb, assertIs<ThumbSubject.Book>(request.subject).lane)

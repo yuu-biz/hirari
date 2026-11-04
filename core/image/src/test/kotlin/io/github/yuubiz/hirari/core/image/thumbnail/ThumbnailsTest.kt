@@ -138,7 +138,8 @@ class ThumbnailsTest {
         sizePx: Int = 300,
         direction: ReadingDirection = ReadingDirection.RightToLeft,
         priority: ThumbPriority = ThumbPriority.Visible,
-    ) = ThumbRequest(subject, sizePx, direction, priority)
+        distance: () -> Int = { 0 },
+    ) = ThumbRequest(subject, sizePx, direction, priority, distance)
 
     private fun item(name: String, id: String = name, lane: ThumbLane = ThumbLane.Local) = FolderEntry.Item(name, book(id, lane))
 
@@ -459,6 +460,26 @@ class ThumbnailsTest {
         release.complete(Unit)
         runCurrent()
         assertEquals(listOf("busy", "second", "first"), maker.ids)
+    }
+
+    @Test
+    fun theVisibleItemNearestTheMiddleOfTheScreenIsMadeFirst() = runTest {
+        val thumbnails = thumbnails()
+        val release = CompletableDeferred<Unit>()
+        maker.script = { book ->
+            if (book.id.value == "busy") release.await()
+            Made.Webp(byteArrayOf(1))
+        }
+        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        runCurrent()
+        val distances = mapOf("edge" to 4, "middle" to 0, "folder" to 2)
+        launch { thumbnails.thumbnail(request(book("edge", lane = ThumbLane.Smb)) { distances.getValue("edge") }) }
+        launch { thumbnails.thumbnail(request(folder(item("in folder", lane = ThumbLane.Smb))) { distances.getValue("folder") }) }
+        launch { thumbnails.thumbnail(request(book("middle", lane = ThumbLane.Smb)) { distances.getValue("middle") }) }
+        runCurrent()
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("busy", "middle", "in folder", "edge"), maker.ids)
     }
 
     @Test

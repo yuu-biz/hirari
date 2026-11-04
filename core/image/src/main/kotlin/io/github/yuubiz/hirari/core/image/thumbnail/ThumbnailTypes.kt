@@ -122,12 +122,18 @@ sealed interface FolderEntry {
     class Directory(override val name: String, val children: suspend () -> List<FolderEntry>) : FolderEntry
 }
 
-/** One thumbnail to show: [sizePx] is the long side, [direction] the binding direction of the book. */
+/**
+ * One thumbnail to show: [sizePx] is the long side, [direction] the binding direction of the book. Within its
+ * [priority], a request whose [distance] is smaller is made sooner: how far the item is from the middle of the items
+ * on screen, read each time a lane picks what to make next, so the order follows the list as it scrolls. It is
+ * called on any thread and must be cheap.
+ */
 class ThumbRequest(
     val subject: ThumbSubject,
     val sizePx: Int,
     val direction: ReadingDirection,
     val priority: ThumbPriority = ThumbPriority.Visible,
+    val distance: () -> Int = { 0 },
 ) {
     init {
         require(sizePx > 0) { "size $sizePx" }

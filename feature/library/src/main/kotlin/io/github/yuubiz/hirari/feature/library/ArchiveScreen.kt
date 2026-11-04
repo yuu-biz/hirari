@@ -158,10 +158,11 @@ private fun Entries(content: ArchiveUi.Shown, list: Boolean, onPage: (ArchivePag
     val colors = LocalLibraryColors.current
     val grid = rememberLazyGridState()
     val pageCovers = content.covers
+    val focus = remember { CoverFocus() }
     if (pageCovers != null && !list) {
         val refs = remember(content.pages, pageCovers) { content.pages.map { pageCovers.ref(it.page) } }
         val before = content.texts.size + if (content.texts.isNotEmpty() && content.pages.isNotEmpty()) 1 else 0
-        PrefetchCovers(refs, pageCovers.layout.covers) {
+        PrefetchCovers(refs, pageCovers.layout.covers, focus) {
             val shown = grid.layoutInfo.visibleItemsInfo
             if (shown.isEmpty()) IntRange.EMPTY else maxOf(shown.first().index - before, 0)..(shown.last().index - before)
         }
@@ -216,7 +217,7 @@ private fun Entries(content: ArchiveUi.Shown, list: Boolean, onPage: (ArchivePag
                     if (pageCovers == null) {
                         CoverSlot(label, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), faded = row.read)
                     } else {
-                        CoverBox(pageCovers.ref(page), pageCovers.layout.covers, label, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO).decorative(), faded = row.read)
+                        CoverBox(pageCovers.ref(page), pageCovers.layout.covers, label, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO).decorative(), faded = row.read, focus = focus)
                     }
                     Text(
                         number,

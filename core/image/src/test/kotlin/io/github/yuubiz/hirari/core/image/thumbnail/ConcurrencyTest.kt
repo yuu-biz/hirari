@@ -155,12 +155,33 @@ class ConcurrencyTest {
         val nearby = Urgency(ThumbPriority.Nearby)
         val visible = Urgency(ThumbPriority.Visible)
         flight.follow(nearby)
-        assertEquals(ThumbPriority.Nearby.ordinal, lent.rank)
+        assertEquals(nearby.rank, lent.rank)
         flight.follow(visible)
-        assertEquals(ThumbPriority.Visible.ordinal, lent.rank)
+        assertEquals(visible.rank, lent.rank)
         flight.unfollow(visible)
-        assertEquals(ThumbPriority.Nearby.ordinal, lent.rank)
+        assertEquals(nearby.rank, lent.rank)
         flight.unfollow(nearby)
-        assertEquals(Int.MAX_VALUE, lent.rank)
+        assertEquals(Long.MAX_VALUE, lent.rank)
+    }
+
+    @Test
+    fun aFreedPermitGoesToTheWaiterNearestTheMiddleAsItIsWhenThePermitIsFree() = runTest {
+        val gate = PriorityGate(1)
+        val release = CompletableDeferred<Unit>()
+        val order = ArrayList<String>()
+        val distances = mutableMapOf("top" to 1, "bottom" to 3, "far nearby" to 9, "near nearby" to 2)
+        launch { gate.withPermit(Urgency(ThumbPriority.Visible)) { release.await() } }
+        runCurrent()
+        for (name in listOf("top", "bottom")) {
+            launch { gate.withPermit(Urgency(ThumbPriority.Visible) { distances.getValue(name) }) { order += name } }
+        }
+        for (name in listOf("far nearby", "near nearby")) {
+            launch { gate.withPermit(Urgency(ThumbPriority.Nearby) { distances.getValue(name) }) { order += name } }
+        }
+        runCurrent()
+        distances["top"] = 5
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("bottom", "top", "near nearby", "far nearby"), order)
     }
 }
