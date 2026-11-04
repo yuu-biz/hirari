@@ -178,4 +178,18 @@
     <string name="save_failed_write">保存先への書き込みに失敗しました</string>
     <string name="save_failed_password_unreadable">保存したパスワードを読めません。サーバーの設定でパスワードを入れ直してください</string>
     <string name="save_failed_local_network">ローカルネットワークへの接続が許可されていません</string>
+    <string name="look_title">表示の調整</string>
+    <string name="look_columns_portrait">列数（縦画面）</string>
+    <string name="look_columns_landscape">列数（横画面）</string>
+    <string name="look_auto">自動</string>
+    <string name="look_name_lines">名前の行数</string>
+    <string name="look_note_line">作者の行を出す</string>
+    <string name="look_aspect">表紙の縦横比</string>
+    <string name="look_aspect_book">本</string>
+    <string name="look_aspect_square">正方形</string>
+    <string name="look_text_size">文字の大きさ</string>
+    <string name="look_thumb_size">サムネイルの大きさ</string>
+    <string name="look_small">小</string>
+    <string name="look_medium">中</string>
+    <string name="look_large">大</string>
 </resources>

@@ -50,7 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -122,7 +121,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     LibraryView.Grid -> {
                         val grid = rememberLazyGridState()
                         LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
-                        val landscape = LocalConfiguration.current.run { screenWidthDp > screenHeightDp }
+                        val landscape = isLandscapeWindow()
                         val columns = content.look.columns(maxWidth, landscape)
                         val size = content.look.gridThumbSize(maxWidth / columns, landscape)
                         val covers = remember(content.covers, size) { content.covers.copy(sizePx = content.covers.covers.sizePx(size)) }

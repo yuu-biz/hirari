@@ -100,6 +100,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     val state by model.state.collectAsStateWithLifecycle()
     var filtering by rememberSaveable { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<FileRow?>(null) }
+    var adjusting by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalResources.current
     val gate = rememberLocalNetworkGate()
@@ -153,7 +154,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     (state.content as? FolderContent.Shown)?.let { shown ->
                         ViewButton(shown.view) { model.setView(shown.view.next()) }
-                        ListMenu(shown, model, atTop = up == null, pinned = state.pinnedId != null) {
+                        ListMenu(shown, model, atTop = up == null, pinned = state.pinnedId != null, onAdjust = { adjusting = true }) {
                             scope.launch { if (!actions.pinShortcut(model.folderShortcut())) model.show(Notice.ShortcutUnsupported) }
                         }
                     }
@@ -187,6 +188,8 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
             }
         }
     }
+    val shownLook = (state.content as? FolderContent.Shown)?.look
+    if (adjusting && shownLook != null) LookSheet(shownLook, model::changeLook) { adjusting = false }
     sheetFor?.let { row ->
         ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
             RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty(), canSave = state.canSave) { action ->
@@ -312,11 +315,11 @@ private fun IconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 /**
- * The top bar's menu (docs/spec.md section 4.3): the order, the view, 読み直す, and this folder's pin and shortcut. The top of a
+ * The top bar's menu (docs/spec.md section 4.3): the order, the view, 表示の調整, 読み直す, and this folder's pin and shortcut. The top of a
  * place is on the shelf already, so it has no pin.
  */
 @Composable
-private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: Boolean, pinned: Boolean, onShortcut: () -> Unit) {
+private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: Boolean, pinned: Boolean, onAdjust: () -> Unit, onShortcut: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconAction(ListIcons.More, stringResource(R.string.list_menu)) { open = true }
@@ -345,6 +348,13 @@ private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: 
                     model.setView(view)
                 }
             }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.look_title)) },
+                onClick = {
+                    open = false
+                    onAdjust()
+                },
+            )
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.folder_refresh)) },

@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.data.FolderCover
+import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
@@ -296,6 +297,9 @@ class FolderViewModel(
     fun setSort(sort: LibrarySort) = write { settings.update { it.copy(librarySort = sort) } }
 
     fun setFoldersFirst(first: Boolean) = write { settings.update { it.copy(foldersFirst = first) } }
+
+    /** Saves a change made in 表示の調整 (docs/spec.md section 4.3); the list follows the settings. */
+    fun changeLook(change: (GlobalSettings) -> GlobalSettings) = write { settings.update(change) }
 
     fun dismissNotice() {
         notice.value = null

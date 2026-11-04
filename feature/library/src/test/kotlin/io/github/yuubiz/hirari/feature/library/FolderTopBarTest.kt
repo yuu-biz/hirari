@@ -14,6 +14,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.LocationId
@@ -163,6 +164,24 @@ class FolderTopBarTest {
         rule.onNodeWithText("ホーム画面にショートカットを作成").performClick()
         rule.waitForIdle()
         assertEquals(listOf(PlaceShortcut(place.id, "", folder = true, label = "漫画")), shortcuts)
+    }
+
+    @Test
+    fun `adjusting the view saves each choice and the list behind lays itself out again`() {
+        fixture.lister.folders["a"] = (1..9).map { file("${it}巻.zip") }
+        show("a")
+        menu("表示の調整")
+        rule.onNodeWithText("列数（縦画面）").assertIsDisplayed()
+        rule.onNodeWithText("5").performClick()
+        rule.onNodeWithText("1").performClick()
+        rule.onNodeWithText("正方形").performClick()
+        rule.waitForIdle()
+        val saved = fixture.settings.value.value
+        assertEquals(5, saved.gridColumnsPortrait)
+        assertEquals(1, saved.gridNameLines)
+        assertEquals(CoverAspect.Square, saved.coverAspect)
+        val lefts = rule.onAllNodes(hasText("巻", substring = true)).fetchSemanticsNodes().map { it.boundsInRoot.left }.distinct()
+        assertEquals(5, lefts.size, "column lefts $lefts")
     }
 
     @Test
