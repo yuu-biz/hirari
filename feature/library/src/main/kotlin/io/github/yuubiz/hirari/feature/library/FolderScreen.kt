@@ -62,6 +62,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
@@ -150,7 +151,10 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                         filtering = !filtering
                         if (!filtering) model.setFilter("")
                     }
-                    (state.content as? FolderContent.Shown)?.let { ListMenu(it, model) }
+                    (state.content as? FolderContent.Shown)?.let { shown ->
+                        ViewButton(shown.view) { model.setView(shown.view.next()) }
+                        ListMenu(shown, model)
+                    }
                 },
             )
         },
@@ -280,6 +284,20 @@ private fun FolderTitle(placeName: String, trail: FolderTrail, onPick: (String) 
                 )
             }
         }
+    }
+}
+
+/** Shows the current view and turns to the next one; a screen reader hears 表示形式 and the current view. */
+@Composable
+private fun ViewButton(view: LibraryView, onClick: () -> Unit) {
+    val current = stringResource(view.label())
+    val icon = when (view) {
+        LibraryView.Grid -> ListIcons.Grid
+        LibraryView.ThumbnailList -> ListIcons.ThumbnailList
+        LibraryView.List -> ListIcons.List
+    }
+    IconButton(onClick = onClick, modifier = Modifier.semantics { stateDescription = current }) {
+        Icon(icon, contentDescription = stringResource(R.string.folder_view))
     }
 }
 

@@ -39,12 +39,46 @@ internal object ListIcons {
         lineTo(20f, 20f)
     }
 
+    val Grid: ImageVector = icon("grid") {
+        square(4f, 4f, 7f)
+        square(13f, 4f, 7f)
+        square(4f, 13f, 7f)
+        square(13f, 13f, 7f)
+    }
+
+    val ThumbnailList: ImageVector = icon("thumbnail list") {
+        for (top in listOf(4f, 10f, 16f)) {
+            square(3f, top, 5f)
+            bar(10f, top + 1.5f, 11f)
+        }
+    }
+
+    val List: ImageVector = icon("list") {
+        for (top in listOf(5f, 10f, 15f)) bar(3f, top, 18f)
+    }
+
     val Close: ImageVector = lines("close") {
         moveTo(6f, 6f)
         lineTo(18f, 18f)
         moveTo(18f, 6f)
         lineTo(6f, 18f)
     }
+}
+
+private fun PathBuilder.square(left: Float, top: Float, side: Float) {
+    moveTo(left, top)
+    horizontalLineTo(left + side)
+    verticalLineTo(top + side)
+    horizontalLineTo(left)
+    close()
+}
+
+private fun PathBuilder.bar(left: Float, top: Float, width: Float) {
+    moveTo(left, top)
+    horizontalLineTo(left + width)
+    verticalLineTo(top + 2f)
+    horizontalLineTo(left)
+    close()
 }
 
 private fun icon(name: String, path: PathBuilder.() -> Unit): ImageVector =

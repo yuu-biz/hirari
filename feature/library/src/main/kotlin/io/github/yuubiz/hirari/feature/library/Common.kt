@@ -129,6 +129,9 @@ fun LibrarySort.label(): Int = when (this) {
     LibrarySort.Oldest -> R.string.sort_oldest
 }
 
+/** The view the file list's view button turns to next (docs/spec.md section 4.3, 表示形式). */
+fun LibraryView.next(): LibraryView = LibraryView.entries[(ordinal + 1) % LibraryView.entries.size]
+
 @StringRes
 fun LibraryView.label(): Int = when (this) {
     LibraryView.Grid -> R.string.view_grid

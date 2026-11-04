@@ -5,6 +5,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -110,5 +111,23 @@ class FolderTopBarTest {
         assertEquals(1, rule.onAllNodes(hasText("c")).fetchSemanticsNodes().size)
         rule.onNodeWithText("a").performClick()
         assertEquals(listOf("a"), opened)
+    }
+
+    @Test
+    fun `the view button turns the grid to the thumbnail list, the list, and the grid again`() {
+        show("a")
+        val views = (1..3).map {
+            rule.onNode(hasContentDescription("表示形式") and isButton).performClick()
+            rule.waitForIdle()
+            fixture.settings.value.value.libraryView
+        }
+        assertEquals(listOf(LibraryView.ThumbnailList, LibraryView.List, LibraryView.Grid), views)
+    }
+
+    @Test
+    fun `the view button says the current view`() {
+        show("a", LibraryView.ThumbnailList)
+        rule.onNode(hasContentDescription("表示形式") and isButton)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "サムネイル付きリスト"))
     }
 }
