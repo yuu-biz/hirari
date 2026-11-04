@@ -50,6 +50,14 @@ class StartUpTest {
     }
 
     @Test
+    fun `a start whose record cannot be read starts at home with a notice, also over kept screens`() = runTest {
+        given(ReopenLastBook.Immediately)
+        fixture.launch.failure = java.io.IOException("no space left on device")
+        assertEquals(StartPlan.Unplanned, fixture.services.planStart())
+        assertEquals(StartPlan.Unplanned, fixture.services.planStart(restoring = true))
+    }
+
+    @Test
     fun `a start with the folder setting off still records the last folder for when it is turned on`() = runTest {
         given(ReopenLastBook.Off, reopenFolder = false)
         fixture.services.planStart()

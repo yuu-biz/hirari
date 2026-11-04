@@ -15,6 +15,7 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import io.github.yuubiz.hirari.core.data.LastFolder
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.feature.library.Notice
 import io.github.yuubiz.hirari.feature.library.Reopen
 import io.github.yuubiz.hirari.feature.library.StartPlan
 import kotlinx.coroutines.Deferred
@@ -37,15 +38,22 @@ internal class AppStart(val restoring: Boolean, val plan: Deferred<StartPlan>, f
 
     var asking by mutableStateOf<Reopen.Ask?>(null)
 
+    /** What home says once it shows, taken when it is shown. */
+    var notice by mutableStateOf<Notice?>(null)
+
     fun apply(nav: NavController, plan: StartPlan) {
-        kept.decide(adopt = plan !is StartPlan.Open)
-        if (plan is StartPlan.Open) {
-            if (restoring) nav.popBackStack<HomeRoute>(inclusive = false)
-            plan.folder?.let { nav.navigate(it.toRoute(reveal = plan.reveal)) }
-            when (val reopen = plan.reopen) {
-                is Reopen.Now -> nav.navigate(reopen.request.toReaderRoute())
-                is Reopen.Ask -> asking = reopen
-                null -> Unit
+        kept.decide(adopt = plan is StartPlan.Restore)
+        if (restoring && plan !is StartPlan.Restore) nav.popBackStack<HomeRoute>(inclusive = false)
+        when (plan) {
+            StartPlan.Restore -> Unit
+            StartPlan.Unplanned -> notice = Notice.StartUnplanned
+            is StartPlan.Open -> {
+                plan.folder?.let { nav.navigate(it.toRoute(reveal = plan.reveal)) }
+                when (val reopen = plan.reopen) {
+                    is Reopen.Now -> nav.navigate(reopen.request.toReaderRoute())
+                    is Reopen.Ask -> asking = reopen
+                    null -> Unit
+                }
             }
         }
         applied = true

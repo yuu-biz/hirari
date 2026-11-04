@@ -36,6 +36,12 @@ sealed interface StartPlan {
      * [reveal], and then the last book. An empty plan starts at home.
      */
     data class Open(val folder: FolderKey? = null, val reveal: String? = null, val reopen: Reopen? = null) : StartPlan
+
+    /**
+     * What the last starts left could not be read or counted: home alone with [Notice.StartUnplanned], and none of the
+     * screens the system kept, since one of them may be what failed.
+     */
+    data object Unplanned : StartPlan
 }
 
 /** Starts in a row that did not finish before the next one starts at home with the defaults. */
@@ -46,9 +52,18 @@ const val FAILED_STARTS = 3
  * [FAILED_STARTS] unfinished starts in a row, it forgets the last folder, puts the view back to its default, and
  * starts at home without the last book, even over kept screens. The places first take the grants the system
  * holds now, so a place that lost its grant is not opened (docs/spec.md section 7). When the system does not
- * answer, the stored grants stand until the next start, since a start that fails here would never be counted.
+ * answer, the stored grants stand until the next start, since a start that fails here would never be counted. When
+ * the record of the starts or the settings cannot be read or written, the start is [StartPlan.Unplanned].
  */
-suspend fun LibraryServices.planStart(restoring: Boolean = false): StartPlan {
+suspend fun LibraryServices.planStart(restoring: Boolean = false): StartPlan = try {
+    plan(restoring)
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    StartPlan.Unplanned
+}
+
+private suspend fun LibraryServices.plan(restoring: Boolean): StartPlan {
     try {
         locations.syncGrants(grants.held())
     } catch (e: CancellationException) {

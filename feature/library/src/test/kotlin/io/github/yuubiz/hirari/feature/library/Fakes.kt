@@ -430,7 +430,13 @@ internal class FakeArchives : ArchiveOpener {
 internal class FakeLaunch : LaunchRepository {
     var record = LaunchRecord()
 
-    override suspend fun beginStart(): LaunchRecord = record.also { record = it.copy(unfinishedStarts = it.unfinishedStarts + 1) }
+    /** What reading the record throws, as a full or broken disk does. */
+    var failure: Exception? = null
+
+    override suspend fun beginStart(): LaunchRecord {
+        failure?.let { throw it }
+        return record.also { record = it.copy(unfinishedStarts = it.unfinishedStarts + 1) }
+    }
 
     override suspend fun finishStart() {
         record = record.copy(unfinishedStarts = 0)

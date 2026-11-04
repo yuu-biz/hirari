@@ -121,6 +121,11 @@ class MainActivity : ComponentActivity() {
                             homeNotice?.let(home::show)
                             homeNotice = null
                         }
+                        val startNotice = app.start?.notice
+                        LaunchedEffect(startNotice) {
+                            startNotice?.let(home::show)
+                            app.start?.notice = null
+                        }
                         ReportSettled(nav, entry, app) { home.state.first { it.shelf is Loadable.Ready } }
                         HomeScreen(
                             home,

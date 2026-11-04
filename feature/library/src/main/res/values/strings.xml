@@ -154,6 +154,7 @@
     <string name="cover_range_smaller">枠を小さくする</string>
     <string name="sheet_save">端末に保存</string>
     <string name="notice_save_started">保存を始めました</string>
+    <string name="notice_start_unplanned">前回までの起動の記録を読めなかったため、ホームから始めました</string>
     <string name="save_running">「%1$s」を保存しています</string>
     <string name="save_cancel">取り消す</string>
     <string name="save_done">「%1$s」を保存しました</string>
