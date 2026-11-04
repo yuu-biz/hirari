@@ -57,6 +57,10 @@ internal object ListIcons {
         for (top in listOf(5f, 10f, 15f)) bar(3f, top, 18f)
     }
 
+    val More: ImageVector = icon("more") {
+        for (top in listOf(4f, 10.5f, 17f)) square(10.5f, top, 3f)
+    }
+
     val Close: ImageVector = lines("close") {
         moveTo(6f, 6f)
         lineTo(18f, 18f)

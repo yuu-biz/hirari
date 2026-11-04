@@ -76,7 +76,6 @@ import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.UriString
-import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
 import io.github.yuubiz.hirari.core.ui.chosen
 import io.github.yuubiz.hirari.core.ui.decorative
@@ -320,7 +319,7 @@ private fun IconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
 private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: Boolean, pinned: Boolean, onShortcut: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        GlyphButton("⋮", stringResource(R.string.list_menu), { open = true })
+        IconAction(ListIcons.More, stringResource(R.string.list_menu)) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuHeader(R.string.folder_sort)
             LibrarySort.entries.forEach { sort ->
