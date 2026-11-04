@@ -23,9 +23,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
 
-/** The version of the settings file. A newer file still imports; keys this version does not know are ignored. */
-internal const val SETTINGS_FILE_FORMAT = 1
-
 /** An SMB server as the settings file holds it: never the user name, the domain or the password. */
 @Serializable
 internal data class ServerJson(
@@ -93,7 +90,7 @@ class SettingsTransfer internal constructor(
     /** [includeReading] adds positions, read states, bookmarks and history. */
     suspend fun export(includeReading: Boolean): String {
         val file = buildJsonObject {
-            put(FORMAT, SETTINGS_FILE_FORMAT)
+            put(FORMAT, SETTINGS_FORMAT)
             put(SETTINGS, SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), settings.settings.first()))
             put(
                 BOOK_OVERRIDES,
@@ -115,11 +112,10 @@ class SettingsTransfer internal constructor(
         } catch (_: SerializationException) {
             null
         }
-        if (file == null || (file[FORMAT] as? JsonPrimitive)?.intOrNull == null) {
-            return ImportPreparation.NotASettingsFile
-        }
+        val format = (file?.get(FORMAT) as? JsonPrimitive)?.intOrNull
+        if (file == null || format == null) return ImportPreparation.NotASettingsFile
         val plan = ImportPlan(
-            settings = (file[SETTINGS] as? JsonObject ?: JsonObject(emptyMap())).toGlobalSettings(),
+            settings = (file[SETTINGS] as? JsonObject ?: JsonObject(emptyMap())).upgradedFrom(format).toGlobalSettings(),
             bookOverrides = (file[BOOK_OVERRIDES] as? JsonObject).orEmpty()
                 .mapNotNull { (book, value) -> (value as? JsonObject)?.let { BookId(book) to it.toBookOverrides() } }
                 .toMap(),

@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.StopOrder
 import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.ReaderCommand
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.Rgb
 import io.github.yuubiz.hirari.core.model.TextPaper
 import io.github.yuubiz.hirari.core.model.TextTypeface
@@ -72,21 +73,41 @@ class SettingsSerializerTest {
     }
 
     @Test
-    fun `a file stored under the defaults before 2026-11-04 keeps them`() = runTest {
-        val stored = """{"layoutMode":"Auto","coverAlone":true,"scaleMode":"FitScreen","tapAdvancesStops":false}"""
-        val kept = GlobalSettings(layoutMode = LayoutMode.Auto, coverAlone = true, scaleMode = ScaleMode.FitScreen, tapAdvancesStops = false)
-        assertEquals(kept, read(stored))
+    fun `a file from before the format version moves the defaults of 2026-11-04 it still holds`() = runTest {
+        val stored = """{"layoutMode":"Auto","coverAlone":true,"scaleMode":"FitScreen","tapAdvancesStops":false,"tapBandPercent":30}"""
+        assertEquals(GlobalSettings(tapBandPercent = 30), read(stored))
+    }
+
+    @Test
+    fun `a file from before the format version keeps what was chosen away from the old defaults`() = runTest {
+        val stored = """{"layoutMode":"Single","scaleMode":"FitWidth"}"""
+        assertEquals(GlobalSettings(layoutMode = LayoutMode.Single, scaleMode = ScaleMode.FitWidth), read(stored))
+    }
+
+    @Test
+    fun `a file of the current format keeps the old defaults as choices`() = runTest {
+        val stored = """{"format":2,"layoutMode":"Auto","coverAlone":true,"scaleMode":"FitScreen","tapAdvancesStops":false}"""
+        val chosen = GlobalSettings(layoutMode = LayoutMode.Auto, coverAlone = true, scaleMode = ScaleMode.FitScreen, tapAdvancesStops = false)
+        assertEquals(chosen, read(stored))
+        assertEquals(chosen, roundTrip(chosen))
+    }
+
+    @Test
+    fun `the written file carries the format`() = runTest {
+        val out = ByteArrayOutputStream()
+        SettingsSerializer.writeTo(GlobalSettings(), out)
+        assertEquals("2", SettingsJson.parseToJsonElement(out.toByteArray().decodeToString()).jsonObject["format"].toString())
     }
 
     @Test
     fun `missing settings take their defaults`() = runTest {
         assertEquals(GlobalSettings(), read("{}"))
-        assertEquals(GlobalSettings(coverAlone = true), read("""{"coverAlone":true}"""))
+        assertEquals(GlobalSettings(readerOrientation = ReaderOrientation.Landscape), read("""{"readerOrientation":"Landscape"}"""))
     }
 
     @Test
     fun `unknown keys are ignored and unknown values fall back to the default`() = runTest {
-        val stored = """{"scaleMode":"Zoom","futureSetting":3,"coverAlone":true}"""
+        val stored = """{"format":2,"scaleMode":"Zoom","futureSetting":3,"coverAlone":true}"""
         assertEquals(GlobalSettings(coverAlone = true), read(stored))
     }
 

@@ -13,6 +13,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -32,7 +35,10 @@ internal class DataStoreSettingsRepository(private val store: DataStore<GlobalSe
     }
 }
 
-/** The file format of docs/spec.md section 7. Only a file that is not a JSON object is corrupt. */
+/**
+ * The file format of docs/spec.md section 7: the settings and [SETTINGS_FORMAT_KEY]. A file without the key was
+ * written before the format had a version. Only a file that is not a JSON object is corrupt.
+ */
 internal object SettingsSerializer : Serializer<GlobalSettings> {
     override val defaultValue = GlobalSettings()
 
@@ -42,13 +48,17 @@ internal object SettingsSerializer : Serializer<GlobalSettings> {
         } catch (e: SerializationException) {
             throw CorruptionException("unreadable settings", e)
         } ?: throw CorruptionException("settings are not a JSON object")
-        return fields.toGlobalSettings()
+        val format = (fields[SETTINGS_FORMAT_KEY] as? JsonPrimitive)?.intOrNull ?: 1
+        return fields.upgradedFrom(format).toGlobalSettings()
     }
 
     override suspend fun writeTo(t: GlobalSettings, output: OutputStream) {
-        output.write(SettingsJson.encodeToString(GlobalSettings.serializer(), t).encodeToByteArray())
+        val fields = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), t).jsonObject
+        output.write(JsonObject(fields + (SETTINGS_FORMAT_KEY to JsonPrimitive(SETTINGS_FORMAT))).toString().encodeToByteArray())
     }
 }
+
+internal const val SETTINGS_FORMAT_KEY = "format"
 
 internal fun JsonObject.toGlobalSettings(): GlobalSettings =
     SettingsJson.decodeFields(GlobalSettings.serializer(), this).normalized()

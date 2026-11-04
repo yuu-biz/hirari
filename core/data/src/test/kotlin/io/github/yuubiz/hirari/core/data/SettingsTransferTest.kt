@@ -6,11 +6,13 @@ import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.ImageAdjust
+import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
@@ -170,6 +172,22 @@ class SettingsTransferTest {
                 assertEquals(1, changes.progress)
                 assertEquals(BookProgress(BookId("dup"), ReadState.Reading, ReadingPosition.Image(70, 100), at(5)), storage.progress.get(BookId("dup")))
             }
+        }
+    }
+
+    @Test
+    fun `an export of format 1 moves the defaults of 2026-11-04 it still holds and format 2 keeps them`() = runBlocking {
+        val old = """{"layoutMode": "Auto", "coverAlone": true, "scaleMode": "FitScreen", "tapAdvancesStops": false, "tapBandPercent": 30}"""
+        withStorage { storage ->
+            storage.import("""{"format": 1, "settings": $old}""")
+            assertEquals(GlobalSettings(tapBandPercent = 30), storage.settings.settings.first())
+        }
+        withStorage { storage ->
+            storage.import("""{"format": 2, "settings": $old}""")
+            assertEquals(
+                GlobalSettings(layoutMode = LayoutMode.Auto, coverAlone = true, scaleMode = ScaleMode.FitScreen, tapAdvancesStops = false, tapBandPercent = 30),
+                storage.settings.settings.first(),
+            )
         }
     }
 
