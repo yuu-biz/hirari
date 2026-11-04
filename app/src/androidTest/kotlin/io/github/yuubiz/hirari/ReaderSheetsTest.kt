@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.SemanticsNode
@@ -23,7 +22,6 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.yuubiz.hirari.core.model.BOOK_ID_PREFIX_BYTES
@@ -115,7 +113,11 @@ class ReaderSheetsTest {
         compose.mainClock.autoAdvance = true
     }
 
-    private fun tapPageBar() = compose.onRoot().performTouchInput { click(Offset(width / 2f, height - 30.dp.toPx())) }
+    /** A touch on the middle of the page bar where the reader lays it out, as its accessibility node reports. */
+    private fun tapPageBar() {
+        val bar = compose.onNodeWithContentDescription("ページバー").fetchSemanticsNode().boundsInRoot
+        compose.onRoot().performTouchInput { click(bar.center) }
+    }
 
     /**
      * A tap the way the system injects it: down and up go through the input dispatcher, [gapMs] apart in event
@@ -155,7 +157,7 @@ class ReaderSheetsTest {
         ActivityScenario.launch<MainActivity>(intent).use {
             awaitPage(1)
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU)
-            compose.onNodeWithText("操作ガイド").performClick()
+            compose.onNodeWithText("操作ガイド").performScrollTo().performClick()
             compose.waitUntil(5_000) { guideUp() }
             systemTapPageBar(gapMs = 0)
             compose.waitUntil(5_000) { !guideUp() }
