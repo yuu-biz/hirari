@@ -122,7 +122,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     val columns = content.look.columns(maxWidth, landscape)
                     val size = content.look.gridThumbSize(maxWidth / columns, landscape)
                     val covers = remember(content.covers, size) { content.covers.copy(sizePx = content.covers.covers.sizePx(size)) }
-                    val fitter = rememberTitleFitter(constraints.maxWidth / columns)
+                    val fitter = rememberTitleFitter(constraints.maxWidth / columns, content.look.nameLines)
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         state = grid,
@@ -130,8 +130,8 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     ) {
                         items(cells, key = { it.key }) { cell ->
                             when (cell) {
-                                ListCell.Parent -> GridParentCell(fitter, onUp ?: {})
-                                is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, onOpen, onLongPress)
+                                ListCell.Parent -> GridParentCell(fitter, content.look.noteLine, onUp ?: {})
+                                is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look.noteLine, onOpen, onLongPress)
                             }
                         }
                         if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
@@ -177,15 +177,15 @@ private fun EmptyRow(@StringRes text: Int) {
  * the size of a cover and `..` where a name goes, as tall as the other cells.
  */
 @Composable
-private fun GridParentCell(fitter: TitleFitter, onUp: () -> Unit) {
+private fun GridParentCell(fitter: TitleFitter, noteLine: Boolean, onUp: () -> Unit) {
     val colors = LocalLibraryColors.current
     val label = stringResource(R.string.folder_up)
     Column(Modifier.rowPress(onUp, null).semantics { contentDescription = label }.padding(CELL_PADDING)) {
         Box(Modifier.fillMaxWidth().aspectRatio(COVER_RATIO).decorative(), contentAlignment = Alignment.Center) {
             Icon(ListIcons.Up, null, Modifier.fillMaxSize(0.7f), tint = colors.stateFolder)
         }
-        Text(PARENT_KEY, Modifier.fillMaxWidth().padding(top = 4.dp).decorative(), color = colors.stateFolder, style = fitter.style, minLines = GRID_TITLE_LINES, maxLines = GRID_TITLE_LINES)
-        Text("", Modifier.fillMaxWidth().decorative(), style = fitter.style, minLines = 1, maxLines = 1)
+        Text(PARENT_KEY, Modifier.fillMaxWidth().padding(top = 4.dp).decorative(), color = colors.stateFolder, style = fitter.style, minLines = fitter.lines, maxLines = fitter.lines)
+        if (noteLine) Text("", Modifier.fillMaxWidth().decorative(), style = fitter.style, minLines = 1, maxLines = 1)
     }
 }
 
@@ -227,24 +227,26 @@ private val ThumbSize.listCoverWidth get() = when (this) {
     ThumbSize.Large -> 56.dp
 }
 
-/** The fitter of the titles of cells [cellWidthPx] wide, after their padding. */
+/** The fitter of the titles of cells [cellWidthPx] wide, after their padding, on [lines] lines. */
 @Composable
-private fun rememberTitleFitter(cellWidthPx: Int): TitleFitter {
+private fun rememberTitleFitter(cellWidthPx: Int, lines: Int): TitleFitter {
     val measurer = rememberTextMeasurer()
     val style = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center)
     val widthPx = cellWidthPx - with(LocalDensity.current) { (CELL_PADDING * 2).roundToPx() }
-    return remember(measurer, style, widthPx) { TitleFitter(measurer, style, widthPx.coerceAtLeast(1)) }
+    return remember(measurer, style, widthPx, lines) { TitleFitter(measurer, style, widthPx.coerceAtLeast(1), lines) }
 }
 
 /**
- * A grid cell (docs/spec.md section 4.3, グリッドの名前): the cover, the title on two lines and the note on a third,
- * each kept even when empty so the cells of a row line up. A screen reader and a search by text get the whole name.
+ * A grid cell (docs/spec.md section 4.3, グリッドの名前): the cover, the title on the fitter's lines and, with
+ * [noteLine], the note on one more, each kept even when empty so the cells of a row line up. Without [noteLine] the
+ * title keeps its brackets. A screen reader and a search by text get the whole name.
  */
 @Composable
-private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitter: TitleFitter, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitter: TitleFitter, noteLine: Boolean, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
     val name = row.gridName
-    val title = remember(name.title, fitter) { fitter.fit(name.title) }
+    val whole = if (noteLine) name.title else row.item.gridBase()
+    val title = remember(whole, fitter) { fitter.fit(whole) }
     Column(
         Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).semantics { text = AnnotatedString(row.item.entry.name) }.padding(CELL_PADDING),
     ) {
@@ -254,11 +256,11 @@ private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitte
             Modifier.fillMaxWidth().padding(top = 4.dp).decorative(),
             color = row.nameColor(colors),
             style = fitter.style,
-            minLines = GRID_TITLE_LINES,
-            maxLines = GRID_TITLE_LINES,
+            minLines = fitter.lines,
+            maxLines = fitter.lines,
             overflow = TextOverflow.Clip,
         )
-        Text(
+        if (noteLine) Text(
             name.note,
             Modifier.fillMaxWidth().decorative(),
             color = colors.itemDetail,

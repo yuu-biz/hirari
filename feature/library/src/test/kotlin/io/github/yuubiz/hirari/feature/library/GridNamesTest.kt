@@ -34,6 +34,13 @@ class GridNamesTest {
         assertEquals(GridName("cover.jpg", "作者"), item("[作者] cover.jpg").gridName())
     }
 
+    @Test
+    fun `without the author line a name keeps its brackets and loses only a book's extension`() {
+        assertEquals("[堀越耕平] 僕のヒーローアカデミア 第03巻", item("[堀越耕平] 僕のヒーローアカデミア 第03巻.zip").gridBase())
+        assertEquals("[作者] Vol.1", item("[作者] Vol.1", directory = true).gridBase())
+        assertEquals("[作者] cover.jpg", item("[作者] cover.jpg").gridBase())
+    }
+
     private fun fitsIn(count: Int): (String) -> Boolean = { it.codePointCount(0, it.length) <= count }
 
     @Test

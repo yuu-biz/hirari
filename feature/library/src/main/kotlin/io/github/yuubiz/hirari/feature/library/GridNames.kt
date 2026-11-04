@@ -12,13 +12,15 @@ import java.text.BreakIterator
 data class GridName(val title: String, val note: String)
 
 /** The extension goes from a book or a text, whose kind label tells it; a folder and an image keep the whole name. */
-fun FileItem.gridName(): GridName {
+fun FileItem.gridName(): GridName = splitBrackets(gridBase())
+
+/** The name a grid cell shows when it does not split the brackets off: the whole name without the extension. */
+fun FileItem.gridBase(): String {
     val name = entry.name
-    val base = when (this) {
+    return when (this) {
         is FileItem.Archive, is FileItem.Text -> name.substringBeforeLast('.').ifEmpty { name }
         is FileItem.Folder, is FileItem.Image -> name
-    }
-    return splitBrackets(base)
+    }.trim()
 }
 
 private val BRACKETS = mapOf('[' to ']', '［' to '］')
@@ -86,11 +88,9 @@ private fun graphemeBounds(text: String): IntArray {
     return bounds.toIntArray()
 }
 
-/** Fits a grid title into [GRID_TITLE_LINES] lines of [widthPx] at [style]; one per list, shared by its cells. */
-internal class TitleFitter(private val measurer: TextMeasurer, val style: TextStyle, private val widthPx: Int) {
+/** Fits a grid title into [lines] lines of [widthPx] at [style]; one per list, shared by its cells. */
+internal class TitleFitter(private val measurer: TextMeasurer, val style: TextStyle, private val widthPx: Int, val lines: Int) {
     fun fit(title: String): String = middleElided(title) { candidate ->
-        !measurer.measure(candidate, style, maxLines = GRID_TITLE_LINES, constraints = Constraints(maxWidth = widthPx)).hasVisualOverflow
+        !measurer.measure(candidate, style, maxLines = lines, constraints = Constraints(maxWidth = widthPx)).hasVisualOverflow
     }
 }
-
-internal const val GRID_TITLE_LINES = 2

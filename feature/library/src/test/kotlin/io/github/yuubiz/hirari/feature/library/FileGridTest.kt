@@ -3,6 +3,9 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.hasClickAction
@@ -57,6 +60,27 @@ class FileGridTest {
     private fun columnCount() = rule.onAllNodesWithClick().map { it.boundsInRoot.left }.distinct().size
 
     @Test
+    fun `a cell grows by a line for each name line and for the author line`() {
+        var look by mutableStateOf(ListLook())
+        rule.setContent {
+            MaterialTheme { Box(Modifier.size(360.dp, 800.dp)) { FileList(shown(volumes(4).map(::row), look), reveal = null, onOpen = {}, onLongPress = {}) } }
+        }
+        fun cellHeight(next: ListLook): Float {
+            look = next
+            rule.waitForIdle()
+            return rule.onAllNodesWithClick().first().boundsInRoot.height
+        }
+        val one = cellHeight(ListLook(nameLines = 1, noteLine = false))
+        val oneWithNote = cellHeight(ListLook(nameLines = 1))
+        val two = cellHeight(ListLook())
+        val three = cellHeight(ListLook(nameLines = 3))
+        assertTrue(oneWithNote > one, "the author line takes no height")
+        val line = two - oneWithNote
+        assertTrue(line > 0f, "a second name line takes no height")
+        assertEquals(line, three - two, 0.5f)
+    }
+
+    @Test
     fun `a portrait window shows the portrait column count`() {
         showGrid(volumes(12).map(::row), ListLook(portraitColumns = 3, landscapeColumns = 6))
         assertEquals(3, columnCount())
@@ -98,7 +122,7 @@ class FileGridTest {
             val style = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center)
             val width = 78 * 2
             val title = "僕のヒーローアカデミア とても長い副題がここに入ります そしてさらに続く 第03巻"
-            fitted = TitleFitter(measurer, style, width).fit(title)
+            fitted = TitleFitter(measurer, style, width, lines = 2).fit(title)
             val layout = measurer.measure(fitted, style, maxLines = 2, constraints = Constraints(maxWidth = width))
             lines = layout.lineCount
             overflow = layout.hasVisualOverflow
