@@ -1,0 +1,33 @@
+package io.github.yuubiz.hirari.core.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import io.github.yuubiz.hirari.core.model.ReaderBackground
+
+/** The default `readerBackground`, 濃い灰色 (docs/spec.md section 4.10). */
+val DefaultReaderBackground = Color(0xFF616161)
+
+/** The color of `readerBackground` (docs/spec.md section 4.10), which 「テーマに従う」 takes from the theme in force. */
+@Composable
+fun readerBackgroundColor(background: ReaderBackground): Color = when (background) {
+    ReaderBackground.Black -> Color.Black
+    ReaderBackground.DarkGray -> DefaultReaderBackground
+    ReaderBackground.White -> Color.White
+    ReaderBackground.Theme -> MaterialTheme.colorScheme.background
+    is ReaderBackground.Custom -> Color(0xFF000000.toInt() or background.color.value)
+}
+
+/** Black or white, whichever reads on [background]: for the text a reader sets straight on its background. */
+fun readableOn(background: Color): Color = if (background.luminance() > 0.5f) Color.Black else Color.White
+
+/** The surface of a reader: [background] fills it around the pages and between them, and [content] sits on it. */
+@Composable
+fun ReaderBackdrop(background: ReaderBackground, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    Box(modifier.background(readerBackgroundColor(background)), content = content)
+}

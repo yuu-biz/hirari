@@ -78,6 +78,7 @@ import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
 import io.github.yuubiz.hirari.core.ui.performTurnHaptic
+import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
 import io.github.yuubiz.hirari.feature.reader.prefetch.PreparedPage
 import kotlin.math.roundToInt
 
@@ -149,6 +150,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         )
     }
 
+    val background = readerBackgroundColor(viewModel.background)
     val adjust = state.config.adjust
     val colorFilter = remember(adjust) { adjust.colorMatrix()?.let { ColorFilter.colorMatrix(ColorMatrix(it)) } }
     val control = { control: ReaderControl -> control.effectIn(latest).applyTo(viewModel, ui) }
@@ -163,7 +165,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         val now = if (state.animating) frameMs else Long.MAX_VALUE
         if (state.scroll != null) drawStrip(viewModel, state, colorFilter) else for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
         viewModel.traces.drawn(state.current, viewModel.preparedView(state.current) != null)
-        state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter) }
+        state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter, background) }
     }
 
     for ((page, rect) in state.stripPages()) {
@@ -290,7 +292,7 @@ private fun errorOf(viewModel: ReaderViewModel, view: PageView, index: Int, page
  * The loupe of [view]: the current view at rest, scaled about the finger into the loupe's frame, with the page read
  * at its own size in place of its prepared pixels once that has arrived.
  */
-private fun DrawScope.drawLoupe(viewModel: ReaderViewModel, state: ReaderState, view: LoupeView, nowMs: Long, colorFilter: ColorFilter?) {
+private fun DrawScope.drawLoupe(viewModel: ReaderViewModel, state: ReaderState, view: LoupeView, nowMs: Long, colorFilter: ColorFilter?, background: Color) {
     val position = state.positionAt(nowMs)
     if (position == null && state.scroll == null) return
     val rect = view.rect
@@ -298,7 +300,7 @@ private fun DrawScope.drawLoupe(viewModel: ReaderViewModel, state: ReaderState, 
     val size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
     val m = view.magnification
     val detail = viewModel.loupeDetail?.takeIf { it.source.view == state.current || state.scroll != null }
-    drawRect(ReaderBackground, topLeft, size)
+    drawRect(background, topLeft, size)
     clipRect(rect.left, rect.top, rect.right, rect.bottom) {
         withTransform({
             translate(view.center.x - view.finger.x * m, view.center.y - view.finger.y * m)

@@ -71,7 +71,6 @@ import io.github.yuubiz.hirari.core.model.NeighborOpening
 import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.ReaderAction
-import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.model.TextLayout
@@ -81,7 +80,9 @@ import io.github.yuubiz.hirari.core.text.PageContent
 import io.github.yuubiz.hirari.core.text.TextPage
 import io.github.yuubiz.hirari.core.ui.BarSemantics
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
+import io.github.yuubiz.hirari.core.ui.DefaultReaderBackground
 import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
+import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
 import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
 import io.github.yuubiz.hirari.core.ui.performTurnHaptic
@@ -197,7 +198,7 @@ fun TextReaderScreen(
     }
 
     when (val s = state) {
-        TextReaderUiState.Opening -> Box(Modifier.fillMaxSize().background(DEFAULT_BACKGROUND), contentAlignment = Alignment.Center) { DelayedProgress() }
+        TextReaderUiState.Opening -> Box(Modifier.fillMaxSize().background(DefaultReaderBackground), contentAlignment = Alignment.Center) { DelayedProgress() }
         is TextReaderUiState.Failed -> Failure(s.reason, onBack)
         is TextReaderUiState.Reading -> {
             val density = LocalDensity.current.density
@@ -294,7 +295,7 @@ private fun Reading(
     Box(
         Modifier
             .fillMaxSize()
-            .background(readerBackground(state.settings.readerBackground))
+            .background(readerBackgroundColor(state.settings.readerBackground))
             .onSizeChanged { viewModel.onViewport(Viewport(it.width, it.height, density.density, density.fontScale)) }
             .pointerInput(input) { with(input) { handle() } }
             .then(if (accessible) Modifier.textAccessibility(state, onControl) else Modifier.clearAndSetSemantics {}),
@@ -481,7 +482,7 @@ private fun Failure(reason: TextFailure, onBack: () -> Unit) {
         TextFailure.ReadError -> R.string.text_failed_read
     }
     Column(
-        Modifier.fillMaxSize().background(DEFAULT_BACKGROUND).padding(24.dp),
+        Modifier.fillMaxSize().background(DefaultReaderBackground).padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -504,17 +505,6 @@ private fun DelayedProgress() {
 
 private const val PROGRESS_DELAY_MS = 300L
 
-/** The reader background of docs/spec.md section 4.10, around the pages and between them. */
-@Composable
-private fun readerBackground(background: ReaderBackground): Color = when (background) {
-    ReaderBackground.Black -> Color.Black
-    ReaderBackground.DarkGray -> DEFAULT_BACKGROUND
-    ReaderBackground.White -> Color.White
-    ReaderBackground.Theme -> MaterialTheme.colorScheme.background
-    is ReaderBackground.Custom -> Color(argb(background.color))
-}
-
-private val DEFAULT_BACKGROUND = Color(0xFF616161)
 internal val PANEL_BACKGROUND = Color(0x80000070)
 
 /** Whether 画面を消さない (docs/spec.md section 4.10) keeps the screen on. [touched] changes on every input, which restarts the ten minutes. */

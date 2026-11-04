@@ -49,14 +49,15 @@ import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
+import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.Sibling
 import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
+import io.github.yuubiz.hirari.core.ui.ReaderBackdrop
 import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.announced
+import io.github.yuubiz.hirari.core.ui.readableOn
+import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
 import kotlinx.coroutines.delay
-
-/** The default `readerBackground` (docs/spec.md section 4.10). */
-internal val ReaderBackground = Color(0xFF616161)
 
 /**
  * Hands the activity's key events to the reader while it is on screen (docs/spec.md section 4.8, キー操作), the newest
@@ -132,16 +133,16 @@ fun ReaderScreen(
     }
     BackHandler { dismiss() }
 
-    Box(
+    ReaderBackdrop(
+        viewModel.background,
         Modifier
             .fillMaxSize()
-            .background(ReaderBackground)
             .onSizeChanged { viewModel.onViewport(Viewport(it.width.toFloat(), it.height.toFloat(), density)) },
     ) {
         when (val phase = viewModel.phase) {
             ReaderPhase.Opening -> DelayedProgress(Modifier.align(Alignment.Center))
-            is ReaderPhase.Failed -> BookError(stringResource(phase.reason.message), onClose)
-            ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), onClose)
+            is ReaderPhase.Failed -> BookError(stringResource(phase.reason.message), viewModel.background, onClose)
+            ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), viewModel.background, onClose)
             ReaderPhase.Reading -> viewModel.state?.let { state ->
                 AutoPlayClock(viewModel, state.autoPlay)
                 // Behind a sheet or the guide the page is out of reach of a screen reader, as it is of a finger.
@@ -198,7 +199,7 @@ fun ReaderScreen(
                     is ReaderSheet.BookSettings -> BookSettingsSheet(viewModel, state, sheet, onMessage = { ui.message = it }, onEffect = ui::follow, onClose = { ui.sheet = null })
                     null -> Unit
                 }
-                if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), onClose)
+                if (viewModel.allPagesFailed) BookError(stringResource(R.string.reader_all_pages_failed), viewModel.background, onClose)
                 BookEndEffects(viewModel, ui, onClose, onOpenBook)
                 GuideEffects(viewModel, ui)
                 if (ui.guideShown) GuideOverlay(state.config, onDismiss = { ui.guideShown = false })
@@ -333,13 +334,14 @@ internal fun DelayedProgress(modifier: Modifier = Modifier) {
 internal const val PROGRESS_DELAY_MS = 300L
 
 @Composable
-private fun BookError(text: String, onBack: () -> Unit) {
+private fun BookError(text: String, background: ReaderBackground, onBack: () -> Unit) {
+    val color = readerBackgroundColor(background)
     Column(
-        Modifier.fillMaxSize().background(ReaderBackground).padding(24.dp),
+        Modifier.fillMaxSize().background(color).padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text, color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Text(text, color = readableOn(color), style = MaterialTheme.typography.titleMedium)
         Button(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.reader_back)) }
     }
 }

@@ -53,6 +53,7 @@ import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
+import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingPosition
@@ -205,6 +206,10 @@ class ReaderViewModel(
 
     /** `画面の向き`: the setting until the book opens, then the reader's, which outlives the activity turning. */
     var orientation: ReaderOrientation by mutableStateOf(ReaderOrientation.System)
+        private set
+
+    /** `背景色` (docs/spec.md section 4.10): the setting from the start, followed live, so the opening and failing screens wear it too. */
+    var background: ReaderBackground by mutableStateOf(ReaderBackground.DarkGray)
         private set
 
     /** 画面の明るさ in percent, or `null` for the device's, kept apart from [state] so a turn does not touch it. */
@@ -641,6 +646,7 @@ class ReaderViewModel(
         if (firstReader.getAndSet(false)) services.appScope.launch { SharedPageFiles.clear(shareDir) }
         val settings = services.storage.settings.settings.first()
         orientation = settings.readerOrientation
+        background = settings.readerBackground
         val located = withContext(Dispatchers.IO) {
             openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder().also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
@@ -696,6 +702,7 @@ class ReaderViewModel(
         val book = opened ?: return
         if (settings == book.settings) return
         book.settings = settings
+        background = settings.readerBackground
         book.global = ReaderConfig.of(settings)
         val current = state ?: return run { book.config = book.config.following(settings, book.overrides.current) }
         dispatch(ReaderEvent.ConfigChanged(current.config.following(settings, book.overrides.current)))
