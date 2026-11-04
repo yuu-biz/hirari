@@ -58,10 +58,13 @@ interface ThumbnailStore {
     fun hold(key: ThumbnailKey): Closeable
 }
 
-/** Where the bytes of a book come from, which sets how many thumbnails are made at once (section 4.4). */
-enum class ThumbLane(internal val parallelism: Int) {
-    Local(2),
-    Smb(1),
+/**
+ * Where the bytes of a book come from, which sets how many thumbnails are made at once and how long one may take
+ * (section 4.4). [limitMillis] is `null` for no limit of the lane's own.
+ */
+enum class ThumbLane(internal val parallelism: Int, internal val limitMillis: Long?) {
+    Local(2, null),
+    Smb(1, Thumbnails.SMB_COVER_LIMIT_MILLIS),
 }
 
 /** Visible items come before the ones the list only prepares. Section 4.4: both passes serve visible items first. */

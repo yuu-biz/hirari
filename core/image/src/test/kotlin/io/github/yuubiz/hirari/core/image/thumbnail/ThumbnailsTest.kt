@@ -14,7 +14,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -287,6 +289,37 @@ class ThumbnailsTest {
         val again = async { thumbnails.thumbnail(request(book("a", modified = 2000))) }
         runCurrent()
         assertTrue(again.await() is ThumbResult.Ready)
+    }
+
+    @Test
+    fun aCoverOverSmbThatTakesLongerThanTheLimitGivesWayAndIsTriedAgainLater() = runTest {
+        val thumbnails = thumbnails()
+        maker.script = { book ->
+            if (book.id.value == "huge") delay(Thumbnails.SMB_COVER_LIMIT_MILLIS * 2)
+            image(book)
+        }
+        val huge = async { thumbnails.thumbnail(request(book("huge", lane = ThumbLane.Smb))) }
+        val next = async { thumbnails.thumbnail(request(book("next", lane = ThumbLane.Smb))) }
+        advanceTimeBy(Thumbnails.SMB_COVER_LIMIT_MILLIS - 1)
+        assertFalse("gave up before the limit", huge.isCompleted)
+        advanceTimeBy(2)
+        assertEquals(ThumbResult.Unavailable, huge.await())
+        assertTrue("a cover over the limit was recorded as failed", store.failed.isEmpty())
+        runCurrent()
+        assertEquals("next", shows(next.await()))
+        clock += Thumbnails.UNAVAILABLE_BACKOFF_MILLIS
+        maker.script = ::image
+        assertEquals("huge", shows(thumbnails.thumbnail(request(book("huge", lane = ThumbLane.Smb)))))
+    }
+
+    @Test
+    fun aLocalCoverHasNoTimeLimitOfItsOwn() = runTest {
+        val thumbnails = thumbnails()
+        maker.script = { book ->
+            delay(Thumbnails.SMB_COVER_LIMIT_MILLIS * 2)
+            image(book)
+        }
+        assertEquals("slow", shows(thumbnails.thumbnail(request(book("slow")))))
     }
 
     @Test

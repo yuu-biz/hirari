@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
@@ -170,7 +171,7 @@ class Thumbnails internal constructor(
             // Another flight for the key may have finished while this one waited for its turn.
             stored(key)?.let { return@withPermit it }
             try {
-                when (val made = maker.make(book, key.sizePx, key.direction)) {
+                when (val made = timed(book.lane) { maker.make(book, key.sizePx, key.direction) }) {
                     is Made.Webp -> ThumbResult.Ready(store.put(key, made.bytes), key)
                     Made.Unreadable -> {
                         store.markFailed(key)
@@ -184,6 +185,12 @@ class Thumbnails internal constructor(
                 unavailable(key)
             }
         }
+
+    /** A cover that takes longer than its lane allows gives the lane up and counts as one that may be made later. */
+    private suspend fun timed(lane: ThumbLane, make: suspend () -> Made): Made {
+        val limit = lane.limitMillis ?: return make()
+        return withTimeoutOrNull(limit) { make() } ?: Made.Unavailable
+    }
 
     private fun unavailable(key: ThumbnailKey): ThumbResult {
         backOff(key)
@@ -383,6 +390,9 @@ class Thumbnails internal constructor(
 
         /** How many folders deep a search for the cover of a folder goes. */
         const val MAX_SEARCH_DEPTH = 6
+
+        /** The longest one cover over SMB may take once it has its turn (docs/spec.md section 4.4). */
+        const val SMB_COVER_LIMIT_MILLIS = 10_000L
 
         /** How long a request for a thumbnail that failed for a passing reason answers [ThumbResult.Unavailable] without trying. */
         const val UNAVAILABLE_BACKOFF_MILLIS = 60_000L
