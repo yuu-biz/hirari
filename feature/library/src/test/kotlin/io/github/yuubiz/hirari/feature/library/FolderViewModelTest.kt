@@ -47,6 +47,45 @@ class FolderViewModelTest {
     private fun FolderViewModel.shown() = assertIs<FolderContent.Shown>(state.value.content)
 
     @Test
+    fun `the folder sheet and an image tap address the same book with different starting positions`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(FolderEntry("外伝", null, true, null, null))
+        fixture.lister.folders["作品/外伝"] = listOf(file("p01.jpg"))
+        val parent = viewModel()
+        val request = parent.folderBook(parent.shown().rows.single())!!
+        val child = viewModel("作品/外伝", documentId = null)
+        val tapped = assertIs<FileTarget.Book>(child.open(child.shown().rows.single())).request
+        assertEquals(tapped.book, request.book)
+        assertEquals(StartAt.Saved, request.start)
+        assertEquals(StartAt.Image("p01.jpg"), tapped.start)
+    }
+
+    @Test
+    fun `an SMB folder book uses its folder path and saved position after one child listing`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas.local", 445, "books", "", null, null, null)
+        fixture.locations.rows.value = listOf(server)
+        fixture.smb.folders["作品"] = listOf(FolderEntry("外伝", null, true, null, null))
+        fixture.smb.folders["作品/外伝"] = listOf(FolderEntry("p01.jpg", null, false, 1, null))
+        val parent = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(server.id, "作品"), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        assertEquals(
+            OpenBookRequest(BookAddress.InLocation(server.id, "作品/外伝", folder = true), StartAt.Saved),
+            parent.folderBook(parent.shown().rows.single()),
+        )
+        assertEquals(listOf(server to "作品", server to "作品/外伝"), fixture.smb.listed)
+        assertEquals(0, fixture.lister.calls)
+    }
+
+    @Test
+    fun `a folder that cannot be listed offers no folder book`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(FolderEntry("外伝", "doc:外伝", true, null, null))
+        val parent = viewModel()
+        assertEquals(null, parent.folderBook(parent.shown().rows.single()))
+        assertEquals(2, fixture.lister.calls)
+    }
+
+    @Test
     fun `a book read in the reader changes its mark on the list without listing again`() = runTest {
         val first = book(place.id, "作品/1巻.zip").copy(id = locationBookId(place, "作品/1巻.zip"))
         fixture.locations.rows.value = listOf(place)

@@ -52,6 +52,7 @@
     <string name="folder_label">フォルダ</string>
     <string name="folder_pages">%1$d ページ</string>
     <string name="sheet_open">開く</string>
+    <string name="sheet_read_folder">このフォルダを本として読む</string>
     <string name="sheet_from_start">最初から読む</string>
     <string name="sheet_mark_read">既読にする</string>
     <string name="sheet_mark_unread">未読にする</string>

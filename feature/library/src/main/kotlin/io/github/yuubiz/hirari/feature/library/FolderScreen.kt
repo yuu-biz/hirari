@@ -77,6 +77,7 @@ import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
+import io.github.yuubiz.hirari.core.ui.FirstPageTrace
 import io.github.yuubiz.hirari.core.ui.chosen
 import io.github.yuubiz.hirari.core.ui.decorative
 import kotlinx.coroutines.launch
@@ -193,11 +194,17 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
         }
     }
     sheetFor?.let { row ->
+        var folderBook by remember(model, row) { mutableStateOf<OpenBookRequest?>(null) }
+        LaunchedEffect(model, row) { folderBook = model.folderBook(row) }
         ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
-            RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty(), canSave = state.canSave) { action ->
+            RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty(), canSave = state.canSave, canReadFolder = folderBook != null) { action ->
                 sheetFor = null
                 when (action) {
                     SheetAction.Open -> open(row)
+                    SheetAction.ReadFolder -> folderBook?.let {
+                        FirstPageTrace.begin()
+                        actions.openBook(it)
+                    }
                     SheetAction.Contents -> actions.openArchive(ArchiveKey(model.folder.location, row.path, row.item.entry.documentId))
                     SheetAction.FromStart -> open(row, StartAt.Page(0))
                     SheetAction.MarkRead -> model.mark(row, ReadState.Read)
@@ -432,13 +439,14 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-internal enum class SheetAction { Open, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover, Save }
+internal enum class SheetAction { Open, ReadFolder, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover, Save }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
-internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, canSave: Boolean = false, onAction: (SheetAction) -> Unit) {
+internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, canSave: Boolean = false, canReadFolder: Boolean = false, onAction: (SheetAction) -> Unit) {
     val actions = buildList {
         add(SheetAction.Open to R.string.sheet_open)
+        if (row.item is FileItem.Folder && canReadFolder) add(SheetAction.ReadFolder to R.string.sheet_read_folder)
         if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
         if (row.item is FileItem.Archive && row.mark != null && row.mark != ReadMark.Unread) add(SheetAction.FromStart to R.string.sheet_from_start)
         if (row.item is FileItem.Archive || row.item is FileItem.Text) {

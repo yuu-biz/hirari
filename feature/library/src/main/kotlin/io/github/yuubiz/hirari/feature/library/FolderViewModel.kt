@@ -2,6 +2,8 @@ package io.github.yuubiz.hirari.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.image.PageCandidate
+import io.github.yuubiz.hirari.core.image.pageCandidate
 import io.github.yuubiz.hirari.core.data.FolderCover
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookAddress
@@ -311,6 +313,21 @@ class FolderViewModel(
 
     /** ホーム画面にショートカットを作成 of the long-press sheet, when [row] has one. */
     fun shortcut(row: FileRow): PlaceShortcut? = shortcutFor(row, folder.location)
+
+    /** The folder book offered by the sheet, after one listing of its direct children (section 4.3). */
+    suspend fun folderBook(row: FileRow): OpenBookRequest? {
+        if (row.item !is FileItem.Folder) return null
+        val services = services.await()
+        val location = place.value ?: return null
+        val result = when (location) {
+            is LibraryLocation.SafTree -> if (location.permissionHeld) {
+                services.folders.list(location.treeUri, row.path, row.item.entry.documentId)
+            } else return null
+            is LibraryLocation.SmbShare -> services.smb.list(location, row.path)
+        }
+        if (result !is Listing.Listed || result.entries.none { pageCandidate(it.name, it.directory) == PageCandidate.Image }) return null
+        return OpenBookRequest(BookAddress.InLocation(folder.location, row.path, folder = true, result.folderDocumentId), StartAt.Saved)
+    }
 
     /**
      * What tapping [row] opens (docs/spec.md section 4.3), in a place of either kind. An image file opens its folder
