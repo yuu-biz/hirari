@@ -39,6 +39,7 @@ import io.github.yuubiz.hirari.core.model.reduce
 import io.github.yuubiz.hirari.core.model.turnMovement
 import io.github.yuubiz.hirari.core.ui.HoldTimer
 import io.github.yuubiz.hirari.core.ui.awaitOrHold
+import io.github.yuubiz.hirari.core.ui.takenBySystem
 
 /** A text always binds on the right (docs/spec.md section 4.9, 操作). */
 internal val TEXT_DIRECTION = ReadingDirection.RightToLeft
@@ -207,9 +208,10 @@ internal class TextInput(
             if (holding && hold.due) step(CommandBarEvent.Hold(hold.at))
             if (event == null) continue
             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
+            val taken = change.takenBySystem
             change.consume()
             if (!change.pressed) {
-                step(CommandBarEvent.Up(change.position.dp(density)))
+                step(if (taken) CommandBarEvent.Cancel else CommandBarEvent.Up(change.position.dp(density)))
                 return
             }
             step(CommandBarEvent.Move(change.position.dp(density)))
@@ -255,9 +257,10 @@ internal class TextInput(
             }
             if (event == null) continue
             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
+            val taken = change.takenBySystem
             change.consume()
             if (!change.pressed) {
-                step(PageBarEvent.Up(change.position.dp(density)))
+                step(if (taken) PageBarEvent.Cancel else PageBarEvent.Up(change.position.dp(density)))
                 return
             }
             step(PageBarEvent.Move(change.position.dp(density)))

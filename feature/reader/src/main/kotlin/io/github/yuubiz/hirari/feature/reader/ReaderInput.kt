@@ -34,6 +34,7 @@ import io.github.yuubiz.hirari.core.model.reduce
 import io.github.yuubiz.hirari.core.model.tapAction
 import io.github.yuubiz.hirari.core.ui.HoldTimer
 import io.github.yuubiz.hirari.core.ui.awaitOrHold
+import io.github.yuubiz.hirari.core.ui.takenBySystem
 import kotlin.math.hypot
 
 /** A second finger that goes up within this time, without moving past the touch slop, taps. */
@@ -114,10 +115,14 @@ internal class ReaderInput(
     /** Feeds one event to the command bar; true once the finger is up. */
     private fun finishCommand(event: PointerEvent, id: PointerId, density: Float, step: (CommandBarEvent) -> Unit): Boolean {
         val change = event.changes.firstOrNull { it.id == id } ?: event.changes.first()
+        val taken = change.takenBySystem
         change.consume()
         return if (change.pressed) {
             step(CommandBarEvent.Move(change.position.dp(density)))
             false
+        } else if (taken) {
+            step(CommandBarEvent.Cancel)
+            true
         } else {
             step(CommandBarEvent.Up(change.position.dp(density)))
             true
@@ -160,9 +165,10 @@ internal class ReaderInput(
             }
             if (event == null) continue
             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
+            val taken = change.takenBySystem
             change.consume()
             if (!change.pressed) {
-                step(PageBarEvent.Up(change.position.dp(density)))
+                step(if (taken) PageBarEvent.Cancel else PageBarEvent.Up(change.position.dp(density)))
                 return
             }
             step(PageBarEvent.Move(change.position.dp(density)))

@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.ui
 
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerInputChange
 import io.github.yuubiz.hirari.core.model.LONG_PRESS_MS
 
 /**
@@ -19,6 +20,13 @@ class HoldTimer(downAtMs: Long, holdMs: Long = LONG_PRESS_MS) {
         lastMs = maxOf(lastMs, event.changes.maxOf { it.uptimeMillis })
     }
 }
+
+/**
+ * Whether this change lifts the finger because the system took the touch for a gesture of its own, such as going home
+ * (docs/spec.md section 4.8, 画面の領域). Compose ends such a pointer with an up that comes already consumed, so this
+ * is read before the change is consumed.
+ */
+val PointerInputChange.takenBySystem: Boolean get() = !pressed && isConsumed
 
 /** The next event, or `null` when the press of [hold] became due first. Only a [waiting] press times out. */
 suspend fun AwaitPointerEventScope.awaitOrHold(hold: HoldTimer, waiting: Boolean): PointerEvent? {
