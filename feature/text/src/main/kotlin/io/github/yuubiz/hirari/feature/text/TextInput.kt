@@ -34,6 +34,7 @@ import io.github.yuubiz.hirari.core.model.TouchState
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.model.TurnAnimation
 import io.github.yuubiz.hirari.core.model.TurnAreaTouch
+import io.github.yuubiz.hirari.core.model.SystemGestureEdges
 import io.github.yuubiz.hirari.core.model.reduce
 import io.github.yuubiz.hirari.core.model.turnMovement
 import io.github.yuubiz.hirari.core.ui.HoldTimer
@@ -160,13 +161,15 @@ internal class TextInput(
     private val haptic: () -> Unit,
     /** Turns toward a [Turn], continuing the effect from the share of the view a finger pulled, if it did. */
     private val turn: (Turn, Float?) -> Unit,
+    /** Where system gestures start on this screen. */
+    private val edges: () -> SystemGestureEdges,
 ) {
     suspend fun PointerInputScope.handle() {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             val current = state()
             val settings = current.settings
-            val regions = ReaderRegions(Size(size.width / density, size.height / density), settings.barHeightDp.toFloat(), settings.hideSystemBars)
+            val regions = ReaderRegions(Size(size.width / density, size.height / density), settings.barHeightDp.toFloat(), settings.hideSystemBars, edges())
             val slop = viewConfiguration.touchSlop / density
             val region = regions.regionAt(down.position.dp(density)) ?: return@awaitEachGesture
             onTouch()
@@ -270,7 +273,8 @@ internal class TextInput(
         val continuous = current.frame?.continuous == true
         val rules = TurnAreaTouch(TEXT_DIRECTION, settings.mirrorControls, settings.swipeToTurn, slop, settings.loupeHoldMs.toLong())
         val pullable = if (continuous) emptySet() else setOf(Side.Left, Side.Right)
-        var touchState = rules.reduce(TouchState.Idle, TouchEvent.Down(down.position.dp(density), down.uptimeMillis, pullable)).state
+        val point = down.position.dp(density)
+        var touchState = rules.reduce(TouchState.Idle, TouchEvent.Down(point, down.uptimeMillis, pullable, regions.startsBackGesture(point))).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
         val width = size.width.toFloat()
         try {

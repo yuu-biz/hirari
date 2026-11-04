@@ -89,6 +89,8 @@ import io.github.yuubiz.hirari.core.ui.performTurnHaptic
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.delay
+import io.github.yuubiz.hirari.core.ui.PageBarGestureExclusion
+import io.github.yuubiz.hirari.core.ui.systemGestureEdges
 
 /**
  * Hands key events to the open text reader. The activity calls [dispatch] from `dispatchKeyEvent` before Compose
@@ -289,8 +291,9 @@ private fun Reading(
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(state)
+    val edges by rememberUpdatedState(systemGestureEdges())
     val input = remember(viewModel, panelBounds) {
-        TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, panelBounds, onItem, { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }, turn)
+        TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, panelBounds, onItem, { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }, turn, { edges })
     }
     Box(
         Modifier
@@ -300,6 +303,7 @@ private fun Reading(
             .pointerInput(input) { with(input) { handle() } }
             .then(if (accessible) Modifier.textAccessibility(state, onControl) else Modifier.clearAndSetSemantics {}),
     ) {
+        PageBarGestureExclusion(state.settings.barHeightDp.toFloat())
         if (accessible) {
             BarSemantics(
                 state.settings.barHeightDp.toFloat(),
