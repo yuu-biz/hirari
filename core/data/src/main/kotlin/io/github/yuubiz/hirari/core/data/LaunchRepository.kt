@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.data
 
 import android.content.Context
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
@@ -14,11 +15,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicReference
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /** The folder of a SAF place the file list showed last. [documentId] saves looking the path up again. */
 data class LastFolder(val location: LocationId, val path: String, val documentId: String?)
@@ -64,6 +71,9 @@ data class LaunchRecord(
 
 /** The start-up record. Device-local: it is not backed up and not exported (docs/spec.md section 7). */
 interface LaunchRepository {
+    /** Takes a persistence failure once, after switching to process-local state. */
+    fun takeFailure(): IOException? = null
+
     /**
      * Counts this start as unfinished until [finishStart], and returns the record from before it. A book a reader was
      * still opening becomes the [LaunchRecord.suspect] from here on.
@@ -153,9 +163,46 @@ internal data class StoredLaunch(
 }
 
 internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaunch>) : LaunchRepository {
+    private val mutex = Mutex()
+    private var memory: StoredLaunch? = null
+    private var memoryOnly = false
+    private val failure = AtomicReference<IOException?>(null)
+
+    override fun takeFailure(): IOException? = failure.getAndSet(null)
+
+    private fun failed(error: IOException) {
+        memoryOnly = true
+        if (error !is CorruptionException) {
+            failure.compareAndSet(null, error)
+            Logger.getLogger("LaunchRepository").log(Level.WARNING, "Cannot persist launch record; using process-local state", error)
+        }
+    }
+
+    private suspend fun read(): StoredLaunch {
+        memory?.let { return it }
+        return try {
+            store.data.first()
+        } catch (error: IOException) {
+            failed(error)
+            StoredLaunch()
+        }.also { memory = it }
+    }
+
+    private suspend fun update(transform: (StoredLaunch) -> StoredLaunch): StoredLaunch = mutex.withLock {
+        val next = transform(read())
+        if (!memoryOnly) {
+            try {
+                store.updateData { next }
+            } catch (error: IOException) {
+                failed(error)
+            }
+        }
+        next.also { memory = it }
+    }
+
     override suspend fun beginStart(): LaunchRecord {
         var before = StoredLaunch()
-        store.updateData {
+        update {
             before = it
             it.copy(unfinishedStarts = it.unfinishedStarts.coerceAtLeast(0) + 1, opening = null, suspect = it.opening ?: it.suspect)
         }
@@ -163,12 +210,12 @@ internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaun
     }
 
     override suspend fun beginOpening(book: OpeningBook): BookOpening {
-        val serial = store.updateData { it.copy(opening = StoredBook.of(book), openingSerial = it.openingSerial + 1) }.openingSerial
+        val serial = update { it.copy(opening = StoredBook.of(book), openingSerial = it.openingSerial + 1) }.openingSerial
         return BookOpening(serial, book)
     }
 
     override suspend fun endOpening(opening: BookOpening, shown: Boolean) {
-        store.updateData {
+        update {
             val own = it.opening != null && it.openingSerial == opening.serial
             val cleared = shown && it.suspect?.toBook()?.book == opening.book.book
             if (!own && !cleared) it else it.copy(opening = it.opening.takeUnless { own }, suspect = it.suspect.takeUnless { cleared })
@@ -176,25 +223,25 @@ internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaun
     }
 
     override suspend fun finishStart() {
-        store.updateData { it.copy(unfinishedStarts = 0) }
+        update { it.copy(unfinishedStarts = 0) }
     }
 
     override suspend fun setLastFolder(folder: LastFolder?) {
-        store.updateData {
+        update {
             it.copy(lastFolderLocation = folder?.location?.value, lastFolderPath = folder?.path, lastFolderDocumentId = folder?.documentId)
         }
     }
 
-    override suspend fun readerGuideSeen(): Boolean = store.data.first().readerGuideSeen
+    override suspend fun readerGuideSeen(): Boolean = mutex.withLock { read().readerGuideSeen }
 
     override suspend fun markReaderGuideSeen() {
-        store.updateData { it.copy(readerGuideSeen = true) }
+        update { it.copy(readerGuideSeen = true) }
     }
 
-    override suspend fun lastSaveFolder(): UriString? = store.data.first().lastSaveFolder?.let(::UriString)
+    override suspend fun lastSaveFolder(): UriString? = mutex.withLock { read().lastSaveFolder?.let(::UriString) }
 
     override suspend fun setLastSaveFolder(folder: UriString?) {
-        store.updateData { it.copy(lastSaveFolder = folder?.value) }
+        update { it.copy(lastSaveFolder = folder?.value) }
     }
 }
 
@@ -204,10 +251,10 @@ internal object LaunchSerializer : Serializer<StoredLaunch> {
 
     override suspend fun readFrom(input: InputStream): StoredLaunch = try {
         SettingsJson.decodeFromString(StoredLaunch.serializer(), input.readBytes().decodeToString())
-    } catch (_: SerializationException) {
-        StoredLaunch()
-    } catch (_: IllegalArgumentException) {
-        StoredLaunch()
+    } catch (error: SerializationException) {
+        throw CorruptionException("unreadable launch record", error)
+    } catch (error: IllegalArgumentException) {
+        throw CorruptionException("invalid launch record", error)
     }
 
     override suspend fun writeTo(t: StoredLaunch, output: OutputStream) {

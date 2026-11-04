@@ -17,6 +17,23 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class StartUpTest {
+    @Test
+    fun `a recovered launch record failure starts at home with a notice even over kept screens`() = runTest {
+        for (restoring in listOf(false, true)) {
+            given(ReopenLastBook.Immediately)
+            fixture.launch.recoveredFailure = java.io.IOException("launch.json is a directory")
+            assertEquals(StartPlan.Unplanned, fixture.services.planStart(restoring))
+        }
+    }
+
+    @Test
+    fun `a failed write while clearing the third unfinished start returns an unplanned start`() = runTest {
+        given(ReopenLastBook.Immediately, unfinished = FAILED_STARTS)
+        fixture.launch.writeFailure = java.io.IOException("disk full")
+        assertEquals(StartPlan.Unplanned, fixture.services.planStart())
+        assertEquals(StartPlan.Unplanned, fixture.services.planStart(restoring = true))
+    }
+
     private val fixture = Fixture()
     private val place = LibraryLocation.SafTree(LocationId(1), "漫画", UriString("content://tree/manga"))
     private val folder = LastFolder(place.id, "作品", "doc:作品")

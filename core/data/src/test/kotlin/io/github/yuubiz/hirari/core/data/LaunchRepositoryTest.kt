@@ -1,22 +1,116 @@
 package io.github.yuubiz.hirari.core.data
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.CorruptionException
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 /**
  * The record's own logic over an in-memory store, and its file format through the serializer. A file-backed
  * DataStore cannot write a file twice on a Windows JVM, whose rename does not replace an existing file.
  */
 class LaunchRepositoryTest {
+    @get:Rule
+    val folder = TemporaryFolder()
+
+    private suspend fun withRepository(file: File, block: suspend (LaunchRepository) -> Unit) {
+        val job = Job()
+        try {
+            block(DataStoreLaunchRepository(openLaunch(CoroutineScope(Dispatchers.IO + job)) { file }))
+        } finally {
+            job.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun `a directory supplies defaults and reports the read failure only once`() = runBlocking {
+        withRepository(folder.newFolder("launch.json")) { launch ->
+            assertEquals(false, launch.readerGuideSeen())
+            assertNull(launch.lastSaveFolder())
+            assertEquals(LaunchRecord(), launch.beginStart())
+            assertIs<IOException>(launch.takeFailure())
+            repeat(3) {
+                launch.finishStart()
+                assertEquals(LaunchRecord(), launch.beginStart())
+                assertNull(launch.takeFailure())
+            }
+        }
+    }
+
+    @Test
+    fun `all writes to an unreadable launch file keep working in memory`() = runBlocking {
+        withRepository(folder.newFolder("launch.json")) { launch ->
+            exerciseMemoryWrites(launch)
+        }
+    }
+
+    @Test
+    fun `a write failure preserves the last readable state and switches to memory`() = runBlocking {
+        var attempts = 0
+        val store = object : DataStore<StoredLaunch> {
+            override val data: Flow<StoredLaunch> = MutableStateFlow(StoredLaunch(readerGuideSeen = true))
+            override suspend fun updateData(transform: suspend (StoredLaunch) -> StoredLaunch): StoredLaunch {
+                attempts++
+                throw IOException("disk full")
+            }
+        }
+        val launch = DataStoreLaunchRepository(store)
+        assertEquals(true, launch.readerGuideSeen())
+        exerciseMemoryWrites(launch)
+        assertEquals(1, attempts)
+        assertIs<IOException>(launch.takeFailure())
+        assertNull(launch.takeFailure())
+    }
+
+    private suspend fun exerciseMemoryWrites(launch: LaunchRepository) {
+        val last = LastFolder(LocationId(3), "漫画", null)
+        val save = UriString("content://save")
+        launch.setLastFolder(last)
+        launch.setLastSaveFolder(save)
+        launch.markReaderGuideSeen()
+        assertEquals(true, launch.readerGuideSeen())
+        assertEquals(save, launch.lastSaveFolder())
+        val leaving = launch.beginOpening(book)
+        val replacing = launch.beginOpening(other)
+        launch.endOpening(leaving, shown = false)
+        assertEquals(other, launch.beginStart().diedOpening)
+        launch.endOpening(replacing, shown = true)
+        launch.finishStart()
+        assertEquals(LaunchRecord(lastFolder = last), launch.beginStart())
+        launch.setLastFolder(null)
+        launch.setLastSaveFolder(null)
+        launch.finishStart()
+        assertEquals(LaunchRecord(), launch.beginStart())
+        assertNull(launch.lastSaveFolder())
+    }
+
+    @Test
+    fun `corrupt launch records reset silently through the corruption handler`() = runBlocking {
+        withRepository(folder.newFile("launch.json").apply { writeText("not json") }) { launch ->
+            assertEquals(LaunchRecord(), launch.beginStart())
+            assertNull(launch.takeFailure())
+        }
+    }
+
     private class MemoryStore(initial: StoredLaunch = StoredLaunch()) : DataStore<StoredLaunch> {
         val value = MutableStateFlow(initial)
         override val data: Flow<StoredLaunch> = value
@@ -136,8 +230,9 @@ class LaunchRepositoryTest {
     }
 
     @Test
-    fun `an unreadable file starts over`() = runBlocking {
-        assertEquals(StoredLaunch(), LaunchSerializer.readFrom(ByteArrayInputStream("not json".toByteArray())))
-        assertEquals(StoredLaunch(), LaunchSerializer.readFrom(ByteArrayInputStream("[1, 2]".toByteArray())))
+    fun `malformed records are delegated to the corruption handler`() = runBlocking {
+        assertFailsWith<CorruptionException> { LaunchSerializer.readFrom(ByteArrayInputStream("not json".toByteArray())) }
+        assertFailsWith<CorruptionException> { LaunchSerializer.readFrom(ByteArrayInputStream("[1, 2]".toByteArray())) }
+        Unit
     }
 }

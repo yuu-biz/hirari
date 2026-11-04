@@ -88,8 +88,10 @@ private suspend fun LibraryServices.plan(restoring: Boolean): StartPlan {
     } catch (_: Exception) {
     }
     val record = launch.beginStart()
+    if (launch.takeFailure() != null) return StartPlan.Unplanned
     if (record.unfinishedStarts >= FAILED_STARTS) {
         launch.setLastFolder(null)
+        if (launch.takeFailure() != null) return StartPlan.Unplanned
         settings.update { it.copy(libraryView = GlobalSettings().libraryView) }
         return StartPlan.Open(diedOpening = record.diedOpening)
     }

@@ -14,6 +14,7 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import io.github.yuubiz.hirari.core.data.LastFolder
+import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.feature.library.Notice
@@ -24,6 +25,22 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
+import java.io.IOException
+import java.util.logging.Level
+import java.util.logging.Logger
+
+/** A failed launch record must not stop navigation or completion of the start. */
+internal suspend fun LaunchRepository.recordLastFolder(folder: LastFolder?) = recordLaunch { setLastFolder(folder) }
+
+internal suspend fun LaunchRepository.completeStart() = recordLaunch { finishStart() }
+
+private suspend fun recordLaunch(write: suspend () -> Unit) {
+    try {
+        write()
+    } catch (error: IOException) {
+        Logger.getLogger("AppStart").log(Level.WARNING, "Cannot write launch record", error)
+    }
+}
 
 /**
  * One start of the app (docs/spec.md section 4.3, 起動時の動作). It lives in the process, not the activity, so an
@@ -86,7 +103,7 @@ internal fun StartUp(nav: NavController, app: HirariApp, start: AppStart?) {
             .onEach { start?.gate?.check(it.id) }
             .mapNotNull { it.lastFolder() }
             .distinctUntilChanged()
-            .collect { library.launch.setLastFolder(it.folder) }
+            .collect { library.launch.recordLastFolder(it.folder) }
     }
     val ended = start?.ended
     if (ended != null) {

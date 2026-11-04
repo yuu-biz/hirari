@@ -441,6 +441,10 @@ internal class FakeArchives : ArchiveOpener {
 
 internal class FakeLaunch : LaunchRepository {
     var record = LaunchRecord()
+    var writeFailure: java.io.IOException? = null
+    var recoveredFailure: java.io.IOException? = null
+
+    override fun takeFailure(): java.io.IOException? = recoveredFailure.also { recoveredFailure = null }
 
     /** What reading the record throws, as a full or broken disk does. */
     var failure: Exception? = null
@@ -455,6 +459,7 @@ internal class FakeLaunch : LaunchRepository {
     }
 
     override suspend fun setLastFolder(folder: LastFolder?) {
+        writeFailure?.let { throw it }
         record = record.copy(lastFolder = folder)
     }
 
