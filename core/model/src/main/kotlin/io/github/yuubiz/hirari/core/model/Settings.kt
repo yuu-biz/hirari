@@ -88,6 +88,12 @@ enum class LibraryView { Grid, ThumbnailList, List }
 
 enum class ThumbSize { Small, Medium, Large }
 
+/** Width over height of the cover box in the file list (docs/spec.md section 4.3, 表紙の枠). */
+enum class CoverAspect(val ratio: Float) { Book(0.7f), Square(1f) }
+
+/** What the file list multiplies the device's text size by (docs/spec.md section 4.3, 文字の大きさ). */
+enum class LibraryTextSize(val scale: Float) { Small(0.85f), Medium(1f), Large(1.15f) }
+
 enum class LibrarySort { Name, Newest, Oldest }
 
 enum class ReopenLastBook { Off, Ask, Immediately }

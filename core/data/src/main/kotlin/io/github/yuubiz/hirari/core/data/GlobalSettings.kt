@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
+import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.GutterStyle
@@ -13,6 +14,7 @@ import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LibrarySort
+import io.github.yuubiz.hirari.core.model.LibraryTextSize
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.LoupeFrame
 import io.github.yuubiz.hirari.core.model.LoupeZoom
@@ -104,6 +106,14 @@ data class GlobalSettings(
 
     val libraryView: LibraryView = LibraryView.Grid,
     val thumbSize: ThumbSize = ThumbSize.Medium,
+    /** Columns of the file list's grid in a portrait window, or `null` to fit cells of [thumbSize] (自動). */
+    val gridColumnsPortrait: Int? = null,
+    /** As [gridColumnsPortrait], in a landscape window. */
+    val gridColumnsLandscape: Int? = null,
+    val gridNameLines: Int = 2,
+    val gridNoteLine: Boolean = true,
+    val coverAspect: CoverAspect = CoverAspect.Book,
+    val libraryTextSize: LibraryTextSize = LibraryTextSize.Medium,
     val librarySort: LibrarySort = LibrarySort.Name,
     val foldersFirst: Boolean = true,
     val showDotFiles: Boolean = false,
@@ -136,6 +146,9 @@ data class GlobalSettings(
         commandBarItems = commandBarItems.distinct().take(ReaderCommand.MAX_ITEMS),
         autoPlaySeconds = AUTO_PLAY_SECONDS.snap(autoPlaySeconds),
         readerBrightness = readerBrightness?.snapTo(READER_BRIGHTNESS),
+        gridColumnsPortrait = gridColumnsPortrait?.coerceIn(GRID_COLUMNS_PORTRAIT.first, GRID_COLUMNS_PORTRAIT.last),
+        gridColumnsLandscape = gridColumnsLandscape?.coerceIn(GRID_COLUMNS_LANDSCAPE.first, GRID_COLUMNS_LANDSCAPE.last),
+        gridNameLines = gridNameLines.coerceIn(GRID_NAME_LINES.first, GRID_NAME_LINES.last),
         textSizeSp = textSizeSp.snapTo(TEXT_SIZE_SP),
         textLineGap = TEXT_LINE_GAP.snap(textLineGap),
         textLetterGap = TEXT_LETTER_GAP.snap(textLetterGap),
@@ -158,6 +171,9 @@ data class GlobalSettings(
         val TEXT_LINE_GAP = DecimalSteps(0.0, 2.5, 0.1)
         val TEXT_LETTER_GAP = DecimalSteps(0.0, 2.5, 0.05)
         val HISTORY_LIMITS = listOf(0, 20, 50, 100, 200, 500)
+        val GRID_COLUMNS_PORTRAIT = 2..6
+        val GRID_COLUMNS_LANDSCAPE = 2..12
+        val GRID_NAME_LINES = 1..3
     }
 }
 

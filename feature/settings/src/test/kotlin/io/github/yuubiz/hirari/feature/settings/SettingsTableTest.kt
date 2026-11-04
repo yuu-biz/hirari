@@ -58,7 +58,7 @@ class SettingsTableTest {
         val keys = SettingsTable.map { it.key }
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
         assertEquals(fields, keys.toSet())
-        assertEquals(65, keys.size)
+        assertEquals(71, keys.size)
     }
 
     @Test

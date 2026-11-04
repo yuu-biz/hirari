@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
+import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.GutterStyle
@@ -12,6 +13,7 @@ import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LibrarySort
+import io.github.yuubiz.hirari.core.model.LibraryTextSize
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.LoupeFrame
 import io.github.yuubiz.hirari.core.model.LoupeZoom
@@ -246,6 +248,25 @@ val SettingsTable: List<Setting> = buildList {
         LibraryView.Grid to "グリッド", LibraryView.ThumbnailList to "サムネイル付きリスト", LibraryView.List to "リスト"))
     add(choice(GlobalSettings::thumbSize, library, "サムネイルの大きさ", { s, v -> s.copy(thumbSize = v) },
         ThumbSize.Small to "小", ThumbSize.Medium to "中", ThumbSize.Large to "大"))
+    add(columns(GlobalSettings::gridColumnsPortrait, "グリッドの列数（縦画面）", GlobalSettings.GRID_COLUMNS_PORTRAIT) { s, v -> s.copy(gridColumnsPortrait = v) })
+    add(columns(GlobalSettings::gridColumnsLandscape, "グリッドの列数（横画面）", GlobalSettings.GRID_COLUMNS_LANDSCAPE) { s, v -> s.copy(gridColumnsLandscape = v) })
+    add(
+        choice(
+            GlobalSettings::gridNameLines, library, "名前の行数", { s, v -> s.copy(gridNameLines = v) },
+            *GlobalSettings.GRID_NAME_LINES.map { it to "$it 行" }.toTypedArray(),
+            note = "グリッドで、表紙の下に名前を出す行の数です。",
+        ),
+    )
+    add(
+        toggle(
+            GlobalSettings::gridNoteLine, library, "作者の行を出す",
+            note = "グリッドで、名前の最初の [ ] の中を、名前の下の行に分けて出します。",
+        ) { s, v -> s.copy(gridNoteLine = v) },
+    )
+    add(choice(GlobalSettings::coverAspect, library, "表紙の縦横比", { s, v -> s.copy(coverAspect = v) },
+        CoverAspect.Book to "本", CoverAspect.Square to "正方形"))
+    add(choice(GlobalSettings::libraryTextSize, library, "一覧の文字の大きさ", { s, v -> s.copy(libraryTextSize = v) },
+        LibraryTextSize.Small to "小", LibraryTextSize.Medium to "中", LibraryTextSize.Large to "大"))
     add(choice(GlobalSettings::librarySort, library, "並べ替え", { s, v -> s.copy(librarySort = v) },
         LibrarySort.Name to "名前", LibrarySort.Newest to "新しい順", LibrarySort.Oldest to "古い順"))
     add(toggle(GlobalSettings::foldersFirst, library, "フォルダを先に") { s, v -> s.copy(foldersFirst = v) })
@@ -339,6 +360,18 @@ private fun <T> slider(
     note: String? = null,
     write: (GlobalSettings, T) -> GlobalSettings,
 ) = SliderSetting(property.name, group, label, note, 0, values, format, property, write)
+
+/** The grid columns of one orientation: 自動, which fits cells of サムネイルの大きさ, or a count. */
+private fun columns(
+    property: KProperty1<GlobalSettings, Int?>,
+    label: String,
+    counts: IntRange,
+    write: (GlobalSettings, Int?) -> GlobalSettings,
+) = choice(
+    property, SettingGroup.Library, label, write,
+    *(listOf<Pair<Int?, String>>(null to "自動") + counts.map { it to "$it 列" }).toTypedArray(),
+    note = "自動では、サムネイルの大きさに合わせて、画面の幅に入るだけ並べます。",
+)
 
 /** A color that can also be left unset. */
 private fun optionalColor(

@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
+import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.GutterStyle
@@ -11,6 +12,7 @@ import io.github.yuubiz.hirari.core.model.HistorySort
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LibrarySort
+import io.github.yuubiz.hirari.core.model.LibraryTextSize
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.LoupeFrame
 import io.github.yuubiz.hirari.core.model.LoupeZoom
@@ -87,6 +89,12 @@ val everything = GlobalSettings(
     textPaperOverride = Rgb(0xFFFFFF),
     libraryView = LibraryView.List,
     thumbSize = ThumbSize.Large,
+    gridColumnsPortrait = 3,
+    gridColumnsLandscape = 7,
+    gridNameLines = 3,
+    gridNoteLine = false,
+    coverAspect = CoverAspect.Square,
+    libraryTextSize = LibraryTextSize.Large,
     librarySort = LibrarySort.Oldest,
     foldersFirst = false,
     showDotFiles = true,
