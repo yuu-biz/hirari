@@ -113,7 +113,8 @@ class Thumbnails internal constructor(
 
     /**
      * Pass 1: the thumbnail for [request] if the store has it or knows it failed, and `null` if it has to be made.
-     * It does not list a folder: a folder has a thumbnail once pass 2 has searched it.
+     * It does not list a folder: a folder has a thumbnail once pass 2 has searched it. It writes to the store only to
+     * drop the mark of a thumbnail the last process left unfinished, which this process then skips.
      */
     suspend fun cached(request: ThumbRequest): ThumbResult? = resolve(request, Mode.CacheOnly)
 
