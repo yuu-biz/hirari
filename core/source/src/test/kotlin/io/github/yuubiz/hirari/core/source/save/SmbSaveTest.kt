@@ -130,13 +130,6 @@ private class MemoryFolder(
         }
     }
 
-    override fun delete(name: String) {
-        synchronized(log) {
-            files.remove(name)
-            folders.remove(name)
-        }
-    }
-
     fun leftovers(): List<String> = files.keys.filter { it.endsWith(SAVE_PART_SUFFIX) } + folders.values.flatMap { it.leftovers() }
 }
 
@@ -419,10 +412,30 @@ class SmbSaveTest {
     }
 
     @Test
-    fun `a stale part from an earlier run is replaced`() {
-        val into = MemoryFolder(files = linkedMapOf("vol1.cbz.part" to byteArrayOf(7, 7, 7)))
-        save(server(mapOf("vol1.cbz" to pattern)), "vol1.cbz", false, into)
-        assertEquals(listOf("vol1.cbz"), into.files.keys.toList())
-        assertFalse(into.files.keys.any { it.endsWith(SAVE_PART_SUFFIX) })
+    fun `temporary names skip existing files and directories without limiting final name attempts`() {
+        val original = byteArrayOf(7, 7, 7)
+        val into = MemoryFolder(files = linkedMapOf("VOL1.CBZ.PART" to original))
+        (1..12).forEach { into.folders["vol1.cbz.$it.part"] = MemoryFolder(files = linkedMapOf("keep" to original)) }
+        assertEquals(SaveOutcome.Saved("vol1.cbz", 1, pattern.size.toLong()), save(server(mapOf("vol1.cbz" to pattern)), "vol1.cbz", false, into))
+        assertEquals(listOf("vol1.cbz.13.part"), into.log)
+        assertArrayEquals(original, into.files.getValue("VOL1.CBZ.PART"))
+        assertArrayEquals(pattern, into.files.getValue("vol1.cbz"))
+        assertEquals(12, into.folders.size)
+        into.folders.values.forEach { assertArrayEquals(original, it.files.getValue("keep")) }
+    }
+
+    @Test
+    fun `a folder save preserves a part document that appears before its file is copied`() {
+        val original = byteArrayOf(7, 7, 7)
+        val into = MemoryFolder()
+        into.onWrite = {
+            into.folders.getValue("series").files.putIfAbsent("book.zip.part", original)
+        }
+        val files = mapOf("series/a.zip" to byteArrayOf(1), "series/book.zip" to pattern)
+        assertEquals(SaveOutcome.Saved("series", 2, pattern.size + 1L), save(server(files), "series", true, into))
+        val folder = into.folders.getValue("series")
+        assertArrayEquals(original, folder.files.getValue("book.zip.part"))
+        assertArrayEquals(pattern, folder.files.getValue("book.zip"))
+        assertEquals(setOf("a.zip", "book.zip", "book.zip.part"), folder.files.keys)
     }
 }

@@ -67,11 +67,8 @@ interface SaveFolder {
 
     fun createFolder(name: String): SaveFolder
 
-    /** A new file named exactly [name], open for writing. */
+    /** A new file named [name], open for writing. Never reuses or overwrites an existing child. */
     fun create(name: String): SaveFile
-
-    /** Deletes the child [name] with all it holds, if there is one. */
-    fun delete(name: String)
 }
 
 /** A file being written. Ends with [commit] or [discard], and both may follow a failed [write]. */
@@ -126,6 +123,16 @@ fun freeName(wanted: String, taken: Set<String>): String {
  */
 internal object HeldNames {
     private val held = HashMap<SaveFolder, MutableList<String>>()
+
+    /** Reserves a temporary name, avoiding existing files, folders and names held by other saves. */
+    fun holdTemporary(folder: SaveFolder, wanted: String): String = synchronized(held) {
+        val used = (folder.names() + held[folder].orEmpty()).mapTo(HashSet()) { it.comparable() }
+        var name = wanted + SAVE_PART_SUFFIX
+        var number = 0L
+        while (name.comparable() in used) name = "$wanted.${++number}$SAVE_PART_SUFFIX"
+        held.getOrPut(folder, ::mutableListOf) += name
+        name
+    }
 
     /**
      * Holds and returns the first free name of [wanted] in [folder], one that neither a child of [folder] nor the hold of

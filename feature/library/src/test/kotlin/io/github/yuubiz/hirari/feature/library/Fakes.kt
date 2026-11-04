@@ -485,8 +485,6 @@ internal class FakeSaveFolders : SaveFolders {
         override fun createFolder(name: String): SaveFolder = this
 
         override fun create(name: String): SaveFile = error("the fake SMB writes nothing")
-
-        override fun delete(name: String) = Unit
     }
 
     override fun open(tree: UriString): SaveFolder = folder.also { opened += tree }

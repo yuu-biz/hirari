@@ -17,6 +17,7 @@ import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.source.smb.FakeConnector
 import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -144,18 +145,15 @@ class SafSaveFolderTest {
     }
 
     @Test
-    fun `a discarded file and a deleted child are gone`() {
+    fun `discard removes only the created document`() {
         val root = SafSaveFolder(resolver, tree)
         root.create("a.part").discard()
         root.create("b.part").also { it.write(byteArrayOf(1), 1) }.discard()
         root.create("keep.zip.part").commit("keep.zip")
         root.createFolder("folder").create("inner.zip").commit("inner.zip")
         assertEquals(setOf("keep.zip", "folder"), root.names())
-        root.delete("keep.zip")
-        root.delete("folder")
-        root.delete("never-there")
-        assertEquals(emptySet(), root.names())
-        assertEquals(setOf("root"), provider.docs.keys)
+        assertEquals(4, provider.docs.size)
+        assertEquals(provider.named("folder")!!.id, provider.named("inner.zip")!!.parent)
     }
 
     @Test
@@ -225,5 +223,62 @@ class SafSaveFolderTest {
         val shelf = provider.named("shelf")!!
         assertContentEquals(bytes, provider.childrenOf(shelf.id).single { it.name == "vol1.cbz" }.file!!.readBytes())
         assertTrue(provider.docs.values.none { it.name.endsWith(SAVE_PART_SUFFIX) })
+    }
+
+    @Test
+    fun `an existing part file survives a successful save`() = preservesExistingPart(directory = false, end = End.Success)
+
+    @Test
+    fun `an existing part directory survives a successful save`() = preservesExistingPart(directory = true, end = End.Success)
+
+    @Test
+    fun `an existing part file survives cancellation and the created part is removed`() = preservesExistingPart(directory = false, end = End.Cancelled)
+
+    @Test
+    fun `an existing part directory survives cancellation and the created part is removed`() = preservesExistingPart(directory = true, end = End.Cancelled)
+
+    @Test
+    fun `an existing part file survives a failed save`() = preservesExistingPart(directory = false, end = End.Failed)
+
+    @Test
+    fun `an existing part directory survives a failed save`() = preservesExistingPart(directory = true, end = End.Failed)
+
+    private enum class End { Success, Cancelled, Failed }
+
+    private fun preservesExistingPart(directory: Boolean, end: End) {
+        val root = SafSaveFolder(resolver, tree)
+        val original = byteArrayOf(7, 8, 9)
+        val existingName = "book.zip.part"
+        val owner = if (directory) root.createFolder(existingName) else root
+        val contentName = if (directory) "keep.txt" else existingName
+        owner.create(contentName).also { it.write(original, original.size) }.commit(contentName)
+        val existing = provider.named(existingName)!!
+        val content = provider.named(contentName)!!
+        val destination = SafSaveFolder(resolver, tree, fsync = {
+            if (end == End.Failed) throw ErrnoException("fsync", OsConstants.EIO)
+        })
+        val bytes = ByteArray(SAVE_BLOCK + 1) { 42 }
+        val server = SmbServer(FakeConnector(mapOf("book.zip" to bytes)), SmbLogin.Guest, scope, emptyFlow(), Dispatchers.IO, 15.seconds)
+        fun save() = runBlocking {
+            server.saveTo("book.zip", false, destination) {
+                if (it.bytesDone > 0 && it.filesDone == 0) {
+                    assertTrue(provider.named("book.zip.1.part") != null)
+                    if (end == End.Cancelled) throw CancellationException("cancel after writing a block")
+                }
+            }
+        }
+        when (end) {
+            End.Success -> {
+                assertEquals(SaveOutcome.Saved("book.zip", 1, bytes.size.toLong()), save())
+                assertContentEquals(bytes, provider.named("book.zip")!!.file!!.readBytes())
+            }
+            End.Cancelled -> assertFailsWith<CancellationException> { save() }
+            End.Failed -> assertEquals(SaveOutcome.Failed(SaveFailure.WriteFailed), save())
+        }
+        assertEquals(existing, provider.named(existingName))
+        assertEquals(content, provider.named(contentName))
+        assertContentEquals(original, content.file!!.readBytes())
+        assertEquals(if (end == End.Success) setOf(existingName, "book.zip") else setOf(existingName), root.names())
+        assertTrue(provider.docs.values.none { it.name == "book.zip.1.part" })
     }
 }

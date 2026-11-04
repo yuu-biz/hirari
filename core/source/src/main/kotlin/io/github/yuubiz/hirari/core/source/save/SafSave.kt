@@ -50,11 +50,6 @@ class SafSaveFolder(
         }
     }
 
-    override fun delete(name: String) {
-        val child = resolver.listChildren(treeUri, documentId).firstOrNull { it.name == name } ?: return
-        DocumentsContract.deleteDocument(resolver, child.uri)
-    }
-
     /** The same document of the same provider, whichever tree reaches it: a document id is unique to its provider. */
     override fun equals(other: Any?): Boolean =
         other is SafSaveFolder && other.treeUri.authority == treeUri.authority && other.documentId == documentId

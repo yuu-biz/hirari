@@ -39,7 +39,7 @@ const val SAVE_MAX_DEPTH = 64
  * with the listings and the readers (section 8.3). Runs on the I/O dispatcher and, when the caller is cancelled, stops
  * at the next block or before renaming the last, after deleting the file it was writing.
  *
- * Each file is written as `名前.part` and renamed when whole. The item itself takes the first free name of `名前` and
+ * Each file is written under a unique `.part` name and renamed when whole. The item takes the first free name of `名前` and
  * `名前 (1)` to `名前 (9)` that no other save of this process holds ([HeldNames]). A folder is copied with everything
  * in it. [onProgress] gets a value after each block.
  */
@@ -153,7 +153,7 @@ private class SmbSaveRun(
         try {
             bytesTotal += source.size - node.size
             val wanted = if (resolve) onDestination { HeldNames.hold(into, node.name) }.also(held::add) else node.name
-            val part = (wanted + SAVE_PART_SUFFIX).also { onDestination { into.delete(it) } }
+            val part = onDestination { HeldNames.holdTemporary(into, wanted) }.also(held::add)
             val file = onDestination { into.create(part) }
             try {
                 onDestination { file.freeBytes }?.let { if (it < source.size) throw NoRoomException() }

@@ -42,10 +42,6 @@ private class DiskFolder(private val dir: File) : SaveFolder {
             }
         }
     }
-
-    override fun delete(name: String) {
-        File(dir, name).deleteRecursively()
-    }
 }
 
 /** Saves from the Samba fixture (docs/spec.md section 4.5), skipped without `-Dhirari.smb.host`. */
