@@ -8,6 +8,9 @@ import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,6 +22,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class StashTest {
     @get:Rule
@@ -170,4 +174,32 @@ class StashTest {
         val opened = (Books.openFolder(emptyList(), decoding) as BookResult.Opened).book
         assertNull(opened.stash)
     }
+
+    /**
+     * The reader of an entry is cancelled while another caller waits for it, and the waiter resumes at once on the
+     * canceller's thread, as on the main thread's immediate dispatcher. The waiter must read the entry itself.
+     */
+    @Test
+    fun aWaiterWhoseReaderIsCancelledReadsTheEntryItself() {
+        val server = Server().apply { gate = CompletableDeferred() }
+        val stashed = StashedPages(server, DiskStash(cache, BookId("cancelled"), 1000, written))
+        val result = AtomicReference<PageResult<ByteArray>>()
+        val worker = Thread {
+            runBlocking {
+                val first = launch { stashed.read(pages[0]) }
+                while (server.reads.get() == 0) delay(5)
+                val second = async(Dispatchers.Unconfined) { stashed.read(pages[0]) }
+                server.gate = null
+                first.cancel()
+                result.set(second.await())
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+        worker.join(10_000)
+        assertFalse("the waiter spun on the cancelled read", worker.isAlive)
+        assertEquals(listOf<Byte>(0), (result.get() as PageResult.Ready).image.toList())
+    }
 }
+

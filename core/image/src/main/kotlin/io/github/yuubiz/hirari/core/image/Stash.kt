@@ -92,8 +92,10 @@ internal class StashedPages(private val server: PageBytes, private val stash: Di
             try {
                 return readThrough(page).also { fetched = it }
             } finally {
-                mine.complete(fetched)
+                // Removed before completing: a waiter can resume inside complete() on this thread (the main thread's
+                // immediate dispatcher) and must not find this finished read again, or it loops without end.
                 reading.remove(page.entryIndex, mine)
+                mine.complete(fetched)
             }
         }
     }
