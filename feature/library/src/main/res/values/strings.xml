@@ -182,6 +182,8 @@
     <string name="look_columns_portrait">列数（縦画面）</string>
     <string name="look_columns_landscape">列数（横画面）</string>
     <string name="look_auto">自動</string>
+    <string name="look_columns_count">%1$d 列</string>
+    <string name="look_lines_count">%1$d 行</string>
     <string name="look_name_lines">名前の行数</string>
     <string name="look_note_line">作者の行を出す</string>
     <string name="look_aspect">表紙の縦横比</string>

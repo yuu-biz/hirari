@@ -49,16 +49,18 @@ internal fun LookSheet(look: ListLook, change: ((GlobalSettings) -> GlobalSettin
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.look_title), Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
             val auto = stringResource(R.string.look_auto)
+            val columns = columnCount()
+            val lines = lineCount()
             if (landscape) {
-                Choices(stringResource(R.string.look_columns_landscape), listOf(null) + GlobalSettings.GRID_COLUMNS_LANDSCAPE, look.landscapeColumns, { it?.toString() ?: auto }) { v ->
+                Choices(stringResource(R.string.look_columns_landscape), listOf(null) + GlobalSettings.GRID_COLUMNS_LANDSCAPE, look.landscapeColumns, { it?.let(columns) ?: auto }) { v ->
                     change { it.copy(gridColumnsLandscape = v) }
                 }
             } else {
-                Choices(stringResource(R.string.look_columns_portrait), listOf(null) + GlobalSettings.GRID_COLUMNS_PORTRAIT, look.portraitColumns, { it?.toString() ?: auto }) { v ->
+                Choices(stringResource(R.string.look_columns_portrait), listOf(null) + GlobalSettings.GRID_COLUMNS_PORTRAIT, look.portraitColumns, { it?.let(columns) ?: auto }) { v ->
                     change { it.copy(gridColumnsPortrait = v) }
                 }
             }
-            Choices(stringResource(R.string.look_name_lines), GlobalSettings.GRID_NAME_LINES.toList(), look.nameLines, { it.toString() }) { v ->
+            Choices(stringResource(R.string.look_name_lines), GlobalSettings.GRID_NAME_LINES.toList(), look.nameLines, lines) { v ->
                 change { it.copy(gridNameLines = v) }
             }
             Row(
@@ -96,4 +98,18 @@ private fun <T> Choices(label: String, values: List<T>, chosen: T, name: (T) -> 
             }
         }
     }
+}
+
+/** A column count as the chip shows and a screen reader says it, 「5 列」 rather than a bare number. */
+@Composable
+private fun columnCount(): (Int) -> String {
+    val format = stringResource(R.string.look_columns_count)
+    return { format.format(it) }
+}
+
+/** A line count as 「2 行」. */
+@Composable
+private fun lineCount(): (Int) -> String {
+    val format = stringResource(R.string.look_lines_count)
+    return { format.format(it) }
 }

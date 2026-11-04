@@ -172,8 +172,8 @@ class FolderTopBarTest {
         show("a")
         menu("表示の調整")
         rule.onNodeWithText("列数（縦画面）").assertIsDisplayed()
-        rule.onNodeWithText("5").performClick()
-        rule.onNodeWithText("1").performClick()
+        rule.onNodeWithText("5 列").performClick()
+        rule.onNodeWithText("1 行").performClick()
         rule.onNodeWithText("正方形").performClick()
         rule.waitForIdle()
         val saved = fixture.settings.value.value
