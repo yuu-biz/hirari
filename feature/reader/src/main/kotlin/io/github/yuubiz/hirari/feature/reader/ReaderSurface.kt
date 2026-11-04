@@ -217,6 +217,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
                 if (viewModel.fetchedBytes != null) FetchStatus(viewModel, state.current, Modifier.align(Alignment.Center).padding(top = 96.dp))
             }
         }
+        ReaderOverlays(state.config.overlays, pageNumberText(state.current, state.pagination.shapes.size))
         if (state.connection.reconnecting) {
             OutlinedText(stringResource(R.string.reader_reconnecting), Modifier.align(Alignment.TopCenter).padding(top = 24.dp), size = 16)
         }
@@ -456,7 +457,7 @@ private fun PageErrorText.message(): String = when (this) {
 
 /** White text with a black outline, readable over light and dark pages (docs/spec.md section 4.8). */
 @Composable
-private fun OutlinedText(text: String, modifier: Modifier, size: Int) {
+internal fun OutlinedText(text: String, modifier: Modifier, size: Int) {
     Box(modifier) {
         Text(
             text,

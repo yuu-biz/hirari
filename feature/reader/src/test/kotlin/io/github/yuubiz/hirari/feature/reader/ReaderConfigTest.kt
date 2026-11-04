@@ -7,10 +7,12 @@ import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LoupeFrame
 import io.github.yuubiz.hirari.core.model.LoupeZoom
+import io.github.yuubiz.hirari.core.model.OverlayTextSize
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.ScaleMode
+import io.github.yuubiz.hirari.core.model.ScreenSpot
 import io.github.yuubiz.hirari.core.model.StopOrder
 import io.github.yuubiz.hirari.core.model.TapLayout
 import io.github.yuubiz.hirari.core.model.TrimStrength
@@ -58,6 +60,9 @@ class ReaderConfigTest {
         "readerBrightness" to { it.copy(readerBrightness = 70) },
         "hideSystemBars" to { it.copy(hideSystemBars = false) },
         "keepAwake" to { it.copy(keepAwake = KeepAwake.TenMinutes) },
+        "pageNumberSpot" to { it.copy(pageNumberSpot = ScreenSpot.BottomCenter) },
+        "statusSpot" to { it.copy(statusSpot = ScreenSpot.BottomRight) },
+        "overlayTextSize" to { it.copy(overlayTextSize = OverlayTextSize.Large) },
     )
 
     /** Global settings the image reader reads from the settings themselves, outside [ReaderConfig]. */
@@ -70,11 +75,8 @@ class ReaderConfigTest {
         "breathSensitivity",
     )
 
-    /**
-     * Settings of the image reader in docs/spec.md section 4.10 that it does not read yet: 重ねて表示する情報 (section
-     * 4.8), and 書庫内の並び, which no page list follows.
-     */
-    private val notReadYet = setOf("pageNumberSpot", "statusSpot", "overlayTextSize", "entryOrder")
+    /** Settings of the image reader in docs/spec.md section 4.10 that it does not read yet: 書庫内の並び, which no page list follows. */
+    private val notReadYet = setOf("entryOrder")
 
     /** Settings of the text reader, the lists, and the whole app. */
     private val otherScreens = setOf(

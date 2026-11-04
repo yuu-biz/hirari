@@ -61,6 +61,7 @@ data class ReaderConfig(
     /** 画面の明るさ in percent, or `null` to follow the device. */
     val brightness: Int? = null,
     val hideSystemBars: Boolean = true,
+    val overlays: Overlays = Overlays(),
     /** 画面を消さない. */
     val keepAwake: KeepAwake = KeepAwake.System,
     /**
@@ -110,6 +111,7 @@ data class ReaderConfig(
             turnHaptics = settings.turnHaptics,
             brightness = settings.readerBrightness,
             hideSystemBars = settings.hideSystemBars,
+            overlays = Overlays(settings.pageNumberSpot, settings.statusSpot, settings.overlayTextSize),
             keepAwake = settings.keepAwake,
         )
     }
