@@ -4,7 +4,6 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,7 +79,7 @@ fun CoverSlot(
                 }
             }
         } else {
-            Box(Modifier.align(Alignment.BottomEnd).fillMaxWidth(1f / 3).padding(2.dp).decorative(), contentAlignment = Alignment.BottomEnd) {
+            Box(Modifier.align(Alignment.BottomEnd).badgeWidth().padding(2.dp).decorative(), contentAlignment = Alignment.BottomEnd) {
                 when (badge) {
                     is CoverBadge.Label -> BasicText(
                         badge.text,
@@ -96,6 +96,14 @@ fun CoverSlot(
     }
 }
 
+/** At most a third of the cover wide, or [BADGE_MIN_WIDTH] on a cover too small for a third to hold a label. */
+private fun Modifier.badgeWidth(): Modifier = layout { measurable, constraints ->
+    val width = maxOf(constraints.maxWidth / 3, BADGE_MIN_WIDTH.roundToPx()).coerceAtMost(constraints.maxWidth)
+    val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = width))
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+}
+
+private val BADGE_MIN_WIDTH = 24.dp
 private val BADGE_SIZE = 11.sp
 private val BADGE_MIN_SIZE = 6.sp
 private val BADGE_ICON_WIDTH = 18.dp
