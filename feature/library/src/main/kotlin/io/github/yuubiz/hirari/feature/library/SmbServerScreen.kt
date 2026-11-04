@@ -43,8 +43,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.editableText
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -145,7 +147,7 @@ private fun SmbForm(
         Field(R.string.smb_user, fields.user, error = form.errors[SmbField.User], hint = R.string.smb_user_hint) { onEdit(fields.copy(user = it)) }
         OutlinedSecureTextField(
             state = password,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().maskedForAccessibility(password),
             label = { Text(stringResource(R.string.smb_password)) },
             supportingText = if (form.storedPassword) ({ Text(stringResource(R.string.smb_password_kept)) }) else null,
         )
@@ -164,6 +166,14 @@ private fun SmbForm(
             Button(onClick = onSave, enabled = !form.saving) { Text(stringResource(R.string.smb_save)) }
         }
     }
+}
+
+/**
+ * Replaces the text the field tells the accessibility services with one bullet per character. The field is a password
+ * to them already, yet its node still carries what was typed, which a dump of the screen shows (docs/spec.md section 4.5).
+ */
+private fun Modifier.maskedForAccessibility(password: TextFieldState): Modifier = semantics {
+    editableText = AnnotatedString("•".repeat(password.text.length))
 }
 
 @Composable
