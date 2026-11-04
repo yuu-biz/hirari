@@ -47,5 +47,17 @@ done
 rm -f /srv/books/cover.zip
 (cd /tmp/cover && zip -q -0 -X /srv/books/cover.zip p1*.jpg p0*.jpg)
 rm -rf /tmp/cover
+# A book of 24 small PNG pages that decode, for the device test of the whole route (app/src/androidTest, RouteSmbTest). The
+# pages of cover.zip are not images.
+mkdir -p /tmp/route
+printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAADwAAABUCAIAAABROcMSAAACzElEQVR42tXV5wIQAgCF0RsRFZVSZLTQQCErq1IyQtNoC2mIKHvUV6SlQZpmg6bRpDS1tLRDlKxI9p7lvsZ9hfPnSAco+A+H/UHRXyj+A6X2ccxXHP855T/hpI+o8j6nbeGMDZy9lvNXcdEy6iym/ttc8SZXz6Lx6zSfxo2TaD2Bm17k1mfpNIquw7lrKPcM4oF+PPIY9OLxh+l/P0/2YFg3nrmd0R157hZeasfEVky+genNeKMRsxvy1uUsqMeS2iy/kHfPY11NNtZg66l8UJmPK7G7HF8cx9dl+LYkOug/Dv2Lwr9x5E8c9R2l91L2S078lIo7OeVDqm2j+ibOWs+5q7lgBZcs5dKFNJjHVXO4dgZNX+X6KbR8mbbjuPl5bhtDlxHc+RTdB3PfAB7qS8/e9HmUJx5k4L0MuZun72BkZ8Z24IX2jG/DKy2Yeh2vNWHmNcy9kvmXsagu71zMylqsOYf3zmTz6Wyvyo6T2VWBz05gz7F8czTfl0BxzD8WQ3HMPx+B4ph/LYLimH8/HMUx/1kIxTH/fQiKY/73YBTHvL8AymM+gOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXbjimF244phduOKYXfj/jQl2BGZXQX4AAAAASUVORK5CYII=' | base64 -d > /tmp/route/page.png
+i=0
+while [ $i -lt 24 ]; do
+  cp /tmp/route/page.png /tmp/route/$(printf 'p%02d.png' $i)
+  i=$((i + 1))
+done
+rm -f /srv/books/route.zip
+(cd /tmp/route && zip -q -0 -X /srv/books/route.zip p*.png)
+rm -rf /tmp/route
 chmod -R a+rX /srv/books
 exec smbd --foreground --no-process-group --debug-stdout
