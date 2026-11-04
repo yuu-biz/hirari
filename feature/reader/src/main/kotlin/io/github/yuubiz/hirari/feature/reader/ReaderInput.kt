@@ -100,7 +100,7 @@ internal class ReaderInput(
                 null -> Unit
             }
         }
-        step(CommandBarEvent.Down(down.position.dp(density), down.uptimeMillis, systemBarsHidden = true))
+        step(CommandBarEvent.Down(down.position.dp(density), down.uptimeMillis, current.config.hideSystemBars))
         down.consume()
         val hold = HoldTimer(down.uptimeMillis)
         while (true) {
