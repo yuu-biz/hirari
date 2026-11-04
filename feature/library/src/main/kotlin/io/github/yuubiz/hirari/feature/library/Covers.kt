@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.feature.library
 
+import android.content.ComponentCallbacks2
+
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -42,7 +44,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class Covers(
     private val source: ThumbnailSource,
     private val books: CoverBooks,
-    memoryBytes: Long,
+    private val memoryBytes: Long,
     private val density: () -> Float,
     decodeContext: CoroutineContext = Dispatchers.IO.limitedParallelism(DECODE_PARALLELISM),
     decode: (File) -> ImageBitmap? = ::decodeCover,
@@ -91,6 +93,16 @@ class Covers(
     }
 
     fun peek(ref: CoverRef): ImageBitmap? = loader.peek(ref.key)
+
+    /**
+     * Answers `onTrimMemory` (docs/spec.md section 5.4): when the app's screens are hidden the covers shrink to an eighth
+     * of their share, and once the app sits in the background they are all let go; the store keeps them on disk.
+     */
+    fun trimMemory(level: Int) = when {
+        level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> loader.trimMemory(0)
+        level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> loader.trimMemory(memoryBytes / 8)
+        else -> Unit
+    }
 
     /** Whether covers are not made, since the last process died making one (docs/spec.md section 4.4), until [resume]. */
     val held: Flow<Boolean> get() = source.held

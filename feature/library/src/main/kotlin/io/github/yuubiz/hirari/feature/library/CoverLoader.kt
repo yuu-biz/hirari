@@ -83,6 +83,16 @@ class MemoryImages<K : Any, I : Any>(private val maxBytes: Long, private val siz
 
     @get:Synchronized
     val size: Int get() = entries.size
+
+    /** Drops the images used least recently until at most [targetBytes] are held. */
+    @Synchronized
+    fun trimTo(targetBytes: Long) {
+        val oldest = entries.entries.iterator()
+        while (bytes > targetBytes && oldest.hasNext()) {
+            bytes -= sizeOf(oldest.next().value)
+            oldest.remove()
+        }
+    }
 }
 
 /**
@@ -106,6 +116,9 @@ class CoverLoader<I : Any>(
 
     /** The decoded cover of [key] if it is in memory. Cheap enough to ask while binding a row. */
     fun peek(key: CoverKey): I? = memory[key]
+
+    /** Gives memory back when the system asks (docs/spec.md section 5.4): [targetBytes] stay at most. */
+    fun trimMemory(targetBytes: Long) = memory.trimTo(targetBytes)
 
     fun show(key: CoverKey, request: ThumbRequest, recoveries: Flow<Unit> = emptyFlow()): Flow<CoverState<I>> = flow {
         val unavailable = AtomicBoolean(false)

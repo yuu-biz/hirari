@@ -35,6 +35,7 @@ import io.github.yuubiz.hirari.feature.text.TextReaderServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.collect
@@ -135,6 +136,12 @@ class HirariApp : Application() {
                 )
             }
         }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::library.isInitialized && library.isCompleted) library.getCompleted().covers.trimMemory(level)
     }
 
     /** Runs the foreground service for as long as a save to the device is under way (docs/spec.md section 4.5). */

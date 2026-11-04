@@ -348,4 +348,19 @@ class CoverLoaderTest {
         assertTrue(nearbyWindow(0, 0, 0).isEmpty())
         assertEquals(99 + MAX_MARGIN, nearbyWindow(0, 99, 1000).last)
     }
+
+    @Test
+    fun trimmingKeepsTheImagesUsedMostRecentlyUnderTheTarget() {
+        val images = MemoryImages<String, String>(maxBytes = 100) { it.length }
+        images.put("a", "1234")
+        images.put("b", "5678")
+        images.put("c", "9012")
+        images["a"]
+        images.trimTo(8)
+        assertEquals(null, images["b"])
+        assertEquals("1234", images["a"])
+        assertEquals("9012", images["c"])
+        images.trimTo(0)
+        assertEquals(0, images.size)
+    }
 }
