@@ -164,32 +164,34 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = { SaveBar(saves, model::cancelSave) },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            val shown = state.content as? FolderContent.Shown
-            if (filtering && shown != null) {
-                FilterField(
-                    value = shown.filter,
-                    onValueChange = model::setFilter,
-                    label = stringResource(R.string.folder_filter),
-                    placeholder = stringResource(R.string.folder_filter_hint),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                )
-            }
-            when (val content = state.content) {
-                FolderContent.Loading -> Unit
-                FolderContent.SlowLoading -> SlowLoading {
-                    model.cancel()
-                    actions.close()
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                val shown = state.content as? FolderContent.Shown
+                if (filtering && shown != null) {
+                    FilterField(
+                        value = shown.filter,
+                        onValueChange = model::setFilter,
+                        label = stringResource(R.string.folder_filter),
+                        placeholder = stringResource(R.string.folder_filter_hint),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
                 }
-                is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
-                is FolderContent.Shown -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = model::refresh, modifier = Modifier.fillMaxSize()) {
-                    FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem })
+                when (val content = state.content) {
+                    FolderContent.Loading -> Unit
+                    FolderContent.SlowLoading -> SlowLoading {
+                        model.cancel()
+                        actions.close()
+                    }
+                    is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
+                    is FolderContent.Shown -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = model::refresh, modifier = Modifier.fillMaxSize()) {
+                        FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem })
+                    }
                 }
             }
+            val shownLook = (state.content as? FolderContent.Shown)?.look
+            if (adjusting && shownLook != null) LookSheet(shownLook, model::changeLook) { adjusting = false }
         }
     }
-    val shownLook = (state.content as? FolderContent.Shown)?.look
-    if (adjusting && shownLook != null) LookSheet(shownLook, model::changeLook) { adjusting = false }
     sheetFor?.let { row ->
         ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
             RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty(), canSave = state.canSave) { action ->

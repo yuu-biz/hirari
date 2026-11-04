@@ -179,6 +179,7 @@
     <string name="save_failed_password_unreadable">保存したパスワードを読めません。サーバーの設定でパスワードを入れ直してください</string>
     <string name="save_failed_local_network">ローカルネットワークへの接続が許可されていません</string>
     <string name="look_title">表示の調整</string>
+    <string name="look_close">表示の調整を閉じる</string>
     <string name="look_columns_portrait">列数（縦画面）</string>
     <string name="look_columns_landscape">列数（横画面）</string>
     <string name="look_auto">自動</string>
