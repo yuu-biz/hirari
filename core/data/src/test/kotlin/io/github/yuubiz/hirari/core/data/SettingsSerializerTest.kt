@@ -72,15 +72,22 @@ class SettingsSerializerTest {
     }
 
     @Test
+    fun `a file stored under the defaults before 2026-11-04 keeps them`() = runTest {
+        val stored = """{"layoutMode":"Auto","coverAlone":true,"scaleMode":"FitScreen","tapAdvancesStops":false}"""
+        val kept = GlobalSettings(layoutMode = LayoutMode.Auto, coverAlone = true, scaleMode = ScaleMode.FitScreen, tapAdvancesStops = false)
+        assertEquals(kept, read(stored))
+    }
+
+    @Test
     fun `missing settings take their defaults`() = runTest {
         assertEquals(GlobalSettings(), read("{}"))
-        assertEquals(GlobalSettings(coverAlone = false), read("""{"coverAlone":false}"""))
+        assertEquals(GlobalSettings(coverAlone = true), read("""{"coverAlone":true}"""))
     }
 
     @Test
     fun `unknown keys are ignored and unknown values fall back to the default`() = runTest {
-        val stored = """{"scaleMode":"Zoom","futureSetting":3,"coverAlone":false}"""
-        assertEquals(GlobalSettings(coverAlone = false), read(stored))
+        val stored = """{"scaleMode":"Zoom","futureSetting":3,"coverAlone":true}"""
+        assertEquals(GlobalSettings(coverAlone = true), read(stored))
     }
 
     @Test

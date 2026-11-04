@@ -28,7 +28,7 @@ import kotlin.math.roundToLong
  * overrides of section 2.9, with the changes made from the command bar during this session.
  */
 data class ReaderConfig(
-    val layout: LayoutSettings = LayoutSettings(LayoutMode.Auto, ReadingDirection.RightToLeft, coverAlone = true),
+    val layout: LayoutSettings = LayoutSettings(LayoutMode.Spread, ReadingDirection.RightToLeft, coverAlone = false),
     val scaleMode: ScaleMode = ScaleMode.FitPage,
     val capAtOriginal: Boolean = false,
     val turnEffect: TurnEffect = TurnEffect.Cover,
@@ -36,7 +36,7 @@ data class ReaderConfig(
     val stopOrder: StopOrder = StopOrder.RowsFirst,
     val stopMaxStep: Float = 0.35f,
     val tapZones: TapZones = TapZones(),
-    val tapAdvancesStops: Boolean = false,
+    val tapAdvancesStops: Boolean = true,
     val swipeToTurn: Boolean = true,
     val volumeKeys: VolumeKeys = VolumeKeys.DownAdvances,
     val barHeightDp: Float = 60f,
@@ -86,6 +86,7 @@ data class ReaderConfig(
             stopOrder = settings.stopOrder,
             stopMaxStep = settings.stopMaxStepPercent / 100f,
             tapZones = TapZones(settings.tapLayout, settings.tapBandPercent, settings.mirrorControls),
+            tapAdvancesStops = settings.tapAdvancesStops,
             swipeToTurn = settings.swipeToTurn,
             volumeKeys = settings.volumeKeys,
             barHeightDp = settings.barHeightDp.toFloat(),

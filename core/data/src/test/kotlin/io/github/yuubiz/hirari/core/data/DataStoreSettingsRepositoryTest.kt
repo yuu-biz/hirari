@@ -29,10 +29,10 @@ class DataStoreSettingsRepositoryTest {
     fun `a change survives reopening the store`() = runBlocking {
         val file = File(folder.root, "settings.json")
         withRepository(file) { repository ->
-            repository.update { it.copy(coverAlone = false, tapBandPercent = 40) }
+            repository.update { it.copy(coverAlone = true, tapBandPercent = 40) }
         }
         val reopened = withRepository(file) { it.settings.first() }
-        assertEquals(GlobalSettings(coverAlone = false, tapBandPercent = 40), reopened)
+        assertEquals(GlobalSettings(coverAlone = true, tapBandPercent = 40), reopened)
     }
 
     @Test

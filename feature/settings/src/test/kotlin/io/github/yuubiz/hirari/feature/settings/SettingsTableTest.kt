@@ -179,6 +179,32 @@ class SettingsTableTest {
         assertNotNull(parseHex(hexOf(Rgb(0x0A0B0C))))
     }
 
+    @Test
+    fun `the default of each switch and choice is the default the spec gives`() {
+        val defaults = GlobalSettings()
+        val spec = specDefaults()
+        val checked = mutableListOf<String>()
+        for (setting in SettingsTable) {
+            val written = spec.getValue(setting.key)
+            val shown = when (setting) {
+                is ToggleSetting -> if (setting.read(defaults)) "オン" else "オフ"
+                is ChoiceSetting<*> -> setting.options.single { it.value == setting.read(defaults) }.label
+                else -> continue
+            }
+            if (shown in written || written in shown) checked += setting.key else assertEquals(written, shown, setting.key)
+        }
+        assertTrue(listOf("layoutMode", "coverAlone", "scaleMode", "tapAdvancesStops").all { it in checked }, "checked $checked")
+    }
+
+    /** The default column of the tables of 4.10, by internal name. */
+    private fun specDefaults(): Map<String, String> {
+        val spec = generateSequence(File("").absoluteFile) { it.parentFile }.map { File(it, "docs/spec.md") }.first { it.isFile }
+        val lines = spec.readLines()
+        val section = lines.subList(lines.indexOfFirst { it.startsWith("### 4.10 ") }, lines.indexOfFirst { it.startsWith("### 4.11 ") })
+        return section.mapNotNull { Regex("^\\| [^|]+ \\| `([A-Za-z]+)` \\| [^|]+ \\| ([^|]+) \\|").find(it)?.destructured }
+            .associate { (name, default) -> name to default.trim() }
+    }
+
     /** The internal names of the tables of 4.10, each with the heading of its table, in the order of the spec. */
     private fun specSettings(): List<Pair<String, String>> {
         val spec = generateSequence(File("").absoluteFile) { it.parentFile }.map { File(it, "docs/spec.md") }.first { it.isFile }

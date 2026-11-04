@@ -51,6 +51,9 @@ class ReaderSheetsTest {
     @get:Rule
     val compose = createEmptyComposeRule()
 
+    @get:Rule
+    val layout = OnePageLayout()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val app = context.applicationContext as HirariApp

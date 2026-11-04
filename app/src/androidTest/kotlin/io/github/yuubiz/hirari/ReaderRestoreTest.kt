@@ -21,6 +21,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import java.io.File
 import java.time.Instant
@@ -31,6 +32,9 @@ import java.time.Instant
  * the debug StrictMode, which kills the process on disk access from the main thread.
  */
 class ReaderRestoreTest {
+    @get:Rule
+    val layout = OnePageLayout()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val app = context.applicationContext as HirariApp

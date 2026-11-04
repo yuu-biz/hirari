@@ -48,8 +48,8 @@ import kotlin.math.roundToLong
 @Serializable
 data class GlobalSettings(
     val readingDirection: ReadingDirection = ReadingDirection.RightToLeft,
-    val layoutMode: LayoutMode = LayoutMode.Auto,
-    val coverAlone: Boolean = true,
+    val layoutMode: LayoutMode = LayoutMode.Spread,
+    val coverAlone: Boolean = false,
     val entryOrder: EntryOrder = EntryOrder.Natural,
     val atBookEnd: BookEndAction = BookEndAction.Ask,
 
@@ -73,7 +73,7 @@ data class GlobalSettings(
     val tapLayout: TapLayout = TapLayout.OneSideBand,
     val tapBandPercent: Int = 10,
     val mirrorControls: Boolean = false,
-    val tapAdvancesStops: Boolean = false,
+    val tapAdvancesStops: Boolean = true,
     val swipeToTurn: Boolean = true,
     val volumeKeys: VolumeKeys = VolumeKeys.DownAdvances,
     val turnHaptics: Boolean = false,

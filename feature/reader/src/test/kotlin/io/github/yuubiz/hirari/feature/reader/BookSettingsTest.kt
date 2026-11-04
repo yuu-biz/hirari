@@ -21,7 +21,7 @@ class BookSettingsTest {
     private val overrides = BookOverrides(
         direction = ReadingDirection.LeftToRight,
         layoutMode = LayoutMode.Single,
-        coverAlone = false,
+        coverAlone = true,
         scaleMode = ScaleMode.FitWidth,
         trim = TrimStrength.Strong,
         rotation = Rotation.Quarter,
@@ -67,7 +67,7 @@ class BookSettingsTest {
         val adopted = settings.adopting(book)
         assertEquals(ReadingDirection.LeftToRight, adopted.readingDirection)
         assertEquals(LayoutMode.Single, adopted.layoutMode)
-        assertEquals(false, adopted.coverAlone)
+        assertEquals(true, adopted.coverAlone)
         assertEquals(ScaleMode.FitWidth, adopted.scaleMode)
         assertEquals(TrimStrength.Strong, adopted.trimStrength)
         assertEquals(ImageAdjust(level = 2, sharpen = true), adopted.adjust)

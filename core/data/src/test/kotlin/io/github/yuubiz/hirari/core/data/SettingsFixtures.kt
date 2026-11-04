@@ -38,8 +38,8 @@ import io.github.yuubiz.hirari.core.model.VolumeKeys
 /** Every setting away from its default, at an allowed value. */
 val everything = GlobalSettings(
     readingDirection = ReadingDirection.LeftToRight,
-    layoutMode = LayoutMode.Spread,
-    coverAlone = false,
+    layoutMode = LayoutMode.SplitWide,
+    coverAlone = true,
     entryOrder = EntryOrder.Stored,
     atBookEnd = BookEndAction.NextBook,
     scaleMode = ScaleMode.FitWidth,
@@ -61,7 +61,7 @@ val everything = GlobalSettings(
     tapLayout = TapLayout.TopAndBottomBands,
     tapBandPercent = 30,
     mirrorControls = true,
-    tapAdvancesStops = true,
+    tapAdvancesStops = false,
     swipeToTurn = false,
     volumeKeys = VolumeKeys.UpAdvances,
     turnHaptics = true,
