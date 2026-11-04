@@ -17,6 +17,8 @@ data class SmbTraffic(val requests: Int, val bytes: Long)
  * so reads that go back and forth between the head, the tail and the place being read do not fetch again. After the
  * server reconnects, the next fetch opens the file again on the new connection.
  *
+ * Every fetch is a request for the [SmbPurpose] the file was opened for.
+ *
  * [read] throws [ConnectionLostException] when the connection broke, timed out, or is being re-established.
  */
 class SmbByteSource internal constructor(
@@ -24,6 +26,7 @@ class SmbByteSource internal constructor(
     private val path: String,
     file: RemoteFile,
     generation: Long,
+    private val purpose: SmbPurpose,
 ) : ByteSource {
     override val size: Long = file.size
 
@@ -84,7 +87,7 @@ class SmbByteSource internal constructor(
         previous?.let(windows::remove)
         val buffer = previous?.bytes?.takeIf { it.size >= length } ?: ByteArray(length)
         var got = 0
-        server.request { link ->
+        server.request(purpose) { link ->
             val remote = fileOn(link)
             while (got < length) {
                 val n = remote.read(offset + got, buffer, got, length - got)

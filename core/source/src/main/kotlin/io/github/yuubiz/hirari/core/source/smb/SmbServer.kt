@@ -13,11 +13,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.IOException
-import java.util.concurrent.Semaphore
-import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
@@ -30,10 +29,13 @@ val RECONNECT_DELAYS: List<Duration> = listOf(500.milliseconds, 1.seconds, 2.sec
 /** Requests in flight to one server at most (docs/spec.md section 8.3). */
 const val MAX_REQUESTS_PER_SERVER = 4
 
+/** Of those, the background ones at most: the last permit is kept for the listing or the page the person waits for. */
+const val MAX_BACKGROUND_REQUESTS_PER_SERVER = MAX_REQUESTS_PER_SERVER - 1
+
 /**
  * One SMB server and share (docs/spec.md sections 3.1 and 6.5). Connects on the first request, shares the
  * connection among every listing and [SmbByteSource] of the share, and lets at most [MAX_REQUESTS_PER_SERVER]
- * requests run at once.
+ * requests run at once, of which at most [MAX_BACKGROUND_REQUESTS_PER_SERVER] are [SmbPurpose.Background].
  *
  * When a request finds the connection broken, the request fails with [ConnectionLostException] and the server
  * reconnects after each of [RECONNECT_DELAYS]. Requests made meanwhile fail at once with the same exception
@@ -66,7 +68,7 @@ class SmbServer internal constructor(
 
     private val job = SupervisorJob(scope.coroutineContext[Job])
     private val scope = CoroutineScope(scope.coroutineContext + job)
-    private val permits = Semaphore(MAX_REQUESTS_PER_SERVER, true)
+    private val gate = RequestGate(MAX_REQUESTS_PER_SERVER, MAX_BACKGROUND_REQUESTS_PER_SERVER)
     private val lock = Any()
     private val connecting = Any()
 
@@ -101,14 +103,16 @@ class SmbServer internal constructor(
      *
      * @throws ConnectionLostException, SmbConnectException, java.io.FileNotFoundException, SmbRequestException
      */
-    suspend fun list(path: String): List<SmbEntry> = withContext(io) { request { it.connection.list(path) } }
+    suspend fun list(path: String, purpose: SmbPurpose = SmbPurpose.Foreground): List<SmbEntry> =
+        withContext(io) { request(purpose) { it.connection.list(path) } }
 
     /**
-     * Opens the file at [path] for random access. Blocks.
+     * Opens the file at [path] for random access. Blocks. Every read of the file is a request for [purpose].
      *
      * @throws ConnectionLostException, SmbConnectException, java.io.FileNotFoundException, SmbRequestException
      */
-    fun open(path: String): SmbByteSource = request { SmbByteSource(this, path, it.connection.open(path), it.generation) }
+    fun open(path: String, purpose: SmbPurpose = SmbPurpose.Foreground): SmbByteSource =
+        request(purpose) { SmbByteSource(this, path, it.connection.open(path), it.generation, purpose) }
 
     /** Starts the reconnect attempts over when they all failed. Does nothing otherwise. */
     fun retry() {
@@ -132,11 +136,11 @@ class SmbServer internal constructor(
     }
 
     /**
-     * Runs [block] on the current connection, holding one of the request permits. A [ConnectionLostException] from
-     * [block] marks that connection broken.
+     * Runs [block] on the current connection, holding one of the request permits for [purpose]. A
+     * [ConnectionLostException] from [block] marks that connection broken.
      */
-    internal fun <T> request(block: (Link) -> T): T {
-        if (!permits.tryAcquire(queueTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)) {
+    internal fun <T> request(purpose: SmbPurpose = SmbPurpose.Foreground, block: (Link) -> T): T {
+        if (!runBlocking { gate.acquire(purpose, queueTimeout) }) {
             throw ConnectionLostException("SMB requests waited too long for their turn")
         }
         try {
@@ -148,7 +152,7 @@ class SmbServer internal constructor(
                 throw e
             }
         } finally {
-            permits.release()
+            gate.release(purpose)
         }
     }
 

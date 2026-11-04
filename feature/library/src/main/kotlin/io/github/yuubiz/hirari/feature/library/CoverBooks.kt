@@ -12,6 +12,7 @@ import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
+import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -44,7 +45,11 @@ interface CoverBooks {
     fun reconnections(place: LibraryLocation): Flow<Unit>
 }
 
-/** The books of SAF places and picked documents through [resolver], and of SMB places through [smb]. */
+/**
+ * The books of SAF places and picked documents through [resolver], and of SMB places through [smb]. Everything it reads
+ * from a server is background work, so covers leave the server's last request permit to the listing and the reader
+ * (docs/spec.md section 8.3).
+ */
 class DeviceCoverBooks(
     private val resolver: ContentResolver,
     private val cacheDir: File,
@@ -60,7 +65,7 @@ class DeviceCoverBooks(
             is CoverOrigin.Archive -> when (val place = origin.place) {
                 is LibraryLocation.SafTree ->
                     Books.openDocument(resolver, documentUri(place, origin.path, origin.documentId), copyDir, decoding, extractDir(spec))
-                is LibraryLocation.SmbShare -> Books.openBook(smb.open(place, origin.path), decoding, extractDir(spec))
+                is LibraryLocation.SmbShare -> Books.openBook(smb.open(place, origin.path, SmbPurpose.Background), decoding, extractDir(spec))
             }
             is CoverOrigin.Image -> {
                 val name = origin.path.substringAfterLast('/')
@@ -69,7 +74,7 @@ class DeviceCoverBooks(
                         val uri = documentUri(place, origin.path, origin.documentId)
                         FolderFile(name, spec.byteSize) { resolver.openByteSource(uri, copyDir) }
                     }
-                    is LibraryLocation.SmbShare -> FolderFile(name, spec.byteSize) { runBlocking { smb.open(place, origin.path) } }
+                    is LibraryLocation.SmbShare -> FolderFile(name, spec.byteSize) { runBlocking { smb.open(place, origin.path, SmbPurpose.Background) } }
                 }
                 Books.openFolder(listOf(file), decoding)
             }
@@ -83,7 +88,7 @@ class DeviceCoverBooks(
                 }
                 is LibraryLocation.SmbShare -> {
                     val files = list(place, origin.path, null).filterNot { it.directory }.map { entry ->
-                        FolderFile(entry.name, entry.size) { runBlocking { smb.open(place, "${origin.path}/${entry.name}") } }
+                        FolderFile(entry.name, entry.size) { runBlocking { smb.open(place, "${origin.path}/${entry.name}", SmbPurpose.Background) } }
                     }
                     Books.openFolder(files, decoding)
                 }
@@ -115,7 +120,7 @@ class DeviceCoverBooks(
                 if (!place.permissionHeld) throw SecurityException("the grant of ${place.displayName} is gone")
                 folders.list(place.treeUri, path, documentId)
             }
-            is LibraryLocation.SmbShare -> smb.list(place, path)
+            is LibraryLocation.SmbShare -> smb.list(place, path, SmbPurpose.Background)
         }
         return when (listing) {
             is Listing.Listed -> listing.entries

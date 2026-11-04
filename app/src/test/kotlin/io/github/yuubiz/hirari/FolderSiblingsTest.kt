@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.save.SaveFolder
 import io.github.yuubiz.hirari.core.source.save.SaveOutcome
 import io.github.yuubiz.hirari.core.source.save.SaveProgress
+import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import io.github.yuubiz.hirari.feature.library.FolderEntry
 import io.github.yuubiz.hirari.feature.library.FolderLister
 import io.github.yuubiz.hirari.feature.library.ListFailure
@@ -42,7 +43,7 @@ internal class Folders(private val listings: Map<String, List<FolderEntry>>) : F
 internal class Shares(private val listings: Map<String, List<FolderEntry>>) : SmbPlaces {
     val listed = mutableListOf<Pair<LibraryLocation.SmbShare, String>>()
 
-    override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
+    override suspend fun list(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): Listing {
         listed += place to path
         return listings.listing(path, documentId = null)
     }
@@ -53,7 +54,7 @@ internal class Shares(private val listings: Map<String, List<FolderEntry>>) : Sm
 
     override suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult = error("not used")
 
-    override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource = error("not used")
+    override suspend fun open(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): ByteSource = error("not used")
 
     override suspend fun save(place: LibraryLocation.SmbShare, path: String, directory: Boolean, destination: SaveFolder, onProgress: (SaveProgress) -> Unit): SaveOutcome =
         error("not used")

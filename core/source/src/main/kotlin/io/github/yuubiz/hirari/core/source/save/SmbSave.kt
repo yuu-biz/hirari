@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectFailure
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
+import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import io.github.yuubiz.hirari.core.source.smb.SmbRequestException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import kotlinx.coroutines.CancellationException
@@ -111,7 +112,7 @@ private class SmbSaveRun(
     private suspend fun walk(path: String, name: String, depth: Int): DirNode {
         if (depth > SAVE_MAX_DEPTH) throw SmbRequestException("folders nested too deep")
         currentCoroutineContext().ensureActive()
-        val children = server.list(path).sortedBy { it.name }.map {
+        val children = server.list(path, SmbPurpose.Background).sortedBy { it.name }.map {
             if (it.isDirectory) walk(it.path, it.name, depth + 1) else FileNode(it.name, it.path, it.size)
         }
         return DirNode(name, children)
@@ -147,7 +148,7 @@ private class SmbSaveRun(
 
     private suspend fun copyFile(into: SaveFolder, node: FileNode, resolve: Boolean): String {
         current = node.name
-        val source = server.open(node.path)
+        val source = server.open(node.path, SmbPurpose.Background)
         val held = mutableListOf<String>()
         try {
             bytesTotal += source.size - node.size

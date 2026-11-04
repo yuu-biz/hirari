@@ -23,6 +23,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbConnectFailure
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectResult
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
 import io.github.yuubiz.hirari.core.source.smb.SmbLogin
+import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import io.github.yuubiz.hirari.core.source.smb.SmbRequestException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
@@ -63,8 +64,12 @@ sealed interface SmbTestResult {
 
 /** The SMB places of the library (docs/spec.md section 4.5). Every call does its I/O off the main thread. */
 interface SmbPlaces {
-    /** The children of the folder at [path], counted from the place's own folder. */
-    suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing
+    /**
+     * The children of the folder at [path], counted from the place's own folder. A listing for [SmbPurpose.Background],
+     * such as a cover's, never takes the server's last request permit from one the person waits for (docs/spec.md
+     * section 8.3).
+     */
+    suspend fun list(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose = SmbPurpose.Foreground): Listing
 
     /**
      * The user's retry of docs/spec.md section 6.5: when every reconnect of the place's server failed, starts them
@@ -85,11 +90,12 @@ interface SmbPlaces {
     suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult
 
     /**
-     * Opens the file at [path], counted from the place's folder, for random access.
+     * Opens the file at [path], counted from the place's folder, for random access. Every read of it is a request for
+     * [purpose].
      *
      * @throws java.io.IOException as [SmbServer.open] does, and when the system blocks the local network.
      */
-    suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource
+    suspend fun open(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose = SmbPurpose.Foreground): ByteSource
 
     /**
      * 端末に保存 (docs/spec.md section 4.5): copies the file or folder at [path], counted from the place's folder, into
@@ -162,11 +168,11 @@ class SmbjPlaces(
     private val scope: CoroutineScope,
     private val timeouts: SmbTimeouts = SmbTimeouts(),
 ) : SmbPlaces {
-    override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
+    override suspend fun list(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): Listing {
         if (!localNetwork.granted()) return Listing.Failed(ListFailure.NoLocalNetwork)
         return try {
             val server = shares.server(place)
-            val entries = server.list(normalizePath("${place.basePath}/$path")).map {
+            val entries = server.list(normalizePath("${place.basePath}/$path"), purpose).map {
                 FolderEntry(it.name, documentId = null, directory = it.isDirectory, size = it.size, modified = it.modified)
             }
             Listing.Listed(folderDocumentId = null, entries)
@@ -232,10 +238,10 @@ class SmbjPlaces(
         }
     }
 
-    override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource {
+    override suspend fun open(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): ByteSource {
         if (!localNetwork.granted()) throw SmbConnectException(SmbConnectFailure.Unreachable, "local network not granted")
         val server = shares.server(place)
-        return openOwned(Dispatchers.IO) { server.open(normalizePath("${place.basePath}/$path")) }
+        return openOwned(Dispatchers.IO) { server.open(normalizePath("${place.basePath}/$path"), purpose) }
     }
 
     override suspend fun save(place: LibraryLocation.SmbShare, path: String, directory: Boolean, destination: SaveFolder, onProgress: (SaveProgress) -> Unit): SaveOutcome {

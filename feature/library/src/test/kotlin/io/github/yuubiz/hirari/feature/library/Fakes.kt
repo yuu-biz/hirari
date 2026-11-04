@@ -53,6 +53,7 @@ import io.github.yuubiz.hirari.core.source.save.SaveFile
 import io.github.yuubiz.hirari.core.source.save.SaveFolder
 import io.github.yuubiz.hirari.core.source.save.SaveOutcome
 import io.github.yuubiz.hirari.core.source.save.SaveProgress
+import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -343,11 +344,14 @@ internal class FakeSmb : SmbPlaces {
     val reconnects = mutableListOf<LocationId>()
     var result: SmbTestResult = SmbTestResult.Connected
     val listed = mutableListOf<Pair<LibraryLocation.SmbShare, String>>()
+    val listPurposes = mutableListOf<SmbPurpose>()
+    val opened = mutableListOf<Pair<String, SmbPurpose>>()
     val tests = mutableListOf<Triple<SmbServer, String?, CredentialRef?>>()
     val forgotten = mutableListOf<LocationId>()
 
-    override suspend fun list(place: LibraryLocation.SmbShare, path: String): Listing {
+    override suspend fun list(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): Listing {
         listed += place to path
+        listPurposes += purpose
         if (lost) return Listing.Failed(ListFailure.Unreachable)
         failure?.let { return Listing.Failed(it) }
         val entries = folders[path] ?: return Listing.Failed(ListFailure.NotFound)
@@ -370,7 +374,10 @@ internal class FakeSmb : SmbPlaces {
         return result
     }
 
-    override suspend fun open(place: LibraryLocation.SmbShare, path: String): ByteSource = throw java.io.FileNotFoundException(path)
+    override suspend fun open(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): ByteSource {
+        opened += path to purpose
+        throw java.io.FileNotFoundException(path)
+    }
 
     class Save(val place: LibraryLocation.SmbShare, val path: String, val directory: Boolean, val destination: SaveFolder)
 
