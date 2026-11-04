@@ -2,8 +2,6 @@ package io.github.yuubiz.hirari.core.model
 
 import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.exp
-import kotlin.math.ln
 import kotlin.math.roundToLong
 
 /** The height over the width of a page whose shape is not known, while no page is: a portrait page of 1:√2. */
@@ -129,20 +127,15 @@ sealed interface ScrollMotion {
         override fun shifted(by: Double): Move = copy(from = from + by, to = to + by)
     }
 
-    /** A glide from [from] at [velocity] pixels per millisecond, slowing by [GLIDE_FRICTION_PER_S] for [durationMs]. */
-    data class Glide(val from: Double, val velocity: Double, val startMs: Long, val durationMs: Long) : ScrollMotion {
-        override fun topAt(nowMs: Long): Double {
-            val t = (nowMs - startMs).coerceIn(0L, durationMs).toDouble()
-            return from + velocity / FRICTION_PER_MS * (1.0 - exp(-FRICTION_PER_MS * t))
-        }
+    /** A glide down the strip from [from], carried by the vertical part of [inertia]. */
+    data class Glide(val from: Double, val inertia: Inertia) : ScrollMotion {
+        override fun topAt(nowMs: Long): Double = from + inertia.distanceYAt(nowMs)
 
-        override fun isDoneAt(nowMs: Long): Boolean = nowMs - startMs >= durationMs
+        override fun isDoneAt(nowMs: Long): Boolean = inertia.isDoneAt(nowMs)
 
         override fun shifted(by: Double): Glide = copy(from = from + by)
     }
 }
-
-private const val FRICTION_PER_MS = GLIDE_FRICTION_PER_S / 1000.0
 
 /**
  * Where the screen is over a [Strip] (docs/spec.md sections 2.5 and 2.6). [anchor] is the point of the strip at the
@@ -180,10 +173,8 @@ data class StripScroll(val anchor: StripPosition = StripPosition(0, 0f), val x: 
      * the way the finger went, slower and slower, when it went faster than [GLIDE_MIN_DP_PER_S].
      */
     fun flung(fingerVelocity: Float, nowMs: Long, pxPerDp: Float, strip: Strip, screen: StripScreen): StripScroll {
-        val dpPerS = (-fingerVelocity / pxPerDp).coerceIn(-GLIDE_MAX_DP_PER_S, GLIDE_MAX_DP_PER_S)
-        if (abs(dpPerS) < GLIDE_MIN_DP_PER_S) return copy(motion = null)
-        val durationMs = (ln(abs(dpPerS) / GLIDE_STOP_DP_PER_S) / FRICTION_PER_MS).roundToLong()
-        return copy(motion = ScrollMotion.Glide(top(strip, screen), dpPerS * pxPerDp / 1000.0, nowMs, durationMs))
+        val inertia = Inertia.of(0f, -fingerVelocity / pxPerDp, nowMs, pxPerDp) ?: return copy(motion = null)
+        return copy(motion = ScrollMotion.Glide(top(strip, screen), inertia))
     }
 
     /**

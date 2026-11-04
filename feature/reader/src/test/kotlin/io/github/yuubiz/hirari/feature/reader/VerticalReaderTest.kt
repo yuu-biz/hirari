@@ -128,7 +128,7 @@ class VerticalReaderTest {
     fun aDragScrollsAndAFlingGlidesOnUntilItStops() {
         val state = strip(30).reduce(ReaderEvent.Pan(0f, -500f))
         near(500.0, state.top)
-        val flung = state.reduce(ReaderEvent.Fling(-6000f, nowMs = 0))
+        val flung = state.reduce(ReaderEvent.Fling(0f, -6000f, nowMs = 0))
         assertNotNull(flung.scroll!!.motion)
         val later = flung.reduce(ReaderEvent.Tick(300))
         assertTrue(later.top > state.top)
@@ -193,7 +193,7 @@ class VerticalReaderTest {
     fun learningAShapeAboveDuringAStepOrAGlideGoesOnFromWhatTheScreenShows() {
         val starts = mapOf<String, (ReaderState) -> ReaderState>(
             "step" to { it.act(ReaderAction.TurnView(Turn.Forward), nowMs = 0) },
-            "glide" to { it.reduce(ReaderEvent.Fling(-6000f, nowMs = 0)) },
+            "glide" to { it.reduce(ReaderEvent.Fling(0f, -6000f, nowMs = 0)) },
         )
         for ((name, start) in starts) {
             val moving = start(ReaderState.open(20, 5, VERTICAL, PORTRAIT, offset = 0.5f)).reduce(ReaderEvent.Tick(50))

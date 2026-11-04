@@ -213,7 +213,7 @@ class StripTest {
                 val moved = top - previous
                 assertTrue(moved * -velocity >= -1e-6, "a finger moving $velocity moved the strip by $moved")
                 previous = top
-                assertTrue(now - startMs <= motion.durationMs + 16, "the glide ends")
+                assertTrue(now - startMs <= motion.inertia.durationMs + 16, "the glide ends")
             }
         }
     }

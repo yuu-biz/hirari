@@ -179,7 +179,7 @@ internal class ReaderInput(
         val position = current.positionAt(SystemClock.uptimeMillis())
         val (hiddenLeft, hiddenRight) = if (geometry != null && position != null) geometry.hidden(position) else Pair(0f, 0f)
         val pullable = if (current.scroll != null) emptySet() else pullableSides(hiddenLeft, hiddenRight)
-        val caught = current.scroll?.motion is ScrollMotion.Glide
+        val caught = current.scroll?.motion is ScrollMotion.Glide || current.place is Place.Gliding
         if (caught) viewModel.dispatch(ReaderEvent.Catch)
         var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(down.position.dp(density), down.uptimeMillis, pullable)).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
@@ -216,8 +216,8 @@ internal class ReaderInput(
 
     /**
      * Feeds [event] to the touch in [state]; true once the touch is over, by a finger going up or a second one
-     * starting a pinch. While the loupe is up a second finger changes nothing. A touch that [caught] a glide of
-     * 縦に連続 does not tap, and a scroll of the strip let go while moving glides on.
+     * starting a pinch. While the loupe is up a second finger changes nothing. A touch that [caught] a glide does not
+     * tap, and a scroll let go while moving glides on.
      */
     private suspend fun AwaitPointerEventScope.followed(
         event: PointerEvent,
@@ -241,7 +241,7 @@ internal class ReaderInput(
         if (change.pressed) return false
         val released = velocity.calculateVelocity()
         val vx = released.x / density
-        if (state is TouchState.Scrolling) viewModel.dispatch(ReaderEvent.Fling(released.y, change.uptimeMillis))
+        if (state is TouchState.Scrolling) viewModel.dispatch(ReaderEvent.Fling(released.x, released.y, change.uptimeMillis))
         when (val outcome = touch.reduce(state, TouchEvent.Up(change.position.dp(density), change.uptimeMillis, vx)).outcome) {
             is TouchOutcome.Tap -> if (!caught) tap(outcome.point, regions, change.uptimeMillis)
             is TouchOutcome.Commit -> viewModel.dispatch(ReaderEvent.PullEnded(commit = true, SystemClock.uptimeMillis()))

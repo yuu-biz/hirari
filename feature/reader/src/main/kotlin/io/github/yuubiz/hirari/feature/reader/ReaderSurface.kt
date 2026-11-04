@@ -130,7 +130,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         for (tick in viewModel.turnHaptics) view.performTurnHaptic()
     }
 
-    LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move, state.edgeHit, state.scroll?.motion) {
+    LaunchedEffect(state.transition, state.stopTravel, state.loupe?.move, state.edgeHit, state.scroll?.motion, (state.place as? Place.Gliding)?.inertia) {
         if (!state.animating) return@LaunchedEffect
         while (true) {
             val now = withFrameMillis { it }
@@ -251,7 +251,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
 
 /** Whether a frame moves something, so the frames tick. */
 private val ReaderState.animating: Boolean
-    get() = transition != null || stopTravel != null || loupe?.move != null || edgeHit != null || scroll?.motion != null
+    get() = transition != null || stopTravel != null || loupe?.move != null || edgeHit != null || scroll?.motion != null || place is Place.Gliding
 
 /**
  * 取得の状況 under the progress indicator for a book on a server (docs/spec.md section 4.8): where the view's data

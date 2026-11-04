@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.reader
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.EdgeHit
+import io.github.yuubiz.hirari.core.model.Inertia
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.Turn
@@ -23,6 +24,10 @@ import io.github.yuubiz.hirari.core.model.StripScreen
 import io.github.yuubiz.hirari.core.model.StripScroll
 import io.github.yuubiz.hirari.core.model.rotated
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
+import kotlin.math.abs
+
+/** Positions closer than this, in pixels, count as the same. */
+private const val SAME_PX = 0.5f
 
 /** Where the screen rests in the current view. */
 sealed interface Place {
@@ -33,6 +38,12 @@ sealed interface Place {
 
     /** Moved by a finger or a pinch, off the stops. */
     data class Panned(val position: Point) : Place
+
+    /**
+     * Carried on by [inertia] from [from] after a finger let go of a pan while moving, and at [at] as of the last frame.
+     * It stops at the edges of the view and never turns (docs/spec.md section 4.8, 端引きでめくる).
+     */
+    data class Gliding(val from: Point, val inertia: Inertia, val at: Point) : Place
 }
 
 /**
@@ -117,7 +128,7 @@ data class ReaderState(
         return when (val place = place) {
             is Place.Entered -> StopCursor.entering(path, place.turn).index
             is Place.AtStop -> place.index.coerceIn(0, path.last)
-            is Place.Panned -> null
+            is Place.Panned, is Place.Gliding -> null
         }
     }
 
@@ -128,13 +139,35 @@ data class ReaderState(
             is Place.Entered -> StopCursor.entering(path, place.turn).point
             is Place.AtStop -> path.stops[place.index.coerceIn(0, path.last)].point
             is Place.Panned -> geometry.clamp(place.position)
+            is Place.Gliding -> geometry.clamp(place.at)
         }
     }
 
-    /** Where the screen is in the current view at [nowMs], moving between stops or resting. */
+    /** Where the screen is in the current view at [nowMs], moving between stops, gliding, or resting. */
     fun positionAt(nowMs: Long): Point? {
         val geometry = geometry() ?: return null
-        return stopTravel?.move?.positionAt(nowMs) ?: positionOf(geometry, place)
+        val gliding = place as? Place.Gliding
+        return stopTravel?.move?.positionAt(nowMs) ?: gliding?.let { geometry.clamp(it.raw(nowMs)) } ?: positionOf(geometry, place)
+    }
+
+    private fun Place.Gliding.raw(nowMs: Long) =
+        Point((from.x + inertia.distanceXAt(nowMs)).toFloat(), (from.y + inertia.distanceYAt(nowMs)).toFloat())
+
+    /**
+     * The glide at [nowMs]: it moves on, or comes to rest once its time is up or every axis has stopped. An axis stops
+     * at an edge of the view; an axis the view fits along, or one the finger did not move along, never moves.
+     */
+    private fun glided(nowMs: Long): Place {
+        val gliding = place as? Place.Gliding ?: return place
+        val geometry = geometry() ?: return place
+        val raw = gliding.raw(nowMs)
+        val at = geometry.clamp(raw)
+        fun stopped(velocity: Double, wanted: Float, kept: Float, content: Float, screen: Float) =
+            velocity == 0.0 || content <= screen + SAME_PX || abs(wanted - kept) >= SAME_PX
+        val done = gliding.inertia.isDoneAt(nowMs) ||
+            stopped(gliding.inertia.velocityX, raw.x, at.x, geometry.size.width, viewport.width) &&
+            stopped(gliding.inertia.velocityY, raw.y, at.y, geometry.size.height, viewport.height)
+        return if (done) Place.Panned(at) else gliding.copy(at = at)
     }
 
     /**
@@ -210,6 +243,7 @@ data class ReaderState(
             }
         is ReaderEvent.ConfigChanged -> configured(event.config)
         is ReaderEvent.Tick -> copy(
+            place = glided(event.nowMs),
             transition = transition?.takeUnless { it.animation.isDoneAt(event.nowMs) },
             stopTravel = stopTravel?.takeUnless { it.move.motion.isDoneAt(event.nowMs) },
             loupe = loupe?.at(event.nowMs),
@@ -220,8 +254,13 @@ data class ReaderState(
         is ReaderEvent.LoupeMoved -> copy(loupe = loupe?.moved(event.finger, viewport.size, viewport.density, event.nowMs))
         ReaderEvent.LoupeHidden -> copy(loupe = null)
         is ReaderEvent.Pan -> byHand().panned(event.dx, event.dy)
-        is ReaderEvent.Fling -> copy(scroll = scroll?.flung(event.velocityY, event.nowMs, viewport.density, strip, stripScreen)).following()
-        ReaderEvent.Catch -> if (scroll?.motion is ScrollMotion.Glide) settled() else this
+        is ReaderEvent.Fling ->
+            if (scroll != null) {
+                copy(scroll = scroll.flung(event.velocityY, event.nowMs, viewport.density, strip, stripScreen)).following()
+            } else {
+                flung(event.velocityX, event.velocityY, event.nowMs)
+            }
+        ReaderEvent.Catch -> if (scroll?.motion is ScrollMotion.Glide || place is Place.Gliding) settled() else this
         is ReaderEvent.Pulling -> byHand().copy(pull = Pull(event.turn, neighbor(event.turn), event.pulledDp))
         is ReaderEvent.PullEnded -> released(event.commit, event.nowMs)
         is ReaderEvent.Zoom -> byHand().zoomed(event.event, event.focus)
@@ -234,7 +273,8 @@ data class ReaderState(
     /** The state with every running animation at its end, as the next input finds it. */
     private fun settled(): ReaderState {
         if (scroll != null) return copy(transition = null, pull = null, scroll = scroll.settled(strip, stripScreen)).following()
-        val travel = stopTravel ?: return copy(transition = null, pull = null)
+        val resting = (place as? Place.Gliding)?.let { Place.Panned(it.at) } ?: place
+        val travel = stopTravel ?: return copy(transition = null, pull = null, place = resting)
         return copy(transition = null, pull = null, stopTravel = null, place = Place.AtStop(travel.index))
     }
 
@@ -378,6 +418,19 @@ data class ReaderState(
         return copy(place = Place.Panned(geometry.clamp(Point(from.x - dx, from.y - dy))))
     }
 
+    /**
+     * A finger that panned the view let go at [velocityX] and [velocityY] screen pixels per second: the view glides on
+     * the way the finger went, as the strip of 縦に連続 does, when it went fast enough.
+     */
+    private fun flung(velocityX: Float, velocityY: Float, nowMs: Long): ReaderState {
+        val panned = place as? Place.Panned ?: return this
+        val geometry = geometry()?.takeIf { it.overflows } ?: return this
+        val density = viewport.density
+        val inertia = Inertia.of(-velocityX / density, -velocityY / density, nowMs, density) ?: return this
+        val from = geometry.clamp(panned.position)
+        return copy(place = Place.Gliding(from, inertia, from))
+    }
+
     private fun released(commit: Boolean, nowMs: Long): ReaderState {
         val pull = pull ?: return this
         val neighbor = pull.neighbor ?: return copy(pull = null).let { if (commit) it.ranInto(it, pull.turn, nowMs) else it }
@@ -454,10 +507,13 @@ sealed interface ReaderEvent {
     /** A finger moved the zoomed view, or the strip of 縦に連続, by [dx] and [dy] screen pixels. */
     data class Pan(val dx: Float, val dy: Float) : ReaderEvent
 
-    /** A finger that scrolled went up at [velocityY] pixels per second, positive downward, which 縦に連続 glides on. */
-    data class Fling(val velocityY: Float, val nowMs: Long) : ReaderEvent
+    /**
+     * A finger that scrolled went up at [velocityX] and [velocityY] pixels per second, positive right and down. A view
+     * larger than the screen glides on, and so does the strip of 縦に連続, which takes only [velocityY].
+     */
+    data class Fling(val velocityX: Float, val velocityY: Float, val nowMs: Long) : ReaderEvent
 
-    /** A finger went down on the strip while it glided, which stops it where it is. */
+    /** A finger went down on the strip or the view while it glided, which stops it where it is. */
     data object Catch : ReaderEvent
 
     /** A finger pulls past the edge toward [turn], by [pulledDp] after resistance. */
