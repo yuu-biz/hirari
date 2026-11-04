@@ -1,7 +1,9 @@
 package io.github.yuubiz.hirari.core.image
 
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.ImageType
+import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.source.ByteSource
@@ -43,12 +45,37 @@ class OpenBookTest {
     fun aReversedBookReadsItsLastPageFirstAndNumbersThePagesInTheNewOrder() = runTest {
         val opened = mutableListOf<String>()
         val files = listOf("1.jpg", "2.jpg", "3.jpg").map { name -> FolderFile(name, size = null) { opened += name; throw IOException("not here") } }
-        val book = (Books.openFolder(files, decoding) as BookResult.Opened).book.reversed()
+        val book = (Books.openFolder(files, decoding) as BookResult.Opened).book.ordered(PageOrder(reversed = true))
         assertEquals(listOf("3.jpg", "2.jpg", "1.jpg"), book.pages.map { it.name })
         assertEquals(listOf(0, 1, 2), book.pages.map { it.index })
         book.raw(0)
         assertEquals(listOf("3.jpg"), opened)
         book.close()
+    }
+
+    @Test
+    fun anArchiveInTheStoredOrderReadsItsEntriesAsStoredAndAFolderStaysInNaturalOrder() = runTest {
+        val names = listOf("10.jpg", "2.jpg", "1.jpg")
+        val read = mutableListOf<Int>()
+        val bytes = object : PageBytes {
+            override suspend fun read(page: PageEntry): PageResult<ByteArray> {
+                read += page.entryIndex
+                return PageResult.Failed(FailureReason.ReadError, retryable = true)
+            }
+
+            override fun close() = Unit
+        }
+        val entries = names.mapIndexed { i, name -> PageEntry(-1, i, name.toByteArray(), name, null, sniffed = null) }
+        val archive = OpenBook(BookContent.Images(bytes), Container.Zip, sortedPages(entries), indexError = null, decoding).ordered(PageOrder(EntryOrder.Stored))
+        assertEquals(names, archive.pages.map { it.name })
+        archive.raw(0)
+        assertEquals(listOf(0), read)
+        archive.close()
+
+        val files = names.map { FolderFile(it, size = null) { throw IOException("not here") } }
+        val folder = (Books.openFolder(files, decoding) as BookResult.Opened).book.ordered(PageOrder(EntryOrder.Stored))
+        assertEquals(listOf("1.jpg", "2.jpg", "10.jpg"), folder.pages.map { it.name })
+        folder.close()
     }
 
     @Test

@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
+import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
@@ -104,6 +105,18 @@ class ArchiveViewModelTest {
         val shown = list.shown()
         assertEquals(listOf("第10話.jpg", "第2話.jpg", "第1話.jpg"), shown.pages.map { it.page.name })
         assertEquals(listOf(0, 1, 2), shown.pages.map { it.page.index })
+    }
+
+    @Test
+    fun `the stored entry order lists the pages as the archive holds them, also when changed with the list open`() = runTest {
+        val list = viewModel()
+        fixture.settings.value.value = fixture.settings.value.value.copy(entryOrder = EntryOrder.Stored)
+
+        val shown = list.shown()
+        assertEquals(listOf("第2話.jpg", "第1話.jpg", "第10話.jpg"), shown.pages.map { it.page.name })
+        assertEquals(listOf(0, 1, 2), shown.pages.map { it.page.index })
+        fixture.books.updateOverrides(id) { it.copy(reverseOrder = true) }
+        assertEquals(listOf("第10話.jpg", "第1話.jpg", "第2話.jpg"), list.shown().pages.map { it.page.name })
     }
 
     @Test

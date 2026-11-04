@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.data.FolderCover
+import io.github.yuubiz.hirari.core.image.PageOrder
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
@@ -157,10 +158,10 @@ class ArchiveViewModel(
         val contents = opened.contents
         val id = opened.id
         val chosen = services.books.overrides(id).map { it.nameCharset to (it.reverseOrder == true) }.distinctUntilChanged()
-        val fallback = services.settings.settings.map { Charset.forName(it.fallbackCharset.charsetName) }.distinctUntilChanged()
-        val rows = combine(chosen, fallback) { (chosen, reversed), fallback -> Triple(chosen, contents.charset(chosen, fallback), reversed) }
+        val global = services.settings.settings.map { Charset.forName(it.fallbackCharset.charsetName) to it.entryOrder }.distinctUntilChanged()
+        val rows = combine(chosen, global) { (chosen, reversed), (fallback, entries) -> Triple(chosen, contents.charset(chosen, fallback), PageOrder(entries, reversed)) }
             .distinctUntilChanged()
-            .mapLatest { (chosen, charset, reversed) -> Triple(chosen, charset, contents.rows(charset, id, reversed)) }
+            .mapLatest { (chosen, charset, order) -> Triple(chosen, charset, contents.rows(charset, id, order)) }
             .flowOn(compute)
         val progress = rows
             .map { (_, _, rows) -> rows.texts.map { it.id } + id }
@@ -218,9 +219,11 @@ class ArchiveViewModel(
         write {
             charsetChanges.withLock {
                 val overrides = books.overrides(id).first()
-                val fallback = Charset.forName(settings.settings.first().fallbackCharset.charsetName)
+                val global = settings.settings.first()
+                val fallback = Charset.forName(global.fallbackCharset.charsetName)
+                val order = PageOrder(global.entryOrder, overrides.reverseOrder == true)
                 val (before, after) = withContext(compute) {
-                    listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id, overrides.reverseOrder == true).pages }
+                    listOf(overrides.nameCharset, charset).map { opened.contents.rows(opened.contents.charset(it, fallback), id, order).pages }
                 }
                 withContext(NonCancellable) {
                     books.updateOverrides(id) { it.copy(nameCharset = charset) }

@@ -220,6 +220,9 @@ fun ReaderScreen(
                 onOpenSettings(target)
             }
         }
+        viewModel.reordered?.let { request ->
+            LaunchedEffect(request) { onOpenBook(request) }
+        }
         ui.reopening?.let { request ->
             LaunchedEffect(request) {
                 ui.reopening = null

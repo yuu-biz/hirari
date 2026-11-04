@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.image
 
 import android.graphics.Bitmap
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.PageEntry
@@ -44,7 +45,7 @@ internal sealed interface BookContent : Closeable {
  * [CancellationException] and virtual machine errors other than [OutOfMemoryError] get through. Calls may
  * overlap; an archive serializes its reads in its session, and a PDF its drawing in its document session.
  *
- * @property pages the page list in natural order, or its reverse after [reversed], fixed while the book is open (section 3.5).
+ * @property pages the page list in natural order, or in another after [ordered], fixed while the book is open (section 3.5).
  * @property indexError why listing the archive stopped early, or null when it reached the end.
  * @property container what the book was opened from, for the index of opened books (section 2.2).
  */
@@ -67,10 +68,14 @@ class OpenBook internal constructor(
     }
 
     /**
-     * This book with its pages in the reverse order, for a book whose `reverseOrder` is on (docs/spec.md section
-     * 2.9). The result takes over what this book reads from; call it right after opening, and use only the result.
+     * This book with its pages in [order] (docs/spec.md section 3.5). A folder keeps the natural order under
+     * 格納順, since the order its provider lists the files in means nothing. The result takes over what this book
+     * reads from; call it right after opening, and use only the result.
      */
-    fun reversed(): OpenBook = OpenBook(content, container, pages.asReversed().mapIndexed { i, entry -> entry.copy(index = i) }, indexError, decoding)
+    fun ordered(order: PageOrder): OpenBook {
+        val own = if (container == Container.Folder) order.copy(entries = EntryOrder.Natural) else order
+        return OpenBook(content, container, sortedPages(pages, own), indexError, decoding)
+    }
 
     /**
      * The encoded bytes of the page at [index], for the raw-data prefetch layer to hold (docs/spec.md section

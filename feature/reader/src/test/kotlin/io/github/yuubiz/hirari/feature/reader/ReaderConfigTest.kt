@@ -73,10 +73,8 @@ class ReaderConfigTest {
         "showDotFiles",
         "breathControl",
         "breathSensitivity",
+        "entryOrder",
     )
-
-    /** Settings of the image reader in docs/spec.md section 4.10 that it does not read yet: 書庫内の並び, which no page list follows. */
-    private val notReadYet = setOf("entryOrder")
 
     /** Settings of the text reader, the lists, and the whole app. */
     private val otherScreens = setOf(
@@ -95,7 +93,7 @@ class ReaderConfigTest {
     @Test
     fun everyGlobalSettingIsSortedIntoWhereTheReaderReadsIt() {
         val settings = GlobalSettings::class.java.declaredFields.filterNot { Modifier.isStatic(it.modifiers) }.map { it.name }.toSet()
-        val groups = listOf(readThroughConfig.keys, readBesideConfig, notReadYet, otherScreens)
+        val groups = listOf(readThroughConfig.keys, readBesideConfig, otherScreens)
         assertEquals(settings, groups.flatten().toSet(), "a setting is missing from the groups, or a group names one that is gone")
         assertEquals(groups.sumOf { it.size }, groups.flatten().toSet().size, "a setting is in two groups")
     }

@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image
 
+import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.NaturalPageOrder
 import io.github.yuubiz.hirari.core.model.PageEntry
 import java.util.Locale
@@ -31,11 +32,19 @@ fun pageCandidate(name: String, isDirectory: Boolean): PageCandidate {
 }
 
 /**
- * [entries] in natural order, or in the reverse of it for a book whose `reverseOrder` is on (docs/spec.md section
- * 2.9), with [PageEntry.index] set to the position in that order.
+ * The order of a book's pages (docs/spec.md section 3.5): 書庫内の並び, natural or as the archive stores them, and
+ * reversed for a book whose `reverseOrder` is on (section 2.9).
  */
-fun sortedPages(entries: List<PageEntry>, reversed: Boolean = false): List<PageEntry> =
-    entries.sortedWith(NaturalPageOrder).let { if (reversed) it.asReversed() else it }.mapIndexed { i, entry -> entry.copy(index = i) }
+data class PageOrder(val entries: EntryOrder = EntryOrder.Natural, val reversed: Boolean = false)
+
+/** [entries] in [order], with [PageEntry.index] set to the position in that order. */
+fun sortedPages(entries: List<PageEntry>, order: PageOrder = PageOrder()): List<PageEntry> {
+    val sorted = when (order.entries) {
+        EntryOrder.Natural -> entries.sortedWith(NaturalPageOrder)
+        EntryOrder.Stored -> entries.sortedBy { it.entryIndex }
+    }
+    return (if (order.reversed) sorted.asReversed() else sorted).mapIndexed { i, entry -> entry.copy(index = i) }
+}
 
 private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "jpe", "jfif", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "jxl")
 private val EXCLUDED_EXTENSIONS = setOf("txt", "nfo", "xml", "sfv", "md5", "url")

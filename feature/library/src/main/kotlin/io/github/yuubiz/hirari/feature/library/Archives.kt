@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.archive.EntryNames
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.archive.OpenResult
 import io.github.yuubiz.hirari.core.image.PageCandidate
+import io.github.yuubiz.hirari.core.image.PageOrder
 import io.github.yuubiz.hirari.core.image.pageCandidate
 import io.github.yuubiz.hirari.core.image.sniffImage
 import io.github.yuubiz.hirari.core.image.sortedPages
@@ -88,11 +89,11 @@ data class ArchiveRows(val texts: List<ArchiveText>, val pages: List<ArchivePage
 
 /**
  * The texts and the pages of [contents] with its names in [charset] (docs/spec.md sections 3.5 and 4.7). Pages are
- * in natural order of those names, so another charset can reorder them, or in its reverse when [reversed], as the
- * reader orders a book whose `reverseOrder` is on. Texts are the `.txt` entries in natural order.
+ * in [order], as the reader orders them, so in natural order another charset can reorder them. Texts are the `.txt`
+ * entries in natural order.
  */
-suspend fun ArchiveContents.rows(charset: Charset, book: BookId, reversed: Boolean = false): ArchiveRows {
-    val pages = pagesIn(charset, reversed).map { page ->
+suspend fun ArchiveContents.rows(charset: Charset, book: BookId, order: PageOrder = PageOrder()): ArchiveRows {
+    val pages = pagesIn(charset, order).map { page ->
         val item = entries[page.entryIndex]
         ArchivePage(page.entryIndex, page.name, item.size, page.index, item.unreadable)
     }
@@ -103,7 +104,7 @@ suspend fun ArchiveContents.rows(charset: Charset, book: BookId, reversed: Boole
     return ArchiveRows(texts, pages)
 }
 
-private suspend fun ArchiveContents.pagesIn(charset: Charset, reversed: Boolean): List<PageEntry> = sortedPages(
+private suspend fun ArchiveContents.pagesIn(charset: Charset, order: PageOrder): List<PageEntry> = sortedPages(
     entries.mapNotNull { item ->
         val name = name(item, charset)
         val page = PageEntry(-1, item.entryIndex, item.rawName, name, item.size, sniffed = null)
@@ -113,7 +114,7 @@ private suspend fun ArchiveContents.pagesIn(charset: Charset, reversed: Boolean)
             PageCandidate.Sniff -> page.takeIf { isImage(item) }
         }
     },
-    reversed,
+    order,
 )
 
 /** The archives of SAF places through [resolver], and of SMB places through [smb]. */

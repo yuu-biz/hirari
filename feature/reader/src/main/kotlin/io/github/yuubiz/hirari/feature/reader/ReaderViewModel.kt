@@ -28,6 +28,7 @@ import io.github.yuubiz.hirari.core.image.EntryNaming
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.OpenBook
+import io.github.yuubiz.hirari.core.image.PageOrder
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
 import io.github.yuubiz.hirari.core.image.RawPage
@@ -43,6 +44,7 @@ import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.ImageType
@@ -651,7 +653,7 @@ class ReaderViewModel(
         background = settings.readerBackground
         hideSystemBars = settings.hideSystemBars
         val located = withContext(Dispatchers.IO) {
-            openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder().also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
+            openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder(settings.entryOrder).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
         val id = located.id
         val book = when (val result = located.result) {
@@ -700,10 +702,18 @@ class ReaderViewModel(
         viewModelScope.launch { services.storage.settings.settings.catch {}.collect(::followSettings) }
     }
 
+    /**
+     * The book opened again in the order 書庫内の並び now gives, at the page on screen, once that setting changed while
+     * it was open (docs/spec.md section 3.5).
+     */
+    var reordered: OpenBookRequest? by mutableStateOf(null)
+        private set
+
     /** The global settings changed while the book is open, as on the settings screen opened from the reader. */
     private fun followSettings(settings: GlobalSettings) {
         val book = opened ?: return
         if (settings == book.settings) return
+        if (reorders(book.settings, settings, book.book.container)) reordered = againHere()
         book.settings = settings
         background = settings.readerBackground
         book.global = ReaderConfig.of(settings)
@@ -820,11 +830,15 @@ class ReaderViewModel(
         }
     }
 
-    /** The book in the order its overrides ask for: reversed when `reverseOrder` is on (docs/spec.md section 2.9). */
-    private fun Located.inOrder(): Located {
+    /**
+     * The book in the order 書庫内の並び ([entries]) and its overrides ask for: reversed when `reverseOrder` is on
+     * (docs/spec.md sections 2.9 and 3.5).
+     */
+    private fun Located.inOrder(entries: EntryOrder): Located {
         val opened = result as? BookResult.Opened ?: return this
-        if (overrides?.current?.reverseOrder != true) return this
-        return Located(id, source, documentUri, folder, BookResult.Opened(opened.book.reversed()), remote, overrides, fileSize)
+        val order = PageOrder(entries, overrides?.current?.reverseOrder == true)
+        if (order == PageOrder()) return this
+        return Located(id, source, documentUri, folder, BookResult.Opened(opened.book.ordered(order)), remote, overrides, fileSize)
     }
 
     /** Whether the book's names come from an archive's bytes, so a charset chosen for them changes them (docs/spec.md section 3.4). */
@@ -846,9 +860,14 @@ class ReaderViewModel(
         val before = book.overrides.current
         book.overrides.update(change)
         if (book.overrides.current == before) return null
-        val anchor = current.scroll?.anchor
-        val entry = book.book.pages[anchor?.page ?: current.current.pages.first()].entryIndex
-        return CommandEffect.Reopen(OpenBookRequest(request.book, StartAt.Entry(entry, anchor?.fraction ?: 0f)))
+        return CommandEffect.Reopen(againHere(book, current))
+    }
+
+    /** This book from the page on screen, found by its `entryIndex` once it opens in another order. */
+    private fun againHere(book: Opened = checkNotNull(opened), current: ReaderState? = state): OpenBookRequest {
+        val anchor = current?.scroll?.anchor
+        val page = anchor?.page ?: current?.current?.pages?.first() ?: book.start
+        return OpenBookRequest(request.book, StartAt.Entry(book.book.pages[page].entryIndex, anchor?.fraction ?: 0f))
     }
 
     /** What every way of opening the book shares: the services, where copies go, and the setting `fallbackCharset`. */
@@ -992,6 +1011,13 @@ internal fun startOffset(at: StartAt, start: Int, pages: List<PageEntry>, saved:
     is StartAt.Entry -> at.offset.takeIf { pages.getOrNull(start)?.entryIndex == at.entryIndex }
     is StartAt.Page, is StartAt.Image -> null
 } ?: 0f
+
+/**
+ * Whether the change of the global settings from [before] to [after] puts a book from [container] in another order,
+ * which opens it again (docs/spec.md section 3.5). A folder keeps its natural order under 格納順.
+ */
+internal fun reorders(before: GlobalSettings, after: GlobalSettings, container: Container): Boolean =
+    before.entryOrder != after.entryOrder && container != Container.Folder
 
 /** The pixels of [source] for the loupe. */
 class LoupeDetail(val source: LoupeSource, val bitmap: Bitmap)

@@ -1,12 +1,18 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookOverrides
+import io.github.yuubiz.hirari.core.model.Container
+import io.github.yuubiz.hirari.core.model.EntryOrder
+import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.StartAt
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class PageOrderTest {
     private fun pages(vararg entries: Int) = entries.mapIndexed { i, entry -> PageEntry(i, entry, byteArrayOf(), "$entry.jpg", declaredSize = null, sniffed = null) }
@@ -14,6 +20,16 @@ class PageOrderTest {
     @Test
     fun reverseOrderIsACommandThatTheReaderStoresAndOpensTheBookAgainFor() {
         assertEquals(CommandEffect.ReverseOrder, ReaderConfig().effectOf(ReaderCommand.ReverseOrder))
+    }
+
+    @Test
+    fun aChangeOfTheEntryOrderOpensAnArchiveAgainButNotAFolderOrAnyOtherChange() {
+        val natural = GlobalSettings()
+        val stored = natural.copy(entryOrder = EntryOrder.Stored)
+        assertTrue(reorders(natural, stored, Container.Zip))
+        assertTrue(reorders(stored, natural, Container.Pdf))
+        assertFalse(reorders(natural, stored, Container.Folder))
+        assertFalse(reorders(natural, natural.copy(layoutMode = LayoutMode.Single), Container.Zip))
     }
 
     @Test
