@@ -47,12 +47,12 @@
     <string name="command_share_page">ページを共有</string>
     <string name="command_settings">設定</string>
 
-    <string name="page_panel_first">先頭</string>
-    <string name="page_panel_last">末尾</string>
-    <string name="page_panel_shift_back">組ずらし（前）</string>
-    <string name="page_panel_shift_forward">組ずらし（後）</string>
-    <string name="page_panel_previous_book">前の本</string>
-    <string name="page_panel_next_book">次の本</string>
+    <string name="menu_first_page">最初のページへ</string>
+    <string name="menu_last_page">最後のページへ</string>
+    <string name="menu_shift_back">組ずらし（前）</string>
+    <string name="menu_shift_forward">組ずらし（後）</string>
+    <string name="menu_previous_book">前の本</string>
+    <string name="menu_next_book">次の本</string>
     <string name="page_panel_undo">取り消す</string>
     <string name="page_panel_number">ページ番号</string>
 
@@ -172,8 +172,6 @@
     <string name="a11y_page_of">%1$d ページ目、全 %2$d ページ</string>
     <string name="a11y_pages_of">%1$d から %2$d ページ目、全 %3$d ページ</string>
     <string name="a11y_page_number">%1$d ページ</string>
-    <string name="a11y_step_back">%1$d ページ戻る</string>
-    <string name="a11y_step_forward">%1$d ページ進む</string>
     <string name="a11y_loading">読み込んでいます</string>
     <string name="a11y_page_slider">ページ</string>
     <string name="page_panel_title">ページパネル</string>

@@ -50,11 +50,6 @@ class SheetsTest {
     }
 
     @Test
-    fun theStepButtonsStopAtTheEnds() {
-        assertEquals(listOf(0, 0, 4, 6, 15, 49), PagePanel.STEPS.map { PagePanel.stepped(5, it, pageCount = 50) })
-    }
-
-    @Test
     fun aTypedNumberCountsFromOneAndAnythingElseIsNone() {
         assertEquals(11, PagePanel.typed(" 12 ", pageCount = 200))
         assertEquals(199, PagePanel.typed("999999999999", pageCount = 200))
@@ -71,11 +66,14 @@ class SheetsTest {
     }
 
     @Test
-    fun theMenuKeepsTheSpecsThreeGroupsInOrder() {
+    fun theMenuKeepsTheSpecsFourGroupsInOrder() {
         assertEquals(
             mapOf(
                 MenuGroup.Book to listOf(
                     MenuItem.AddBookmark, MenuItem.Bookmarks, MenuItem.BookSettings, MenuItem.SetCover, MenuItem.SetCoverFromRange, MenuItem.SharePage, MenuItem.RestoreAndClose,
+                ),
+                MenuGroup.Move to listOf(
+                    MenuItem.FirstPage, MenuItem.LastPage, MenuItem.ShiftBack, MenuItem.ShiftForward, MenuItem.PreviousBook, MenuItem.NextBook,
                 ),
                 MenuGroup.Reading to listOf(MenuItem.AutoPlay, MenuItem.Breath, MenuItem.Orientation, MenuItem.MirrorControls, MenuItem.Guide),
                 MenuGroup.App to listOf(MenuItem.Settings, MenuItem.EditCommandBar, MenuItem.About),

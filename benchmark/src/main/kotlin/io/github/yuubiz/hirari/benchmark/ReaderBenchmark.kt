@@ -1,6 +1,9 @@
 package io.github.yuubiz.hirari.benchmark
 
+import android.os.Build
+import android.os.Bundle
 import android.util.Log
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.ExperimentalMetricApi
 import androidx.benchmark.macro.FrameTimingMetric
@@ -19,7 +22,10 @@ import org.junit.runner.RunWith
 private const val TAP_INTERVAL_MS = 300L
 private const val JUMP_INTERVAL_MS = 800L
 private const val PAGE_BAR_CENTER_DP = 45
-private const val STEP_PAGES = 100
+private const val JUMP_PAGES = 100
+
+/** The step between two jumps that land near each other: a spread is two pages, so one page on would land on a page seen. */
+private const val NEAR_PAGES = 2
 
 /** The default tap zones (docs/spec.md section 4.8): the right 10% turns back and the rest turns forward. */
 private const val BACK_BAND_PERCENT = 95
@@ -64,9 +70,10 @@ class ReaderBenchmark {
     fun p2TurnJank() = measureTurns(intArgument("turns", 100))
 
     /**
-     * P3: 50 jumps through the page panel, in cycles of 100 pages forward, 1 page forward, 100 pages back, 1 page
-     * forward, so that each lands on a page not seen before and the decoded pages that the reader keeps do not
-     * answer it. A jump to a view that was prepared is counted as a turn (`turnCount`), the others as `jumpCount`.
+     * P3: 50 jumps through the page panel's page number field, in cycles of 100 pages forward, 2 pages forward, 100
+     * pages back, 2 pages forward from the first page, so that each lands on a pair not seen before and the decoded
+     * pages that the reader keeps do not answer it. A jump to a view that was prepared is counted as a turn
+     * (`turnCount`), the others as `jumpCount`.
      */
     @Test
     fun p3JumpLatency() = rule.measureFromPlace(
@@ -79,14 +86,11 @@ class ReaderBenchmark {
             openPagePanel()
         },
     ) {
-        val cycle = listOf(
-            stepButton("a11y_step_forward", STEP_PAGES),
-            stepButton("a11y_step_forward", 1),
-            stepButton("a11y_step_back", STEP_PAGES),
-            stepButton("a11y_step_forward", 1),
-        )
+        val cycle = listOf(JUMP_PAGES, NEAR_PAGES, -JUMP_PAGES, NEAR_PAGES)
+        var page = 0
         repeat(intArgument("jumps", 50)) {
-            driver.click(cycle[it % cycle.size])
+            page += cycle[it % cycle.size]
+            typePage(page)
             Thread.sleep(JUMP_INTERVAL_MS)
         }
     }
@@ -178,13 +182,40 @@ class ReaderBenchmark {
         repeat(PANEL_ATTEMPTS) {
             device.click(x, y)
             Log.i(TAG, "page bar tap at $x,$y")
-            if (device.wait(Until.hasObject(stepButton("a11y_step_forward")), SETTLE_MS)) return
+            if (device.wait(Until.hasObject(By.pkg(PACKAGE).desc(driver.appString("page_panel_number"))), SETTLE_MS)) return
         }
         error("the page panel did not open")
     }
 
-    /** The step buttons of the page panel are found by what a screen reader says of them. */
-    private fun stepButton(description: String, pages: Int = STEP_PAGES) = By.pkg(PACKAGE).desc(driver.appString(description, pages))
+    /**
+     * Types [page], counted from 0, into the page panel's number field and confirms it with the actions a screen
+     * reader uses, so no keyboard comes up between the jumps. Before API 30 there is no action for Go, and the
+     * field takes the Enter key.
+     */
+    private fun typePage(page: Int) {
+        val label = driver.appString("page_panel_number")
+        val number = "${page + 1}"
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            device.findObject(By.pkg(PACKAGE).desc(label))?.text = number
+            device.pressEnter()
+            return
+        }
+        val field = findNode(instrumentation.uiAutomation.rootInActiveWindow) { it.contentDescription?.toString() == label }
+            ?: driver.fail("the page number field is not on screen")
+        val text = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, number) }
+        check(field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, text)) { "the page number field took no text" }
+        check(field.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) { "the page number field took no Go" }
+    }
+
+    private fun findNode(root: AccessibilityNodeInfo?, matches: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+        val queue = ArrayDeque(listOfNotNull(root))
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (matches(node)) return node
+            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::addLast)
+        }
+        return null
+    }
 
     /** Java and native heap of the app in KB, from the app summary of `dumpsys meminfo`. */
     private fun sampleMemory(page: Int): Long {

@@ -32,10 +32,10 @@ sealed interface ReaderSheet {
     data object Bookmarks : ReaderSheet
 
     /**
-     * The neighboring book toward [edge]: the sheet of 本の端での動作, or with [fromPanel] the choices of 前の本 and
-     * 次の本 on the page panel.
+     * The neighboring book toward [edge]: the sheet of 本の端での動作, or with [fromMenu] the choices of 前の本 and
+     * 次の本 in the menu.
      */
-    data class BookEnd(val edge: BookEdge, val fromPanel: Boolean = false) : ReaderSheet
+    data class BookEnd(val edge: BookEdge, val fromMenu: Boolean = false) : ReaderSheet
 
     /**
      * Whether the reader takes [code] while this sheet is up. Back closes it and Menu opens or closes the menu.
@@ -56,12 +56,8 @@ fun pageLabel(view: PageView, pageCount: Int): String {
 
 /** The page panel's controls (docs/spec.md section 4.8, ページバー). Pages are counted from 0 here. */
 object PagePanel {
-    val STEPS = listOf(-100, -10, -1, 1, 10, 100)
-
     /** The interval of the live preview while the slider is dragged. */
     const val PREVIEW_MS = 100L
-
-    fun stepped(head: Int, step: Int, pageCount: Int): Int = (head + step).coerceIn(0, pageCount - 1)
 
     /** The page a typed number means, from 1. A number past either end goes to that end; other text means none. */
     fun typed(text: String, pageCount: Int): Int? = text.trim().toLongOrNull()?.let { (it - 1).coerceIn(0L, pageCount - 1L).toInt() }
@@ -72,7 +68,7 @@ object PagePanel {
 /** The menu's width: 95% of the screen's short side, up to 400 dp (docs/spec.md section 4.8, メニュー). */
 fun menuWidthDp(screenWidthDp: Float, screenHeightDp: Float): Float = minOf(minOf(screenWidthDp, screenHeightDp) * 0.95f, 400f)
 
-enum class MenuGroup { Book, Reading, App }
+enum class MenuGroup { Book, Move, Reading, App }
 
 /** The menu's items in their order. */
 enum class MenuItem(val group: MenuGroup) {
@@ -83,6 +79,12 @@ enum class MenuItem(val group: MenuGroup) {
     SetCoverFromRange(MenuGroup.Book),
     SharePage(MenuGroup.Book),
     RestoreAndClose(MenuGroup.Book),
+    FirstPage(MenuGroup.Move),
+    LastPage(MenuGroup.Move),
+    ShiftBack(MenuGroup.Move),
+    ShiftForward(MenuGroup.Move),
+    PreviousBook(MenuGroup.Move),
+    NextBook(MenuGroup.Move),
     AutoPlay(MenuGroup.Reading),
     Breath(MenuGroup.Reading),
     Orientation(MenuGroup.Reading),

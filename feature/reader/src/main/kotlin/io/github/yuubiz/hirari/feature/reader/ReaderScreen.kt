@@ -152,14 +152,7 @@ fun ReaderScreen(
                 }
                 BreathControl(viewModel, ui, Modifier.align(Alignment.TopEnd))
                 when (val sheet = ui.sheet) {
-                    is ReaderSheet.Pages -> PagePanelSheet(
-                        viewModel,
-                        state,
-                        sheet,
-                        onClose = { ui.sheet = null },
-                        onNeighbor = { ui.sheet = ReaderSheet.BookEnd(it, fromPanel = true) },
-                        onBookmarks = { ui.sheet = ReaderSheet.Bookmarks },
-                    )
+                    is ReaderSheet.Pages -> PagePanelSheet(viewModel, state, sheet, onClose = { ui.sheet = null })
                     is ReaderSheet.BookEnd -> BookEndSheet(viewModel, sheet, onClose = { ui.sheet = null }, onCloseReader = onClose, onOpenBook = onOpenBook)
                     ReaderSheet.Menu -> MenuSheet(
                         viewModel,
@@ -169,6 +162,7 @@ fun ReaderScreen(
                         onEffect = ui::follow,
                         onGuide = { ui.guideShown = true },
                         onCoverRange = { chooseCoverRange(state, viewModel, ui, onCoverRange) },
+                        onNeighbor = { ui.sheet = ReaderSheet.BookEnd(it, fromMenu = true) },
                     )
                     ReaderSheet.Adjust -> AdjustSheet(viewModel, state, onClose = { ui.sheet = null })
                     is ReaderSheet.SharePick -> SharePickSheet(sheet.view, state.config.direction, R.string.share_which_page, onPick = { ui.follow(CommandEffect.Share(it)) }, onClose = { ui.sheet = null })

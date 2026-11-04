@@ -264,9 +264,7 @@ class ReaderViewModel(
      * Small decodes for the page panel and the page bar. Evicted ones are left to the collector, not recycled,
      * since a strip cell may still draw one for a frame.
      */
-    private val thumbnails = object : LinkedHashMap<Int, Bitmap>(THUMBNAILS, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>) = size > THUMBNAILS
-    }
+    private val thumbnails = ThumbnailCache<Bitmap>(PageStrip.THUMBNAIL_BYTES) { it.width.toLong() * it.height * 4 }
 
     private class Opened(
         val book: OpenBook,
@@ -959,7 +957,6 @@ class ReaderViewModel(
     }
 }
 
-private const val THUMBNAILS = 64
 
 private val ARCHIVES = setOf(Container.Zip, Container.Rar, Container.SevenZip, Container.Tar)
 

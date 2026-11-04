@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
@@ -177,25 +178,23 @@ class ReaderSheetsTest {
         ActivityScenario.launch<MainActivity>(intent).use {
             val count = awaitPage(1).substringAfter("/ ")
             tapPageBar()
-            for (step in listOf("100 ページ戻る", "10 ページ戻る", "1 ページ戻る", "1 ページ進む", "10 ページ進む", "100 ページ進む")) {
-                compose.waitUntil(5_000) { runCatching { compose.onNodeWithContentDescription(step).assertIsDisplayed() }.isSuccess }
-            }
+            compose.waitUntil(5_000) { runCatching { compose.onNodeWithContentDescription("2 ページ").assertIsDisplayed() }.isSuccess }
             compose.waitForIdle()
             screenshot("page-panel")
 
-            compose.onNodeWithContentDescription("1 ページ進む").performClick()
-            assertEquals("2 / $count", awaitPage(2))
+            compose.onNodeWithContentDescription("ページ番号").performTextReplacement("3")
+            compose.onNodeWithContentDescription("ページ番号").performImeAction()
+            assertEquals("3 / $count", awaitPage(3))
             compose.onNodeWithText("取り消す").performClick()
             awaitPage(1)
 
-            compose.onNodeWithContentDescription("ページ番号").performTextReplacement("3")
-            compose.onNodeWithContentDescription("ページ番号").performImeAction()
-            awaitPage(3)
-            compose.onNodeWithText("末尾").performClick()
-            awaitPage(count.toInt())
+            compose.onNodeWithContentDescription("2 ページ").performClick()
+            awaitPage(2)
+            compose.waitUntil(5_000) { !pagePanelUp() }
 
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            compose.waitUntil(5_000) { compose.onAllNodes(hasContentDescription("ページ番号")).fetchSemanticsNodes().isEmpty() }
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU)
+            compose.onNodeWithText("最後のページへ").performScrollTo().performClick()
+            awaitPage(count.toInt())
         }
     }
 
