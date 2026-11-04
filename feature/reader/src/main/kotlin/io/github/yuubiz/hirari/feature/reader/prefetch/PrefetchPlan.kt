@@ -189,7 +189,22 @@ private class Candidates(private val request: PrefetchRequest) {
         val jobs = mutableListOf<PrefetchJob>()
         val keptViews = shown.toMutableSet()
         val keptRaw = mutableSetOf<Int>()
-        list.forEachIndexed { index, candidate ->
+        // Admission must not depend on which views still need raw data to prepare. Keep the
+        // execution order below, but budget raw candidates nearest first in their existing slots.
+        val ahead = Walk(request, request.travel)
+        val behind = Walk(request, if (request.travel == Turn.Forward) Turn.Back else Turn.Forward)
+        val rawOrder = buildList {
+            shown.forEach { addAll(it.pages) }
+            while (ahead.hasNext || behind.hasNext) {
+                ahead.take(1).forEach { (step, _) -> step.page?.let { add(it) } }
+                behind.take(1).forEach { (step, _) -> step.page?.let { add(it) } }
+            }
+        }.withIndex().associate { it.value to it.index }
+        val nearestRaws = list.filter { it.job is PrefetchJob.ReadRaw }
+            .sortedBy { rawOrder.getValue((it.job as PrefetchJob.ReadRaw).page) }.iterator()
+        val admittedCandidates = HashSet<Candidate>()
+        for (slot in list) {
+            val candidate = if (slot.job is PrefetchJob.ReadRaw) nearestRaws.next() else slot
             val admitted = when (val job = candidate.job) {
                 is PrefetchJob.ReadShape -> true
                 is PrefetchJob.PrepareView -> {
@@ -211,7 +226,10 @@ private class Candidates(private val request: PrefetchRequest) {
                     rawOpen
                 }
             }
-            val wanted = admitted && (index < focus || !request.paused) && !request.resident.holds(candidate.job)
+            if (admitted) admittedCandidates += candidate
+        }
+        list.forEachIndexed { index, candidate ->
+            val wanted = candidate in admittedCandidates && (index < focus || !request.paused) && !request.resident.holds(candidate.job)
             if (wanted) jobs += candidate.job
         }
         val keep = Resident(keptViews, keptRaw)

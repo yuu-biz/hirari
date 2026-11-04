@@ -134,7 +134,45 @@ class PrefetchPlanTest {
     @Test
     fun rawBytesTakeAtMostHalfTheBudgetAndLoseTheFarthestPages() {
         val plan = planPrefetch(request(single(100), current = 50, budget = 20))
-        assertEquals((47..56).toSet(), plan.keep.rawPages)
+        assertEquals((46..55).toSet(), plan.keep.rawPages)
+    }
+
+    @Test
+    fun oversizedRawDataKeepsTheNearestPagesRegardlessOfWhichViewsArePrepared() {
+        for (travel in listOf(Forward, Back)) {
+            for (prepared in listOf(emptySet(), setOf(One(20)), setOf(One(20), One(21)), setOf(One(19), One(20)))) {
+                val plan = planPrefetch(request(
+                    single(60), current = 20, travel = travel, budget = 20_000,
+                    viewBytes = 600, rawBytes = 3000,
+                    resident = Resident(views = prepared, rawPages = (18..22).toSet()),
+                ))
+                assertEquals(setOf(19, 20, 21), plan.keep.rawPages, "$travel with $prepared")
+            }
+        }
+    }
+
+    @Test
+    fun equalDistanceKeepsThePageInTheTravelDirectionFirst() {
+        for (travel in listOf(Forward, Back)) {
+            val next = if (travel == Forward) 21 else 19
+            val plan = planPrefetch(request(
+                single(60), current = 20, travel = travel, budget = 12_000,
+                viewBytes = 600, rawBytes = 3000,
+                resident = Resident(views = setOf(One(19), One(20), One(21))),
+            ))
+            assertEquals(setOf(20, next), plan.keep.rawPages)
+        }
+    }
+
+    @Test
+    fun rawDistanceCountsPagesFromTheEdgesOfAllVisibleViews() {
+        val views = (0 until 30).map { Two(it * 2, it * 2 + 1) }
+        val plan = planPrefetch(request(
+            views, current = 10, visible = 10..11, budget = 36_000,
+            viewBytes = 600, rawBytes = 3000,
+            resident = Resident(views = views.subList(9, 14).toSet()),
+        ))
+        assertEquals((19..24).toSet(), plan.keep.rawPages)
     }
 
     @Test
@@ -144,12 +182,12 @@ class PrefetchPlanTest {
     }
 
     @Test
-    fun rawBytesWaitBehindTheViewsThatDoNotNeedThem() {
+    fun rawBytesOfTheCurrentViewStayBeforeThoseOfOtherViews() {
         val resident = Resident(views = setOf(One(50)), rawPages = setOf(50))
         val plan = planPrefetch(request(single(100), current = 50, budget = 100 * MB, viewBytes = 40 * MB, rawBytes = 20 * MB, resident = resident))
         assertEquals(setOf(One(50), One(51)), plan.keep.views)
-        assertEquals(setOf(51), plan.keep.rawPages)
-        assertEquals(listOf(ReadRaw(51), PrepareView(One(51))), plan.jobs)
+        assertEquals(setOf(50), plan.keep.rawPages)
+        assertEquals(listOf(PrepareView(One(51))), plan.jobs)
     }
 
     @Test
