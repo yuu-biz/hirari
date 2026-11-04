@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.Books
 import io.github.yuubiz.hirari.core.image.FolderFile
 import io.github.yuubiz.hirari.core.image.ImageDecoding
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
@@ -44,8 +45,7 @@ class DeviceCoverBooks(
 ) : CoverBooks {
     private val copyDir get() = File(cacheDir, "copy")
 
-    /** The reader extracts a solid archive into the same directory (docs/spec.md section 3.3), so both share it. */
-    private fun extractDir(spec: CoverSpec.Book) = File(cacheDir, "extract/${spec.id.value}")
+    private suspend fun extractDir(spec: CoverSpec.Book) = withContext(Dispatchers.IO) { coverExtractDir(cacheDir, spec.id) }
 
     override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = try {
         when (val origin = spec.origin) {
@@ -110,6 +110,13 @@ class DeviceCoverBooks(
         }
     }
 }
+
+/**
+ * Where a cover reads a solid archive from (docs/spec.md sections 3.3 and 4.4): the directory the reader or the
+ * archive list extracts the book into, when it is there, and none otherwise, so that a cover reads up to its entry
+ * and writes nothing. Blocks.
+ */
+internal fun coverExtractDir(cacheDir: File, book: BookId): File? = File(cacheDir, "extract/${book.value}").takeIf { it.isDirectory }
 
 private fun Exception.bookFailure(): BookFailure = when (this) {
     is FileNotFoundException, is IllegalArgumentException -> BookFailure.NotFound
