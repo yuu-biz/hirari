@@ -53,6 +53,9 @@ class HirariApp : Application() {
     /** Outlives every screen; the progress writer finishes its writes here after the reader is gone. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** For the state of a start, which the activity reads on the main thread. */
+    internal val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     /** Built off the main thread, since opening the storage touches the disk. */
     lateinit var services: Deferred<ReaderServices>
         private set

@@ -3,6 +3,12 @@ package io.github.yuubiz.hirari
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** How the activity came up, which says whether it is a start (docs/spec.md section 4.3, 起動時の動作). */
 internal enum class StartKind {
@@ -49,6 +55,34 @@ internal class StartGate(private val finish: () -> Unit) {
         if (done || !applied || top == null || top !in settled) return
         done = true
         finish()
+    }
+}
+
+/**
+ * When a start that has shown its content counts as finished (docs/spec.md section 4.3, 起動時の動作): once the app
+ * has stayed up for [SURVIVAL_MILLIS] after it, or as soon as the activity is stopped, whichever comes first. A
+ * process that dies in between, as while it makes the covers of the folder it opened, counts as an unfinished start.
+ * A stop is not a death: the user left, or the system took the screen. Main thread only.
+ */
+internal class StartWatch(private val scope: CoroutineScope, private val finish: () -> Unit) {
+    private val stopped = MutableStateFlow(false)
+    private var watching: Job? = null
+
+    fun settled() {
+        if (watching != null) return
+        watching = scope.launch {
+            withTimeoutOrNull(SURVIVAL_MILLIS) { stopped.first { it } }
+            finish()
+        }
+    }
+
+    /** The activity was stopped, other than to be made again for a new configuration, or started again. */
+    fun stopped(now: Boolean) {
+        stopped.value = now
+    }
+
+    companion object {
+        const val SURVIVAL_MILLIS = 30_000L
     }
 }
 

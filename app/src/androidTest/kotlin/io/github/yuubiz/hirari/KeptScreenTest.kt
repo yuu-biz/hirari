@@ -11,6 +11,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.yuubiz.hirari.feature.library.StartPlan
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.MainScope
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -37,7 +38,7 @@ class KeptScreenTest {
 
     /** Puts a kept screen on top of home and lets it show, with its start still waiting for [plan]. */
     private fun keptScreen(): Pair<AppStart, NavHostController> {
-        val start = AppStart(restoring = true, CompletableDeferred<StartPlan>()) {}
+        val start = AppStart(restoring = true, CompletableDeferred<StartPlan>(), MainScope()) {}
         app.start = start
         lateinit var nav: NavHostController
         compose.setContent {

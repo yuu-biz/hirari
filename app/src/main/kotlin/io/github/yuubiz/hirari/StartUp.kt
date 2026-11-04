@@ -18,6 +18,7 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.feature.library.Notice
 import io.github.yuubiz.hirari.feature.library.Reopen
 import io.github.yuubiz.hirari.feature.library.StartPlan
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
@@ -28,8 +29,9 @@ import kotlinx.coroutines.flow.onEach
  * activity rebuilt in the middle of the start takes it up where it was: the plan goes on being made, goes on the
  * back stack once, and the question about the last book stays asked. Main thread only, but [plan].
  */
-internal class AppStart(val restoring: Boolean, val plan: Deferred<StartPlan>, finish: () -> Unit) {
-    val gate = StartGate(finish)
+internal class AppStart(val restoring: Boolean, val plan: Deferred<StartPlan>, scope: CoroutineScope, finish: () -> Unit) {
+    val watch = StartWatch(scope, finish)
+    val gate = StartGate(watch::settled)
     val kept = KeptScreens(restoring)
 
     /** The plan is on the back stack, which the activity keeps from then on. */

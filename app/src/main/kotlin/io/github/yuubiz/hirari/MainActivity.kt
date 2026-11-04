@@ -92,7 +92,7 @@ class MainActivity : ComponentActivity() {
             kind != StartKind.Recreated -> {
                 val restoring = kind == StartKind.Restored
                 val plan = app.appScope.async { app.library.await().planStart(restoring) }
-                app.start = AppStart(restoring, plan) { app.appScope.launch { app.library.await().launch.finishStart() } }
+                app.start = AppStart(restoring, plan, app.mainScope) { app.appScope.launch { app.library.await().launch.finishStart() } }
             }
         }
         setContent {
@@ -301,10 +301,16 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean = keys.dispatch(event) || textKeys.dispatch(event) || super.dispatchKeyEvent(event)
 
+    override fun onStart() {
+        super.onStart()
+        (application as HirariApp).start?.watch?.stopped(false)
+    }
+
     /** docs/spec.md section 2.7: the position is always written out on `onStop`. */
     override fun onStop() {
         super.onStop()
         val app = application as HirariApp
+        if (!isChangingConfigurations) app.start?.watch?.stopped(true)
         app.appScope.launch { app.services.await().progress.flush() }
     }
 
