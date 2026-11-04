@@ -23,6 +23,8 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /** Where the bytes of the pages of an open book come from: an archive session, or the files of a folder. */
 internal interface PageBytes : Closeable {
+    fun prioritize(entries: List<Int>) = Unit
+
     /** The bytes of [page], as [PageResult.Ready], or why they cannot be read. */
     suspend fun read(page: PageEntry): PageResult<ByteArray>
 }
@@ -30,7 +32,8 @@ internal interface PageBytes : Closeable {
 /** What the pages of an open book are. */
 internal sealed interface BookContent : Closeable {
     /** Encoded images, read from an archive or the files of a folder. */
-    class Images(val bytes: PageBytes) : BookContent {
+    class Images(source: PageBytes) : BookContent {
+        val bytes: PageBytes = if (source is StashedPages) source else OrderedPages(source)
         override fun close() = bytes.close()
     }
 
@@ -75,6 +78,11 @@ class OpenBook internal constructor(
     fun ordered(order: PageOrder): OpenBook {
         val own = if (container == Container.Folder) order.copy(entries = EntryOrder.Natural) else order
         return OpenBook(content, container, sortedPages(pages, own), indexError, decoding)
+    }
+
+    /** The page order for every queued read of this book, including shape and disk-stash reads. */
+    fun prioritize(pagesInOrder: List<Int>) {
+        (content as? BookContent.Images)?.bytes?.prioritize(pagesInOrder.map { pages[it].entryIndex })
     }
 
     /**

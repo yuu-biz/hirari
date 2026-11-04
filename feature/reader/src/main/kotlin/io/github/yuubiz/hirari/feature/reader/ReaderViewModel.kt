@@ -99,6 +99,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.OutputStream
@@ -818,16 +819,23 @@ class ReaderViewModel(
         }
     }
 
-    /**
-     * Moves the SMB prefetch layer to the current view once that view is prepared, so the reads it waits on go
-     * before those of the layer, and stops it until then. It stops while the thumbnail strip is up, as the other
-     * layers do (docs/spec.md section 5.3).
-     */
+    /** Releases distant prefetch after the surface drew its first prepared view. */
+    fun viewDrawn(view: PageView) {
+        val book = opened ?: return
+        if (book.prefetcher.canPrefetch || book.prefetcher[view] == null) return
+        viewModelScope.launch {
+            yield()
+            book.prefetcher.drawn(view)
+            prefetchToDisk()
+        }
+    }
+
+    /** Keeps disk prefetch behind the first draw and stops it while the current view is unprepared or the strip is up. */
     private fun prefetchToDisk() {
         val book = opened ?: return
         val disk = book.disk ?: return
         val current = state ?: return
-        if (stripShown) return disk.stop()
+        if (stripShown || !book.prefetcher.canPrefetch) return disk.stop()
         val view = current.current
         val shown = (view.pages.min()..view.pages.max()).takeIf { book.prefetcher.get(view) != null }
         disk.update(shown, travelDirection(current.recentTurns))

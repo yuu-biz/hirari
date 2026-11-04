@@ -108,6 +108,7 @@ private class Reader(
     var state: ReaderState,
     val loader: FakeLoader = FakeLoader(),
     budgetBytes: Long = 1L shl 30,
+    val autoDraw: Boolean = true,
 ) : Prefetcher.Listener {
     val released = mutableListOf<String>()
 
@@ -121,7 +122,9 @@ private class Reader(
 
     override fun onShape(page: Int, shape: PageShape.Known) = apply(ReaderEvent.ShapeLearned(page, shape))
 
-    override fun onChanged() = Unit
+    override fun onChanged() {
+        if (autoDraw) prefetcher.drawn(state.current)
+    }
 
     override fun onMargins(page: Int, scan: MarginScan) = apply(ReaderEvent.MarginsLearned(page, scan))
 
@@ -152,9 +155,33 @@ private fun TestScope.reader(
     start: Int = 0,
     loader: FakeLoader = FakeLoader(),
     budgetBytes: Long = 1L shl 30,
-) = Reader(CoroutineScope(StandardTestDispatcher(testScheduler)), ReaderState.open(pages, start, config, viewport), loader, budgetBytes)
+    autoDraw: Boolean = true,
+) = Reader(CoroutineScope(StandardTestDispatcher(testScheduler)), ReaderState.open(pages, start, config, viewport), loader, budgetBytes, autoDraw)
 
 class PrefetcherTest {
+    @Test
+    fun prefetchBeyondTheNextViewWaitsForDrawingEvenAfterPreparation() = runTest {
+        val reader = reader(pages = 60, start = 10, autoDraw = false)
+        advanceUntilIdle()
+        assertEquals(setOf(10, 11), reader.loader.rawReads.toSet())
+        assertEquals(setOf(10, 11), reader.preparedPages())
+        assertTrue(!reader.prefetcher.canPrefetch)
+        reader.prefetcher.drawn(reader.state.current)
+        advanceUntilIdle()
+        assertTrue(reader.prefetcher.canPrefetch)
+        assertTrue(12 in reader.loader.rawReads)
+        assertTrue(9 in reader.loader.rawReads)
+    }
+
+    @Test
+    fun failedFirstViewReleasesPrefetchWithoutDrawing() = runTest {
+        val error = PageResult.Failed(io.github.yuubiz.hirari.core.model.FailureReason.ReadError, retryable = true)
+        val reader = reader(pages = 60, loader = FakeLoader(rawFailing = mutableMapOf(0 to error)), autoDraw = false)
+        advanceUntilIdle()
+        assertTrue(reader.prefetcher.canPrefetch)
+        assertTrue(2 in reader.loader.rawReads)
+    }
+
     @Test
     fun openingReadsTheShapesAndPreparesTheCurrentViewTwoAheadAndOneBehind() = runTest {
         val reader = reader(pages = 8, start = 3)
@@ -191,7 +218,7 @@ class PrefetcherTest {
         runCurrent()
         reader.apply(ReaderEvent.GoTo(7))
         runCurrent()
-        assertEquals(setOf(0, 1, 2), loader.cancelled.toSet())
+        assertEquals(setOf(0, 1), loader.cancelled.toSet())
         loader.gate!!.complete(Unit)
         advanceUntilIdle()
         assertEquals(setOf(6, 7), reader.preparedPages())

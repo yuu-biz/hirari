@@ -64,6 +64,9 @@ class MadePage<out T>(val image: T, val margins: MarginScan? = null)
  * without reading the book again.
  */
 interface PageLoader<R, T> {
+    /** Updates the order of queued raw reads, including reads for shapes and the disk stash. */
+    fun prioritize(pages: List<Int>) = Unit
+
     suspend fun raw(page: Int): PageResult<R>
 
     /** What holding [raw] takes from the memory budget. */
@@ -144,6 +147,26 @@ class Prefetcher<R, T>(
     /** The steps, with the whole page as the part, a page failed to prepare with. Other steps read it again. */
     private val failedSteps = HashMap<Int, PageSteps>()
     private var last: PrefetchInput? = null
+    private var firstViewDrawn = false
+
+    val canPrefetch: Boolean get() = firstViewDrawn
+
+    /** Called after the surface drew a prepared view, including its error cards. */
+    fun drawn(view: PageView) {
+        if (firstViewDrawn || cache[view] == null) return
+        val input = last ?: return
+        if (view != input.views[input.current] || input.visible.any { cache[input.views[it]] == null }) return
+        firstViewDrawn = true
+        update(input)
+    }
+
+    private fun failedFirstView() {
+        val input = last ?: return
+        if (!firstViewDrawn && input.visible.all { index -> input.views[index].pages.all { it in failures } }) {
+            firstViewDrawn = true
+            update(input)
+        }
+    }
 
     /** The view on screen when memory ran low. Prefetch stays paused until the reader leaves it. */
     private var trimmedOn: PageView? = null
@@ -183,8 +206,25 @@ class Prefetcher<R, T>(
         dropped.forEach(::evict)
         val shownPages = input.shown.flatMapTo(HashSet()) { it.pages }
         raws.keys.retainAll { it in plan.keep.rawPages || it in shownPages }
+        val forward = input.travel == Turn.Forward
+        val ahead = if (forward) (input.visible.last + 1..input.views.lastIndex).toList()
+            else (input.visible.first - 1 downTo 0).toList()
+        val behind = if (forward) (input.visible.first - 1 downTo 0).toList()
+            else (input.visible.last + 1..input.views.lastIndex).toList()
+        val order = (input.visible.toList() + ahead + behind).flatMap { index ->
+            val pages = input.views[index].pages
+            if (forward || index in input.visible) pages else pages.asReversed()
+        }.distinct()
+        loader.prioritize(order)
+        val early = (input.visible.toList() + ahead.take(1)).flatMapTo(HashSet()) { input.views[it].pages }
         val wanted = LinkedHashMap<Any, () -> Job>()
         for (job in plan.jobs) {
+            val pages = when (job) {
+                is PrefetchJob.ReadShape -> listOf(job.page)
+                is PrefetchJob.ReadRaw -> listOf(job.page)
+                is PrefetchJob.PrepareView -> job.view.pages
+            }
+            if (!firstViewDrawn && pages.any { it !in early }) continue
             when (job) {
                 is PrefetchJob.ReadShape -> wanted[job] = { launchShape(job.page) }
                 is PrefetchJob.PrepareView -> input.targets(job.view)?.let { target ->
@@ -200,7 +240,8 @@ class Prefetcher<R, T>(
                 running.remove(key)
             }
         }
-        for ((key, start) in wanted) {
+        // Register raw jobs before shapes and views can ask rawFor(), including on Main.immediate.
+        for ((key, start) in wanted.entries.sortedBy { if (it.key is PrefetchJob.ReadRaw) 0 else 1 }) {
             if (running[key]?.isActive != true) running[key] = start()
         }
         if (dropped.isNotEmpty()) listener.onChanged()
@@ -277,6 +318,7 @@ class Prefetcher<R, T>(
                 @Suppress("UNCHECKED_CAST")
                 failures[page] = result as PageResult<Nothing>
                 failedRaws += page
+                failedFirstView()
                 listener.onChanged()
                 null
             }
@@ -306,6 +348,7 @@ class Prefetcher<R, T>(
                 @Suppress("UNCHECKED_CAST")
                 failures[page] = result as PageResult<Nothing>
                 failedShapes += page
+                failedFirstView()
                 listener.onShape(page, FAILED_PAGE_SHAPE)
                 listener.onChanged()
             }
@@ -335,6 +378,7 @@ class Prefetcher<R, T>(
         cache.put(target.view, PreparedView(target, pages.map { it!! }))?.let { old ->
             old.pages.forEach { if (it is PreparedPage.Image) release(it.image) }
         }
+        failedFirstView()
         listener.onChanged()
         margins.forEachIndexed { i, scan -> if (scan != null) listener.onMargins(target.view.pages[i], scan) }
     }

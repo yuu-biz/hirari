@@ -56,12 +56,15 @@ internal class StashedPages(private val server: PageBytes, private val stash: Di
     /** The reads in progress by entry. One that ends without a result gives null, and its waiters read for themselves. */
     private val reading = ConcurrentHashMap<Int, CompletableDeferred<Fetched?>>()
 
+    private val queue = PageReadQueue()
+
+    override fun prioritize(entries: List<Int>) = queue.prioritize(entries)
+
     override suspend fun read(page: PageEntry): PageResult<ByteArray> = fetch(page).result
 
     suspend fun holds(page: PageEntry): Boolean = withContext(Dispatchers.IO) { stash.cache.has(key(page)) }
 
     suspend fun fill(page: PageEntry): Fill {
-        if (holds(page)) return Fill.OnDisk
         return try {
             val fetched = fetch(page)
             when {
@@ -90,7 +93,7 @@ internal class StashedPages(private val server: PageBytes, private val stash: Di
             }
             var fetched: Fetched? = null
             try {
-                return readThrough(page).also { fetched = it }
+                return queue.read(page.entryIndex) { readThrough(page) }.also { fetched = it }
             } finally {
                 // Removed before completing: a waiter can resume inside complete() on this thread (the main thread's
                 // immediate dispatcher) and must not find this finished read again, or it loops without end.
