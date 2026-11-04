@@ -13,11 +13,16 @@ import kotlin.coroutines.cancellation.CancellationException
  * The record of the book a reader opens (docs/spec.md section 6.1). [begin] writes it before the book opens. It ends
  * once the reader [shown] the book's content or why it did not open, or [left] before that. While the screen is
  * [stopped] it is ended too, since the process ending then is not the book's doing, and it is written again once the
- * screen [started]. The writes run on [scope], which outlives the reader, one after another in the order asked, so
+ * screen [started]; [onScreen] is whether it is started now. The writes run on [scope], which outlives the reader, one after another in the order asked, so
  * leaving the screen neither cuts one short nor lets an end overtake its write. A write that fails is left out: the
  * record guards the next start, and the book opens without it. Main thread only.
  */
-internal class OpeningRecord(scope: CoroutineScope, private val launch: LaunchRepository, private val book: OpeningBook) {
+internal class OpeningRecord(
+    scope: CoroutineScope,
+    private val launch: LaunchRepository,
+    private val book: OpeningBook,
+    private var onScreen: Boolean = true,
+) {
     private sealed interface Step {
         class Write(val written: CompletableDeferred<Unit>?) : Step
 
@@ -26,7 +31,6 @@ internal class OpeningRecord(scope: CoroutineScope, private val launch: LaunchRe
 
     private val steps = Channel<Step>(Channel.UNLIMITED)
     private var begun = false
-    private var onScreen = true
     private var done = false
 
     /** Whether the last step asked writes the record. */

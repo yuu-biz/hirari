@@ -261,6 +261,9 @@ class ReaderViewModel(
     /** The record of the book this reader opens (docs/spec.md section 6.1), from the moment it is written. */
     private var openingRecord: OpeningRecord? = null
 
+    /** Whether the screen is started, which a stop before the record exists also tells it. */
+    private var onScreen = true
+
     /** Holds the book from the moment it opens, so leaving the screen closes it whatever the open was waiting on. */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val stops = StopRelay()
@@ -641,10 +644,12 @@ class ReaderViewModel(
     fun onStop() {
         dispatch(ReaderEvent.AutoPlayStopped)
         stops.stop()
+        onScreen = false
         openingRecord?.stopped()
     }
 
     fun onStart() {
+        onScreen = true
         openingRecord?.started()
     }
 
@@ -674,7 +679,7 @@ class ReaderViewModel(
         background = settings.readerBackground
         hideSystemBars = settings.hideSystemBars
         val name = request.book.initialPath().substringAfterLast('/')
-        OpeningRecord(services.appScope, services.storage.launch, OpeningBook(request.book, name)).also { openingRecord = it }.begin()
+        OpeningRecord(services.appScope, services.storage.launch, OpeningBook(request.book, name), onScreen).also { openingRecord = it }.begin()
         val located = withContext(Dispatchers.IO) {
             openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder(settings.entryOrder).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }

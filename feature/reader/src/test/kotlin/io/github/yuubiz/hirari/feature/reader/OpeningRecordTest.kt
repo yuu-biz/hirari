@@ -58,7 +58,7 @@ class OpeningRecordTest {
 
     private val book = OpeningBook(BookAddress.InLocation(LocationId(1), "作品/1巻.zip", folder = false), "1巻.zip")
 
-    private fun TestScope.record(launch: Launch) = OpeningRecord(backgroundScope, launch, book)
+    private fun TestScope.record(launch: Launch, onScreen: Boolean = true) = OpeningRecord(backgroundScope, launch, book, onScreen)
 
     /** Lets the writes asked so far land; the writer runs in the background scope, which advanceUntilIdle leaves. */
     private fun TestScope.settle() {
@@ -106,13 +106,23 @@ class OpeningRecordTest {
         settle()
         assertEquals(emptyList(), launch.steps, "a stopped reader recorded its book")
 
+        val stoppedFirst = record(launch, onScreen = false)
+        stoppedFirst.begin()
+        settle()
+        assertEquals(emptyList(), launch.steps, "a reader stopped before its record existed recorded its book")
+        stoppedFirst.started()
+        stoppedFirst.left()
+        settle()
+        assertEquals(listOf("write 1巻.zip", "end 1"), launch.steps)
+        launch.steps.clear()
+
         val record = record(launch)
         record.begin()
         record.stopped()
         record.started()
         record.shown()
         settle()
-        assertEquals(listOf("write 1巻.zip", "end 1", "write 1巻.zip", "shown 2"), launch.steps)
+        assertEquals(listOf("write 1巻.zip", "end 2", "write 1巻.zip", "shown 3"), launch.steps)
     }
 
     @Test
