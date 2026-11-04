@@ -6,12 +6,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -22,6 +20,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -37,9 +38,12 @@ internal fun CoverBox(ref: CoverRef?, covers: Covers, badge: CoverBadge?, modifi
     var state by remember(ref) {
         mutableStateOf<CoverState<ImageBitmap>>(ref?.let(covers::peek)?.let { CoverState.Loaded(it) } ?: CoverState.Pending)
     }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var onScreen by remember(ref) { mutableStateOf(false) }
-    if (ref != null && (focus != null || onScreen)) LaunchedEffect(ref, focus) {
-        covers.show(ref, focus).collect { state = it }
+    if (ref != null && (focus != null || onScreen)) LaunchedEffect(ref, focus, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            covers.show(ref, focus).collect { state = it }
+        }
     }
     val slotModifier = if (focus != null) modifier else modifier.onGloballyPositioned {
         val bounds = it.boundsInWindow()
@@ -71,12 +75,17 @@ private fun BoxScope.PendingMark(ref: CoverRef) {
  */
 @Composable
 internal fun PrefetchCovers(refs: List<CoverRef?>, covers: Covers, focus: CoverFocus, scrolling: () -> Boolean = { false }, visible: () -> IntRange) {
-    val scope = rememberCoroutineScope()
-    val viewport = remember(covers, scope, focus) { covers.viewport(scope, focus) }
-    DisposableEffect(viewport) { onDispose { viewport.clear() } }
-    LaunchedEffect(refs, viewport) {
-        snapshotFlow { visible() to scrolling() }.distinctUntilChanged().collect { (range, moving) ->
-            viewport.update(refs, range, moving)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(refs, covers, focus, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            val viewport = covers.viewport(this, focus)
+            try {
+                snapshotFlow { visible() to scrolling() }.distinctUntilChanged().collect { (range, moving) ->
+                    viewport.update(refs, range, moving)
+                }
+            } finally {
+                viewport.clear()
+            }
         }
     }
 }

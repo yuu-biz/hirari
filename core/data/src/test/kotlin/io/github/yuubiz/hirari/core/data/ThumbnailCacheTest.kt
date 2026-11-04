@@ -48,6 +48,22 @@ class ThumbnailCacheTest {
     private suspend fun ThumbnailCache.isHit(name: String) = get(key(name)) is ThumbLookup.Hit
 
     @Test
+    fun `resuming clears interrupted failures after reopening the cache and preserves decode failures`() = runTest {
+        val making = folder.newFolder("interrupted")
+        cache.markFailed(key("corrupt"))
+        File(making, key("dying").digest).createNewFile()
+        val nextStart = DiskThumbnailCache(dir, index.thumbs(), makingDir = making)
+        assertTrue(nextStart.settleInterrupted())
+        assertIs<ThumbLookup.Failed>(nextStart.get(key("dying")))
+        val reopened = DiskThumbnailCache(dir, index.thumbs(), makingDir = making)
+        reopened.clearInterrupted()
+        assertIs<ThumbLookup.Miss>(reopened.get(key("dying")))
+        assertIs<ThumbLookup.Failed>(reopened.get(key("corrupt")))
+        reopened.clearInterrupted()
+        assertIs<ThumbLookup.Failed>(reopened.get(key("corrupt")))
+    }
+
+    @Test
     fun `the key changes with every field it is made from`() {
         val base = key("a")
         assertEquals(40, base.digest.length)

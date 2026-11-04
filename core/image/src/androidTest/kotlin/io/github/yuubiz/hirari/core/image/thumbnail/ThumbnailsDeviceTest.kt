@@ -258,6 +258,8 @@ class ThumbnailsDeviceTest {
         override suspend fun <T> making(key: ThumbnailKey, block: suspend () -> T): T = block()
 
         override suspend fun settleInterrupted(): Boolean = false
+
+        override suspend fun clearInterrupted() = Unit
     }
 
     private companion object {

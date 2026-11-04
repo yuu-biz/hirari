@@ -95,8 +95,11 @@ class Thumbnails internal constructor(
     /** 表紙を作る: makes thumbnails again after [held]. */
     fun resume() {
         if (making.value == Making.Held) {
-            unavailableUntil.clear()
-            if (making.compareAndSet(Making.Held, Making.Allowed)) resumed.value = true
+            scope.launch {
+                store.clearInterrupted()
+                unavailableUntil.clear()
+                if (making.compareAndSet(Making.Held, Making.Allowed)) resumed.value = true
+            }
         }
     }
 
@@ -376,7 +379,7 @@ class Thumbnails internal constructor(
     private suspend fun search(folder: ThumbSubject.Folder, key: ThumbnailKey, search: Search): ThumbResult {
         // Another flight for the key may have stored it since [folder] looked.
         stored(key)?.let { return it }
-        folder.chosen?.let { visit(it, search) }
+        withContext(io) { folder.resolveChosen() }?.let { visit(it, search) }
         if (!search.done) {
             val entries = listing(search, FolderEntry.Directory(folder.id.value, folder.children))
             if (entries != null) walk(entries, depth = 0, search)

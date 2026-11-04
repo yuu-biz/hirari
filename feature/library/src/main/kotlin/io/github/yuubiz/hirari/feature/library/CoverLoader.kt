@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
 import io.github.yuubiz.hirari.core.ui.TraceSection
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import io.github.yuubiz.hirari.core.image.thumbnail.Thumbnails
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -39,8 +42,8 @@ sealed interface CoverState<out I> {
     data object Failed : CoverState<Nothing>
 
     /**
-     * Reading failed for a reason that may pass; the placeholder shows until the row is bound again, or until the
-     * reason passes, as when the connection of its place comes back.
+     * Reading failed for a reason that may pass; the placeholder shows until the next attempt after sixty seconds,
+     * or until the connection of its place comes back.
      */
     data object Unavailable : CoverState<Nothing>
 }
@@ -99,7 +102,23 @@ class CoverLoader<I : Any>(
         val unavailable = AtomicBoolean(false)
         val fresh = refreshed.filter { it == key }.map { false }.onStart { emit(false) }
         val again = recoveries.filter { unavailable.get() }.map { true }
-        emitAll(merge(fresh, again).flatMapLatest { look(key, request, retry = it) }.onEach { unavailable.set(it == CoverState.Unavailable) })
+        coroutineScope {
+            val timed = MutableSharedFlow<Boolean>()
+            var timer: Job? = null
+            try {
+                emitAll(merge(fresh, again, timed).flatMapLatest { look(key, request, retry = it) }.onEach {
+                    unavailable.set(it == CoverState.Unavailable)
+                    timer?.cancel()
+                    if (it == CoverState.Unavailable) timer = launch {
+                        delay(Thumbnails.UNAVAILABLE_BACKOFF_MILLIS)
+                        // A timed request respects the source's back-off; a reconnection bypasses it.
+                        timed.emit(false)
+                    }
+                })
+            } finally {
+                timer?.cancel()
+            }
+        }
     }
 
     /** Looks up the thumbnail of [request] in the store and holds it, for an item the list will show soon. Nothing is decoded. */

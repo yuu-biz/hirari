@@ -99,15 +99,19 @@ interface ThumbnailCache {
 
     /**
      * Turns the records that a process which died while making thumbnails left into failures, so those are not made
-     * again for this version of their file, and says whether there were any. Call once at start, before the first
+     * again until explicitly resumed, and says whether there were any. Call once at start, before the first
      * [making].
      */
     suspend fun settleInterrupted(): Boolean
+
+    /** 表紙を作る: forgets only failures made from interrupted records. */
+    suspend fun clearInterrupted()
 }
 
 @Entity(tableName = "thumbs", indices = [Index("last_used")])
 internal data class ThumbRow(
     @PrimaryKey val digest: String,
+    /** Nonnegative for stored bytes and decode failures; -1 identifies an interrupted failure. */
     val bytes: Long,
     @ColumnInfo(name = "last_used") val lastUsed: Long,
     val failed: Boolean,
@@ -126,6 +130,9 @@ internal interface ThumbDao {
 
     @Query("DELETE FROM thumbs WHERE digest = :digest")
     suspend fun delete(digest: String)
+
+    @Query("DELETE FROM thumbs WHERE failed AND bytes = -1")
+    suspend fun deleteInterrupted()
 
     @Query("DELETE FROM thumbs")
     suspend fun deleteAll()
@@ -236,9 +243,9 @@ internal class DiskThumbnailCache(
 
     override suspend fun markFailed(key: ThumbKey) = markFailed(key.digest)
 
-    private suspend fun markFailed(digest: String) = writing.withLock {
+    private suspend fun markFailed(digest: String, interrupted: Boolean = false) = writing.withLock {
         withContext(io) { fileOf(digest).delete() }
-        dao.upsert(ThumbRow(digest, 0, now().toEpochMilli(), failed = true))
+        dao.upsert(ThumbRow(digest, if (interrupted) -1 else 0, now().toEpochMilli(), failed = true))
     }
 
     override suspend fun remove(key: ThumbKey) = writing.withLock {
@@ -276,11 +283,13 @@ internal class DiskThumbnailCache(
     override suspend fun settleInterrupted(): Boolean {
         val left = withContext(io) { makingDir.listFiles()?.toList().orEmpty() }
         for (record in left) {
-            markFailed(record.name)
+            markFailed(record.name, interrupted = true)
             withContext(io) { record.delete() }
         }
         return left.isNotEmpty()
     }
+
+    override suspend fun clearInterrupted() = writing.withLock { dao.deleteInterrupted() }
 
     override suspend fun reconcile() = writing.withLock {
         val files = withContext(io) { dir.listFiles()?.toList().orEmpty() }

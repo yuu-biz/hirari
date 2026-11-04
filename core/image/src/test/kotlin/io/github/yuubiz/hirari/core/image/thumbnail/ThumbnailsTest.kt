@@ -92,7 +92,12 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
 
     override suspend fun settleInterrupted(): Boolean {
         failed += interrupted
-        return interrupted.isNotEmpty().also { interrupted.clear() }
+        return interrupted.isNotEmpty()
+    }
+
+    override suspend fun clearInterrupted() {
+        failed.removeAll(interrupted)
+        interrupted.clear()
     }
 }
 
@@ -345,8 +350,10 @@ class ThumbnailsTest {
     }
 
     @Test
-    fun afterAProcessDiedMakingAThumbnailNoneIsMadeUntilResumedAndThatOneStaysFailed() = runTest {
+    fun afterAProcessDiedMakingAThumbnailResumeRemakesItButKeepsDecodeFailures() = runTest {
         val dying = request(book("dying"))
+        val corrupt = request(book("corrupt"))
+        store.markFailed(ThumbnailKey(BookId("corrupt"), Instant.ofEpochMilli(1000), 5000, null, 300, ReadingDirection.RightToLeft))
         store.interrupted += ThumbnailKey(BookId("dying"), Instant.ofEpochMilli(1000), 5000, null, 300, ReadingDirection.RightToLeft)
         val thumbnails = thumbnails()
         val held = async { thumbnails.held.first() }
@@ -369,7 +376,10 @@ class ThumbnailsTest {
         resumed.await()
         assertFalse(thumbnails.held.first())
         assertEquals("other", shows(thumbnails.thumbnail(request(book("other")))))
-        assertEquals(ThumbResult.Failed, thumbnails.thumbnail(dying))
+        assertEquals("dying", shows(thumbnails.thumbnail(dying)))
+        assertEquals(ThumbResult.Failed, thumbnails.thumbnail(corrupt))
+        assertFalse(maker.ids.contains("corrupt"))
+        thumbnails.close()
     }
 
     @Test
@@ -389,8 +399,38 @@ class ThumbnailsTest {
         // This collector missed resume itself, just as a row outside the viewport does.
         assertEquals(Unit, thumbnails.resumptions.first())
         assertEquals("later", shows(thumbnails.observe(request(book("later"))).first()))
-        assertEquals(ThumbResult.Failed, thumbnails.observe(request(book("dying"))).first())
+        assertEquals("dying", shows(thumbnails.observe(request(book("dying"))).first()))
         active.cancel()
+        thumbnails.close()
+    }
+
+    @Test
+    fun chosenFolderResolutionWaitsForGenerationAndStopsWhenTheVisibleCollectorLeaves() = runTest {
+        val thumbnails = thumbnails()
+        var lookups = 0
+        var cancelled = false
+        var searches = 0
+        val subject = ThumbSubject.Folder(BookId("chosen folder"), Instant.ofEpochMilli(500), resolveChosen = {
+            lookups++
+            try {
+                awaitCancellation()
+            } finally {
+                cancelled = true
+            }
+        }) {
+            searches++
+            emptyList()
+        }
+        val ref = request(subject)
+        assertNull(thumbnails.cached(ref))
+        assertEquals(0, lookups)
+        val visible = launch { thumbnails.observe(ref).collect {} }
+        runCurrent()
+        assertEquals(1, lookups)
+        visible.cancel()
+        runCurrent()
+        assertTrue(cancelled)
+        assertEquals(0, searches)
         thumbnails.close()
     }
 

@@ -209,22 +209,46 @@ class CoversTest {
     }
 
     @Test
-    fun `chosen images are looked up a few at once in the order given, and each folder leaves pending as its own lookup ends`() = runTest {
-        val paths = (1..6).map { "f$it" }
-        val slow = paths.associateWith { CompletableDeferred<Unit>() }
-        for (path in paths) fixture.coverBooks.folders[path] = listOf(entry("c.jpg"))
-        fixture.coverBooks.stalls.putAll(slow)
-        val seen = mutableListOf<ChosenCovers>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            covers.chosenCovers(saf, paths.associateWith { FolderCover("$it/c.jpg") }).collect { seen += it }
-        }
-        assertEquals(ChosenCovers(emptyMap(), paths.toSet()), seen.single())
-        assertEquals(listOf("f1", "f2", "f3", "f4"), fixture.coverBooks.listCalls)
+    fun `simultaneous chosen images in one parent share a listing and cancellation releases each waiter`() = runTest(UnconfinedTestDispatcher()) {
+        fixture.coverBooks.folders["f"] = listOf(entry("a.jpg"), entry("b.jpg"))
+        val gate = CompletableDeferred<Unit>()
+        fixture.coverBooks.gate = gate
+        var found: ChosenCover? = null
+        val first = launch { covers.chosen(saf, FolderCover("f/a.jpg")) }
+        val second = launch { found = covers.chosen(saf, FolderCover("f/b.jpg")) }
+        assertEquals(listOf("f"), fixture.coverBooks.listCalls)
+        first.cancel()
+        gate.complete(Unit)
+        second.join()
+        assertEquals("b.jpg", found?.entry?.name)
+        assertEquals(listOf("f"), fixture.coverBooks.listCalls)
+        covers.chosen(saf, FolderCover("f/a.jpg"))
+        assertEquals(listOf("f", "f"), fixture.coverBooks.listCalls, "completed listings are not kept stale")
+    }
 
-        slow.getValue("f3").complete(Unit)
-        assertEquals(setOf("f3"), seen.last().found.keys)
-        assertEquals(paths.toSet() - "f3", seen.last().pending)
-        assertEquals(listOf("f1", "f2", "f3", "f4", "f5"), fixture.coverBooks.listCalls)
+    @Test
+    fun `chosen lookups still list at most four different parents at once`() = runTest(UnconfinedTestDispatcher()) {
+        val gate = CompletableDeferred<Unit>()
+        fixture.coverBooks.gate = gate
+        val jobs = (1..6).map { index ->
+            fixture.coverBooks.folders["f$index"] = listOf(entry("a.jpg"))
+            launch { covers.chosen(saf, FolderCover("f$index/a.jpg")) }
+        }
+        assertEquals(listOf("f1", "f2", "f3", "f4"), fixture.coverBooks.listCalls)
+        gate.complete(Unit)
+        jobs.forEach { it.join() }
+        assertEquals(6, fixture.coverBooks.listCalls.size)
+    }
+
+    @Test
+    fun `leaving while a chosen image is being resolved cancels its listing`() = runTest(UnconfinedTestDispatcher()) {
+        fixture.coverBooks.folders["f"] = listOf(entry("a.jpg"))
+        fixture.coverBooks.gate = CompletableDeferred()
+        val row = launch { covers.chosen(saf, FolderCover("f/a.jpg")) }
+        assertEquals(listOf("f"), fixture.coverBooks.listCalls)
+        row.cancel()
+        row.join()
+        assertEquals(1, fixture.coverBooks.cancelledListings)
     }
 
     @Test

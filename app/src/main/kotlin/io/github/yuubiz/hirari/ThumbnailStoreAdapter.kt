@@ -32,6 +32,8 @@ internal class ThumbnailStoreAdapter(private val cache: ThumbnailCache) : Thumbn
     override suspend fun <T> making(key: ThumbnailKey, block: suspend () -> T): T = cache.making(key.toCacheKey(), block)
 
     override suspend fun settleInterrupted(): Boolean = cache.settleInterrupted()
+
+    override suspend fun clearInterrupted() = cache.clearInterrupted()
 }
 
 internal fun ThumbnailKey.toCacheKey() = ThumbKey(book, modified, byteSize, coverEntry, sizePx, direction, coverCrop)

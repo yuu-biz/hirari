@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.data.FolderCover
+
 import io.github.yuubiz.hirari.core.data.LibraryBook
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
@@ -164,9 +166,7 @@ class CoverContext(
     val place: LibraryLocation,
     val defaultDirection: ReadingDirection,
     val directions: Map<BookId, ReadingDirection>,
-    val chosen: Map<String, ChosenCover>,
-    /** Folders with a cover the user chose that is not found yet: they show no cover until it is, or it is not there. */
-    val pending: Set<String> = emptySet(),
+    val chosen: Map<String, FolderCover>,
 )
 
 /**
@@ -188,8 +188,8 @@ fun List<FileRow>.withCovers(indexed: List<LibraryBook>, context: CoverContext):
                 CoverSpec.Book(id, modified, entry.size ?: 0, coverByPath[row.path]?.coverEntry, direction, CoverOrigin.Archive(context.place, row.path, entry.documentId), coverByPath[row.path]?.coverCrop)
             is FileItem.Image ->
                 CoverSpec.Book(id, modified, entry.size ?: 0, null, direction, CoverOrigin.Image(context.place, row.path, entry.documentId))
-            is FileItem.Folder -> if (row.path in context.pending) null else
-                CoverSpec.Folder(id, modified, direction, context.place, row.path, entry.documentId, context.chosen[row.path]?.toSpec(context.place, direction))
+            is FileItem.Folder ->
+                CoverSpec.Folder(id, modified, direction, context.place, row.path, entry.documentId, null, context.chosen[row.path])
             is FileItem.Text -> null
         }
         if (cover == row.cover) row else row.copy(cover = cover)

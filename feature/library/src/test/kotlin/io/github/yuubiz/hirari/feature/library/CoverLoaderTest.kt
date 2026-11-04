@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.time.Instant
@@ -52,6 +54,46 @@ class CoverLoaderTest {
     )
 
     private fun ready(name: String) = ThumbResult.Ready(File(name), ThumbnailKey(spec.id, spec.modified, spec.byteSize, null, 300, spec.direction))
+
+    @Test
+    fun `a visible transient failure is retried every sixty seconds without rebinding`() = runTest(UnconfinedTestDispatcher()) {
+        source.result = ThumbResult.Unavailable
+        val seen = mutableListOf<CoverState<String>>()
+        val row = launch { loader.show(key, request()).collect { seen += it } }
+        assertEquals(1, source.watches.size)
+        advanceTimeBy(59_999)
+        runCurrent()
+        assertEquals(1, source.watches.size)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(2, source.watches.size)
+        source.result = ready("back.webp")
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(CoverState.Loaded("image:back.webp"), seen.last())
+        assertEquals(3, source.watches.size)
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(3, source.watches.size)
+        assertTrue(source.retries.isEmpty(), "the timer must respect source back-off")
+        row.cancel()
+    }
+
+    @Test
+    fun `a final failure is never retried by the timer and leaving cancels a transient retry`() = runTest(UnconfinedTestDispatcher()) {
+        source.result = ThumbResult.Failed
+        val finalRow = launch { loader.show(key, request()).collect {} }
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(1, source.watches.size)
+        finalRow.cancel()
+        source.result = ThumbResult.Unavailable
+        val transientRow = launch { loader.show(key, request()).collect {} }
+        transientRow.cancel()
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(2, source.watches.size)
+    }
 
     @Test
     fun `the stored thumbnail is decoded off the caller's thread`() {

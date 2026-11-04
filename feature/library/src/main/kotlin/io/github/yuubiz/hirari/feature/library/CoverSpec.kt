@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.data.FolderCover
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.model.Book
@@ -71,6 +72,8 @@ sealed interface CoverSpec {
         val path: String,
         val documentId: String?,
         val chosen: Book?,
+        /** The persisted choice; its parent listing waits until this folder is visible and needs making. */
+        val selection: FolderCover? = null,
     ) : CoverSpec
 }
 

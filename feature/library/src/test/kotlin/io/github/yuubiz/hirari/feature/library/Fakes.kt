@@ -619,10 +619,17 @@ internal class FakeCoverBooks : CoverBooks {
 
     override fun reconnections(place: LibraryLocation): Flow<Unit> = reconnected.getOrPut(place) { MutableSharedFlow() }
 
+    var cancelledListings = 0
+
     override suspend fun list(place: LibraryLocation, path: String, documentId: String?): List<FolderEntry> {
         listCalls += path
-        gate?.await()
-        stalls.remove(path)?.await()
-        return folders[path] ?: throw java.io.IOException("no such folder")
+        try {
+            gate?.await()
+            stalls.remove(path)?.await()
+            return folders[path] ?: throw java.io.IOException("no such folder")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            cancelledListings++
+            throw e
+        }
     }
 }

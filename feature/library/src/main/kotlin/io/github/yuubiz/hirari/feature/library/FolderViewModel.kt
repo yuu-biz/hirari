@@ -188,7 +188,7 @@ class FolderViewModel(
 
     private fun shown(services: LibraryServices, entries: List<FolderEntry>, layout: Flow<Layout>): Flow<FolderContent> {
         val sorted = layout.map { it.ordering }.distinctUntilChanged().map { entries.toRows(folder.path, it) }.flowOn(compute)
-        val context = place.value?.let { coverContext(services, it, entries, sorted) } ?: flowOf(null)
+        val context = place.value?.let { coverContext(services, it) } ?: flowOf(null)
         val marked = combine(sorted, services.books.inFolder(folder.location, folder.path), progressOf(services, sorted), context) { rows, indexed, progress, covers ->
             val marked = rows.withMarks(indexed, progress)
             if (covers == null) marked else marked.withCovers(indexed, covers)
@@ -201,24 +201,12 @@ class FolderViewModel(
         }.flowOn(compute)
     }
 
-    /**
-     * What the covers of this listing need: the directions of the books that have one, the global one, and the image
-     * chosen for each folder in it, whose file is looked up once off the main thread, in the order of [rows]. A hidden
-     * folder the rows leave out comes last and is looked up too, since showing hidden files does not look again. The
-     * rows are shown before the lookups end, but a folder with a chosen image shows no cover until it is found, so its
-     * cover is never made without the image.
-     */
-    private fun coverContext(services: LibraryServices, place: LibraryLocation, entries: List<FolderEntry>, rows: Flow<List<FileRow>>): Flow<CoverContext> {
-        val folders = entries.filter { it.directory }.mapTo(HashSet()) { normalizePath("${folder.path}/${it.name}") }
-        val chosen = services.coverIndex.folderCovers(folder.location)
-            .map { all -> all.filterKeys { it in folders } }
-            .distinctUntilChanged()
-            .flatMapLatest { all ->
-                val shownFirst = if (all.isEmpty()) emptyList() else rows.first().map { it.path }.filter { it in all }
-                services.covers.chosenCovers(place, (shownFirst + all.keys).distinct().associateWith(all::getValue))
-            }
+    /** Carries chosen paths without resolving them; only visible cover requests do I/O (section 4.4). */
+    private fun coverContext(services: LibraryServices, place: LibraryLocation): Flow<CoverContext> {
         val direction = services.settings.settings.map { it.readingDirection }.distinctUntilChanged()
-        return combine(services.coverIndex.directions(), direction, chosen) { directions, default, chosen -> CoverContext(place, default, directions, chosen.found, chosen.pending) }
+        return combine(services.coverIndex.directions(), direction, services.coverIndex.folderCovers(folder.location)) { directions, default, chosen ->
+            CoverContext(place, default, directions, chosen)
+        }
     }
 
     /** The progress of the books and texts of the [rows] by path, which a book marked before it was ever opened has too. */

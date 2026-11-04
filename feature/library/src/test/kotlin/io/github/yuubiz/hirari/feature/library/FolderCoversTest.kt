@@ -109,69 +109,43 @@ class FolderCoversTest {
     }
 
     @Test
-    fun `the image chosen for a folder is found once in its folder and the rows show before it is`() = runTest {
+    fun `chosen folder covers stay unresolved until requested, including hidden folders`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(entry("外伝", directory = true), entry(".隠し", directory = true))
+        val selection = FolderCover("作品/外伝/cover.jpg")
+        fixture.coverIndex.folderCovers.value = mapOf(
+            "作品/外伝" to selection,
+            "作品/.隠し" to FolderCover("作品/.隠し/c.jpg"),
+        )
+        val list = viewModel()
+        val spec = assertIs<CoverSpec.Folder>(list.shown().rows.single().cover)
+        assertEquals(selection, spec.selection)
+        assertNull(spec.chosen)
+        assertTrue(fixture.coverBooks.listCalls.isEmpty())
+
+        fixture.coverIndex.folderCovers.value = mapOf("作品/外伝" to FolderCover("作品/外伝/1.zip", entry = 3))
+        assertEquals(3, assertIs<CoverSpec.Folder>(list.shown().rows.single().cover).selection?.entry)
+        assertTrue(fixture.coverBooks.listCalls.isEmpty())
+    }
+
+    @Test
+    fun `a chosen folder resolves its image or page only when generation searches it`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(entry("外伝", directory = true))
         fixture.coverBooks.folders["作品/外伝"] = listOf(entry("cover.jpg"), entry("1.zip"))
-        fixture.coverIndex.folderCovers.value = mapOf("作品/外伝" to FolderCover("作品/外伝/cover.jpg"), "別" to FolderCover("別/x.jpg"))
-        val list = viewModel()
-
-        val chosen = assertIs<CoverSpec.Folder>(list.shown().rows.single().cover).chosen
-        assertEquals(CoverOrigin.Image(place, "作品/外伝/cover.jpg", "doc:cover.jpg"), chosen?.origin)
-        assertEquals(listOf("作品/外伝"), fixture.coverBooks.listCalls)
-
-        fixture.coverIndex.folderCovers.value = mapOf("作品/外伝" to FolderCover("作品/外伝/1.zip", entry = 3))
-        val page = assertIs<CoverSpec.Folder>(list.shown().rows.single().cover).chosen
-        assertEquals(3, page?.coverEntry)
-        assertEquals(CoverOrigin.Archive(place, "作品/外伝/1.zip", "doc:1.zip"), page?.origin)
-
-        fixture.coverIndex.folderCovers.value = emptyMap()
-        assertNull(assertIs<CoverSpec.Folder>(list.shown().rows.single().cover).chosen)
-    }
-
-    @Test
-    fun `a folder with a chosen image shows no cover until the image is found, and the others do at once`() = runTest {
-        fixture.locations.rows.value = listOf(place)
-        fixture.lister.folders["作品"] = listOf(entry("外伝", directory = true), entry("番外", directory = true), entry("1.zip"))
-        fixture.coverBooks.folders["作品/外伝"] = listOf(entry("cover.jpg"))
         fixture.coverIndex.folderCovers.value = mapOf("作品/外伝" to FolderCover("作品/外伝/cover.jpg"))
-        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
-        fixture.coverBooks.gate = gate
         val list = viewModel()
-
-        val before = list.shown().rows.associate { it.item.entry.name to it.cover }
-        assertNull(before.getValue("外伝"))
-        assertIs<CoverSpec.Folder>(before.getValue("番外"))
-        assertIs<CoverSpec.Book>(before.getValue("1.zip"))
-
-        gate.complete(Unit)
-        assertEquals("作品/外伝/cover.jpg", (assertIs<CoverSpec.Folder>(list.shown().rows.first { it.item.entry.name == "外伝" }.cover).chosen?.origin as CoverOrigin.Image).path)
-    }
-
-    @Test
-    fun `a folder shows its chosen cover once it is found, while another folder is still looked up`() = runTest {
-        fixture.locations.rows.value = listOf(place)
-        fixture.lister.folders["作品"] = listOf(entry("外伝", directory = true), entry("番外", directory = true))
-        fixture.coverBooks.folders["作品/外伝"] = listOf(entry("a.jpg"))
-        fixture.coverBooks.folders["作品/番外"] = listOf(entry("b.jpg"))
-        fixture.coverIndex.folderCovers.value = mapOf("作品/番外" to FolderCover("作品/番外/b.jpg"), "作品/外伝" to FolderCover("作品/外伝/a.jpg"))
-        val slow = CompletableDeferred<Unit>()
-        fixture.coverBooks.stalls["作品/番外"] = slow
-        val list = viewModel()
-        fun cover(name: String) = list.shown().rows.single { it.item.entry.name == name }.cover as CoverSpec.Folder?
-
-        assertEquals(locationBookId(place, "作品/外伝/a.jpg"), cover("外伝")?.chosen?.id)
-        assertNull(cover("番外"))
-        slow.complete(Unit)
-        assertEquals(locationBookId(place, "作品/番外/b.jpg"), cover("番外")?.chosen?.id)
-    }
-
-    @Test
-    fun `a chosen image that cannot be found leaves the folder searched`() = runTest {
-        fixture.locations.rows.value = listOf(place)
-        fixture.lister.folders["作品"] = listOf(entry("外伝", directory = true))
+        suspend fun resolved(): ThumbSubject.Book? {
+            val ref = CoverRef(list.shown().rows.single().cover!!, 320)
+            val subject = fixture.covers.request(ref, io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority.Visible).subject
+            return assertIs<ThumbSubject.Folder>(subject).resolveChosen()
+        }
+        assertTrue(fixture.coverBooks.listCalls.isEmpty())
+        assertEquals(locationBookId(place, "作品/外伝/cover.jpg"), resolved()?.id)
+        fixture.coverIndex.folderCovers.value = mapOf("作品/外伝" to FolderCover("作品/外伝/1.zip", entry = 3))
+        assertEquals(3, resolved()?.coverEntry)
         fixture.coverIndex.folderCovers.value = mapOf("作品/外伝" to FolderCover("作品/外伝/gone.jpg"))
-        assertNull(assertIs<CoverSpec.Folder>(viewModel().shown().rows.single().cover).chosen)
+        assertNull(resolved())
     }
 
     @Test

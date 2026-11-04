@@ -62,6 +62,9 @@ interface ThumbnailStore {
 
     /** Records as failed what a process that died while making it left, and says whether there was any. Once, before [making]. */
     suspend fun settleInterrupted(): Boolean
+
+    /** Forgets failures from interrupted records, keeping actual decode failures. */
+    suspend fun clearInterrupted()
 }
 
 /**
@@ -114,6 +117,8 @@ sealed interface ThumbSubject {
         override val id: BookId,
         override val modified: Instant,
         val chosen: Book? = null,
+        /** Resolves the chosen file only on a cache miss while generation is allowed. */
+        val resolveChosen: suspend () -> Book? = { chosen },
         val children: suspend () -> List<FolderEntry>,
     ) : ThumbSubject
 }

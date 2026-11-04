@@ -52,9 +52,20 @@ class ThumbnailStoreAdapterTest {
         var interrupted = false
 
         override suspend fun settleInterrupted(): Boolean = interrupted
+
+        var clearedInterrupted = 0
+
+        override suspend fun clearInterrupted() { clearedInterrupted++ }
     }
 
     private val book = ThumbnailKey(BookId("book"), Instant.ofEpochMilli(1234), 99, coverEntry = 3, sizePx = 320, direction = ReadingDirection.LeftToRight)
+
+    @Test
+    fun `resuming forwards the clearing of interrupted failures to the cache`() = runBlocking {
+        val cache = Recording()
+        ThumbnailStoreAdapter(cache).clearInterrupted()
+        assertEquals(1, cache.clearedInterrupted)
+    }
 
     @Test
     fun `every call reaches the cache with the same fields`() = runBlocking {
