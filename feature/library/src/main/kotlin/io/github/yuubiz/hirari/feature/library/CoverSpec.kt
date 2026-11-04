@@ -15,6 +15,8 @@ import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
 import java.time.Instant
 import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.max
 
 /** Where the bytes of a cover's book are, and so how to open them. */
 sealed interface CoverOrigin {
@@ -117,18 +119,27 @@ data class CoverRef(val spec: CoverSpec, val sizePx: Int) {
 /** Width over height of the cover box in a list. */
 internal const val COVER_RATIO = 0.7f
 
-internal val ThumbSize.cellWidth: Dp get() = when (this) {
-    ThumbSize.Small -> 88.dp
-    ThumbSize.Medium -> 112.dp
-    ThumbSize.Large -> 144.dp
+/** The narrowest a grid cell may be (docs/spec.md section 4.3, グリッドの列数). */
+internal val ThumbSize.minCellWidth: Dp get() = when (this) {
+    ThumbSize.Small -> 72.dp
+    ThumbSize.Medium -> 90.dp
+    ThumbSize.Large -> 120.dp
 }
 
+/** How many columns a grid of [width] has: as many cells of at least [ThumbSize.minCellWidth] as fit, and never fewer than 2. */
+internal fun gridColumns(width: Dp, size: ThumbSize): Int = max(MIN_COLUMNS, floor(width.value / size.minCellWidth.value).toInt())
+
+private const val MIN_COLUMNS = 2
+
 /**
- * The long side of a thumbnail in pixels (docs/spec.md section 5.4): the height of the cover box of a cell of
- * [size] on a screen of [density]. The only place the size is worked out, so the lists, the regeneration and the
- * store all name the same thumbnail.
+ * The long side of a thumbnail in pixels (docs/spec.md section 5.4): the height of the cover box of a cell 1.5 times
+ * the narrowest cell of [size], on a screen of [density]. A cell is narrower than twice the narrowest, so a cover is
+ * seldom enlarged. The only place the size is worked out, so the lists, the regeneration and the store all name the
+ * same thumbnail.
  */
-fun coverSizePx(size: ThumbSize, density: Float): Int = ceil(size.cellWidth.value / COVER_RATIO * density).toInt()
+fun coverSizePx(size: ThumbSize, density: Float): Int = ceil(size.minCellWidth.value * COVER_CELL_SCALE / COVER_RATIO * density).toInt()
+
+private const val COVER_CELL_SCALE = 1.5f
 
 /**
  * The image or page the user chose as the cover of a folder, with the listing entry of the file it is in, whose

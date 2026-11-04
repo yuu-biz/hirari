@@ -182,7 +182,7 @@ class FolderCoversTest {
         val list = viewModel()
 
         list.remake(list.shown().rows.single())
-        assertEquals(listOf(412, 252, 320), fixture.thumbnails.regenerated.map { it.sizePx })
+        assertEquals(listOf(515, 309, 386), fixture.thumbnails.regenerated.map { it.sizePx })
         assertEquals(setOf(locationBookId(place, "作品/1巻.zip")), fixture.thumbnails.regenerated.map { (it.subject as ThumbSubject.Book).id }.toSet())
     }
 
@@ -206,7 +206,7 @@ class FolderCoversTest {
 
         list.chooseFolderCover(row, choose = true)
         assertEquals(listOf(Triple<LocationId, String, FolderCover?>(place.id, "作品", FolderCover("作品/p.png"))), fixture.locations.chosenCovers)
-        assertEquals(listOf(320, 252, 412), fixture.thumbnails.regenerated.map { it.sizePx })
+        assertEquals(listOf(386, 309, 515), fixture.thumbnails.regenerated.map { it.sizePx })
         val folder = fixture.thumbnails.regenerated.map { it.subject }.first()
         assertIs<ThumbSubject.Folder>(folder)
         assertEquals(locationBookId(place, "作品"), folder.id)
@@ -224,7 +224,7 @@ class FolderCoversTest {
         val list = screen.own { FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, "作品", "doc:作品"), UnconfinedTestDispatcher(testScheduler)) }
         watch(list.state)
         val folder = checkNotNull(fixture.covers.folderSpec(place, "作品", fixture.settings.value.value.readingDirection, null))
-        watch(fixture.covers.show(CoverRef(folder, 320)))
+        watch(fixture.covers.show(CoverRef(folder, 386)))
         fun folderLooks() = fixture.thumbnails.watches.count { it.request.subject.id == folder.id }
         assertEquals(1, folderLooks())
         val slow = CompletableDeferred<Unit>()
@@ -233,7 +233,7 @@ class FolderCoversTest {
         list.chooseFolderCover(list.shown().rows.single(), choose = true)
         screen.clear()
         slow.complete(Unit)
-        assertEquals(listOf(320, 252, 412), fixture.thumbnails.regenerated.map { it.sizePx })
+        assertEquals(listOf(386, 309, 515), fixture.thumbnails.regenerated.map { it.sizePx })
         assertEquals(setOf(locationBookId(place, "作品/p.png")), fixture.thumbnails.regenerated.map { (it.subject as ThumbSubject.Folder).chosen?.id }.toSet())
         assertEquals(2, folderLooks())
     }

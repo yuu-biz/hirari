@@ -274,7 +274,7 @@ class ArchiveViewModelTest {
         assertEquals(500, spec.byteSize)
         assertEquals(io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight, spec.direction)
         assertEquals(CoverOrigin.Archive(place, "作品/book.zip", "doc:book"), spec.origin)
-        assertEquals(320, refs.first().sizePx)
+        assertEquals(386, refs.first().sizePx)
     }
 
     @Test

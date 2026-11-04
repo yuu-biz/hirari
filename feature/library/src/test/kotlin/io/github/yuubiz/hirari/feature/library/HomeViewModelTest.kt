@@ -121,7 +121,7 @@ class HomeViewModelTest {
         assertEquals(5, spec.coverEntry)
         assertEquals(io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight, spec.direction)
         assertEquals(CoverOrigin.Archive(place, "作品/1巻.zip", null), spec.origin)
-        assertEquals(320, shelf.covers.sizePx)
+        assertEquals(386, shelf.covers.sizePx)
 
         val specs = (home.state.value.history as Loadable.Ready).value.specs
         assertEquals(setOf(first.id, handed.id), specs.keys)

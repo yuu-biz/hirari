@@ -161,16 +161,16 @@ class CoversTest {
 
     @Test
     fun `sizes follow the cell of the thumbnail size and the density`() {
-        assertEquals(252, covers.sizePx(ThumbSize.Small))
-        assertEquals(320, covers.sizePx(ThumbSize.Medium))
-        assertEquals(412, covers.sizePx(ThumbSize.Large))
-        assertEquals(listOf(412, 252, 320), covers.sizesFrom(ThumbSize.Large))
+        assertEquals(309, covers.sizePx(ThumbSize.Small))
+        assertEquals(386, covers.sizePx(ThumbSize.Medium))
+        assertEquals(515, covers.sizePx(ThumbSize.Large))
+        assertEquals(listOf(515, 309, 386), covers.sizesFrom(ThumbSize.Large))
     }
 
     @Test
     fun `regenerating asks for each size in turn with the visible priority`() = runTest {
         covers.regenerate(book(saf, "s/1.zip"), covers.sizesFrom(ThumbSize.Medium))
-        assertEquals(listOf(320, 252, 412), fixture.thumbnails.regenerated.map { it.sizePx })
+        assertEquals(listOf(386, 309, 515), fixture.thumbnails.regenerated.map { it.sizePx })
         assertEquals(setOf(ThumbPriority.Visible), fixture.thumbnails.regenerated.map { it.priority }.toSet())
     }
 

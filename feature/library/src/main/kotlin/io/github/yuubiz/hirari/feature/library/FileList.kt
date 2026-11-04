@@ -1,7 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +58,7 @@ import io.github.yuubiz.hirari.core.ui.LibraryColors
 import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
 import io.github.yuubiz.hirari.core.ui.decorative
 import io.github.yuubiz.hirari.core.ui.minTouchTarget
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -79,25 +80,25 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
     val held by content.covers.covers.held.collectAsState(initial = false)
     Column(Modifier.fillMaxSize()) {
         if (held && content.view != LibraryView.List) HeldCovers(onResume = content.covers.covers::resume)
-        Box(Modifier.fillMaxWidth().weight(1f)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             when (content.view) {
                 LibraryView.Grid -> {
                     val grid = rememberLazyGridState()
                     LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(content.thumbSize.cellWidth),
+                        columns = GridCells.Fixed(gridColumns(maxWidth, content.thumbSize)),
                         state = grid,
-                        modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
                         items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, focus, onOpen, onLongPress) }
                     }
                     PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
-                    FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
+                    FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
                 LibraryView.ThumbnailList, LibraryView.List -> {
                     val list = rememberLazyListState()
                     LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
-                    LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH)) {
+                    LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
                         items(content.rows, key = { it.path }) { row ->
                             ListRow(row, content.covers.takeIf { content.view == LibraryView.ThumbnailList }, focus, content.thumbSize, onOpen, onLongPress)
                         }
@@ -105,7 +106,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     if (content.view == LibraryView.ThumbnailList) {
                         PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
                     }
-                    FastScroller(content.rows.size, { list.firstVisibleItemIndex }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
+                    FastScroller(content.rows.size, { list.firstVisibleItemIndex }, { list.isScrollInProgress }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
             }
         }
@@ -235,44 +236,54 @@ private fun FileRow.nameColor(colors: LibraryColors): Color = when (item) {
 
 private val FAST_SCROLL_WIDTH = 48.dp
 private const val FAST_SCROLL_MIN_ROWS = 30
+private const val FAST_SCROLL_HIDE_MS = 1500L
 private val THUMB_HEIGHT = 48.dp
 
 /**
- * The 48 dp fast-scroll strip at the right edge (docs/spec.md section 4.3, スクロール). Dragging or tapping the
- * strip moves the list to the same share of its rows.
+ * The fast-scroll thumb over the right edge of the list (docs/spec.md section 4.3, スクロール). It shows while the
+ * list moves and for [FAST_SCROLL_HIDE_MS] after, and only the thumb takes touches, so the list keeps its full width
+ * and a tap beside the thumb reaches the row under it. Dragging the thumb moves the list to the same share of its rows.
  */
 @Composable
-private fun FastScroller(rows: Int, first: () -> Int, scrollTo: (Int) -> Unit, modifier: Modifier) {
+private fun FastScroller(rows: Int, first: () -> Int, scrolling: () -> Boolean, scrollTo: (Int) -> Unit, modifier: Modifier) {
     if (rows < FAST_SCROLL_MIN_ROWS) return
-    // A pointer shortcut. A screen reader scrolls the list itself, so the strip stays out of its way.
+    var dragged by remember { mutableFloatStateOf(-1f) }
+    var shown by remember { mutableStateOf(false) }
+    val active by remember { derivedStateOf { scrolling() || dragged >= 0f } }
+    LaunchedEffect(active) {
+        if (active) {
+            shown = true
+        } else {
+            delay(FAST_SCROLL_HIDE_MS)
+            shown = false
+        }
+    }
+    if (!shown) return
+    // A pointer shortcut. A screen reader scrolls the list itself, so the thumb stays out of its way.
     BoxWithConstraints(modifier.width(FAST_SCROLL_WIDTH).fillMaxHeight().decorative()) {
         val density = LocalDensity.current
         val trackPx = constraints.maxHeight.toFloat()
         val thumbPx = with(density) { THUMB_HEIGHT.toPx() }
-        var dragged by remember { mutableFloatStateOf(-1f) }
-        fun jump(y: Float) {
-            val share = (y / trackPx).coerceIn(0f, 1f)
-            dragged = share
-            scrollTo((share * (rows - 1)).roundToInt())
-        }
+        val travel = (trackPx - thumbPx).coerceAtLeast(1f)
         val share = if (dragged >= 0f) dragged else first().toFloat() / (rows - 1)
         Box(
-            Modifier.fillMaxSize()
-                .pointerInput(rows) { detectTapGestures { jump(it.y) } }
-                .pointerInput(rows) {
+            Modifier.align(Alignment.TopCenter)
+                .offset { IntOffset(0, (share * travel).roundToInt()) }
+                .size(FAST_SCROLL_WIDTH, THUMB_HEIGHT)
+                .pointerInput(rows, travel) {
                     detectVerticalDragGestures(
-                        onDragStart = { jump(it.y) },
+                        onDragStart = { dragged = first().toFloat() / (rows - 1) },
                         onDragEnd = { dragged = -1f },
                         onDragCancel = { dragged = -1f },
-                    ) { change, _ -> jump(change.position.y) }
+                    ) { change, amount ->
+                        change.consume()
+                        dragged = (dragged + amount / travel).coerceIn(0f, 1f)
+                        scrollTo((dragged * (rows - 1)).roundToInt())
+                    }
                 },
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier.align(Alignment.TopCenter)
-                    .offset { IntOffset(0, (share * (trackPx - thumbPx)).roundToInt()) }
-                    .size(6.dp, THUMB_HEIGHT)
-                    .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp)),
-            )
+            Box(Modifier.size(6.dp, THUMB_HEIGHT).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp)))
         }
     }
 }
