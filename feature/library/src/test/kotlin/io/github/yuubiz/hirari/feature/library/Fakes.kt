@@ -560,6 +560,14 @@ internal class FakeThumbnails : ThumbnailSource {
         return result
     }
 
+    override val held = MutableStateFlow(false)
+
+    override val resumptions = MutableSharedFlow<Unit>()
+
+    override fun resume() {
+        held.value = false
+    }
+
     val previews = mutableListOf<Triple<ThumbSubject.Book, Int, Int>>()
     var preview: PagePreview = PagePreview.Unavailable
 

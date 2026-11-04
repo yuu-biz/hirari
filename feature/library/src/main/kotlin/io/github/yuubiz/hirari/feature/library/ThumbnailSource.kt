@@ -25,6 +25,15 @@ interface ThumbnailSource {
     /** サムネイルを作り直す: forgets and makes again. */
     suspend fun regenerate(request: ThumbRequest): ThumbResult
 
+    /** Whether no thumbnail is made, since the last process died making one (docs/spec.md section 4.4). */
+    val held: Flow<Boolean>
+
+    /** Emits when [resume] lets thumbnails be made again. */
+    val resumptions: Flow<Unit>
+
+    /** 表紙を作る: makes thumbnails again after [held]. */
+    fun resume()
+
     /** One page of [book] shown whole and fitted into [maxSidePx], for choosing a range of it as the cover. Not stored. */
     suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview
 }
@@ -37,6 +46,12 @@ class ThumbnailsSource(private val thumbnails: Thumbnails) : ThumbnailSource {
     override fun hold(request: ThumbRequest): Closeable = thumbnails.hold(request)
 
     override suspend fun regenerate(request: ThumbRequest): ThumbResult = thumbnails.regenerate(request)
+
+    override val held: Flow<Boolean> get() = thumbnails.held
+
+    override val resumptions: Flow<Unit> get() = thumbnails.resumptions
+
+    override fun resume() = thumbnails.resume()
 
     override suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview =
         thumbnails.preview(book, entryIndex, maxSidePx)

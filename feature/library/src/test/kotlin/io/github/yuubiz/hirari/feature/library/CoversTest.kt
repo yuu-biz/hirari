@@ -99,6 +99,16 @@ class CoversTest {
     }
 
     @Test
+    fun `a row without a cover asks again when covers are made again after they were held`() = runTest(UnconfinedTestDispatcher()) {
+        val thumbnails = fixture.thumbnails
+        thumbnails.result = ThumbResult.Unavailable
+        val shown = launch { covers.show(CoverRef(book(saf, "s/1.zip"), 320)).collect {} }
+        thumbnails.resumptions.emit(Unit)
+        assertEquals(listOf(locationBookId(saf, "s/1.zip")), thumbnails.retries.map { it.request.subject.id })
+        shown.cancel()
+    }
+
+    @Test
     fun `a book of an SMB place is made in the SMB lane`() {
         val request = covers.request(CoverRef(book(nas, "s/1.zip"), 320), ThumbPriority.Visible)
         assertEquals(ThumbLane.Smb, assertIs<ThumbSubject.Book>(request.subject).lane)

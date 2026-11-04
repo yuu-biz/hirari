@@ -43,6 +43,15 @@ class ThumbnailStoreAdapterTest {
         override suspend fun clear() = Unit
 
         override suspend fun reconcile() = Unit
+
+        override suspend fun <T> making(key: ThumbKey, block: suspend () -> T): T {
+            keys += key
+            return block()
+        }
+
+        var interrupted = false
+
+        override suspend fun settleInterrupted(): Boolean = interrupted
     }
 
     private val book = ThumbnailKey(BookId("book"), Instant.ofEpochMilli(1234), 99, coverEntry = 3, sizePx = 320, direction = ReadingDirection.LeftToRight)
@@ -56,8 +65,9 @@ class ThumbnailStoreAdapterTest {
         store.markFailed(book)
         store.remove(book)
         store.hold(book).close()
+        store.making(book) {}
         val expected = ThumbKey(BookId("book"), Instant.ofEpochMilli(1234), 99, 3, 320, ReadingDirection.LeftToRight)
-        assertEquals(List(5) { expected }, cache.keys)
+        assertEquals(List(6) { expected }, cache.keys)
         assertEquals(1, cache.holds)
         assertEquals(1, cache.released)
     }

@@ -22,7 +22,11 @@ class Storage internal constructor(
         cipher = SecretCipher(::keystoreKey),
         settingsStore = openSettings(context.applicationContext),
         launchStore = openLaunch(context.applicationContext),
-        thumbnails = DiskThumbnailCache(File(context.cacheDir, "thumbs"), openThumbnailIndex(context).thumbs()),
+        thumbnails = DiskThumbnailCache(
+            File(context.cacheDir, "thumbs"),
+            openThumbnailIndex(context).thumbs(),
+            makingDir = File(context.noBackupFilesDir, "thumbs-making"),
+        ),
         fonts = FontStore(File(context.filesDir, "fonts")),
     )
 

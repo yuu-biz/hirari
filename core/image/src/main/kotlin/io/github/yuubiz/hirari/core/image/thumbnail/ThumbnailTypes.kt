@@ -56,6 +56,12 @@ interface ThumbnailStore {
 
     /** Keeps [key] out of eviction until the result is closed. */
     fun hold(key: ThumbnailKey): Closeable
+
+    /** Makes the thumbnail of [key] with [block], recorded on disk while it runs, so a death in between is found at the next start. */
+    suspend fun <T> making(key: ThumbnailKey, block: suspend () -> T): T
+
+    /** Records as failed what a process that died while making it left, and says whether there was any. Once, before [making]. */
+    suspend fun settleInterrupted(): Boolean
 }
 
 /**

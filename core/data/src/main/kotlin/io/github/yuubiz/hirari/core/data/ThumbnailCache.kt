@@ -90,6 +90,19 @@ interface ThumbnailCache {
 
     /** Drops index rows whose file is gone and files the index does not know. Call once at start. */
     suspend fun reconcile()
+
+    /**
+     * Runs [block], the making of the thumbnail of [key], with a record on disk that it is being made, which is gone
+     * once [block] ends in any way. Only a process that dies in between leaves the record (docs/spec.md section 4.4).
+     */
+    suspend fun <T> making(key: ThumbKey, block: suspend () -> T): T
+
+    /**
+     * Turns the records that a process which died while making thumbnails left into failures, so those are not made
+     * again for this version of their file, and says whether there were any. Call once at start, before the first
+     * [making].
+     */
+    suspend fun settleInterrupted(): Boolean
 }
 
 @Entity(tableName = "thumbs", indices = [Index("last_used")])
@@ -139,12 +152,17 @@ internal fun openThumbnailIndex(context: Context): ThumbnailIndexDatabase =
 
 internal const val THUMBNAIL_LIMIT_BYTES = 256L * 1024 * 1024
 
+/**
+ * [makingDir] holds an empty file per thumbnail being made, named by its digest. It is outside the cache directory,
+ * which the system may clear while the app runs.
+ */
 internal class DiskThumbnailCache(
     private val dir: File,
     private val dao: ThumbDao,
     private val limitBytes: Long = THUMBNAIL_LIMIT_BYTES,
     private val now: () -> Instant = Instant::now,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val makingDir: File = File(dir.parentFile, "${dir.name}-making"),
 ) : ThumbnailCache {
     private val held = ConcurrentHashMap<String, Int>()
     private val writing = Mutex()
@@ -216,9 +234,11 @@ internal class DiskThumbnailCache(
         }
     }
 
-    override suspend fun markFailed(key: ThumbKey) = writing.withLock {
-        withContext(io) { fileOf(key.digest).delete() }
-        dao.upsert(ThumbRow(key.digest, 0, now().toEpochMilli(), failed = true))
+    override suspend fun markFailed(key: ThumbKey) = markFailed(key.digest)
+
+    private suspend fun markFailed(digest: String) = writing.withLock {
+        withContext(io) { fileOf(digest).delete() }
+        dao.upsert(ThumbRow(digest, 0, now().toEpochMilli(), failed = true))
     }
 
     override suspend fun remove(key: ThumbKey) = writing.withLock {
@@ -238,6 +258,28 @@ internal class DiskThumbnailCache(
     override suspend fun clear() = writing.withLock {
         withContext(io) { dir.listFiles()?.forEach { it.delete() } }
         dao.deleteAll()
+    }
+
+    override suspend fun <T> making(key: ThumbKey, block: suspend () -> T): T {
+        val record = File(makingDir, key.digest)
+        try {
+            withContext(io) {
+                makingDir.mkdirs()
+                record.createNewFile()
+            }
+            return block()
+        } finally {
+            withContext(NonCancellable + io) { record.delete() }
+        }
+    }
+
+    override suspend fun settleInterrupted(): Boolean {
+        val left = withContext(io) { makingDir.listFiles()?.toList().orEmpty() }
+        for (record in left) {
+            markFailed(record.name)
+            withContext(io) { record.delete() }
+        }
+        return left.isNotEmpty()
     }
 
     override suspend fun reconcile() = writing.withLock {

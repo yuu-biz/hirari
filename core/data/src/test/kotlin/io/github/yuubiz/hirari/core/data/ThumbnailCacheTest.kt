@@ -192,6 +192,34 @@ class ThumbnailCacheTest {
     }
 
     @Test
+    fun `a thumbnail being made when the process died is failed for that version at the next start`() = runTest {
+        val making = File(folder.root, "making")
+        val dying = DiskThumbnailCache(dir, index.thumbs(), limitBytes = 100, makingDir = making)
+        val nextStart = DiskThumbnailCache(dir, index.thumbs(), limitBytes = 100, makingDir = making)
+        dying.making(key("done")) { dying.put(key("done"), bytes(10)) }
+        dying.making(key("dying")) {
+            assertTrue(nextStart.settleInterrupted(), "the record of the cover being made was not left")
+        }
+        assertIs<ThumbLookup.Failed>(nextStart.get(key("dying")))
+        assertIs<ThumbLookup.Hit>(nextStart.get(key("done")))
+        assertEquals(false, nextStart.settleInterrupted(), "a record outlived the start that settled it")
+    }
+
+    @Test
+    fun `making that ends in any way leaves no record`() = runTest {
+        val making = File(folder.root, "making")
+        val cache = DiskThumbnailCache(dir, index.thumbs(), limitBytes = 100, makingDir = making)
+        runCatching { cache.making(key("thrown")) { error("the maker threw") } }
+        val cancelled = launch { cache.making(key("cancelled")) { kotlinx.coroutines.awaitCancellation() } }
+        testScheduler.runCurrent()
+        cancelled.cancel()
+        cancelled.join()
+        assertEquals(emptyList(), making.listFiles().orEmpty().toList())
+        assertEquals(false, cache.settleInterrupted())
+        assertIs<ThumbLookup.Miss>(cache.get(key("thrown")))
+    }
+
+    @Test
     fun `a hold closed twice does not release another hold`() = runTest {
         cache.put(key("a"), bytes(40))
         val first = cache.hold(key("a"))

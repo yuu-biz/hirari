@@ -31,8 +31,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -74,35 +76,56 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
         if (at >= 0) scrollTo(at)
     }
     val focus = remember { CoverFocus() }
-    Box(Modifier.fillMaxSize()) {
-        when (content.view) {
-            LibraryView.Grid -> {
-                val grid = rememberLazyGridState()
-                LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(content.thumbSize.cellWidth),
-                    state = grid,
-                    modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH),
-                ) {
-                    items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, focus, onOpen, onLongPress) }
-                }
-                PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
-                FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
-            }
-            LibraryView.ThumbnailList, LibraryView.List -> {
-                val list = rememberLazyListState()
-                LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
-                LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH)) {
-                    items(content.rows, key = { it.path }) { row ->
-                        ListRow(row, content.covers.takeIf { content.view == LibraryView.ThumbnailList }, focus, content.thumbSize, onOpen, onLongPress)
+    val held by content.covers.covers.held.collectAsState(initial = false)
+    Column(Modifier.fillMaxSize()) {
+        if (held && content.view != LibraryView.List) HeldCovers(onResume = content.covers.covers::resume)
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            when (content.view) {
+                LibraryView.Grid -> {
+                    val grid = rememberLazyGridState()
+                    LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(content.thumbSize.cellWidth),
+                        state = grid,
+                        modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH),
+                    ) {
+                        items(content.rows, key = { it.path }) { row -> GridCell(row, content.covers, focus, onOpen, onLongPress) }
                     }
+                    PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
+                    FastScroller(content.rows.size, { grid.firstVisibleItemIndex }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
-                if (content.view == LibraryView.ThumbnailList) {
-                    PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
+                LibraryView.ThumbnailList, LibraryView.List -> {
+                    val list = rememberLazyListState()
+                    LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
+                    LazyColumn(state = list, modifier = Modifier.fillMaxSize().padding(end = FAST_SCROLL_WIDTH)) {
+                        items(content.rows, key = { it.path }) { row ->
+                            ListRow(row, content.covers.takeIf { content.view == LibraryView.ThumbnailList }, focus, content.thumbSize, onOpen, onLongPress)
+                        }
+                    }
+                    if (content.view == LibraryView.ThumbnailList) {
+                        PrefetchCovers(content.rows.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
+                    }
+                    FastScroller(content.rows.size, { list.firstVisibleItemIndex }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
-                FastScroller(content.rows.size, { list.firstVisibleItemIndex }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
             }
         }
+    }
+}
+
+/** docs/spec.md section 4.4: covers are held after the app ended while it made one, until the user asks for them again. */
+@Composable
+private fun HeldCovers(onResume: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.covers_held),
+            Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(onClick = onResume) { Text(stringResource(R.string.covers_resume)) }
     }
 }
 

@@ -17,7 +17,13 @@ import kotlinx.coroutines.completeWith
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -41,6 +47,10 @@ import kotlin.coroutines.cancellation.CancellationException
  * visible item first. [thumbnail] also makes what is missing. [observe] does both for one item and holds the
  * thumbnail in the store for as long as the item is shown.
  *
+ * Each thumbnail is recorded in the store while it is made. When the process died making one, the next process
+ * records that one as failed and makes none until [resume] ([held]): only what the store has shows, and the rest is
+ * unavailable. A regeneration still makes its own.
+ *
  * Every function is safe to call from the main thread.
  */
 class Thumbnails internal constructor(
@@ -56,6 +66,36 @@ class Thumbnails internal constructor(
     private val folderWrites = Mutex()
     private val gates = ThumbLane.entries.associateWith { PriorityGate(it.parallelism) }
     private val unavailableUntil = ConcurrentHashMap<ThumbnailKey, Long>()
+    private val making = MutableStateFlow(Making.Unknown)
+    private val resumed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    private enum class Making { Unknown, Allowed, Held }
+
+    init {
+        scope.launch {
+            val interrupted = try {
+                store.settleInterrupted()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+            making.compareAndSet(Making.Unknown, if (interrupted) Making.Held else Making.Allowed)
+        }
+    }
+
+    /** Whether thumbnails are not made, since the last process died making one (docs/spec.md section 4.4). */
+    val held: Flow<Boolean> = making.map { it == Making.Held }.distinctUntilChanged()
+
+    /** Emits when [resume] lets thumbnails be made again, so what showed as unavailable meanwhile is worth asking for. */
+    val resumptions: Flow<Unit> = resumed.asSharedFlow()
+
+    /** 表紙を作る: makes thumbnails again after [held]. */
+    fun resume() {
+        if (making.compareAndSet(Making.Held, Making.Allowed)) resumed.tryEmit(Unit)
+    }
+
+    private suspend fun isHeld(): Boolean = making.first { it != Making.Unknown } == Making.Held
 
     /**
      * Pass 1: the thumbnail for [request] if the store has it or knows it failed, and `null` if it has to be made.
@@ -164,6 +204,7 @@ class Thumbnails internal constructor(
         if (mode == Mode.Remake || mode == Mode.Retry) unavailableUntil.remove(key)
         stored(key)?.let { return it }
         if (mode == Mode.CacheOnly) return null
+        if (mode != Mode.Remake && isHeld()) return ThumbResult.Unavailable
         if (backingOff(key)) return ThumbResult.Unavailable
         return bookFlights.join(key, urgency) { make(book, key, it) }
     }
@@ -179,7 +220,7 @@ class Thumbnails internal constructor(
             // Another flight for the key may have finished while this one waited for its turn.
             stored(key)?.let { return@withPermit it }
             try {
-                when (val made = timed(book.lane) { maker.make(book, key.sizePx, key.direction) }) {
+                when (val made = store.making(key) { timed(book.lane) { maker.make(book, key.sizePx, key.direction) } }) {
                     is Made.Webp -> ThumbResult.Ready(store.put(key, made.bytes), key)
                     Made.Unreadable -> {
                         store.markFailed(key)

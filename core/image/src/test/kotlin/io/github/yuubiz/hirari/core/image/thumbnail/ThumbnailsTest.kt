@@ -74,6 +74,26 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
         held += key
         return Closeable { released += key }
     }
+
+    /** The keys whose making is recorded now. */
+    val making = LinkedHashSet<ThumbnailKey>()
+
+    /** What a process that died left: these are failed and the next start holds the making back. */
+    val interrupted = LinkedHashSet<ThumbnailKey>()
+
+    override suspend fun <T> making(key: ThumbnailKey, block: suspend () -> T): T {
+        making += key
+        try {
+            return block()
+        } finally {
+            making -= key
+        }
+    }
+
+    override suspend fun settleInterrupted(): Boolean {
+        failed += interrupted
+        return interrupted.isNotEmpty().also { interrupted.clear() }
+    }
 }
 
 /** A thumbnail whose bytes name the book it was made from. */
@@ -309,6 +329,41 @@ class ThumbnailsTest {
         assertEquals(ThumbResult.Unavailable, thumbnails.retry(request(book("b", lane = ThumbLane.Smb))).first())
         assertEquals(ThumbResult.Unavailable, thumbnails.observe(request(book("b", lane = ThumbLane.Smb))).first())
         assertEquals("a failure after a retry was tried again at once", 5, maker.calls.size)
+    }
+
+    @Test
+    fun aThumbnailIsRecordedAsBeingMadeOnlyWhileTheMakerRuns() = runTest {
+        val thumbnails = thumbnails()
+        val seen = ArrayList<Set<ThumbnailKey>>()
+        maker.script = { book ->
+            seen += store.making.toSet()
+            image(book)
+        }
+        val made = thumbnails.thumbnail(request(book("a")))
+        assertEquals(listOf(setOf((made as ThumbResult.Ready).key)), seen)
+        assertTrue(store.making.isEmpty())
+    }
+
+    @Test
+    fun afterAProcessDiedMakingAThumbnailNoneIsMadeUntilResumedAndThatOneStaysFailed() = runTest {
+        val dying = request(book("dying"))
+        store.interrupted += ThumbnailKey(BookId("dying"), Instant.ofEpochMilli(1000), 5000, null, 300, ReadingDirection.RightToLeft)
+        val thumbnails = thumbnails()
+        val held = async { thumbnails.held.first() }
+        runCurrent()
+        assertTrue(held.await())
+        assertEquals(ThumbResult.Failed, thumbnails.thumbnail(dying))
+        assertEquals(ThumbResult.Unavailable, thumbnails.thumbnail(request(book("other"))))
+        assertEquals(ThumbResult.Unavailable, thumbnails.thumbnail(request(folder(item("in folder")))))
+        assertTrue("a thumbnail was made while held back", maker.calls.isEmpty())
+        assertEquals("regenerated", shows(thumbnails.regenerate(request(book("regenerated")))))
+        val resumed = async { thumbnails.resumptions.first() }
+        runCurrent()
+        thumbnails.resume()
+        resumed.await()
+        assertFalse(thumbnails.held.first())
+        assertEquals("other", shows(thumbnails.thumbnail(request(book("other")))))
+        assertEquals(ThumbResult.Failed, thumbnails.thumbnail(dying))
     }
 
     @Test

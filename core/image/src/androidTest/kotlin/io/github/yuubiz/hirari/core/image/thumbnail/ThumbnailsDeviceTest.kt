@@ -254,6 +254,10 @@ class ThumbnailsDeviceTest {
         }
 
         override fun hold(key: ThumbnailKey): Closeable = Closeable { }
+
+        override suspend fun <T> making(key: ThumbnailKey, block: suspend () -> T): T = block()
+
+        override suspend fun settleInterrupted(): Boolean = false
     }
 
     private companion object {
