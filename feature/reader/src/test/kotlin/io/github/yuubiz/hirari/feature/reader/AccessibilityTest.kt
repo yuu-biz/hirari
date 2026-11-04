@@ -123,6 +123,7 @@ class AccessibilityTest {
         val onWhite = SheetBackground.compositeOver(Color.White)
         assertTrue(ratio(SheetText, onWhite) >= 4.5, "white text: ${ratio(SheetText, onWhite)}")
         assertTrue(ratio(SheetDisabled, onWhite) >= 4.9, "secondary text: ${ratio(SheetDisabled, onWhite)}")
+        assertTrue(ratio(SheetMark, onWhite) >= 4.5, "the page panel's mark: ${ratio(SheetMark, onWhite)}")
         assertTrue(ratio(Color(0xFF8A8A90), onWhite) < 4.5, "the former secondary color fell short")
     }
 }
