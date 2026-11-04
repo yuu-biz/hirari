@@ -40,7 +40,8 @@ internal class DataStoreSettingsRepository(private val store: DataStore<GlobalSe
 
     override val settings: Flow<GlobalSettings> = store.data.catch { failure ->
         if (failure !is IOException) throw failure
-        readFailure.compareAndSet(null, failure)
+        // A corrupt file is reset without a word (spec 4.3); only a file that cannot be read at all is reported.
+        if (failure !is CorruptionException) readFailure.compareAndSet(null, failure)
         emit(GlobalSettings())
     }
 
