@@ -51,6 +51,8 @@
     <string name="menu_last_page">最後のページへ</string>
     <string name="menu_shift_back">組ずらし（前）</string>
     <string name="menu_shift_forward">組ずらし（後）</string>
+    <string name="page_panel_shift_back">前</string>
+    <string name="page_panel_shift_forward">後</string>
     <string name="menu_previous_book">前の本</string>
     <string name="menu_next_book">次の本</string>
     <string name="page_panel_undo">取り消す</string>

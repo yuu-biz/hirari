@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -67,6 +68,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageShape
+import io.github.yuubiz.hirari.core.model.LayoutMode
+import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.ui.blockTouches
 import io.github.yuubiz.hirari.core.ui.decorative
@@ -78,7 +81,7 @@ internal const val PAGE_STRIP_TAG = "page-strip"
 internal val SheetMark = Color(0xFFFF8A80)
 private val CellPlaceholder = Color(0xFF404048)
 
-/** A strip as wide as this or wider has the slider, the page number field, and 取り消す on one row. */
+/** A strip as wide as this or wider has the slider and all controls on one row. */
 private val ONE_ROW_WIDTH = 600.dp
 
 /**
@@ -112,7 +115,6 @@ internal class StripThumbnails(private val cached: (Int) -> ImageBitmap?, privat
 /** ページパネル (docs/spec.md section 4.8, ページバー). */
 @Composable
 internal fun PagePanelSheet(viewModel: ReaderViewModel, state: ReaderState, sheet: ReaderSheet.Pages, onClose: () -> Unit) {
-    val pageCount = state.pagination.shapes.size
     val head = state.current.pages.min()
     fun goTo(page: Int) = viewModel.dispatch(ReaderEvent.GoTo(page))
 
@@ -152,10 +154,32 @@ internal fun PagePanelSheet(viewModel: ReaderViewModel, state: ReaderState, shee
                         onClose()
                     },
                 ) {
-                    PageNumberInput(head, pageCount, ::goTo)
-                    SheetButton(R.string.page_panel_undo) { goTo(sheet.openedOn) }
+                    PagePanelControls(state, sheet.openedOn, viewModel::dispatch)
                 }
             }
+        }
+    }
+}
+
+/** The bottom actions keep the panel open; only picking a thumbnail closes it. */
+@Composable
+internal fun PagePanelControls(state: ReaderState, openedOn: Int, dispatch: (ReaderEvent) -> Unit) {
+    PageNumberInput(state.current.pages.min(), state.pagination.shapes.size) { dispatch(ReaderEvent.GoTo(it)) }
+    SheetButton(R.string.page_panel_undo) { dispatch(ReaderEvent.GoTo(openedOn)) }
+    val pairs = state.pagination.settings.resolve(state.pagination.orientation).mode == LayoutMode.Spread
+    for (forward in listOf(false, true)) {
+        val description = stringResource(if (forward) R.string.menu_shift_forward else R.string.menu_shift_back)
+        TextButton(
+            onClick = { dispatch(ReaderEvent.Act(ReaderAction.Shift(forward), android.os.SystemClock.uptimeMillis())) },
+            enabled = pairs,
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.size(48.dp).semantics { contentDescription = description },
+        ) {
+            Text(
+                stringResource(if (forward) R.string.page_panel_shift_forward else R.string.page_panel_shift_back),
+                modifier = Modifier.decorative(),
+                color = if (pairs) SheetText else SheetDisabled,
+            )
         }
     }
 }
