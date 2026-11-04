@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.PageView.One
 import io.github.yuubiz.hirari.core.model.PageView.Two
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.layoutViews
+import io.github.yuubiz.hirari.core.model.viewAt
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.model.Turn.Back
 import io.github.yuubiz.hirari.core.model.Turn.Forward
@@ -275,7 +276,7 @@ class PrefetchPlanTest {
         val shapes = Arb.list(Arb.element(tall, wide, PageShape.Unknown), 1..60).bind()
         val mode = Arb.element(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide, LayoutMode.Vertical).bind()
         val settings = LayoutSettings(mode, Arb.enum<ReadingDirection>().bind(), Arb.boolean().bind())
-        val views = layoutViews(shapes.size, shapes::get, settings, Arb.int(shapes.indices).bind())
+        val views = layoutViews(shapes.size, shapes::get, settings, viewAt(shapes.size, shapes::get, settings, Arb.int(shapes.indices).bind(), Arb.enum<Turn>().bind()))
         val resident = Resident(
             views = Arb.list(Arb.element(views), 0..8).bind().toSet(),
             rawPages = Arb.list(Arb.int(shapes.indices), 0..20).bind().toSet(),

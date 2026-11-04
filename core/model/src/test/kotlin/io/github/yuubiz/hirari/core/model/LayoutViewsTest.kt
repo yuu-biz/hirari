@@ -7,36 +7,69 @@ import io.github.yuubiz.hirari.core.model.PageView.One
 import io.github.yuubiz.hirari.core.model.PageView.Two
 import io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight
 import io.github.yuubiz.hirari.core.model.ReadingDirection.RightToLeft
-import io.kotest.property.Arb
 import io.kotest.property.arbitrary.arbitrary
-import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class LayoutViewsTest {
-    @Test
-    fun spreadPairsTallPagesAroundAWidePage() =
-        assertEquals(listOf(Two(0, 1), One(2), One(3), Two(4, 5)), layout("TTTWTT", spread()))
+    /** One row of the pairing table: the pages, the view the layout is built around, and the views in reading order. */
+    private data class Row(val pattern: String, val page: Int, val toward: Turn, val views: List<PageView>, val coverAlone: Boolean = false)
 
     @Test
-    fun coverAloneKeepsTheFirstPageSingle() =
-        assertEquals(listOf(One(0), Two(1, 2), One(3), Two(4, 5)), layout("TTTWTT", spread(coverAlone = true)))
+    fun spreadPairsForwardAfterTheCurrentViewAndBackwardBeforeIt() {
+        val rows = listOf(
+            Row("TTTWTT", 0, Turn.Forward, listOf(Two(0, 1), One(2), One(3), Two(4, 5))),
+            Row("TTTWTT", 5, Turn.Back, listOf(One(0), Two(1, 2), One(3), Two(4, 5))),
+            Row("TTTWTT", 3, Turn.Back, listOf(One(0), Two(1, 2), One(3), Two(4, 5))),
+            Row("TTTWTT", 2, Turn.Back, listOf(One(0), Two(1, 2), One(3), Two(4, 5))),
+            Row("TTTWTT", 1, Turn.Forward, listOf(One(0), Two(1, 2), One(3), Two(4, 5))),
+            Row("TTTWTT", 0, Turn.Forward, listOf(One(0), Two(1, 2), One(3), Two(4, 5)), coverAlone = true),
+            Row("TTTWTT", 1, Turn.Back, listOf(One(0), One(1), One(2), One(3), Two(4, 5)), coverAlone = true),
+            Row("TTTTT", 0, Turn.Forward, listOf(Two(0, 1), Two(2, 3), One(4))),
+            Row("TTTTT", 3, Turn.Forward, listOf(One(0), Two(1, 2), Two(3, 4))),
+            Row("TTTTT", 4, Turn.Back, listOf(One(0), Two(1, 2), Two(3, 4))),
+            Row("TTTTT", 2, Turn.Back, listOf(One(0), Two(1, 2), Two(3, 4))),
+            Row("TTWTTWTT", 7, Turn.Back, listOf(Two(0, 1), One(2), Two(3, 4), One(5), Two(6, 7))),
+            Row("TWTTTWT", 4, Turn.Back, listOf(One(0), One(1), One(2), Two(3, 4), One(5), One(6))),
+            Row("TWTTTWT", 2, Turn.Forward, listOf(One(0), One(1), Two(2, 3), One(4), One(5), One(6))),
+        )
+        for (row in rows) {
+            assertEquals(row.views, layout(row.pattern, spread(row.coverAlone), row.page, row.toward), row.toString())
+        }
+    }
 
     @Test
-    fun anchorOneShiftsThePairs() =
-        assertEquals(listOf(One(0), Two(1, 2), One(3), Two(4, 5)), layout("TTTWTT", spread(), anchor = 1))
+    fun theViewAtAPageStartsThereGoingForwardAndEndsThereGoingBack() {
+        val shapes = shapesOf("TTTWTT")
+        fun at(page: Int, toward: Turn) = viewAt(shapes.size, shapes::get, spread(), page, toward)
+        assertEquals(Two(1, 2), at(1, Turn.Forward))
+        assertEquals(Two(0, 1), at(1, Turn.Back))
+        assertEquals(One(2), at(2, Turn.Forward))
+        assertEquals(One(3), at(3, Turn.Back))
+        assertEquals(One(5), at(5, Turn.Forward))
+        assertEquals(Two(4, 5), at(5, Turn.Back))
+        val split = shapesOf("WT")
+        assertEquals(Half(0, First), viewAt(split.size, split::get, splitWide(RightToLeft), 0, Turn.Forward))
+        assertEquals(Half(0, Second), viewAt(split.size, split::get, splitWide(RightToLeft), 0, Turn.Back))
+    }
 
     @Test
-    fun leftoverLastPageStandsAlone() =
-        assertEquals(listOf(Two(0, 1), Two(2, 3), One(4)), layout("TTTTT", spread()))
-
-    @Test
-    fun pagesBeforeTheAnchorPairBackward() =
-        assertEquals(listOf(One(0), Two(1, 2), Two(3, 4)), layout("TTTTT", spread(), anchor = 3))
+    fun aViewIsOneThatPairsFromEitherOfItsEnds() {
+        val shapes = shapesOf("TTTWTT")
+        fun isView(view: PageView) = isView(view, shapes.size, shapes::get, spread())
+        assertTrue(isView(Two(1, 2)))
+        assertTrue(isView(One(0)), "the first page alone is what pairing back from it makes")
+        assertTrue(isView(One(2)))
+        assertFalse(isView(Two(2, 3)), "a wide page never pairs")
+        assertFalse(isView(One(1)), "a tall page between two tall pages pairs from either end")
+        assertFalse(isView(Two(5, 6)), "past the last page")
+        assertFalse(isView(Half(3, First)), "Spread never splits")
+    }
 
     @Test
     fun splitWideRightToLeftShowsTheRightHalfFirst() {
@@ -75,7 +108,7 @@ class LayoutViewsTest {
     fun onePageBookIsOneView() {
         for (mode in listOf(LayoutMode.Single, LayoutMode.Spread, LayoutMode.SplitWide, LayoutMode.Vertical)) {
             for (cover in listOf(false, true)) {
-                assertEquals(listOf(One(0)), layout("T", LayoutSettings(mode, RightToLeft, cover)))
+                for (toward in Turn.entries) assertEquals(listOf(One(0)), layout("T", LayoutSettings(mode, RightToLeft, cover), toward = toward))
             }
         }
         assertEquals(listOf(Half(0, First), Half(0, Second)), layout("W", splitWide(RightToLeft)))
@@ -134,29 +167,47 @@ class LayoutViewsTest {
     }
 
     @Test
-    fun anchorHeadsAView(): Unit = runBlocking {
+    fun theCurrentViewStartsOnItsPageGoingForwardAndEndsOnItGoingBack(): Unit = runBlocking {
         checkAll(arbSample) { sample ->
-            val heads = sample.views.filter { it !is Half || it.part == First }.map { it.pages.first() }
-            assertTrue(sample.anchor in heads, "anchor ${sample.anchor} heads none of ${sample.views}")
+            val current = sample.current
+            assertTrue(current in sample.views, "$current is one of ${sample.views}")
+            val end = if (sample.toward == Turn.Forward) current.pages.first() else current.pages.last()
+            assertEquals(sample.page, end, "$current from page ${sample.page} going ${sample.toward}")
         }
     }
 
     @Test
-    fun learningLaterShapesKeepsTheViewsUpToTheCurrentOne(): Unit = runBlocking {
+    fun theViewsNextToTheCurrentOnePairFromThePagesNextToIt(): Unit = runBlocking {
+        checkAll(arbSample) { sample ->
+            val views = sample.views
+            val at = views.indexOf(sample.current)
+            fun viewAt(page: Int, toward: Turn) = viewAt(sample.shapes.size, sample.shapes::get, sample.settings, page, toward)
+            for (i in at + 1 until views.size) {
+                if (views[i] is Half) continue
+                assertEquals(viewAt(views[i - 1].pages.last() + 1, Turn.Forward), views[i], "after ${views[i - 1]} in $views")
+            }
+            for (i in 0 until at) {
+                if (views[i] is Half) continue
+                assertEquals(viewAt(views[i + 1].pages.first() - 1, Turn.Back), views[i], "before ${views[i + 1]} in $views")
+            }
+        }
+    }
+
+    @Test
+    fun learningShapesAfterTheCurrentViewKeepsTheViewsUpToIt(): Unit = runBlocking {
         val cases = arbitrary {
             val sample = arbSample.bind()
-            val views = sample.views
-            val anchorView = views.indexOfFirst { sample.anchor in it.pages }
-            val current = Arb.int(anchorView until views.size).bind()
-            val lastShown = views[current].pages.last()
+            val lastShown = sample.current.pages.last()
             val learned = sample.shapes.mapIndexed { page, shape ->
                 if (page > lastShown && shape == PageShape.Unknown) arbKnownShape.bind() else shape
             }
-            Triple(sample, current, learned)
+            sample to learned
         }
-        checkAll(cases) { (sample, current, learned) ->
-            val after = sample.copy(shapes = learned).views
-            assertEquals(sample.views.take(current + 1), after.take(current + 1))
+        checkAll(cases) { (sample, learned) ->
+            val before = sample.views
+            val after = layoutViews(learned.size, learned::get, sample.settings, sample.current)
+            val upTo = before.indexOf(sample.current) + 1
+            assertEquals(before.take(upTo), after.take(upTo))
         }
     }
 }

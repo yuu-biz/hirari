@@ -338,7 +338,7 @@ data class ReaderState(
         if (next === pagination) return this
         val scroll = scroll?.let { if (it.motion == null) it else it.relaid(strip, Strip.of(next.shapes), stripScreen) }
         if (next.current == current) {
-            val keepTransition = transition?.takeIf { it.incoming in next.views && it.outgoing in next.views }
+            val keepTransition = transition?.takeIf { next.holds(it.incoming) && next.holds(it.outgoing) }
             val keepPull = pull?.takeIf { it.neighbor == null || it.neighbor in next.views }
             return copy(pagination = next, transition = keepTransition, pull = keepPull, scroll = scroll)
         }
@@ -439,7 +439,7 @@ sealed interface ReaderEvent {
     /** A tap, a key, or a command; [ReaderAction.OpenMenu] and [ReaderAction.Dismiss] belong to the screen. */
     data class Act(val action: ReaderAction, val nowMs: Long) : ReaderEvent
 
-    /** A jump to [page] from the page bar, which anchors the layout there. */
+    /** A jump to [page] from the page bar, which pairs forward from it. */
     data class GoTo(val page: Int) : ReaderEvent
     data class ShapeLearned(val page: Int, val shape: PageShape.Known) : ReaderEvent
 

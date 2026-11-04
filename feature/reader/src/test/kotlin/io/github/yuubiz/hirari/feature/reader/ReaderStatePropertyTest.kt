@@ -24,8 +24,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * docs/spec.md section 9, M1: going forward and then back returns to the same view, and to the same stop. 縦に連続
- * has neither views to turn nor stops; its steps are checked in `StripTest`.
+ * docs/spec.md section 9, M1: going forward and then back returns to the same view, and to the same stop, wherever
+ * the views do not depend on the way the reader goes. That is every book in the layouts that never pair, and a book of
+ * tall pages with the cover paired. Elsewhere 見開き pairs from the view on screen, so a turn back may pair otherwise
+ * (`PaginationTest`). 縦に連続 has neither views to turn nor stops; its steps are checked in `StripTest`.
  */
 class ReaderStatePropertyTest {
     private class Reading(val truth: List<PageShape.Known>, val state: ReaderState) {
@@ -39,22 +41,28 @@ class ReaderStatePropertyTest {
         current.pages.fold(this) { state, page -> state.reduce(ReaderEvent.ShapeLearned(page, truth[page])) }
             .let { if (it.current == current) it else it.shown(truth) }
 
-    private val arbShape: Arb<PageShape.Known> = Arb.choice(
-        Arb.element(TALL, PageShape.Known(800, 1200), PageShape.Known(1200, 1700)),
-        Arb.element(WIDE, PageShape.Known(2400, 1700)),
-    )
+    private val arbShape: Arb<PageShape.Known> = Arb.element(TALL, PageShape.Known(800, 1200), PageShape.Known(1200, 1700), WIDE, PageShape.Known(2400, 1700))
 
-    private val arbConfig: Arb<ReaderConfig> = arbitrary {
+    private fun arbConfig(modes: List<LayoutMode>, coverAlone: Arb<Boolean>): Arb<ReaderConfig> = arbitrary {
         ReaderConfig(
-            layout = LayoutSettings(Arb.element(LayoutMode.entries - LayoutMode.Vertical).bind(), Arb.enum<ReadingDirection>().bind(), Arb.boolean().bind()),
+            layout = LayoutSettings(Arb.element(modes).bind(), Arb.enum<ReadingDirection>().bind(), coverAlone.bind()),
             scaleMode = Arb.enum<ScaleMode>().bind(),
             stopOrder = Arb.enum<StopOrder>().bind(),
             stopMaxStep = Arb.int(1..20).bind() * 0.05f,
         )
     }
 
+    private val tall: Arb<PageShape.Known> = Arb.element(TALL, PageShape.Known(800, 1200), PageShape.Known(1200, 1700))
+
+    /** Any book in a layout that never pairs, or a book of tall pages in any layout but 縦に連続. */
     private val arbReading: Arb<Reading> = arbitrary {
-        val truth = Arb.list(arbShape, 1..24).bind()
+        val unpaired = Arb.boolean().bind()
+        val truth = Arb.list(if (unpaired) arbShape else tall, 1..24).bind()
+        val config = if (unpaired) {
+            arbConfig(listOf(LayoutMode.Single, LayoutMode.SplitWide), Arb.boolean())
+        } else {
+            arbConfig(LayoutMode.entries - LayoutMode.Vertical, Arb.constant(false))
+        }
         val viewport = Arb.element(PORTRAIT, LANDSCAPE, Viewport(800f, 1280f, 2f)).bind()
         val events = Arb.list(
             Arb.choice(
@@ -66,7 +74,7 @@ class ReaderStatePropertyTest {
             ).map { ReaderEvent.Act(it, 0) },
             0..30,
         ).bind()
-        val opened = ReaderState.open(truth.size, Arb.int(truth.indices).bind(), arbConfig.bind(), viewport).shown(truth)
+        val opened = ReaderState.open(truth.size, Arb.int(truth.indices).bind(), config.bind(), viewport).shown(truth)
         Reading(truth, events.fold(opened) { state, event -> state.reduce(event).shown(truth) })
     }
 

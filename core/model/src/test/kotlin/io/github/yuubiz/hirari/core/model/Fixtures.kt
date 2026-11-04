@@ -26,9 +26,10 @@ fun spread(coverAlone: Boolean = false, direction: ReadingDirection = ReadingDir
 
 fun splitWide(direction: ReadingDirection) = LayoutSettings(LayoutMode.SplitWide, direction, coverAlone = false)
 
-fun layout(pattern: String, settings: LayoutSettings, anchor: Int = 0): List<PageView> {
+/** The views around the one that [page] starts going forward, or ends going back. */
+fun layout(pattern: String, settings: LayoutSettings, page: Int = 0, toward: Turn = Turn.Forward): List<PageView> {
     val shapes = shapesOf(pattern)
-    return layoutViews(shapes.size, shapes::get, settings, anchor)
+    return layoutViews(shapes.size, shapes::get, settings, viewAt(shapes.size, shapes::get, settings, page, toward))
 }
 
 val arbShape: Arb<PageShape> = Arb.element(PageShape.Unknown, TALL, WIDE)
@@ -44,11 +45,12 @@ val arbResolvedSettings: Arb<LayoutSettings> = arbitrary {
     )
 }
 
-data class Sample(val shapes: List<PageShape>, val settings: LayoutSettings, val anchor: Int) {
-    val views: List<PageView> get() = layoutViews(shapes.size, shapes::get, settings, anchor)
+data class Sample(val shapes: List<PageShape>, val settings: LayoutSettings, val page: Int, val toward: Turn) {
+    val current: PageView get() = viewAt(shapes.size, shapes::get, settings, page, toward)
+    val views: List<PageView> get() = layoutViews(shapes.size, shapes::get, settings, current)
 }
 
 val arbSample: Arb<Sample> = arbitrary {
     val shapes = arbShapes.bind()
-    Sample(shapes, arbResolvedSettings.bind(), Arb.int(shapes.indices).bind())
+    Sample(shapes, arbResolvedSettings.bind(), Arb.int(shapes.indices).bind(), Arb.enum<Turn>().bind())
 }

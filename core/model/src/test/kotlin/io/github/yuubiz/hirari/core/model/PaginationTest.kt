@@ -44,8 +44,8 @@ class PaginationTest {
     @Test
     fun opensOnTheSavedViewStart() {
         val state = book("TTTTT", start = 3)
-        assertEquals(3, state.anchor)
         assertEquals(Two(3, 4), state.current)
+        assertEquals(Turn.Forward, state.entered)
     }
 
     @Test
@@ -60,15 +60,13 @@ class PaginationTest {
     @Test
     fun goToAnchorsOnTheTargetPage() {
         val state = book("TTTTT").reduce(GoTo(3))
-        assertEquals(3, state.anchor)
         assertEquals(listOf(One(0), Two(1, 2), Two(3, 4)), state.views)
         assertEquals(Two(3, 4), state.current)
     }
 
     @Test
-    fun shiftForwardMovesTheAnchorOnePage() {
+    fun shiftForwardShowsTheViewThatStartsOnTheNextPage() {
         val state = book("TTTWTT").reduce(Shift(forward = true))
-        assertEquals(1, state.anchor)
         assertEquals(listOf(One(0), Two(1, 2), One(3), Two(4, 5)), state.views)
         assertEquals(Two(1, 2), state.current)
     }
@@ -76,7 +74,6 @@ class PaginationTest {
     @Test
     fun shiftBackUndoesShiftForward() {
         val state = book("TTTWTT").after(Shift(forward = true), Shift(forward = false))
-        assertEquals(0, state.anchor)
         assertEquals(Two(0, 1), state.current)
     }
 
@@ -87,13 +84,33 @@ class PaginationTest {
     }
 
     @Test
-    fun shiftForwardOnAWidePageRegroupsTheFollowingPages() {
+    fun shiftForwardOnAWidePageShowsThePagesAfterItPairedAgain() {
         val onWide = book("TTTWTTT").after(GoTo(5), Prev, Prev)
         assertEquals(One(3), onWide.current)
-        assertEquals(Two(5, 6), onWide.views.last())
         val shifted = onWide.reduce(Shift(forward = true))
-        assertEquals(One(3), shifted.current)
-        assertEquals(Two(4, 5), shifted.reduce(Next).current)
+        assertEquals(Two(4, 5), shifted.current)
+        assertEquals(One(6), shifted.reduce(Next).current)
+    }
+
+    @Test
+    fun shiftBackKeepsAViewWhoseHeadDoesNotPairWithThePageBeforeIt() {
+        val onWide = book("TTTWTT").after(Next, Next)
+        assertEquals(One(3), onWide.current)
+        assertSame(onWide, onWide.reduce(Shift(forward = false)))
+        val afterWide = onWide.after(Next)
+        assertEquals(Two(4, 5), afterWide.current)
+        assertSame(afterWide, afterWide.reduce(Shift(forward = false)))
+    }
+
+    @Test
+    fun readingBackPairsFromThePageBeforeTheView() {
+        val forward = book("TTTWTT").after(Next, Next, Next)
+        assertEquals(Two(4, 5), forward.current)
+        val back = generateSequence(forward) { it.reduce(Prev).takeIf { prev -> prev !== it } }.map { it.current }.toList()
+        assertEquals(listOf(Two(4, 5), One(3), Two(1, 2), One(0)), back)
+        val again = generateSequence(book("TTTWTT").after(Next, Next, Next, Prev, Prev, Prev)) { it.reduce(Next).takeIf { next -> next !== it } }
+            .map { it.current }.toList()
+        assertEquals(listOf(One(0), Two(1, 2), One(3), Two(4, 5)), again)
     }
 
     @Test
@@ -118,7 +135,7 @@ class PaginationTest {
     }
 
     @Test
-    fun learningAWideShapeBeforeTheAnchorKeepsThePageNextToTheAnchorView() {
+    fun learningAWideShapeReadingBackKeepsThePageTheReaderCameFrom() {
         val state = Pagination.open(6, spread(), Landscape, start = 4).after(Prev)
         assertEquals(Two(2, 3), state.current)
         val learned = state.reduce(ShapeLearned(3, WIDE))
@@ -136,12 +153,11 @@ class PaginationTest {
     @Test
     fun changingTheLayoutAnchorsOnTheCurrentHead() {
         val state = book("TTTTTT").after(Next).reduce(SettingsChanged(LayoutSettings(LayoutMode.Single, RightToLeft, false)))
-        assertEquals(2, state.anchor)
         assertEquals(One(2), state.current)
     }
 
     @Test
-    fun unchangedSettingsKeepTheAnchor() {
+    fun unchangedSettingsKeepTheLayout() {
         val state = book("TTTT").reduce(GoTo(3)).after(Prev)
         assertEquals(listOf(One(0), Two(1, 2), One(3)), state.views)
         assertSame(state, state.reduce(SettingsChanged(state.settings)))
@@ -154,7 +170,6 @@ class PaginationTest {
         val landscape = book("TTWT", auto)
         assertEquals(listOf(Two(0, 1), One(2), One(3)), landscape.views)
         val portrait = landscape.after(Next).reduce(OrientationChanged(Portrait))
-        assertEquals(2, portrait.anchor)
         assertEquals(Half(2, First), portrait.current)
     }
 
@@ -165,7 +180,6 @@ class PaginationTest {
         val turned = state.reduce(PaginationEvent.ShapesChanged(state.shapes.map { (it as PageShape.Known).rotated(Rotation.Quarter) }))
         assertEquals(List(5) { One(it) }, turned.views)
         assertEquals(One(2), turned.current)
-        assertEquals(2, turned.anchor)
         val back = turned.reduce(PaginationEvent.ShapesChanged(state.shapes))
         assertEquals(Two(2, 3), back.current)
         assertSame(back, back.reduce(PaginationEvent.ShapesChanged(back.shapes)))
@@ -190,34 +204,74 @@ class PaginationTest {
     private class Reading(val truth: List<PageShape.Known>, val state: Pagination) {
         override fun toString() = "Reading(truth=${truth.joinToString("") { if (it.isWide) "W" else "T" }}, " +
             "shapes=${state.shapes.joinToString("") { if (it is PageShape.Known) (if (it.isWide) "W" else "T") else "?" }}, " +
-            "settings=${state.settings}, orientation=${state.orientation}, anchor=${state.anchor}, " +
+            "settings=${state.settings}, orientation=${state.orientation}, entered=${state.entered}, " +
             "views=${state.views}, current=${state.current})"
     }
 
-    private val arbSettings: Arb<LayoutSettings> = arbitrary {
-        LayoutSettings(Arb.enum<LayoutMode>().bind(), Arb.enum<ReadingDirection>().bind(), Arb.boolean().bind())
+    private fun arbSettings(coverAlone: Arb<Boolean> = Arb.boolean()): Arb<LayoutSettings> = arbitrary {
+        LayoutSettings(Arb.enum<LayoutMode>().bind(), Arb.enum<ReadingDirection>().bind(), coverAlone.bind())
     }
 
-    private val arbReading: Arb<Reading> = arbitrary {
-        val truth = Arb.list(arbKnownShape, 1..24).bind()
+    /** A book read through random events. A [tallOnly] book has no wide page and never sets the cover alone. */
+    private fun arbReading(tallOnly: Boolean = false): Arb<Reading> = arbitrary {
+        val truth = Arb.list(if (tallOnly) Arb.constant(TALL) else arbKnownShape, 1..24).bind()
+        val settings = if (tallOnly) arbSettings(Arb.constant(false)) else arbSettings()
         val events = Arb.list(
             Arb.choice(
                 Arb.constant(Next),
                 Arb.constant(Prev),
                 Arb.int(truth.indices).map { GoTo(it) },
                 Arb.boolean().map { Shift(it) },
-                arbSettings.map { SettingsChanged(it) },
+                settings.map { SettingsChanged(it) },
                 Arb.enum<ScreenOrientation>().map { OrientationChanged(it) },
             ),
             0..30,
         ).bind()
-        val opened = Pagination.open(truth.size, arbSettings.bind(), Arb.enum<ScreenOrientation>().bind(), Arb.int(truth.indices).bind())
+        val opened = Pagination.open(truth.size, settings.bind(), Arb.enum<ScreenOrientation>().bind(), Arb.int(truth.indices).bind())
         Reading(truth, events.fold(opened.shown(truth)) { state, event -> state.reduce(event).shown(truth) })
     }
 
     @Test
-    fun nextsThenAsManyPrevsReturnToTheSameView(): Unit = runBlocking {
-        checkAll(arbReading, Arb.int(0..10)) { reading, k ->
+    fun aTurnShowsTheViewThatPairsFromThePageNextToTheCurrentOne(): Unit = runBlocking {
+        checkAll(arbReading(), Arb.enum<Turn>()) { reading, turn ->
+            val state = reading.state
+            val turned = state.reduce(if (turn == Turn.Forward) Next else Prev)
+            if (turned !== state && state.current !is Half && turned.current !is Half) {
+                val page = if (turn == Turn.Forward) state.current.pages.last() + 1 else state.current.pages.first() - 1
+                val settings = state.settings.resolve(state.orientation)
+                assertEquals(viewAt(state.shapes.size, state.shapes::get, settings, page, turn), turned.current)
+                assertEquals(turn, turned.entered)
+            }
+        }
+    }
+
+    /** The view [Pagination.current] would be if it were paired from its end toward [toward]. */
+    private fun Pagination.pairedFrom(toward: Turn): PageView {
+        val page = if (toward == Turn.Forward) current.pages.first() else current.pages.last()
+        return viewAt(shapes.size, shapes::get, settings.resolve(orientation), page, toward)
+    }
+
+    @Test
+    fun turningBackAndForwardReturnsToAViewThatPairsForwardFromItsHead(): Unit = runBlocking {
+        checkAll(arbReading()) { reading ->
+            val state = reading.state
+            val back = state.reduce(Prev).shown(reading.truth)
+            if (state.pairedFrom(Turn.Forward) == state.current && back !== state) assertEquals(state.current, back.reduce(Next).current)
+        }
+    }
+
+    @Test
+    fun turningForwardAndBackReturnsToAViewThatPairsBackFromItsEnd(): Unit = runBlocking {
+        checkAll(arbReading()) { reading ->
+            val state = reading.state
+            val forward = state.reduce(Next).shown(reading.truth)
+            if (state.pairedFrom(Turn.Back) == state.current && forward !== state) assertEquals(state.current, forward.reduce(Prev).current)
+        }
+    }
+
+    @Test
+    fun nextsThenAsManyPrevsReturnToTheSameViewInABookOfTallPages(): Unit = runBlocking {
+        checkAll(arbReading(tallOnly = true), Arb.int(0..10)) { reading, k ->
             var state = reading.state
             var moved = 0
             repeat(k) {
@@ -231,8 +285,8 @@ class PaginationTest {
     }
 
     @Test
-    fun prevsThenAsManyNextsReturnToTheSameView(): Unit = runBlocking {
-        checkAll(arbReading, Arb.int(0..10)) { reading, k ->
+    fun prevsThenAsManyNextsReturnToTheSameViewInABookOfTallPages(): Unit = runBlocking {
+        checkAll(arbReading(tallOnly = true), Arb.int(0..10)) { reading, k ->
             var state = reading.state
             var moved = 0
             repeat(k) {
@@ -246,12 +300,12 @@ class PaginationTest {
     }
 
     @Test
-    fun learningALaterShapeKeepsTheCurrentView(): Unit = runBlocking {
-        checkAll(arbReading, Arb.int(0..23)) { reading, offset ->
+    fun learningTheShapeOfAPageOutsideTheCurrentViewKeepsIt(): Unit = runBlocking {
+        checkAll(arbReading(), Arb.int(0..23)) { reading, offset ->
             val state = reading.state
-            val later = (state.current.pages.last() + 1 until state.shapes.size).toList()
-            if (later.isNotEmpty()) {
-                val page = later[offset % later.size]
+            val outside = state.shapes.indices.filter { it !in state.current.pages }
+            if (outside.isNotEmpty()) {
+                val page = outside[offset % outside.size]
                 val learned = state.reduce(ShapeLearned(page, reading.truth[page]))
                 assertEquals(state.current, learned.current)
             }

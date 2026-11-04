@@ -116,7 +116,7 @@ sealed interface PageBarEvent {
 sealed interface PageBarEffect {
     data object OpenPagePanel : PageBarEffect
 
-    /** Move to [page] and anchor the layout there. */
+    /** Move to [page] and pair forward from it. */
     data class GoTo(val page: Int) : PageBarEffect
 }
 

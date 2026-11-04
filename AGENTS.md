@@ -7,7 +7,7 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 `docs/spec.md` の 9 章のマイルストーンのうち、完了条件をすべて確認できたのは M0 だけです。ほかはコードが揃い、実機、NAS、実データ、人の手が要る確認が残っています。完了条件ごとの分類と根拠は、9 章の「確認の状況」にあります。仕様書の (要検証) は、`docs/verification.md` の台帳に 1 件ずつ載せています。仕様書を直したら、`bash tools/verification/list.sh --check` で台帳と件数が合うことを確かめます。
 
 - M0（骨組みとライセンスの仕組み）: 完了。GitHub の CI で `check` が通ることと、許可外の依存で失敗することを確かめました。
-- M1（ローカルの ZIP と画像フォルダを読む）: 機能は動きます。ただし P1〜P4 を実際のリーダーで計るトレース区間とベンチマークがありません。実機での確認が 3 件残ります（P1〜P4、進んでから戻る手動試験と G2 の片手の手動試験、Q1 と Q2 の計り直し）。
+- M1（ローカルの ZIP と画像フォルダを読む）: 機能は動きます。ただし P1〜P4 を実際のリーダーで計るトレース区間とベンチマークがありません。実機での確認が 3 件残ります（P1〜P4、進むときと戻るときの組み方の手動試験と G2 の片手の手動試験、Q1 と Q2 の計り直し）。
 - M2（ライブラリ、履歴、しおり、サムネイル）: コード完了です。実機での確認が 3 件残ります（1000 冊のフォルダの P7 と P8、ファイル管理アプリから cbz を開く、書き出し、データの消去、読み込みの順）。
 - M3（RAR、7z、PDF とすべての画像形式）: コード完了、確認が 3 件残ります（fuzz は延べ 24 時間のうち 0.30 時間、幅 800 で高さ 50,000 の画像のスクロールと P10 を実機で、圧縮した RAR 5 と RAR 4 の PPMd の実データ）。
 - M4（SMB）: コード完了です。保存の取り消しに小さな穴が 1 つあります（サーバーが応答しないまま待っているとき、タイムアウトまで書きかけの `.part` を消しません）。実機と NAS での確認が 3 件残ります（完了条件の 2 件は、基準 NAS の P4 と、読書中に Wi-Fi を切ることです。もう 1 件は、端末に保存の保存先を選ぶ画面と実際の提供元です）。
@@ -28,7 +28,7 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 - P8: `./gradlew :core:image:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.core.image.thumbnail.ThumbnailsDeviceTest"` を流し、`adb logcat -d -s ThumbnailsDeviceTest` で `P8:` の行を読みます。1000 冊のフォルダでの表示は目で見ます。
 - P9: `./gradlew :feature:text:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=io.github.yuubiz.hirari.feature.text.TextOnDeviceTest#aMegabyteTextReachesItsFirstPageWithTheSystemFontAndDrawsInk"` を流し、`adb logcat -d -s TextOnDeviceTest` で `P9 on this device` の行を読みます。
 - P10: `./gradlew :tools:corpus:generateStandardCorpus` で標準コーパスを作り、`./gradlew :tools:corpus:generateCorpus` で幅 800 で高さ 50,000 の画像 `tall.png` を含むコーパスを作ります。実機で最後まで読みながら、10 ページごとに `adb shell dumpsys meminfo io.github.yuubiz.hirari` を記録します。
-- G2 の片手の手動試験: 4 章の操作表を片手で一巡します。めくり、ページ移動、組ずらし、しおり追加を含みます。進んでから戻ると同じビューに戻ることも、このとき手で確かめます。
+- G2 の片手の手動試験: 4 章の操作表を片手で一巡します。めくり、ページ移動、組ずらし、しおり追加を含みます。見開きで、進むときは今のビューの後ろから、戻るときは今のビューの前から組むこと（`docs/spec.md` の 2.5 節）も、このとき手で確かめます。
 - 折りたたみ端末の点検: 検証用の端末 B で、見開きと、折りたたみと展開での組み直しを見ます。
 - 基準 NAS の P4: NAS の SMB の場所を登録し、一覧のタップから最初のページの描画までを計ります。NAS が手元にないときの試験には、`tools/smb-fixture` の Docker の Samba を使いますが、P4 の判定には使えません。
 - 読書中に Wi-Fi を切る: SMB の本を読みながら Wi-Fi を切り、「再接続しています」が出てアプリが終了しないこと、準備済みのページが読めること、Wi-Fi を戻すと自動で再接続することを見ます。

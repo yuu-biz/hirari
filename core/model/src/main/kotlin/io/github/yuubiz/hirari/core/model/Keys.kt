@@ -29,7 +29,7 @@ sealed interface ReaderAction {
     /** Move to the neighboring stop, and to the neighboring view past the last one. */
     data class StepStops(val turn: Turn) : ReaderAction
 
-    /** Shift the pairing; [forward] moves the anchor one page later. */
+    /** Shift the pairing; [forward] pairs again from one page after the head of the view. */
     data class Shift(val forward: Boolean) : ReaderAction
     data object First : ReaderAction
     data object Last : ReaderAction
