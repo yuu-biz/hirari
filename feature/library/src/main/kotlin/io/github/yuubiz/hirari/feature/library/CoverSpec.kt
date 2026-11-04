@@ -116,7 +116,7 @@ data class CoverRef(val spec: CoverSpec, val sizePx: Int) {
     val key: CoverKey get() = spec.key(sizePx)
 }
 
-/** Width over height of the cover box in a list. */
+/** Width over height of a book cover box: the thumbnail sizes, the archive grid and a chosen cover range use it. */
 internal const val COVER_RATIO = 0.7f
 
 /** The narrowest a grid cell may be (docs/spec.md section 4.3, グリッドの列数). */

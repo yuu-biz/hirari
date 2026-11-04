@@ -130,8 +130,8 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     ) {
                         items(cells, key = { it.key }) { cell ->
                             when (cell) {
-                                ListCell.Parent -> GridParentCell(fitter, content.look.noteLine, onUp ?: {})
-                                is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look.noteLine, onOpen, onLongPress)
+                                ListCell.Parent -> GridParentCell(fitter, content.look, onUp ?: {})
+                                is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look, onOpen, onLongPress)
                             }
                         }
                         if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
@@ -146,8 +146,8 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
                         items(cells, key = { it.key }) { cell ->
                             when (cell) {
-                                ListCell.Parent -> ListParentRow(covers != null, content.look.thumbSize, onUp ?: {})
-                                is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look.thumbSize, onOpen, onLongPress)
+                                ListCell.Parent -> ListParentRow(covers != null, content.look, onUp ?: {})
+                                is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look, onOpen, onLongPress)
                             }
                         }
                         if (empty != null) item { EmptyRow(empty) }
@@ -177,27 +177,27 @@ private fun EmptyRow(@StringRes text: Int) {
  * the size of a cover and `..` where a name goes, as tall as the other cells.
  */
 @Composable
-private fun GridParentCell(fitter: TitleFitter, noteLine: Boolean, onUp: () -> Unit) {
+private fun GridParentCell(fitter: TitleFitter, look: ListLook, onUp: () -> Unit) {
     val colors = LocalLibraryColors.current
     val label = stringResource(R.string.folder_up)
     Column(Modifier.rowPress(onUp, null).semantics { contentDescription = label }.padding(CELL_PADDING)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(COVER_RATIO).decorative(), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().aspectRatio(look.aspect.ratio).decorative(), contentAlignment = Alignment.Center) {
             Icon(ListIcons.Up, null, Modifier.fillMaxSize(0.7f), tint = colors.stateFolder)
         }
         Text(PARENT_KEY, Modifier.fillMaxWidth().padding(top = 4.dp).decorative(), color = colors.stateFolder, style = fitter.style, minLines = fitter.lines, maxLines = fitter.lines)
-        if (noteLine) Text("", Modifier.fillMaxWidth().decorative(), style = fitter.style, minLines = 1, maxLines = 1)
+        if (look.noteLine) Text("", Modifier.fillMaxWidth().decorative(), style = fitter.style, minLines = 1, maxLines = 1)
     }
 }
 
 /** The parent item of a list: the arrow where a cover or a mark goes, then its name. */
 @Composable
-private fun ListParentRow(withCovers: Boolean, size: ThumbSize, onUp: () -> Unit) {
+private fun ListParentRow(withCovers: Boolean, look: ListLook, onUp: () -> Unit) {
     val colors = LocalLibraryColors.current
     Row(
         Modifier.fillMaxWidth().rowPress(onUp, null).minTouchTarget().padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val slot = if (withCovers) Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO) else Modifier.width(32.dp)
+        val slot = if (withCovers) look.listCoverSlot() else Modifier.width(32.dp)
         Box(slot.decorative(), contentAlignment = Alignment.Center) { Icon(ListIcons.Up, null, tint = colors.stateFolder) }
         Spacer(Modifier.width(12.dp))
         Text(stringResource(R.string.folder_up), Modifier.weight(1f), color = colors.stateFolder, maxLines = 1)
@@ -221,10 +221,14 @@ private fun HeldCovers(onResume: () -> Unit) {
     }
 }
 
-private val ThumbSize.listCoverWidth get() = when (this) {
-    ThumbSize.Small -> 36.dp
-    ThumbSize.Medium -> 44.dp
-    ThumbSize.Large -> 56.dp
+/** The cover of a thumbnail list row: as wide as the thumbnail size says, in the chosen box (docs/spec.md section 4.10). */
+private fun ListLook.listCoverSlot(): Modifier {
+    val width = when (thumbSize) {
+        ThumbSize.Small -> 36.dp
+        ThumbSize.Medium -> 44.dp
+        ThumbSize.Large -> 56.dp
+    }
+    return Modifier.width(width).aspectRatio(aspect.ratio)
 }
 
 /** The fitter of the titles of cells [cellWidthPx] wide, after their padding, on [lines] lines. */
@@ -238,19 +242,19 @@ private fun rememberTitleFitter(cellWidthPx: Int, lines: Int): TitleFitter {
 
 /**
  * A grid cell (docs/spec.md section 4.3, グリッドの名前): the cover, the title on the fitter's lines and, with
- * [noteLine], the note on one more, each kept even when empty so the cells of a row line up. Without [noteLine] the
- * title keeps its brackets. A screen reader and a search by text get the whole name.
+ * the author line, the note on one more, each kept even when empty so the cells of a row line up. Without the author
+ * line the title keeps its brackets. A screen reader and a search by text get the whole name.
  */
 @Composable
-private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitter: TitleFitter, noteLine: Boolean, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitter: TitleFitter, look: ListLook, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
     val name = row.gridName
-    val whole = if (noteLine) name.title else row.item.gridBase()
+    val whole = if (look.noteLine) name.title else row.item.gridBase()
     val title = remember(whole, fitter) { fitter.fit(whole) }
     Column(
         Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).semantics { text = AnnotatedString(row.item.entry.name) }.padding(CELL_PADDING),
     ) {
-        Cover(row, covers, focus, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
+        Cover(row, covers, focus, Modifier.fillMaxWidth().aspectRatio(look.aspect.ratio))
         Text(
             title,
             Modifier.fillMaxWidth().padding(top = 4.dp).decorative(),
@@ -260,7 +264,7 @@ private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitte
             maxLines = fitter.lines,
             overflow = TextOverflow.Clip,
         )
-        if (noteLine) Text(
+        if (look.noteLine) Text(
             name.note,
             Modifier.fillMaxWidth().decorative(),
             color = colors.itemDetail,
@@ -273,14 +277,14 @@ private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitte
 }
 
 @Composable
-private fun ListRow(row: FileRow, covers: CoverLayout?, focus: CoverFocus, size: ThumbSize, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
+private fun ListRow(row: FileRow, covers: CoverLayout?, focus: CoverFocus, look: ListLook, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
     Row(
         Modifier.fillMaxWidth().rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).minTouchTarget().padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (covers != null) {
-            Cover(row, covers, focus, Modifier.width(size.listCoverWidth).aspectRatio(COVER_RATIO))
+            Cover(row, covers, focus, look.listCoverSlot())
         } else {
             Box(Modifier.width(32.dp).decorative(), contentAlignment = Alignment.Center) { MarkGlyph(row.mark) }
         }

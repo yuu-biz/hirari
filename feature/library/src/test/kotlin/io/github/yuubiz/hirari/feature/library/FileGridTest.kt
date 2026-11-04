@@ -15,6 +15,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.ThumbSize
@@ -44,8 +45,8 @@ class FileGridTest {
         return FileRow(requireNotNull(entry.toItem(showDotFiles = false)), path = name, filterKey = name)
     }
 
-    private fun shown(rows: List<FileRow>, look: ListLook = ListLook()) = FolderContent.Shown(
-        rows, rows.size, "", LibraryView.Grid, look, LibrarySort.Name, foldersFirst = true,
+    private fun shown(rows: List<FileRow>, look: ListLook = ListLook(), view: LibraryView = LibraryView.Grid) = FolderContent.Shown(
+        rows, rows.size, "", view, look, LibrarySort.Name, foldersFirst = true,
         CoverLayout(fixture.covers, fixture.covers.sizePx(look.thumbSize)), folderCoverPath = null,
     )
 
@@ -61,23 +62,38 @@ class FileGridTest {
 
     @Test
     fun `a cell grows by a line for each name line and for the author line`() {
-        var look by mutableStateOf(ListLook())
-        rule.setContent {
-            MaterialTheme { Box(Modifier.size(360.dp, 800.dp)) { FileList(shown(volumes(4).map(::row), look), reveal = null, onOpen = {}, onLongPress = {}) } }
-        }
-        fun cellHeight(next: ListLook): Float {
-            look = next
-            rule.waitForIdle()
-            return rule.onAllNodesWithClick().first().boundsInRoot.height
-        }
-        val one = cellHeight(ListLook(nameLines = 1, noteLine = false))
-        val oneWithNote = cellHeight(ListLook(nameLines = 1))
-        val two = cellHeight(ListLook())
-        val three = cellHeight(ListLook(nameLines = 3))
+        val (one, oneWithNote, two, three) = firstItemHeight(
+            LibraryView.Grid, ListLook(nameLines = 1, noteLine = false), ListLook(nameLines = 1), ListLook(), ListLook(nameLines = 3),
+        )
         assertTrue(oneWithNote > one, "the author line takes no height")
         val line = two - oneWithNote
         assertTrue(line > 0f, "a second name line takes no height")
         assertEquals(line, three - two, 0.5f)
+    }
+
+    private fun firstItemHeight(view: LibraryView, vararg looks: ListLook): List<Float> {
+        var look by mutableStateOf(looks.first())
+        rule.setContent {
+            MaterialTheme { Box(Modifier.size(360.dp, 800.dp)) { FileList(shown(volumes(4).map(::row), look, view), reveal = null, onOpen = {}, onLongPress = {}) } }
+        }
+        return looks.map {
+            look = it
+            rule.waitForIdle()
+            rule.onAllNodesWithClick().first().boundsInRoot.height
+        }
+    }
+
+    @Test
+    fun `a square box makes a grid cell shorter by the height the book box adds`() {
+        val (book, square) = firstItemHeight(LibraryView.Grid, ListLook(), ListLook(aspect = CoverAspect.Square))
+        val coverWidth = 360f / 4 - 12
+        assertEquals(coverWidth / 0.7f - coverWidth, book - square, 1f)
+    }
+
+    @Test
+    fun `a square box makes a thumbnail list row no taller than a book box`() {
+        val (book, square) = firstItemHeight(LibraryView.ThumbnailList, ListLook(thumbSize = ThumbSize.Large), ListLook(thumbSize = ThumbSize.Large, aspect = CoverAspect.Square))
+        assertTrue(square < book, "square $square, book $book")
     }
 
     @Test
