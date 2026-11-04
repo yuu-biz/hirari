@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -58,9 +59,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.yuubiz.hirari.core.model.LibraryTextSize
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.ThumbSize
 import io.github.yuubiz.hirari.core.ui.LibraryColors
@@ -114,52 +117,61 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
     Column(Modifier.fillMaxSize()) {
         if (held && content.view != LibraryView.List) HeldCovers(onResume = content.covers.covers::resume)
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            when (content.view) {
-                LibraryView.Grid -> {
-                    val grid = rememberLazyGridState()
-                    LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
-                    val landscape = LocalConfiguration.current.run { screenWidthDp > screenHeightDp }
-                    val columns = content.look.columns(maxWidth, landscape)
-                    val size = content.look.gridThumbSize(maxWidth / columns, landscape)
-                    val covers = remember(content.covers, size) { content.covers.copy(sizePx = content.covers.covers.sizePx(size)) }
-                    val fitter = rememberTitleFitter(constraints.maxWidth / columns, content.look.nameLines)
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(columns),
-                        state = grid,
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        items(cells, key = { it.key }) { cell ->
-                            when (cell) {
-                                ListCell.Parent -> GridParentCell(fitter, content.look, onUp ?: {})
-                                is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look, onOpen, onLongPress)
+            CompositionLocalProvider(LocalDensity provides rememberTextScaled(content.look.textSize)) {
+                when (content.view) {
+                    LibraryView.Grid -> {
+                        val grid = rememberLazyGridState()
+                        LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
+                        val landscape = LocalConfiguration.current.run { screenWidthDp > screenHeightDp }
+                        val columns = content.look.columns(maxWidth, landscape)
+                        val size = content.look.gridThumbSize(maxWidth / columns, landscape)
+                        val covers = remember(content.covers, size) { content.covers.copy(sizePx = content.covers.covers.sizePx(size)) }
+                        val fitter = rememberTitleFitter(constraints.maxWidth / columns, content.look.nameLines)
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(columns),
+                            state = grid,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            items(cells, key = { it.key }) { cell ->
+                                when (cell) {
+                                    ListCell.Parent -> GridParentCell(fitter, content.look, onUp ?: {})
+                                    is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look, onOpen, onLongPress)
+                                }
                             }
+                            if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
                         }
-                        if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
+                        PrefetchCovers(cells.coverRefs(covers), covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
+                        FastScroller(cells.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                     }
-                    PrefetchCovers(cells.coverRefs(covers), covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
-                    FastScroller(cells.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
-                }
-                LibraryView.ThumbnailList, LibraryView.List -> {
-                    val list = rememberLazyListState()
-                    LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
-                    val covers = content.covers.takeIf { content.view == LibraryView.ThumbnailList }
-                    LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
-                        items(cells, key = { it.key }) { cell ->
-                            when (cell) {
-                                ListCell.Parent -> ListParentRow(covers != null, content.look, onUp ?: {})
-                                is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look, onOpen, onLongPress)
+                    LibraryView.ThumbnailList, LibraryView.List -> {
+                        val list = rememberLazyListState()
+                        LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
+                        val covers = content.covers.takeIf { content.view == LibraryView.ThumbnailList }
+                        LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
+                            items(cells, key = { it.key }) { cell ->
+                                when (cell) {
+                                    ListCell.Parent -> ListParentRow(covers != null, content.look, onUp ?: {})
+                                    is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look, onOpen, onLongPress)
+                                }
                             }
+                            if (empty != null) item { EmptyRow(empty) }
                         }
-                        if (empty != null) item { EmptyRow(empty) }
+                        if (covers != null) {
+                            PrefetchCovers(cells.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
+                        }
+                        FastScroller(cells.size, { list.firstVisibleItemIndex }, { list.isScrollInProgress }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                     }
-                    if (covers != null) {
-                        PrefetchCovers(cells.coverRefs(content.covers), content.covers.covers, focus) { list.layoutInfo.visibleItemsInfo.visibleRange() }
-                    }
-                    FastScroller(cells.size, { list.firstVisibleItemIndex }, { list.isScrollInProgress }, { scope.launch { list.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
             }
         }
     }
+}
+
+/** The density of the list's text (docs/spec.md section 4.3, 文字の大きさ): the device's text size times [size]'s scale. */
+@Composable
+private fun rememberTextScaled(size: LibraryTextSize): Density {
+    val density = LocalDensity.current
+    return remember(density, size) { if (size.scale == 1f) density else Density(density.density, density.fontScale * size.scale) }
 }
 
 @Composable

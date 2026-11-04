@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.LibrarySort
+import io.github.yuubiz.hirari.core.model.LibraryTextSize
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.ThumbSize
 import org.junit.Rule
@@ -95,6 +96,17 @@ class FileGridTest {
         val (book, square) = firstItemHeight(LibraryView.ThumbnailList, ListLook(thumbSize = ThumbSize.Large), ListLook(thumbSize = ThumbSize.Large, aspect = CoverAspect.Square))
         assertTrue(square < book, "square $square, book $book")
     }
+
+    private fun assertGrowsWithTextSize(view: LibraryView) {
+        val (small, medium, large) = firstItemHeight(view, *LibraryTextSize.entries.map { ListLook(textSize = it) }.toTypedArray())
+        assertTrue(small < medium && medium < large, "$small, $medium, $large")
+    }
+
+    @Test
+    fun `a larger text size makes grid cells taller`() = assertGrowsWithTextSize(LibraryView.Grid)
+
+    @Test
+    fun `a larger text size makes list rows taller`() = assertGrowsWithTextSize(LibraryView.List)
 
     @Test
     fun `a portrait window shows the portrait column count`() {
