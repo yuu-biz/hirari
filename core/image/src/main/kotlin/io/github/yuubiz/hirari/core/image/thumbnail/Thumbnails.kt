@@ -234,29 +234,29 @@ class Thumbnails internal constructor(
     /** A folder is stored like a book, under a key of its own, so finding it never lists the folder. */
     private suspend fun folder(folder: ThumbSubject.Folder, request: ThumbRequest, mode: Mode): ThumbResult? {
         val key = keyOf(folder, request)
+        val urgency = Urgency(request.priority)
         val flight = if (mode == Mode.Remake) {
             folderWrites.withLock {
                 store.remove(key)
-                board(folder, key, request, mode)
+                board(folder, key, request, mode, urgency)
             }
         } else {
             stored(key)?.let { return it }
             if (mode == Mode.CacheOnly) return null
-            board(folder, key, request, mode)
+            board(folder, key, request, mode, urgency)
         }
         try {
             return flight.result.await()
         } finally {
-            leave(key, flight)
+            leave(key, flight, urgency)
         }
     }
 
-    private fun board(folder: ThumbSubject.Folder, key: ThumbnailKey, request: ThumbRequest, mode: Mode): FolderFlight =
+    private fun board(folder: ThumbSubject.Folder, key: ThumbnailKey, request: ThumbRequest, mode: Mode, urgency: Urgency): FolderFlight =
         synchronized(folderFlights) {
-            val urgency = Urgency(request.priority)
             val running = folderFlights[key]
-            val flight = running?.also { it.urgency.follow(urgency) }
-                ?: FolderFlight(Urgency.following(urgency)).also { folderFlights[key] = it }
+            val flight = running ?: FolderFlight(Urgency.borrowed()).also { folderFlights[key] = it }
+            flight.urgency.follow(urgency)
             if (running == null || mode == Mode.Remake) {
                 running?.search?.cancel()
                 fly(folder, key, flight, Search(request, mode, flight.urgency))
@@ -290,8 +290,9 @@ class Thumbnails internal constructor(
         }
     }
 
-    private fun leave(key: ThumbnailKey, flight: FolderFlight) {
+    private fun leave(key: ThumbnailKey, flight: FolderFlight, urgency: Urgency) {
         synchronized(folderFlights) {
+            flight.urgency.unfollow(urgency)
             if (--flight.waiters == 0) {
                 folderFlights.remove(key, flight)
                 flight.search.cancel()

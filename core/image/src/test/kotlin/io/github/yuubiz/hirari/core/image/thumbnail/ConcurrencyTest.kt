@@ -149,13 +149,18 @@ class ConcurrencyTest {
     }
 
     @Test
-    fun anUrgencyRisesWithTheOnesItFollowsAndNeverFalls() {
-        val flight = Urgency.following(Urgency(ThumbPriority.Nearby))
-        val lent = Urgency.following(flight)
+    fun anUrgencyIsTheBestOfTheOnesItFollowsNow() {
+        val flight = Urgency.borrowed()
+        val lent = Urgency.borrowed().also { it.follow(flight) }
+        val nearby = Urgency(ThumbPriority.Nearby)
+        val visible = Urgency(ThumbPriority.Visible)
+        flight.follow(nearby)
         assertEquals(ThumbPriority.Nearby.ordinal, lent.rank)
-        flight.follow(Urgency(ThumbPriority.Visible))
+        flight.follow(visible)
         assertEquals(ThumbPriority.Visible.ordinal, lent.rank)
-        flight.follow(Urgency(ThumbPriority.Nearby))
-        assertEquals(ThumbPriority.Visible.ordinal, lent.rank)
+        flight.unfollow(visible)
+        assertEquals(ThumbPriority.Nearby.ordinal, lent.rank)
+        flight.unfollow(nearby)
+        assertEquals(Int.MAX_VALUE, lent.rank)
     }
 }

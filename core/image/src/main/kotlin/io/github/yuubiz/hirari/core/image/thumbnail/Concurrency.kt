@@ -9,9 +9,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * How soon a piece of work is wanted: the best of its own priority and of the urgencies it follows, read anew at
- * each turn of a [PriorityGate]. It only rises. A flight follows each request that joins it, and a folder lends
- * the urgency of its flight to the books its search tries, so they rise with the folder.
+ * How soon a piece of work is wanted: the best of its own priority and of the urgencies it follows now, read anew
+ * at each turn of a [PriorityGate]. A flight follows each request for as long as the request waits for it, and a
+ * folder lends the urgency of its flight to the book its search tries, so they rise with the folder and fall back
+ * when the request that raised them leaves.
  */
 internal class Urgency private constructor(private val own: Int) {
     constructor(priority: ThumbPriority) : this(priority.ordinal)
@@ -24,9 +25,13 @@ internal class Urgency private constructor(private val own: Int) {
         followed += other
     }
 
+    fun unfollow(other: Urgency) {
+        followed.remove(other)
+    }
+
     companion object {
-        /** An urgency with no priority of its own: as high as [first] and whatever it follows later. */
-        fun following(first: Urgency) = Urgency(Int.MAX_VALUE).also { it.follow(first) }
+        /** An urgency with no priority of its own: as high as what it follows, and the lowest when it follows nothing. */
+        fun borrowed() = Urgency(Int.MAX_VALUE)
     }
 }
 
@@ -45,7 +50,7 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
 
     suspend fun join(key: K, urgency: Urgency, work: suspend (Urgency) -> V): V {
         val flight = synchronized(lock) {
-            val flight = running[key]?.also { it.urgency.follow(urgency) } ?: Flight<V>(Urgency.following(urgency)).also { created ->
+            val flight = running[key] ?: Flight<V>(Urgency.borrowed()).also { created ->
                 created.result = scope.async(start = CoroutineStart.LAZY) {
                     try {
                         work(created.urgency)
@@ -56,12 +61,16 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
                 running[key] = created
                 created.result.start()
             }
-            flight.also { it.waiters++ }
+            flight.also {
+                it.urgency.follow(urgency)
+                it.waiters++
+            }
         }
         try {
             return flight.result.await()
         } finally {
             synchronized(lock) {
+                flight.urgency.unfollow(urgency)
                 if (--flight.waiters == 0) {
                     if (running[key] === flight) running.remove(key)
                     flight.result.cancel()

@@ -429,6 +429,49 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun aRowScrolledPastGoesBackToTheNearbyPriorityItIsStillAskedFor() = runTest {
+        val thumbnails = thumbnails()
+        val release = CompletableDeferred<Unit>()
+        maker.script = { book ->
+            if (book.id.value == "busy") release.await()
+            Made.Webp(byteArrayOf(1))
+        }
+        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        runCurrent()
+        launch { thumbnails.thumbnail(request(book("passed", lane = ThumbLane.Smb), priority = ThumbPriority.Nearby)) }
+        val shown = launch { thumbnails.thumbnail(request(book("passed", lane = ThumbLane.Smb))) }
+        runCurrent()
+        shown.cancel()
+        launch { thumbnails.thumbnail(request(book("now visible", lane = ThumbLane.Smb))) }
+        runCurrent()
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("busy", "now visible", "passed"), maker.ids)
+    }
+
+    @Test
+    fun aFolderScrolledPastLowersTheBookItsSearchWaitsFor() = runTest {
+        val thumbnails = thumbnails()
+        val release = CompletableDeferred<Unit>()
+        maker.script = { book ->
+            if (book.id.value == "busy") release.await()
+            Made.Webp(byteArrayOf(1))
+        }
+        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        runCurrent()
+        val subject = folder(item("child", lane = ThumbLane.Smb))
+        launch { thumbnails.thumbnail(request(subject, priority = ThumbPriority.Nearby)) }
+        val shown = launch { thumbnails.thumbnail(request(subject)) }
+        runCurrent()
+        shown.cancel()
+        launch { thumbnails.thumbnail(request(book("now visible", lane = ThumbLane.Smb))) }
+        runCurrent()
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("busy", "now visible", "child"), maker.ids)
+    }
+
+    @Test
     fun aNearbyFolderThatBecomesVisibleMovesUpTheBookItWaitsFor() = runTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
