@@ -69,6 +69,9 @@ class Thumbnails internal constructor(
     private val folderFlights = HashMap<ThumbnailKey, FolderFlight>()
     private val folderWrites = Mutex()
     private val gates = ThumbLane.entries.associateWith { PriorityGate(it.parallelism) }
+
+    /** One listing at a time per lane for the searches for folder covers, beside the covers being made (section 4.4). */
+    private val listingGates = ThumbLane.entries.associateWith { PriorityGate(1) }
     private val unavailableUntil = ConcurrentHashMap<ThumbnailKey, Long>()
     private val skipped: MutableSet<ThumbnailKey> = ConcurrentHashMap.newKeySet()
     private val making = MutableStateFlow(Making.Unknown)
@@ -296,16 +299,20 @@ class Thumbnails internal constructor(
 
     /**
      * A search for the cover of a folder, and what it has seen so far: [found] is a copy of the first thumbnail it
-     * got. Its books are made with the [urgency] of the folder.
+     * got. Its books are made and its folders listed with the [urgency] of the folder, each in a turn: a book in one of
+     * the folder's lane, a listing in the one turn for listings of that lane. The first failure that may pass ends it ([unavailable]): the next book would most likely fail the same
+     * way, and trying it would only make one cover cost many. A book skipped because the last process ended while
+     * making it ([skipped]) is passed over, but the folder is not recorded as failed for it.
      */
-    private class Search(val request: ThumbRequest, val mode: Mode, val urgency: Urgency) {
+    private class Search(val request: ThumbRequest, val mode: Mode, val urgency: Urgency, val lane: ThumbLane) {
         var found: ByteArray? = null
         var unavailable = false
+        var skipped = false
         var exhausted = false
         var books = 0
         var listings = 0
 
-        val done: Boolean get() = found != null || exhausted
+        val done: Boolean get() = found != null || unavailable || exhausted
     }
 
     /**
@@ -348,7 +355,7 @@ class Thumbnails internal constructor(
             flight.urgency.follow(urgency)
             if (running == null || mode == Mode.Remake) {
                 running?.search?.cancel()
-                fly(folder, key, flight, Search(request, mode, flight.urgency))
+                fly(folder, key, flight, Search(request, mode, flight.urgency, folder.lane))
             }
             flight.waiters++
             flight
@@ -390,9 +397,9 @@ class Thumbnails internal constructor(
     }
 
     /**
-     * Visits the chosen image and then the items in natural order, sub-folders in place, until one gives a
-     * thumbnail, and stores a copy of it under the folder's [key]. A folder none of them gives one for is recorded
-     * as failed when every attempt was final.
+     * Visits the chosen image, then the books of the folder in natural order, then its sub-folders in natural order,
+     * until one gives a thumbnail, and stores a copy of it under the folder's [key]. A folder none of them gives one
+     * for is recorded as failed when every attempt was final.
      */
     private suspend fun search(folder: ThumbSubject.Folder, key: ThumbnailKey, search: Search): ThumbResult {
         // Another flight for the key may have stored it since [folder] looked.
@@ -408,7 +415,7 @@ class Thumbnails internal constructor(
             val found = search.found
             when {
                 found != null -> ThumbResult.Ready(store.put(key, found), key)
-                search.unavailable -> ThumbResult.Unavailable
+                search.unavailable || search.skipped -> ThumbResult.Unavailable
                 else -> {
                     store.markFailed(key)
                     ThumbResult.Failed
@@ -418,7 +425,8 @@ class Thumbnails internal constructor(
     }
 
     private suspend fun walk(entries: List<FolderEntry>, depth: Int, search: Search) {
-        for (entry in entries.sortedWith(compareBy(NaturalOrder) { it.name })) {
+        val (books, folders) = entries.sortedWith(compareBy(NaturalOrder) { it.name }).partition { it is FolderEntry.Item }
+        for (entry in books + folders) {
             when (entry) {
                 is FolderEntry.Item -> visit(entry.book, search)
                 is FolderEntry.Directory -> if (depth < MAX_SEARCH_DEPTH) {
@@ -438,11 +446,12 @@ class Thumbnails internal constructor(
         }
         search.books++
         // Held from before the store is asked until the copy is read, so no eviction falls in between.
-        store.hold(keyOf(book, search.request)).use {
+        val key = keyOf(book, search.request)
+        store.hold(key).use {
             when (val result = checkNotNull(book(book, search.request, search.mode, search.urgency))) {
                 is ThumbResult.Ready -> search.found = withContext(io) { result.file.readBytes() }
                 ThumbResult.Failed -> Unit
-                ThumbResult.Unavailable -> search.unavailable = true
+                ThumbResult.Unavailable -> if (key in skipped) search.skipped = true else search.unavailable = true
             }
         }
     }
@@ -454,7 +463,7 @@ class Thumbnails internal constructor(
             return null
         }
         return try {
-            withContext(io) { directory.children() }
+            listingGates.getValue(search.lane).withPermit(search.urgency) { withContext(io) { directory.children() } }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

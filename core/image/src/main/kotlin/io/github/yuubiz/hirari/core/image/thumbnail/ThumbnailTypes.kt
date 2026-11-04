@@ -123,7 +123,7 @@ sealed interface ThumbSubject {
 
     /**
      * A folder of the file list. Its thumbnail is the first thumbnail that can be made from [chosen], then from
-     * the items inside in natural order of their names, descending into sub-folders in place (section 4.4). The
+     * the books inside in natural order of their names, then from its sub-folders in that order (section 4.4). The
      * store keeps a copy of it under the folder's own key, which has [id] and [modified] but not what is inside,
      * so the folder shows the same cover until [modified] changes or [Thumbnails.regenerate] searches it again.
      *
@@ -131,11 +131,13 @@ sealed interface ThumbSubject {
      * when it changes.
      * @property children lists the folder; it is called on `Dispatchers.IO` and may throw, which counts as the
      * folder being unavailable for now. List only what a thumbnail can be made from: archives, PDFs and images.
+     * @property lane where the folder is read, whose turns its listings take as its books' covers do.
      */
     class Folder(
         override val id: BookId,
         override val modified: Instant,
         val chosen: Book? = null,
+        val lane: ThumbLane = ThumbLane.Local,
         /** Resolves the chosen file only on a cache miss while generation is allowed. */
         val resolveChosen: suspend () -> Book? = { chosen },
         val children: suspend () -> List<FolderEntry>,

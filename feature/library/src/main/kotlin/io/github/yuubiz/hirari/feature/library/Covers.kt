@@ -176,7 +176,7 @@ class Covers(
 
     private fun subject(spec: CoverSpec): ThumbSubject = when (spec) {
         is CoverSpec.Book -> book(spec)
-        is CoverSpec.Folder -> ThumbSubject.Folder(spec.id, spec.modified, spec.chosen?.let(::book), resolveChosen = {
+        is CoverSpec.Folder -> ThumbSubject.Folder(spec.id, spec.modified, spec.chosen?.let(::book), spec.place.lane(), resolveChosen = {
             spec.selection?.let { chosen(spec.place, it)?.toSpec(spec.place, spec.direction)?.let(::book) } ?: spec.chosen?.let(::book)
         }) {
             children(spec.place, spec.path, spec.documentId, spec.direction)

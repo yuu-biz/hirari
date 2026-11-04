@@ -175,8 +175,9 @@ class ThumbnailsTest {
         vararg entries: FolderEntry,
         chosen: ThumbSubject.Book? = null,
         id: String = "folder",
-        onList: () -> Unit = {},
-    ) = ThumbSubject.Folder(BookId(id), Instant.ofEpochMilli(500), chosen) {
+        lane: ThumbLane = ThumbLane.Local,
+        onList: suspend () -> Unit = {},
+    ) = ThumbSubject.Folder(BookId(id), Instant.ofEpochMilli(500), chosen, lane) {
         onList()
         entries.toList()
     }
@@ -783,14 +784,28 @@ class ThumbnailsTest {
     }
 
     @Test
-    fun aFolderSearchesSubFoldersInPlaceInNaturalOrder() = runTest {
+    fun aFolderTriesItsOwnBooksBeforeItsSubFoldersEachInNaturalOrder() = runTest {
         val thumbnails = thumbnails()
-        maker.script = { if (it.id.value == "a/1") Made.Unreadable else image(it) }
+        maker.script = { if (it.id.value in setOf("b", "a/1")) Made.Unreadable else image(it) }
         val sub = FolderEntry.Directory("a") { listOf(item("1", "a/1"), item("2", "a/2")) }
-        val result = async { thumbnails.thumbnail(request(folder(item("b"), sub))) }
+        val result = async { thumbnails.thumbnail(request(folder(sub, item("b")))) }
         runCurrent()
         assertEquals("a/2", shows(result.await()))
-        assertEquals(listOf("a/1", "a/2"), maker.ids)
+        assertEquals(listOf("b", "a/1", "a/2"), maker.ids)
+    }
+
+    @Test
+    fun aFolderWhoseOwnBookGivesACoverListsNoSubFolder() = runTest {
+        val thumbnails = thumbnails()
+        var listedSub = false
+        val sub = FolderEntry.Directory("extras") {
+            listedSub = true
+            listOf(item("1", "extras/1"))
+        }
+        val result = async { thumbnails.thumbnail(request(folder(sub, item("vol1")))) }
+        runCurrent()
+        assertEquals("vol1", shows(result.await()))
+        assertFalse("a sub-folder was listed though the folder's own book gave a cover", listedSub)
     }
 
     @Test
@@ -833,11 +848,73 @@ class ThumbnailsTest {
     @Test
     fun aFolderWhoseItemsMayBeReadLaterIsNotRecorded() = runTest {
         val thumbnails = thumbnails()
-        maker.script = { if (it.id.value == "1") Made.Unavailable else Made.Unreadable }
+        maker.script = { if (it.id.value == "2") Made.Unavailable else Made.Unreadable }
         val result = async { thumbnails.thumbnail(request(folder(item("1"), item("2")))) }
         runCurrent()
         assertEquals(ThumbResult.Unavailable, result.await())
         assertFalse(store.failed.any { it.book == BookId("folder") })
+    }
+
+    @Test
+    fun foldersOverSmbAreListedOneAtATimeNearestTheMiddleFirst() = runTest {
+        val thumbnails = thumbnails()
+        val release = CompletableDeferred<Unit>()
+        val listing = ArrayList<String>()
+        var most = 0
+        var running = 0
+        val folders = List(6) { index ->
+            folder(item("book", "book $index", ThumbLane.Smb), id = "f$index", lane = ThumbLane.Smb, onList = {
+                listing += "f$index"
+                running++
+                most = maxOf(most, running)
+                try {
+                    release.await()
+                } finally {
+                    running--
+                }
+            })
+        }
+        for ((index, subject) in folders.withIndex()) {
+            launch { thumbnails.thumbnail(request(subject, distance = { kotlin.math.abs(index - 4) })) }
+        }
+        runCurrent()
+        assertEquals("folders listed at once", 1, listing.size)
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(1, most)
+        assertEquals(listOf("f0", "f4", "f3", "f5", "f2", "f1"), listing)
+    }
+
+    @Test
+    fun theSearchForAFolderCoverStopsAtTheFirstBookThatMayBeReadLater() = runTest {
+        val thumbnails = thumbnails()
+        maker.script = { Made.Unavailable }
+        var listedSub = false
+        val sub = FolderEntry.Directory("z") {
+            listedSub = true
+            emptyList()
+        }
+        val result = async { thumbnails.thumbnail(request(folder(item("1"), item("2"), item("3"), sub))) }
+        runCurrent()
+        assertEquals(ThumbResult.Unavailable, result.await())
+        assertEquals("books after a failure that may pass were tried", listOf("1"), maker.ids)
+        assertFalse(listedSub)
+        assertFalse(store.failed.any { it.book == BookId("folder") })
+    }
+
+    @Test
+    fun aFolderSearchPassesOverABookSkippedAfterTheLastProcessEndedButIsNotRecorded() = runTest {
+        previousExit = PreviousExit.Ended
+        store.interrupted += ThumbnailKey(BookId("1"), Instant.ofEpochMilli(1000), 5000, null, 300, ReadingDirection.RightToLeft)
+        val thumbnails = thumbnails()
+        val found = async { thumbnails.thumbnail(request(folder(item("1"), item("2")))) }
+        runCurrent()
+        assertEquals("2", shows(found.await()))
+        maker.script = { Made.Unreadable }
+        val nothing = async { thumbnails.thumbnail(request(folder(item("1"), item("3"), id = "other"))) }
+        runCurrent()
+        assertEquals(ThumbResult.Unavailable, nothing.await())
+        assertFalse(store.failed.any { it.book == BookId("other") })
     }
 
     @Test
@@ -854,8 +931,9 @@ class ThumbnailsTest {
     @Test
     fun theSearchForAFolderCoverStopsAtTheMostFoldersItLists() = runTest {
         val thumbnails = thumbnails()
-        val empty = List(Thumbnails.MAX_SEARCH_LISTINGS) { FolderEntry.Directory("d%02d".format(it)) { emptyList() } }
-        val result = async { thumbnails.thumbnail(request(folder(*empty.toTypedArray(), item("z")))) }
+        val empty = List(Thumbnails.MAX_SEARCH_LISTINGS - 1) { FolderEntry.Directory("d%02d".format(it)) { emptyList() } }
+        val last = FolderEntry.Directory("z") { listOf(item("z")) }
+        val result = async { thumbnails.thumbnail(request(folder(*empty.toTypedArray(), last))) }
         runCurrent()
         assertEquals(ThumbResult.Failed, result.await())
         assertTrue("an item after the last folder it may list was tried", maker.calls.isEmpty())
@@ -867,7 +945,7 @@ class ThumbnailsTest {
         val deepest = (0..Thumbnails.MAX_SEARCH_DEPTH).fold<Int, FolderEntry>(item("bottom")) { inner, depth ->
             FolderEntry.Directory("a$depth") { listOf(inner) }
         }
-        val result = async { thumbnails.thumbnail(request(folder(deepest, item("z")))) }
+        val result = async { thumbnails.thumbnail(request(folder(deepest, FolderEntry.Directory("b") { listOf(item("z")) }))) }
         runCurrent()
         assertEquals(ThumbResult.Failed, result.await())
         assertTrue("an item after a folder too deep was tried: ${maker.ids}", maker.calls.isEmpty())
