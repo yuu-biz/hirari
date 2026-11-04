@@ -4,11 +4,16 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -24,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,13 +44,21 @@ import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.ui.chosen
 import io.github.yuubiz.hirari.core.ui.decorative
 
+/** The kind mark of a cover (docs/spec.md sections 4.3 and 4.4): a label such as `ZIP`, or the folder icon. */
+sealed interface CoverBadge {
+    data class Label(val text: String) : CoverBadge
+
+    data object Folder : CoverBadge
+}
+
 /**
- * Where a cover goes (docs/spec.md section 4.4): a plain square with the kind label in its corner, or in its
- * middle when the cover cannot be shown. [content] draws the cover between the two.
+ * Where a cover goes (docs/spec.md section 4.4): a plain square with the [badge] in its corner, or in its middle when
+ * the cover cannot be shown. In the corner the badge is at most a third of the cover wide, its label 11 sp at most.
+ * [content] draws the cover between the two.
  */
 @Composable
 fun CoverSlot(
-    label: String?,
+    badge: CoverBadge?,
     modifier: Modifier = Modifier,
     faded: Boolean = false,
     centered: Boolean = false,
@@ -55,20 +69,42 @@ fun CoverSlot(
         modifier.background(if (faded) scheme.surfaceVariant.copy(alpha = 0.4f) else scheme.surfaceVariant, RoundedCornerShape(4.dp)),
     ) {
         content()
-        if (label != null) {
-            Text(
-                label,
-                Modifier.align(if (centered) Alignment.Center else Alignment.BottomEnd).decorative().padding(2.dp).background(scheme.inverseSurface, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
-                color = scheme.inverseOnSurface,
-                fontSize = if (centered) 12.sp else 9.sp,
-                fontWeight = FontWeight.Bold,
-            )
+        if (badge == null) return@Box
+        val chip = Modifier.background(scheme.inverseSurface, RoundedCornerShape(2.dp))
+        if (centered) {
+            Box(Modifier.align(Alignment.Center).decorative()) {
+                when (badge) {
+                    is CoverBadge.Label -> Text(badge.text, chip.padding(horizontal = 3.dp), color = scheme.inverseOnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    CoverBadge.Folder -> Icon(ListIcons.Folder, null, chip.padding(4.dp).size(24.dp), tint = scheme.inverseOnSurface)
+                }
+            }
+        } else {
+            Box(Modifier.align(Alignment.BottomEnd).fillMaxWidth(1f / 3).padding(2.dp).decorative(), contentAlignment = Alignment.BottomEnd) {
+                when (badge) {
+                    is CoverBadge.Label -> BasicText(
+                        badge.text,
+                        chip.padding(horizontal = 2.dp),
+                        style = TextStyle(color = scheme.inverseOnSurface, fontSize = BADGE_SIZE, fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased(minFontSize = BADGE_MIN_SIZE, maxFontSize = BADGE_SIZE, stepSize = 0.5.sp),
+                    )
+                    CoverBadge.Folder -> Icon(ListIcons.Folder, null, chip.padding(horizontal = 2.dp).size(BADGE_ICON_WIDTH, BADGE_ICON_HEIGHT), tint = scheme.inverseOnSurface)
+                }
+            }
         }
     }
 }
 
-/** The kind label of docs/spec.md section 4.3, 形式の表示. A folder book and a single image have none. */
-fun Book.kindLabel(): String? = when (val format = format) {
+private val BADGE_SIZE = 11.sp
+private val BADGE_MIN_SIZE = 6.sp
+private val BADGE_ICON_WIDTH = 18.dp
+private val BADGE_ICON_HEIGHT = 14.dp
+
+/** The kind badge of docs/spec.md section 4.3, 形式の表示. A folder book and a single image have none. */
+fun Book.kindBadge(): CoverBadge? = kindLabel()?.let(CoverBadge::Label)
+
+private fun Book.kindLabel(): String? = when (val format = format) {
     is BookFormat.Text -> "TXT"
     is BookFormat.Images -> when (format.container) {
         Container.Zip -> "ZIP"

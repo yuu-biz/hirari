@@ -179,7 +179,7 @@ private fun Entries(content: ArchiveUi.Shown, list: Boolean, onPage: (ArchivePag
                 supportingContent = {
                     Text(listOfNotNull(stringResource(row.mark.label()), row.text.size?.let(::sizeText)).joinToString("  "), color = colors.itemDetail)
                 },
-                leadingContent = { CoverSlot("TXT", Modifier.padding(4.dp).aspectRatio(0.7f).fillMaxWidth(0.12f)) },
+                leadingContent = { CoverSlot(CoverBadge.Label("TXT"), Modifier.padding(4.dp).aspectRatio(0.7f).fillMaxWidth(0.12f)) },
                 modifier = Modifier.rowPress(onClick = { onText(row.text) }, onLongClick = { onHold(Held.Text(row)) }),
             )
         }
@@ -212,7 +212,7 @@ private fun Entries(content: ArchiveUi.Shown, list: Boolean, onPage: (ArchivePag
                             spokenState?.let { stateDescription = it }
                         },
                 ) {
-                    val label = if (page.unreadable) "!" else null
+                    val label = if (page.unreadable) CoverBadge.Label("!") else null
                     val pageCovers = content.covers
                     if (pageCovers == null) {
                         CoverSlot(label, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), faded = row.read)

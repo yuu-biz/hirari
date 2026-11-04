@@ -85,7 +85,7 @@ private fun HistoryRow(item: HistoryItem, covers: CoverLayout, cover: CoverSpec.
     ) {
         Box {
             ListItem(
-                leadingContent = { CoverBox(cover?.let { CoverRef(it, covers.sizePx) }, covers.covers, item.book?.kindLabel(), Modifier.size(40.dp, 56.dp)) },
+                leadingContent = { CoverBox(cover?.let { CoverRef(it, covers.sizePx) }, covers.covers, item.book?.kindBadge(), Modifier.size(40.dp, 56.dp)) },
                 headlineContent = {
                     Text(item.book?.title ?: stringResource(R.string.book_not_indexed), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },

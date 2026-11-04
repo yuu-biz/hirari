@@ -131,7 +131,7 @@ private fun ContinueCard(item: ContinueItem, covers: CoverLayout, onOpen: () -> 
     val reading = stringResource(R.string.mark_reading_percent, item.percent)
     Column(Modifier.width(96.dp).clickable(role = Role.Button, onClick = onOpen).semantics { stateDescription = reading }) {
         Box(Modifier.size(96.dp, 136.dp).decorative()) {
-            CoverBox(item.cover?.let { CoverRef(it, covers.sizePx) }, covers.covers, item.book.book.kindLabel(), Modifier.fillMaxSize())
+            CoverBox(item.cover?.let { CoverRef(it, covers.sizePx) }, covers.covers, item.book.book.kindBadge(), Modifier.fillMaxSize())
             LinearProgressIndicator(
                 progress = { item.percent / 100f },
                 modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.BottomCenter),

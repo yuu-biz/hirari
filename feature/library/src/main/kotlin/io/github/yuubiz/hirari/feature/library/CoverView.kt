@@ -26,18 +26,18 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 /**
  * The thumbnail slot (docs/spec.md section 4.4). While the row is bound it collects the cover of [ref], which holds
  * the thumbnail against eviction, and leaving the screen cancels that. A cover in memory shows at once; otherwise a
- * pale square shows, with a progress mark once the wait is long, and [label] stands in when the cover cannot be made.
+ * pale square shows, with a progress mark once the wait is long, and [badge] stands in when the cover cannot be made.
  * Binding reads memory only: the store, the decode and the making all run elsewhere. In a list with a [focus], the
  * covers nearest the middle of the screen are made first.
  */
 @Composable
-internal fun CoverBox(ref: CoverRef?, covers: Covers, label: String?, modifier: Modifier, faded: Boolean = false, focus: CoverFocus? = null) {
+internal fun CoverBox(ref: CoverRef?, covers: Covers, badge: CoverBadge?, modifier: Modifier, faded: Boolean = false, focus: CoverFocus? = null) {
     var state by remember(ref) {
         mutableStateOf<CoverState<ImageBitmap>>(ref?.let(covers::peek)?.let { CoverState.Loaded(it) } ?: CoverState.Pending)
     }
     if (ref != null) LaunchedEffect(ref) { covers.show(ref, focus).collect { state = it } }
     val shown = state
-    CoverSlot(label, modifier, faded, centered = shown is CoverState.Failed || shown is CoverState.Unavailable) {
+    CoverSlot(badge, modifier, faded, centered = shown is CoverState.Failed || shown is CoverState.Unavailable) {
         when (shown) {
             is CoverState.Loaded -> Image(shown.image, contentDescription = null, Modifier.fillMaxSize().alpha(if (faded) FADED_ALPHA else 1f), contentScale = ContentScale.Fit)
             CoverState.Pending -> if (ref != null) PendingMark(ref)

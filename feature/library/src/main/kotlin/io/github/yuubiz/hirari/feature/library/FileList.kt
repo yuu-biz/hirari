@@ -216,7 +216,7 @@ private fun Cover(row: FileRow, covers: CoverLayout, focus: CoverFocus, modifier
     val mark = row.mark
     Box(modifier.decorative()) {
         val ref = remember(row.cover, covers.sizePx) { row.cover?.let { CoverRef(it, covers.sizePx) } }
-        CoverBox(ref, covers.covers, row.kindLabel(), Modifier.fillMaxSize(), faded = mark == ReadMark.Read, focus = focus)
+        CoverBox(ref, covers.covers, row.kindBadge(), Modifier.fillMaxSize(), faded = mark == ReadMark.Read, focus = focus)
         Box(Modifier.align(Alignment.TopStart).padding(4.dp)) { MarkGlyph(mark) }
         if (mark is ReadMark.Reading) {
             LinearProgressIndicator(
@@ -253,11 +253,10 @@ private fun MarkGlyph(mark: ReadMark?) {
     }
 }
 
-@Composable
-private fun FileRow.kindLabel(): String? = when (val item = item) {
-    is FileItem.Archive -> item.kind.label
-    is FileItem.Text -> "TXT"
-    is FileItem.Folder -> stringResource(R.string.folder_label)
+private fun FileRow.kindBadge(): CoverBadge? = when (val item = item) {
+    is FileItem.Archive -> CoverBadge.Label(item.kind.label)
+    is FileItem.Text -> CoverBadge.Label("TXT")
+    is FileItem.Folder -> CoverBadge.Folder
     is FileItem.Image -> null
 }
 
