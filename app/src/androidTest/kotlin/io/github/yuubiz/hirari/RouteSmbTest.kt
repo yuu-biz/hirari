@@ -21,11 +21,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -105,7 +107,7 @@ class RouteSmbTest {
     private fun field(label: String, value: String) {
         if (value.isEmpty()) return
         val node = compose.onNode(hasText(label) and hasSetTextAction())
-        node.performTextInput(value)
+        node.performScrollTo().performTextInput(value)
     }
 
     /** The reader times a turn on uptime and the rule's frame clock counts from zero; see ReaderSheetsTest. */
@@ -149,13 +151,15 @@ class RouteSmbTest {
         await("the form is shown") { shown("接続を試す") }
         field("表示名", PLACE)
         field("ホスト", host!!)
-        compose.onNode(hasText("ポート") and hasSetTextAction()).performTextReplacement(port)
+        compose.onNode(hasText("ポート") and hasSetTextAction()).performScrollTo().performTextReplacement(port)
         field("共有名", share!!)
         field("ユーザー名", user)
         field("パスワード", password)
-        compose.onNodeWithText("接続を試す").performClick()
+        closeSoftKeyboard()
+        compose.onNodeWithText("接続を試す").performScrollTo().performClick()
         await("the connection test passes") { shown("接続できました") }
-        compose.onNodeWithText("保存").performClick()
+        closeSoftKeyboard()
+        compose.onNodeWithText("保存").performScrollTo().performClick()
         await("the form is closed") { !shown("接続を試す") }
         await("the place is listed") { shown(PLACE) }
         compose.waitForIdle()

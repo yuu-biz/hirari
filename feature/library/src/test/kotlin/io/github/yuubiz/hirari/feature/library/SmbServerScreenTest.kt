@@ -7,7 +7,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +56,27 @@ class SmbServerScreenTest {
         val info = checkNotNull(checkNotNull(host(rule.activity.window.decorView).accessibilityNodeProvider).createAccessibilityNodeInfo(field.fetchSemanticsNode().id))
         assertTrue(info.isPassword, "the accessibility node is not a password")
         assertEquals("•".repeat(TYPED.length), info.text.toString(), "the accessibility node carries the typed password")
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h640dp")
+    fun `the connection test and save buttons can be scrolled into view and clicked on a short screen`() {
+        val fixture = Fixture()
+        val model = SmbServerViewModel(CompletableDeferred(fixture.services), null)
+        model.edit(SmbFields(host = "nas.local", share = "books"))
+        var closed = false
+        rule.setContent { MaterialTheme { SmbServerScreen(model, onClose = { closed = true }) } }
+
+        rule.onNodeWithText("接続を試す").performScrollTo().assertIsDisplayed().performClick()
+        rule.waitForIdle()
+        assertEquals(1, fixture.smb.tests.size)
+        assertEquals(ConnectionTest.Passed, (model.state.value as SmbFormUi.Editing).test)
+
+        rule.onNodeWithText("保存").performScrollTo().assertIsDisplayed().performClick()
+        rule.waitForIdle()
+        assertEquals(SmbFormUi.Saved, model.state.value)
+        assertEquals(1, fixture.locations.rows.value.size)
+        assertTrue(closed, "saving closes the form")
     }
 
     private fun host(view: View): View {
