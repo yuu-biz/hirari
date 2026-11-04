@@ -35,6 +35,7 @@ class FolderTopBarTest {
     private val fixture = Fixture()
     private val place = LibraryLocation.SafTree(LocationId(1), "漫画", UriString("content://tree/manga"))
     private val opened = mutableListOf<String>()
+    private val shortcuts = mutableListOf<PlaceShortcut>()
     private var closed = 0
 
     private fun file(name: String) = FolderEntry(name, "doc:$name", directory = false, size = 1, modified = null)
@@ -45,7 +46,7 @@ class FolderTopBarTest {
         fixture.settings.value.value = fixture.settings.value.value.copy(libraryView = view, showParentItem = parentItem)
         val model = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, path), Dispatchers.Unconfined)
         val actions = FolderActions(
-            openBook = {}, openText = {}, openArchive = {}, openFolder = {}, pinShortcut = { true },
+            openBook = {}, openText = {}, openArchive = {}, openFolder = {}, pinShortcut = { shortcuts += it; true },
             openAncestor = { opened += it },
             close = { closed++ },
         )
@@ -129,5 +130,32 @@ class FolderTopBarTest {
         show("a", LibraryView.ThumbnailList)
         rule.onNode(hasContentDescription("表示形式") and isButton)
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "サムネイル付きリスト"))
+    }
+
+    private fun menu(item: String) {
+        rule.onNode(hasContentDescription("その他の操作")).performClick()
+        rule.onNodeWithText(item).performClick()
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun `the menu pins this folder, takes the pin off, and makes its shortcut`() {
+        show("a/b")
+        menu("このフォルダをピン留め")
+        assertEquals(listOf(place.id to "a/b"), fixture.locations.pins.value.map { it.location to it.path })
+        menu("ピン留めを外す")
+        assertTrue(fixture.locations.pins.value.isEmpty())
+        menu("ホーム画面にショートカットを作成")
+        assertEquals(listOf(PlaceShortcut(place.id, "a/b", folder = true, label = "b")), shortcuts)
+    }
+
+    @Test
+    fun `the top of a place offers its shortcut and no pin`() {
+        show("")
+        rule.onNode(hasContentDescription("その他の操作")).performClick()
+        assertTrue(rule.onAllNodes(hasText("このフォルダをピン留め")).fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithText("ホーム画面にショートカットを作成").performClick()
+        rule.waitForIdle()
+        assertEquals(listOf(PlaceShortcut(place.id, "", folder = true, label = "漫画")), shortcuts)
     }
 }

@@ -69,8 +69,18 @@ sealed interface FolderContent {
 /** The covers a list shows and the size of their thumbnails (docs/spec.md section 4.4). */
 data class CoverLayout(val covers: Covers, val sizePx: Int)
 
-/** [canSave] is whether the place is an SMB server, whose items 端末に保存 copies (docs/spec.md section 4.5). */
-data class FolderUi(val placeName: String, val path: String, val content: FolderContent, val notice: Notice? = null, val canSave: Boolean = false)
+/**
+ * [canSave] is whether the place is an SMB server, whose items 端末に保存 copies (docs/spec.md section 4.5). [pinnedId] is
+ * the pin of this folder on the shelf, if it has one.
+ */
+data class FolderUi(
+    val placeName: String,
+    val path: String,
+    val content: FolderContent,
+    val notice: Notice? = null,
+    val canSave: Boolean = false,
+    val pinnedId: Long? = null,
+)
 
 /** What a tap on a row opens. */
 sealed interface FileTarget {
@@ -148,7 +158,12 @@ class FolderViewModel(
                     }
                 }
             }
-            combine(place, content, notice) { place, content, notice -> FolderUi(place?.displayName.orEmpty(), folder.path, content, notice, canSave = place is LibraryLocation.SmbShare) }
+            val pinnedId = services.locations.pinned
+                .map { pins -> pins.firstOrNull { it.location == folder.location && normalizePath(it.path) == normalizePath(folder.path) }?.id }
+                .distinctUntilChanged()
+            combine(place, content, notice, pinnedId) { place, content, notice, pinnedId ->
+                FolderUi(place?.displayName.orEmpty(), folder.path, content, notice, canSave = place is LibraryLocation.SmbShare, pinnedId = pinnedId)
+            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), FolderUi("", folder.path, FolderContent.Loading))
 
@@ -295,6 +310,15 @@ class FolderViewModel(
     }
 
     fun pin(row: FileRow) = write { locations.pin(folder.location, row.path, clock()) }
+
+    /** このフォルダをピン留め and ピン留めを外す of the top bar's menu (docs/spec.md section 4.3). */
+    fun togglePin() {
+        val pinned = state.value.pinnedId
+        write { if (pinned == null) locations.pin(folder.location, folder.path, clock()) else locations.unpin(pinned) }
+    }
+
+    /** ホーム画面にショートカットを作成 of the top bar's menu: a shortcut to this folder, named as the title names it. */
+    fun folderShortcut(): PlaceShortcut = PlaceShortcut(folder.location, folder.path, folder = true, folderTrail(state.value.placeName, folder.path).current)
 
     /** Where the picker for 端末に保存 starts: the folder chosen last time. */
     suspend fun lastSaveFolder(): UriString? = services.await().launch.lastSaveFolder()

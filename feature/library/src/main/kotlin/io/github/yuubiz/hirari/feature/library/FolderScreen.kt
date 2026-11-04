@@ -153,7 +153,9 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     (state.content as? FolderContent.Shown)?.let { shown ->
                         ViewButton(shown.view) { model.setView(shown.view.next()) }
-                        ListMenu(shown, model)
+                        ListMenu(shown, model, atTop = up == null, pinned = state.pinnedId != null) {
+                            scope.launch { if (!actions.pinShortcut(model.folderShortcut())) model.show(Notice.ShortcutUnsupported) }
+                        }
                     }
                 },
             )
@@ -307,8 +309,12 @@ private fun IconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     IconButton(onClick = onClick) { Icon(icon, contentDescription = label) }
 }
 
+/**
+ * The top bar's menu (docs/spec.md section 4.3): the order, the view, and this folder's pin and shortcut. The top of a
+ * place is on the shelf already, so it has no pin.
+ */
 @Composable
-private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel) {
+private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: Boolean, pinned: Boolean, onShortcut: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         GlyphButton("⋮", stringResource(R.string.list_menu), { open = true })
@@ -337,6 +343,23 @@ private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel) {
                     model.setView(view)
                 }
             }
+            HorizontalDivider()
+            if (!atTop) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(if (pinned) R.string.folder_unpin else R.string.folder_pin)) },
+                    onClick = {
+                        open = false
+                        model.togglePin()
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.sheet_shortcut)) },
+                onClick = {
+                    open = false
+                    onShortcut()
+                },
+            )
         }
     }
 }
