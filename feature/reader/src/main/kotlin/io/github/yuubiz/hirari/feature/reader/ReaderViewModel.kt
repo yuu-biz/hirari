@@ -212,6 +212,10 @@ class ReaderViewModel(
     var background: ReaderBackground by mutableStateOf(ReaderBackground.DarkGray)
         private set
 
+    /** `システムバーを隠す`: the setting from the start, so the opening screen follows it too. */
+    var hideSystemBars: Boolean by mutableStateOf(true)
+        private set
+
     /** 画面の明るさ in percent, or `null` for the device's, kept apart from [state] so a turn does not touch it. */
     var screenBrightness: Int? by mutableStateOf(null)
         private set
@@ -645,6 +649,7 @@ class ReaderViewModel(
         val settings = services.storage.settings.settings.first()
         orientation = settings.readerOrientation
         background = settings.readerBackground
+        hideSystemBars = settings.hideSystemBars
         val located = withContext(Dispatchers.IO) {
             openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder().also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
@@ -753,6 +758,7 @@ class ReaderViewModel(
         }
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
         orientation = after.config.orientation
+        hideSystemBars = after.config.hideSystemBars
         screenBrightness = after.config.brightness
         if (before != null && before.config !== after.config) {
             book.overrides.update { it.changedBy(before.config, after.config, book.global) }

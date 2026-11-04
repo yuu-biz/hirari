@@ -21,12 +21,16 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -44,6 +48,7 @@ import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.Claims
 import io.github.yuubiz.hirari.core.model.CommandBarState
+import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.KeyResult
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageBarState
@@ -55,6 +60,7 @@ import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
 import io.github.yuubiz.hirari.core.ui.ReaderBackdrop
 import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.announced
+import io.github.yuubiz.hirari.core.ui.keepsAwake
 import io.github.yuubiz.hirari.core.ui.readableOn
 import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
 import kotlinx.coroutines.delay
@@ -89,8 +95,7 @@ fun ReaderScreen(
     val ui = remember { ReaderUi() }
     val stoppingKey = remember { StoppingKey() }
     val close by rememberUpdatedState(onClose)
-    val awake = viewModel.state?.autoPlay != null || viewModel.breath.view is BreathView.Listening
-    HoldReaderWindow(ReaderWindow(hideSystemBars = true, orientation = viewModel.orientation, brightness = viewModel.screenBrightness, keepScreenOn = awake))
+    ReaderWindowHold(viewModel, ui)
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
 
     fun dismiss() {
@@ -107,6 +112,7 @@ fun ReaderScreen(
     DisposableEffect(keys, viewModel) {
         val claim = keys.handlers.claim handler@{ event ->
             val pressed = event.action == KeyEvent.ACTION_DOWN
+            if (pressed) ui.touched++
             when (stoppingKey.onKey(event.keyCode, pressed, event.repeatCount > 0, viewModel.state?.autoPlay != null)) {
                 KeyGate.StopAutoPlay -> {
                     viewModel.dispatch(ReaderEvent.AutoPlayStopped)
@@ -137,7 +143,14 @@ fun ReaderScreen(
         viewModel.background,
         Modifier
             .fillMaxSize()
-            .onSizeChanged { viewModel.onViewport(Viewport(it.width.toFloat(), it.height.toFloat(), density)) },
+            .onSizeChanged { viewModel.onViewport(Viewport(it.width.toFloat(), it.height.toFloat(), density)) }
+            .pointerInput(ui) {
+                awaitPointerEventScope {
+                    while (true) {
+                        if (awaitPointerEvent(PointerEventPass.Initial).changes.any { it.changedToDownIgnoreConsumed() }) ui.touched++
+                    }
+                }
+            },
     ) {
         when (val phase = viewModel.phase) {
             ReaderPhase.Opening -> DelayedProgress(Modifier.align(Alignment.Center))
@@ -234,12 +247,27 @@ fun ReaderScreen(
 
 private const val MESSAGE_MS = 1500L
 
+/**
+ * What the reader asks of the window (docs/spec.md section 4.10). The screen stays on while 自動再生 runs or the
+ * microphone listens (section 4.11), and otherwise as 画面を消さない says. Only this reads [ReaderUi.touched], so a
+ * touch recomposes it alone.
+ */
+@Composable
+private fun ReaderWindowHold(viewModel: ReaderViewModel, ui: ReaderUi) {
+    val setting = keepsAwake(viewModel.state?.config?.keepAwake ?: KeepAwake.System, ui.touched)
+    val awake = setting || viewModel.state?.autoPlay != null || viewModel.breath.view is BreathView.Listening
+    HoldReaderWindow(ReaderWindow(hideSystemBars = viewModel.hideSystemBars, orientation = viewModel.orientation, brightness = viewModel.screenBrightness, keepScreenOn = awake))
+}
+
 /** The screen state that is not the book's: the bars and the panels. */
 internal class ReaderUi {
     var commandBar: CommandBarState by mutableStateOf(CommandBarState.Closed)
     var pageBar: PageBarState by mutableStateOf(PageBarState.Idle)
     var sheet: ReaderSheet? by mutableStateOf(null)
     var message: Int? by mutableStateOf(null)
+
+    /** Changes on every touch and key press, which 画面を消さない counts its ten minutes from. */
+    var touched: Int by mutableIntStateOf(0)
 
     /** 操作ガイド, over everything else (docs/spec.md section 4.8). */
     var guideShown: Boolean by mutableStateOf(false)

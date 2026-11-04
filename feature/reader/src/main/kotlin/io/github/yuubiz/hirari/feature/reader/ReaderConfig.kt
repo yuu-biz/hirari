@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.ImageAdjust
+import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.KeyBindings
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
@@ -59,6 +60,9 @@ data class ReaderConfig(
     val turnHaptics: Boolean = false,
     /** 画面の明るさ in percent, or `null` to follow the device. */
     val brightness: Int? = null,
+    val hideSystemBars: Boolean = true,
+    /** 画面を消さない. */
+    val keepAwake: KeepAwake = KeepAwake.System,
     /**
      * What the command bar switched in this session, which a change of the global settings leaves as it is.
      * [SessionSwitch.MirrorControls] is in it while 操作の反転 is flipped from the global setting.
@@ -105,6 +109,8 @@ data class ReaderConfig(
             trim = overrides.trim ?: settings.trimStrength,
             turnHaptics = settings.turnHaptics,
             brightness = settings.readerBrightness,
+            hideSystemBars = settings.hideSystemBars,
+            keepAwake = settings.keepAwake,
         )
     }
 }

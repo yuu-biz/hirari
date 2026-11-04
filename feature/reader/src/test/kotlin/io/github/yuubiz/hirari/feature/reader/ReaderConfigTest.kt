@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.reader
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.GutterStyle
+import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LoupeFrame
 import io.github.yuubiz.hirari.core.model.LoupeZoom
@@ -55,12 +56,13 @@ class ReaderConfigTest {
         "autoPlaySeconds" to { it.copy(autoPlaySeconds = 2.5) },
         "readerOrientation" to { it.copy(readerOrientation = ReaderOrientation.Landscape) },
         "readerBrightness" to { it.copy(readerBrightness = 70) },
+        "hideSystemBars" to { it.copy(hideSystemBars = false) },
+        "keepAwake" to { it.copy(keepAwake = KeepAwake.TenMinutes) },
     )
 
     /** Global settings the image reader reads from the settings themselves, outside [ReaderConfig]. */
     private val readBesideConfig = setOf(
         "readerBackground",
-        "hideSystemBars",
         "historyLimit",
         "fallbackCharset",
         "showDotFiles",
@@ -70,9 +72,9 @@ class ReaderConfigTest {
 
     /**
      * Settings of the image reader in docs/spec.md section 4.10 that it does not read yet: 重ねて表示する情報 (section
-     * 4.8) and 画面を消さない, which only the text reader follows, and 書庫内の並び, which no page list follows.
+     * 4.8), and 書庫内の並び, which no page list follows.
      */
-    private val notReadYet = setOf("pageNumberSpot", "statusSpot", "overlayTextSize", "keepAwake", "entryOrder")
+    private val notReadYet = setOf("pageNumberSpot", "statusSpot", "overlayTextSize", "entryOrder")
 
     /** Settings of the text reader, the lists, and the whole app. */
     private val otherScreens = setOf(

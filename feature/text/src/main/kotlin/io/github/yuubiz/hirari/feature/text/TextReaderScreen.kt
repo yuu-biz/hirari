@@ -82,6 +82,7 @@ import io.github.yuubiz.hirari.core.ui.BarSemantics
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
 import io.github.yuubiz.hirari.core.ui.DefaultReaderBackground
 import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
+import io.github.yuubiz.hirari.core.ui.keepsAwake
 import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
 import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
@@ -510,20 +511,6 @@ private fun DelayedProgress() {
 private const val PROGRESS_DELAY_MS = 300L
 
 internal val PANEL_BACKGROUND = Color(0x80000070)
-
-/** Whether 画面を消さない (docs/spec.md section 4.10) keeps the screen on. [touched] changes on every input, which restarts the ten minutes. */
-@Composable
-private fun keepsAwake(mode: KeepAwake, touched: Int): Boolean {
-    var awake by remember { mutableStateOf(false) }
-    LaunchedEffect(mode, touched) {
-        awake = mode != KeepAwake.System
-        if (mode == KeepAwake.TenMinutes) {
-            delay(10 * 60 * 1000L)
-            awake = false
-        }
-    }
-    return awake
-}
 
 /** 組み方 of the command bar: the next of 1 ページ, 見開き, 連続 and 自動. */
 internal fun GlobalSettings.nextLayout() = copy(textLayout = TextLayout.entries[(textLayout.ordinal + 1) % TextLayout.entries.size])
