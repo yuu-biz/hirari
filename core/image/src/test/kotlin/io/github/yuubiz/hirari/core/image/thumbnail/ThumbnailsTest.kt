@@ -354,7 +354,13 @@ class ThumbnailsTest {
         assertTrue(held.await())
         assertEquals(ThumbResult.Failed, thumbnails.thumbnail(dying))
         assertEquals(ThumbResult.Unavailable, thumbnails.thumbnail(request(book("other"))))
-        assertEquals(ThumbResult.Unavailable, thumbnails.thumbnail(request(folder(item("in folder")))))
+        var listed = 0
+        val unlisted = ThumbSubject.Folder(BookId("folder"), Instant.ofEpochMilli(1000)) {
+            listed++
+            listOf(item("in folder"))
+        }
+        assertEquals(ThumbResult.Unavailable, thumbnails.thumbnail(request(unlisted)))
+        assertEquals("a folder was searched while held back", 0, listed)
         assertTrue("a thumbnail was made while held back", maker.calls.isEmpty())
         assertEquals("regenerated", shows(thumbnails.regenerate(request(book("regenerated")))))
         val resumed = async { thumbnails.resumptions.first() }

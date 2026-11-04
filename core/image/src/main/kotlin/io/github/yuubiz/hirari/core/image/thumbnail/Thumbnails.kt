@@ -299,6 +299,7 @@ class Thumbnails internal constructor(
         } else {
             stored(key)?.let { return it }
             if (mode == Mode.CacheOnly) return null
+            if (isHeld()) return ThumbResult.Unavailable
             board(folder, key, request, mode, urgency)
         }
         try {
