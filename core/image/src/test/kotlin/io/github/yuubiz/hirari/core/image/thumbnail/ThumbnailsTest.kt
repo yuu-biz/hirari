@@ -482,11 +482,16 @@ class ThumbnailsTest {
         maker.most = 0
         repeat(3) { launch { thumbnails.thumbnail(request(book("smb$it", lane = ThumbLane.Smb))) } }
         runCurrent()
-        assertEquals(1, maker.running)
+        assertEquals(2, maker.running)
         smbRelease.complete(Unit)
         runCurrent()
-        assertEquals(1, maker.most)
+        assertEquals(2, maker.most)
         assertEquals(7, maker.calls.size)
+    }
+
+    /** Starts a cover over SMB for each place of the lane, each held by the test's `release`. */
+    private fun TestScope.holdSmbLane(thumbnails: Thumbnails) {
+        repeat(ThumbLane.Smb.parallelism) { launch { thumbnails.thumbnail(request(book("busy$it", lane = ThumbLane.Smb))) } }
     }
 
     @Test
@@ -496,9 +501,10 @@ class ThumbnailsTest {
         maker.script = { release.await().let { Made.Webp(byteArrayOf(1)) } }
         launch { thumbnails.thumbnail(request(book("smb", lane = ThumbLane.Smb))) }
         launch { thumbnails.thumbnail(request(book("smb2", lane = ThumbLane.Smb))) }
+        launch { thumbnails.thumbnail(request(book("smb3", lane = ThumbLane.Smb))) }
         launch { thumbnails.thumbnail(request(book("local"))) }
         runCurrent()
-        assertEquals(listOf("smb", "local"), maker.ids)
+        assertEquals(listOf("smb", "smb2", "local"), maker.ids)
         release.complete(Unit)
     }
 
@@ -507,10 +513,10 @@ class ThumbnailsTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
         maker.script = { book ->
-            if (book.id.value == "busy") release.await()
+            if (book.id.value.startsWith("busy")) release.await()
             Made.Webp(byteArrayOf(1))
         }
-        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        holdSmbLane(thumbnails)
         runCurrent()
         for ((id, priority) in listOf("nearby" to ThumbPriority.Nearby, "visible" to ThumbPriority.Visible)) {
             launch { thumbnails.thumbnail(request(book(id, lane = ThumbLane.Smb), priority = priority)) }
@@ -518,7 +524,7 @@ class ThumbnailsTest {
         }
         release.complete(Unit)
         runCurrent()
-        assertEquals(listOf("busy", "visible", "nearby"), maker.ids)
+        assertEquals(listOf("busy0", "busy1", "visible", "nearby"), maker.ids)
     }
 
     @Test
@@ -526,10 +532,10 @@ class ThumbnailsTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
         maker.script = { book ->
-            if (book.id.value == "busy") release.await()
+            if (book.id.value.startsWith("busy")) release.await()
             Made.Webp(byteArrayOf(1))
         }
-        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        holdSmbLane(thumbnails)
         runCurrent()
         launch { thumbnails.thumbnail(request(book("first", lane = ThumbLane.Smb), priority = ThumbPriority.Nearby)) }
         runCurrent()
@@ -539,7 +545,7 @@ class ThumbnailsTest {
         runCurrent()
         release.complete(Unit)
         runCurrent()
-        assertEquals(listOf("busy", "second", "first"), maker.ids)
+        assertEquals(listOf("busy0", "busy1", "second", "first"), maker.ids)
     }
 
     @Test
@@ -547,10 +553,10 @@ class ThumbnailsTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
         maker.script = { book ->
-            if (book.id.value == "busy") release.await()
+            if (book.id.value.startsWith("busy")) release.await()
             Made.Webp(byteArrayOf(1))
         }
-        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        holdSmbLane(thumbnails)
         runCurrent()
         val distances = mapOf("edge" to 4, "middle" to 0, "folder" to 2)
         launch { thumbnails.thumbnail(request(book("edge", lane = ThumbLane.Smb)) { distances.getValue("edge") }) }
@@ -559,7 +565,7 @@ class ThumbnailsTest {
         runCurrent()
         release.complete(Unit)
         runCurrent()
-        assertEquals(listOf("busy", "middle", "in folder", "edge"), maker.ids)
+        assertEquals(listOf("busy0", "busy1", "middle", "in folder", "edge"), maker.ids)
     }
 
     @Test
@@ -567,10 +573,10 @@ class ThumbnailsTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
         maker.script = { book ->
-            if (book.id.value == "busy") release.await()
+            if (book.id.value.startsWith("busy")) release.await()
             Made.Webp(byteArrayOf(1))
         }
-        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        holdSmbLane(thumbnails)
         runCurrent()
         launch { thumbnails.thumbnail(request(book("passed", lane = ThumbLane.Smb), priority = ThumbPriority.Nearby)) }
         val shown = launch { thumbnails.thumbnail(request(book("passed", lane = ThumbLane.Smb))) }
@@ -580,7 +586,7 @@ class ThumbnailsTest {
         runCurrent()
         release.complete(Unit)
         runCurrent()
-        assertEquals(listOf("busy", "now visible", "passed"), maker.ids)
+        assertEquals(listOf("busy0", "busy1", "now visible", "passed"), maker.ids)
     }
 
     @Test
@@ -588,10 +594,10 @@ class ThumbnailsTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
         maker.script = { book ->
-            if (book.id.value == "busy") release.await()
+            if (book.id.value.startsWith("busy")) release.await()
             Made.Webp(byteArrayOf(1))
         }
-        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        holdSmbLane(thumbnails)
         runCurrent()
         val subject = folder(item("child", lane = ThumbLane.Smb))
         launch { thumbnails.thumbnail(request(subject, priority = ThumbPriority.Nearby)) }
@@ -602,7 +608,7 @@ class ThumbnailsTest {
         runCurrent()
         release.complete(Unit)
         runCurrent()
-        assertEquals(listOf("busy", "now visible", "child"), maker.ids)
+        assertEquals(listOf("busy0", "busy1", "now visible", "child"), maker.ids)
     }
 
     @Test
@@ -610,10 +616,10 @@ class ThumbnailsTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
         maker.script = { book ->
-            if (book.id.value == "busy") release.await()
+            if (book.id.value.startsWith("busy")) release.await()
             Made.Webp(byteArrayOf(1))
         }
-        launch { thumbnails.thumbnail(request(book("busy", lane = ThumbLane.Smb))) }
+        holdSmbLane(thumbnails)
         runCurrent()
         launch { thumbnails.thumbnail(request(book("other", lane = ThumbLane.Smb), priority = ThumbPriority.Nearby)) }
         runCurrent()
@@ -624,7 +630,7 @@ class ThumbnailsTest {
         runCurrent()
         release.complete(Unit)
         runCurrent()
-        assertEquals(listOf("busy", "child", "other"), maker.ids)
+        assertEquals(listOf("busy0", "busy1", "child", "other"), maker.ids)
     }
 
     @Test

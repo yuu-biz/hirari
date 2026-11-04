@@ -38,7 +38,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * Thumbnails for the lists of the library (docs/spec.md sections 4.4 and 5.4): finds one in the [ThumbnailStore],
  * and otherwise makes it from the cover page and stores it.
  *
- * The work is not tied to the caller. At most two thumbnails are made at once from local files and one from SMB
+ * The work is not tied to the caller. At most two thumbnails are made at once from local files and two from SMB
  * ([ThumbLane]), on a decode dispatcher of their own. A request that asks for a thumbnail already being made
  * waits for that one. Cancelling a request, as a list does when the item scrolls out, stops the work once nobody
  * else waits for it. Visible requests are served before nearby ones.
