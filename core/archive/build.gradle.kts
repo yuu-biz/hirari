@@ -59,3 +59,10 @@ androidComponents {
         variant.androidTest?.sources?.assets?.addGeneratedSourceDirectory(corpusAssets, CorpusAssets::outputDir)
     }
 }
+
+tasks.withType<Test>().configureEach {
+    // The JVM tests read the ZIPs of the corpus, which the central directory lists without libarchive.
+    val corpus = project(":tools:corpus").tasks.named("generateCorpus")
+    inputs.files(corpus).withPropertyName("corpus")
+    systemProperty("hirari.corpus", corpus.get().outputs.files.singleFile.absolutePath)
+}

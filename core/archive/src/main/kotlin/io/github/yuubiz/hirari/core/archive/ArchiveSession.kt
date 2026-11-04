@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.archive
 
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
@@ -17,17 +18,20 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * One open archive (docs/spec.md section 3.3). The session owns its libarchive handle and its [ByteSource], and
- * makes every libarchive call on one thread of its own, so calls from any coroutine are serialized. Cancelling a
- * call stops the native read at the next block. Errors come back as [EntryResult] values, not exceptions.
+ * One open archive (docs/spec.md section 3.3). The session owns its [ByteSource] and its libarchive handle, and
+ * reads on one thread of its own, so calls from any coroutine are serialized. Cancelling a call stops the read at
+ * the next block. Errors come back as [EntryResult] values, not exceptions.
  *
- * libarchive reads forward only. In an archive that is not [solid], reading an entry after the current one reads
- * the headers in between and skips their data, and reading an earlier one opens the archive again. A [solid]
+ * A ZIP is listed from its central directory ([CentralZip]) when that is whole. Otherwise libarchive lists the
+ * archive, and it reads forward only: in an archive that is not [solid], reading an entry after the current one
+ * reads the headers in between and skips their data, and reading an earlier one opens the archive again. A [solid]
  * archive opened with an extraction directory is extracted in order in the background instead, and reads take
  * the entries from there ([Extraction]).
  */
 class ArchiveSession private constructor(
-    private val archive: ArchiveHandle,
+    private val source: ByteSource,
+    /** Made on the session thread when first needed, which a ZIP listed from its central directory may never be. */
+    private val libarchive: Lazy<ArchiveHandle>,
     private val executor: ExecutorService,
     private val dispatcher: CoroutineDispatcher,
     listing: Listing.Listed,
@@ -45,10 +49,10 @@ class ArchiveSession private constructor(
 
     private val closed = AtomicBoolean(false)
 
-    private val reader: EntryReader = if (solid && extractDir != null) {
-        Extraction(archive, dispatcher, entries, extractDir)
-    } else {
-        Direct()
+    private val reader: EntryReader = when {
+        listing.records != null -> Direct(Cursor.Closed)
+        solid && extractDir != null -> Extraction(libarchive.value, dispatcher, entries, extractDir)
+        else -> Direct(if (indexError == null) Cursor.Before(entries.size) else Cursor.Closed)
     }
 
     // libarchive turns `\` into `/` in RAR 4 names that lack the Unicode flag (docs/spec.md section 3.4).
@@ -83,7 +87,7 @@ class ArchiveSession private constructor(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         reader.close()
-        release(archive, executor)
+        release(source, libarchive, executor)
     }
 
     internal interface EntryReader {
@@ -92,10 +96,13 @@ class ArchiveSession private constructor(
         fun close()
     }
 
-    /** Reads each entry from the archive when asked, moving the handle forward or opening the archive again. */
-    private inner class Direct : EntryReader {
+    /**
+     * Reads each entry with libarchive when asked, moving the handle forward or opening the archive again. [cursor]
+     * is where the handle stands at first.
+     */
+    private inner class Direct(private var cursor: Cursor) : EntryReader {
         // Touched only on the session thread.
-        private var cursor: Cursor = if (indexError == null) Cursor.Before(entries.size) else Cursor.Closed
+        private val archive: ArchiveHandle get() = libarchive.value
 
         override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult = withContext(dispatcher) {
             // A dispatch rejected by the shut-down executor resumes on another thread after the handle is freed.
@@ -165,11 +172,13 @@ class ArchiveSession private constructor(
 
         data object Encrypted : Listing
 
+        /** [records] are the central directory records of [entries], when the listing came from them. */
         class Listed(
             val entries: List<ArchiveEntry>,
             val error: ArchiveFailure?,
             val format: ArchiveFormat?,
             val filter: Int,
+            val records: List<ZipRecord>? = null,
         ) : Listing
     }
 
@@ -187,35 +196,54 @@ class ArchiveSession private constructor(
          */
         suspend fun open(source: ByteSource, extractDir: File? = null): OpenResult = open(source, extractDir, ::NativeArchive)
 
-        /** [open] with [handle] in place of libarchive, which takes [source] and closes it with itself. */
+        /** [open] with [handle] in place of libarchive. [handle] is called on the session thread, if at all. */
         internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle): OpenResult {
-            val archive = try {
-                handle(source)
-            } catch (e: Throwable) {
-                source.close()
-                if (e is OutOfMemoryError) return OpenResult.Failed(ArchiveFailure.ReadError)
-                throw e
-            }
+            val libarchive = lazy(LazyThreadSafetyMode.NONE) { handle(source) }
             val executor = Executors.newSingleThreadExecutor { Thread(it, "archive-session").apply { isDaemon = true } }
             val dispatcher = executor.asCoroutineDispatcher()
             var result: OpenResult? = null
             try {
                 val opened = withContext(dispatcher) {
-                    archive.begin(coroutineContext.job)
-                    list(archive) to prefix(source)
+                    val job = coroutineContext.job
+                    val prefix = prefix(source)
+                    val listing = listCentralDirectory(source, prefix, job) ?: try {
+                        libarchive.value.let {
+                            it.begin(job)
+                            list(it)
+                        }
+                    } catch (_: OutOfMemoryError) {
+                        Listing.Unopened(ArchiveFailure.ReadError)
+                    }
+                    listing to prefix
                 }
                 result = when (val listing = opened.first) {
                     is Listing.Unopened -> OpenResult.Failed(listing.reason)
                     Listing.Encrypted -> OpenResult.Encrypted
                     is Listing.Listed -> {
                         val solid = isSolid(listing.format, listing.filter, opened.second)
-                        OpenResult.Opened(ArchiveSession(archive, executor, dispatcher, listing, listing.format, solid, extractDir))
+                        OpenResult.Opened(ArchiveSession(source, libarchive, executor, dispatcher, listing, listing.format, solid, extractDir))
                     }
                 }
                 return result
             } finally {
-                if (result !is OpenResult.Opened) release(archive, executor)
+                if (result !is OpenResult.Opened) release(source, libarchive, executor)
             }
+        }
+
+        /** The listing from the central directory, or null when libarchive has to list the archive. */
+        private fun listCentralDirectory(source: ByteSource, prefix: ByteArray, job: Job): Listing? {
+            if (!CentralZip.startsZip(prefix)) return null
+            val records = try {
+                CentralZip.list(source, job)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return Listing.Unopened(failureOf(e))
+            } catch (_: OutOfMemoryError) {
+                return Listing.Unopened(ArchiveFailure.ReadError)
+            } ?: return null
+            val entries = records.mapIndexed { i, record -> record.entry(i) }
+            return Listing.Listed(entries, null, ArchiveFormat.Zip, filter = 0, records)
         }
 
         private fun prefix(source: ByteSource): ByteArray {
@@ -255,8 +283,11 @@ class ArchiveSession private constructor(
             }
         }
 
-        private fun release(archive: ArchiveHandle, executor: ExecutorService) {
-            executor.execute(archive::close)
+        private fun release(source: ByteSource, libarchive: Lazy<ArchiveHandle>, executor: ExecutorService) {
+            executor.execute {
+                if (libarchive.isInitialized()) libarchive.value.close()
+                source.close()
+            }
             executor.shutdown()
         }
 

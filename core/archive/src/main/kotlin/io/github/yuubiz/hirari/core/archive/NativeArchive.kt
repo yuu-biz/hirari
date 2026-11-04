@@ -100,17 +100,19 @@ internal class SourceReads(private val source: ByteSource) {
         return n
     }
 
-    fun failure(): ArchiveFailure = when {
-        cancelled -> throw CancellationException("archive read cancelled")
-        readFailure is ConnectionLostException -> ArchiveFailure.ConnectionLost
-        readFailure != null -> ArchiveFailure.ReadError
-        endReached -> ArchiveFailure.Truncated
-        else -> ArchiveFailure.Corrupt
+    fun failure(): ArchiveFailure {
+        if (cancelled) throw CancellationException("archive read cancelled")
+        readFailure?.let { return failureOf(it) }
+        return if (endReached) ArchiveFailure.Truncated else ArchiveFailure.Corrupt
     }
 }
 
-/** One libarchive read handle over [source], which it owns. Not thread-safe. */
-internal class NativeArchive(private val source: ByteSource) : ArchiveHandle {
+/** What an exception of a [ByteSource] read amounts to (docs/spec.md section 3.3). */
+internal fun failureOf(e: Exception): ArchiveFailure =
+    if (e is ConnectionLostException) ArchiveFailure.ConnectionLost else ArchiveFailure.ReadError
+
+/** One libarchive read handle over [source], which the session owns and closes. Not thread-safe. */
+internal class NativeArchive(source: ByteSource) : ArchiveHandle {
     private val buffer = ByteBuffer.allocateDirect(BLOCK_SIZE)
     private var handle = nativeCreate(source.size, buffer)
     private val reads = SourceReads(source)
@@ -121,10 +123,7 @@ internal class NativeArchive(private val source: ByteSource) : ArchiveHandle {
         private set
 
     init {
-        if (handle == 0L) {
-            source.close()
-            throw OutOfMemoryError("libarchive session")
-        }
+        if (handle == 0L) throw OutOfMemoryError("libarchive session")
     }
 
     override fun begin(job: Job) {
@@ -154,7 +153,6 @@ internal class NativeArchive(private val source: ByteSource) : ArchiveHandle {
         if (handle == 0L) return
         nativeFree(handle)
         handle = 0L
-        source.close()
     }
 
     @Suppress("unused")

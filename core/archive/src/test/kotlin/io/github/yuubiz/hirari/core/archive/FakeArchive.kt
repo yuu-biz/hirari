@@ -58,7 +58,7 @@ internal class FakeArchive(
 
     override fun failure(): ArchiveFailure = reads.failure()
 
-    override fun close() = source.close()
+    override fun close() = Unit
 
     private companion object {
         const val BLOCK = 1024
