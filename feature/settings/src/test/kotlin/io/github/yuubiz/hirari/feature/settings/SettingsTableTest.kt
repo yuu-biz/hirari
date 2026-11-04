@@ -53,12 +53,12 @@ class SettingsTableTest {
     }
 
     @Test
-    fun `every field of GlobalSettings has a row`() {
+    fun `every field of GlobalSettings except file edits has a row`() {
         val fields = GlobalSettings.serializer().descriptor.elementNames.toSet()
         val keys = SettingsTable.map { it.key }
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
-        assertEquals(fields, keys.toSet())
-        assertEquals(71, keys.size)
+        assertEquals(fields - "allowFileEdits", keys.toSet())
+        assertEquals(70, keys.size)
     }
 
     @Test
@@ -68,6 +68,22 @@ class SettingsTableTest {
         assertEquals(spec.map { it.second }, SettingsTable.map { it.key })
         for ((setting, listed) in SettingsTable.zip(spec)) {
             assertEquals(listed.first, setting.group.title, setting.key)
+        }
+    }
+
+    @Test
+    fun `file edits stay hidden while their stored value remains compatible`() {
+        for (sdk in listOf(28, 30, 31, Int.MAX_VALUE)) {
+            assertTrue(settingsFor(sdk).values.flatten().none { it.key == "allowFileEdits" })
+        }
+        assertEquals(false, GlobalSettings().allowFileEdits)
+        assertEquals(false, json.decodeFromString(GlobalSettings.serializer(), "{}").allowFileEdits)
+        for (allowed in listOf(false, true)) {
+            val stored = json.decodeFromString(GlobalSettings.serializer(), """{"allowFileEdits":$allowed}""")
+            assertEquals(allowed, stored.normalized().allowFileEdits)
+            val encoded = json.encodeToString(GlobalSettings.serializer(), stored)
+            assertTrue("\"allowFileEdits\":$allowed" in encoded)
+            assertEquals(allowed, json.decodeFromString(GlobalSettings.serializer(), encoded).allowFileEdits)
         }
     }
 
@@ -216,7 +232,7 @@ class SettingsTableTest {
         for (line in lines.subList(from, to)) {
             if (line.startsWith("#### ")) group = line.removePrefix("#### ").replace(Regex("（M\\d）"), "")
             val name = Regex("^\\| [^|]+ \\| `([A-Za-z]+)` \\|").find(line)?.groupValues?.get(1)
-            if (name != null) found += group to name
+            if (name != null && "まだ表示しない" !in line) found += group to name
         }
         return found
     }
