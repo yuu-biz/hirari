@@ -170,7 +170,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                 val shown = state.content as? FolderContent.Shown
                 if (filtering && shown != null) {
                     FilterField(
-                        value = shown.filter,
+                        initial = shown.filter,
                         onValueChange = model::setFilter,
                         label = stringResource(R.string.folder_filter),
                         placeholder = stringResource(R.string.folder_filter_hint),
