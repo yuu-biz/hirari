@@ -25,7 +25,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -236,13 +235,12 @@ private fun List<LazyGridItemInfo>.visibleRange(): IntRange = if (isEmpty()) Int
 @JvmName("visibleListRange")
 private fun List<LazyListItemInfo>.visibleRange(): IntRange = if (isEmpty()) IntRange.EMPTY else first().index..last().index
 
-/** Shapes as well as colors tell the states apart: a dot, a percentage, a check. */
+/** Shapes as well as colors tell the states apart: nothing for unread, a percentage, a check. */
 @Composable
 private fun MarkGlyph(mark: ReadMark?) {
     val colors = LocalLibraryColors.current
     when (mark) {
-        null -> Unit
-        ReadMark.Unread -> Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+        null, ReadMark.Unread -> Unit
         is ReadMark.Reading -> Text(
             "${mark.percent}%",
             Modifier.background(MaterialTheme.colorScheme.inverseSurface, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
