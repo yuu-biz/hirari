@@ -1,13 +1,13 @@
 package io.github.yuubiz.hirari.core.archive
 
 /**
- * One entry of an archive as libarchive lists it (docs/spec.md sections 2.3 and 3.4).
+ * One entry of an archive as the session lists it (docs/spec.md sections 2.3, 3.3 and 3.4).
  *
  * @property entryIndex the position in archive order, which [ArchiveSession.read] takes.
- * @property rawName the name before decoding. Empty when libarchive gives no name, which happens for a name with
+ * @property rawName the name before decoding. Empty when the archive gives no name, which happens for a name with
  *   the ZIP UTF-8 flag that is not UTF-8.
  * @property declaredSize the size the archive declares, or null when it declares none. Only for the size limit.
- * @property compression libarchive's name of the ZIP method, such as `deflation`, or null when it gives none. The
+ * @property compression libarchive's name of the ZIP method, such as `deflation`, or null when there is none. The
  *   other formats name no method before the data is read.
  */
 class ArchiveEntry(

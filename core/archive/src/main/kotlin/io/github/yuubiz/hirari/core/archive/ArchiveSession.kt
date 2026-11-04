@@ -50,7 +50,7 @@ class ArchiveSession private constructor(
     private val closed = AtomicBoolean(false)
 
     private val reader: EntryReader = when {
-        listing.records != null -> Direct(Cursor.Closed)
+        listing.records != null -> FromCentralDirectory(listing.records)
         solid && extractDir != null -> Extraction(libarchive.value, dispatcher, entries, extractDir)
         else -> Direct(if (indexError == null) Cursor.Before(entries.size) else Cursor.Closed)
     }
@@ -94,6 +94,25 @@ class ArchiveSession private constructor(
         suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult
 
         fun close()
+    }
+
+    /**
+     * Reads a stored or Deflate entry of a ZIP listed from its central directory from its local header, without
+     * libarchive, and leaves the other methods to libarchive (docs/spec.md section 3.3).
+     */
+    private inner class FromCentralDirectory(private val records: List<ZipRecord>) : EntryReader {
+        private val others = Direct(Cursor.Closed)
+
+        override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult {
+            val record = records[entry.entryIndex]
+            if (!CentralZip.reads(record)) return others.read(entry, maxBytes)
+            return withContext(dispatcher) {
+                if (closed.get()) throw CancellationException("the session is closed")
+                CentralZip.read(source, record, maxBytes, coroutineContext.job)
+            }
+        }
+
+        override fun close() = Unit
     }
 
     /**
@@ -235,10 +254,8 @@ class ArchiveSession private constructor(
             if (!CentralZip.startsZip(prefix)) return null
             val records = try {
                 CentralZip.list(source, job)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                return Listing.Unopened(failureOf(e))
+            } catch (e: SourceFailure) {
+                return Listing.Unopened(failureOf(e.cause))
             } catch (_: OutOfMemoryError) {
                 return Listing.Unopened(ArchiveFailure.ReadError)
             } ?: return null

@@ -45,6 +45,23 @@ class CentralZipCorpusTest {
         ArchiveSession.open(MemorySource(File(corpus, path).readBytes()), null) { throw LibarchiveCalled() }
     }
 
+    /** The read of [entry] in the terms of `expected.tsv`, or `libarchive` when it needed libarchive. */
+    private fun describe(session: ArchiveSession, entry: ArchiveEntry): List<String> = try {
+        when (val result = runBlocking { session.read(entry.entryIndex) }) {
+            is EntryResult.Data -> if (entry.isDirectory && result.bytes.isEmpty()) {
+                listOf("directory")
+            } else {
+                listOf("data", result.bytes.size.toString(), "%08x".format(crcOf(result.bytes)))
+            }
+            is EntryResult.Failed -> listOf("fails", result.reason.name.lowercase())
+            EntryResult.Encrypted -> listOf("unsupported", "encrypted")
+            is EntryResult.UnsupportedCompression -> listOf("unsupported", "compression:${result.method}")
+            is EntryResult.TooLarge -> listOf("unsupported", "too-large")
+        }
+    } catch (_: LibarchiveCalled) {
+        listOf("libarchive")
+    }
+
     @Test
     fun `the corpus has the ZIPs this test is about`() {
         val paths = zips.map { it.path }.toSet()
@@ -73,6 +90,14 @@ class CentralZipCorpusTest {
                 val directories = session.entries.map { it.isDirectory }
                 val expectedDirectories = expected.entries.map { it[1] == "directory" }
                 if (directories != expectedDirectories) problems += "directories: expected $expectedDirectories, got $directories"
+                val forward = session.entries.map { describe(session, it) }
+                val backward = session.entries.reversed().map { describe(session, it) }.reversed()
+                if (forward != backward) problems += "reading backward gave $backward, forward $forward"
+                forward.zip(expected.entries).forEachIndexed { i, (actual, wanted) ->
+                    val libarchiveReads = session.entries[i].compression == "ppmd-1"
+                    if (libarchiveReads && actual != listOf("libarchive")) problems += "entry $i: expected libarchive to read it, got $actual"
+                    if (!libarchiveReads && actual != wanted.drop(1)) problems += "entry $i ${wanted[0]}: expected ${wanted.drop(1)}, got $actual"
+                }
                 problems.map { "${expected.path}: $it" }
             }
         }

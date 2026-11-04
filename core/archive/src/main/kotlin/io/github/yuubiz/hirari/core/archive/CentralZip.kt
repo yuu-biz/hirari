@@ -7,6 +7,8 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.text.Normalizer
 import java.util.zip.CRC32
+import java.util.zip.DataFormatException
+import java.util.zip.Inflater
 import kotlin.coroutines.cancellation.CancellationException
 
 /** What a ZIP entry holds, from its external attributes and its name. */
@@ -25,6 +27,8 @@ internal class ZipRecord(
     val compressedSize: Long,
     val size: Long,
     val headerOffset: Long,
+    /** The length of the local header when it repeats the name and extra field of this record, as it usually does. */
+    val expectedHeaderLength: Int,
 ) {
     val encrypted: Boolean get() = flags and (FLAG_ENCRYPTED or FLAG_STRONG_ENCRYPTION) != 0
 
@@ -39,8 +43,8 @@ internal class ZipRecord(
 }
 
 /**
- * Lists a ZIP from its end record and central directory alone, without visiting a local header
- * (docs/spec.md section 3.3). The list is in local header order, as libarchive lists a ZIP.
+ * Lists a ZIP from its end record and central directory alone, in local header order as libarchive lists it, and
+ * reads a stored or Deflate entry from its own local header on (docs/spec.md section 3.3).
  */
 internal object CentralZip {
     /**
@@ -54,7 +58,7 @@ internal object CentralZip {
      * The entries of the ZIP in [source], or null when its end record and central directory are not as a whole,
      * well-formed archive has them, which libarchive then reads its own way.
      *
-     * @throws java.io.IOException when [source] fails.
+     * @throws SourceFailure when [source] fails.
      * @throws CancellationException when [job] is cancelled.
      */
     fun list(source: ByteSource, job: Job): List<ZipRecord>? {
@@ -139,7 +143,100 @@ internal object CentralZip {
         }
         if (kind == ZipKind.Link && (compressedSize > MAX_LINK || method !in LINK_METHODS)) return null
         if (kind == ZipKind.Directory) name = name?.let { if (it.isNotEmpty() && it.last() != SLASH) it + SLASH else it }
-        return ZipRecord(name ?: ByteArray(0), kind, flags, method, directory.u32(at + 16).toInt(), compressedSize, size, headerOffset)
+        val crc = directory.u32(at + 16).toInt()
+        return ZipRecord(name ?: ByteArray(0), kind, flags, method, crc, compressedSize, size, headerOffset, LOCAL_SIZE + nameLength + extraLength)
+    }
+
+    /** Whether [read] reads [record]. libarchive reads the other methods, PPMd among them. */
+    fun reads(record: ZipRecord): Boolean = record.kind == ZipKind.Link || record.method == STORED || record.method == DEFLATED
+
+    /**
+     * The data of [record], which [reads] and which is not encrypted, read from its local header on in as few reads
+     * as the size allows (docs/spec.md section 3.3). The checks and failures are libarchive's: a local header
+     * without its signature, a stream that does not end where the record says, a size or CRC-32 that differs from
+     * the record are [ArchiveFailure.Corrupt], and the file ending first is [ArchiveFailure.Truncated].
+     *
+     * @throws CancellationException when [job] is cancelled.
+     */
+    fun read(source: ByteSource, record: ZipRecord, maxBytes: Int, job: Job): EntryResult {
+        if (record.kind == ZipKind.Link) return EntryResult.Data(ByteArray(0))
+        val unpacker = Unpacker(record.method, EntryBytes(maxBytes))
+        try {
+            val first = readUpTo(source, record.headerOffset, chunk(record.expectedHeaderLength + record.compressedSize), job)
+            if (first.size < LOCAL_SIZE) return EntryResult.Failed(ArchiveFailure.Truncated)
+            if (first.u32(0) != LOCAL_SIGNATURE) return EntryResult.Failed(ArchiveFailure.Corrupt)
+            val dataStart = LOCAL_SIZE + first.u16(26) + first.u16(28)
+            var remaining = record.compressedSize
+            val inFirst = minOf(maxOf(first.size - dataStart, 0).toLong(), remaining).toInt()
+            if (!unpacker.take(first, dataStart, inFirst)) return unpacker.tooLarge()
+            remaining -= inFirst
+            var position = record.headerOffset + dataStart + inFirst
+            while (remaining > 0) {
+                val length = chunk(remaining)
+                val bytes = readUpTo(source, position, length, job)
+                if (bytes.isNotEmpty() && !unpacker.take(bytes, 0, bytes.size)) return unpacker.tooLarge()
+                if (bytes.size < length) return EntryResult.Failed(ArchiveFailure.Truncated)
+                remaining -= length
+                position += length
+            }
+            return unpacker.finish(record)
+        } catch (_: DataFormatException) {
+            return EntryResult.Failed(ArchiveFailure.Corrupt)
+        } catch (e: SourceFailure) {
+            return EntryResult.Failed(failureOf(e.cause))
+        } finally {
+            unpacker.end()
+        }
+    }
+
+    /** One read's worth of [remaining] bytes. The last read takes the rest, so that no read asks for a small tail. */
+    private fun chunk(remaining: Long): Int = if (remaining <= CHUNK + CHUNK / 4) remaining.toInt() else CHUNK
+
+    /** Turns the compressed bytes of one entry into its data, counting its size and CRC-32. */
+    private class Unpacker(method: Int, private val bytes: EntryBytes) {
+        private val inflater = if (method == DEFLATED) Inflater(true) else null
+        private val output = if (inflater != null) ByteArray(INFLATE_BUFFER) else null
+        private val crc = CRC32()
+        private var size = 0L
+        private var endedEarly = false
+
+        /** Takes [length] compressed bytes of [chunk] from [from]. False once the data passes the limit. */
+        fun take(chunk: ByteArray, from: Int, length: Int): Boolean {
+            if (length == 0) return true
+            if (inflater == null) return emit(chunk, from, length)
+            if (inflater.finished()) {
+                endedEarly = true
+                return true
+            }
+            inflater.setInput(chunk, from, length)
+            while (!inflater.finished() && !inflater.needsInput()) {
+                val before = inflater.remaining
+                val n = inflater.inflate(output!!)
+                if (n == 0 && !inflater.finished() && (inflater.needsDictionary() || inflater.remaining == before)) throw DataFormatException("no progress")
+                if (n > 0 && !emit(output, 0, n)) return false
+            }
+            if (inflater.finished() && inflater.remaining > 0) endedEarly = true
+            return true
+        }
+
+        private fun emit(data: ByteArray, from: Int, length: Int): Boolean {
+            if (!bytes.write(ByteBuffer.wrap(data, from, length).slice(), size)) return false
+            crc.update(data, from, length)
+            size += length
+            return true
+        }
+
+        fun tooLarge(): EntryResult = EntryResult.TooLarge(bytes.exceeded!!)
+
+        fun finish(record: ZipRecord): EntryResult {
+            val whole = inflater == null || (inflater.finished() && !endedEarly)
+            if (!whole || size != record.size || crc.value.toInt() != record.crc) return EntryResult.Failed(ArchiveFailure.Corrupt)
+            return EntryResult.Data(bytes.toByteArray())
+        }
+
+        fun end() {
+            inflater?.end()
+        }
     }
 
     /** The extra fields of one record that the listing uses (APPNOTE.TXT section 4.5). */
@@ -199,10 +296,18 @@ internal fun readUpTo(source: ByteSource, offset: Long, length: Int, job: Job): 
     val buffer = ByteBuffer.allocate(length)
     while (buffer.hasRemaining()) {
         if (!job.isActive) throw CancellationException("archive read cancelled")
-        if (source.read(offset + buffer.position(), buffer) <= 0) break
+        val n = try {
+            source.read(offset + buffer.position(), buffer)
+        } catch (e: Exception) {
+            throw SourceFailure(e)
+        }
+        if (n <= 0) break
     }
     return if (buffer.hasRemaining()) buffer.array().copyOf(buffer.position()) else buffer.array()
 }
+
+/** The exception a [ByteSource] read threw, set apart from the failures of the parsing. */
+internal class SourceFailure(override val cause: Exception) : Exception(cause)
 
 /** [length] bytes at [offset], taking the part at or after [tailStart] from [tail]. null when the file ends first. */
 private fun bytesAt(source: ByteSource, offset: Long, length: Int, tailStart: Long, tail: ByteArray, job: Job): ByteArray? {
@@ -278,6 +383,12 @@ private const val MAX_COMMENT = 0xffff
 internal const val TAIL_PROBE = MAX_COMMENT + END_SIZE + LOCATOR_SIZE + END64_SIZE
 
 private const val MAX_DIRECTORY = 64L shl 20
+
+/** The bytes of one read of an entry's data. An SMB source asks for them in one request (docs/spec.md 3.1). */
+private const val CHUNK = 1 shl 20
+private const val INFLATE_BUFFER = 64 * 1024
+private const val STORED = 0
+private const val DEFLATED = 8
 private const val U32_MAX = 0xffffffffL
 private const val FLAG_ENCRYPTED = 1
 private const val FLAG_STRONG_ENCRYPTION = 1 shl 6
