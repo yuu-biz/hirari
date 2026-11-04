@@ -83,6 +83,20 @@ class ArchiveSession private constructor(
         return reader.read(entry, maxBytes)
     }
 
+    /** Up to [count] bytes for sniffing, without reading the rest of a non-solid entry (3.5). */
+    suspend fun readPrefix(entryIndex: Int, count: Int): EntryResult {
+        check(!closed.get()) { "the session is closed" }
+        require(!solid && count > 0)
+        val entry = entries[entryIndex]
+        if (entry.isDirectory) return EntryResult.Data(ByteArray(0))
+        refusal(entry, MAX_ENTRY_BYTES)?.let { return it }
+        return when (val current = reader) {
+            is FromCentralDirectory -> current.read(entry, count, prefix = true)
+            is Direct -> current.read(entry, count, prefix = true)
+            else -> error("a solid archive cannot be sniffed")
+        }
+    }
+
     /** Frees the handle and closes the source after the call in progress, if any, returns. */
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -103,12 +117,14 @@ class ArchiveSession private constructor(
     private inner class FromCentralDirectory(private val records: List<ZipRecord>) : EntryReader {
         private val others = Direct(Cursor.Closed)
 
-        override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult {
+        override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult = read(entry, maxBytes, prefix = false)
+
+        suspend fun read(entry: ArchiveEntry, maxBytes: Int, prefix: Boolean): EntryResult {
             val record = records[entry.entryIndex]
-            if (!CentralZip.reads(record)) return others.read(entry, maxBytes)
+            if (!CentralZip.reads(record)) return others.read(entry, maxBytes, prefix)
             return withContext(dispatcher) {
                 if (closed.get()) throw CancellationException("the session is closed")
-                CentralZip.read(source, record, maxBytes, coroutineContext.job)
+                CentralZip.read(source, record, maxBytes, coroutineContext.job, prefix)
             }
         }
 
@@ -123,12 +139,14 @@ class ArchiveSession private constructor(
         // Touched only on the session thread.
         private val archive: ArchiveHandle get() = libarchive.value
 
-        override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult = withContext(dispatcher) {
+        override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult = read(entry, maxBytes, prefix = false)
+
+        suspend fun read(entry: ArchiveEntry, maxBytes: Int, prefix: Boolean): EntryResult = withContext(dispatcher) {
             // A dispatch rejected by the shut-down executor resumes on another thread after the handle is freed.
             if (closed.get()) throw CancellationException("the session is closed")
             archive.begin(coroutineContext.job)
             when (val failure = moveTo(entry.entryIndex)) {
-                null -> readData(entry, maxBytes)
+                null -> readData(entry, maxBytes, prefix)
                 else -> EntryResult.Failed(failure)
             }
         }
@@ -158,8 +176,8 @@ class ArchiveSession private constructor(
             return null
         }
 
-        private fun readData(entry: ArchiveEntry, maxBytes: Int): EntryResult {
-            val bytes = EntryBytes(maxBytes)
+        private fun readData(entry: ArchiveEntry, maxBytes: Int, prefix: Boolean): EntryResult {
+            val bytes = EntryBytes(maxBytes, prefix)
             cursor = Cursor.Closed
             val status = archive.readData(bytes)
             if (status == Status.OK || status == Status.STOPPED || status == Status.FAILED) {
@@ -167,7 +185,7 @@ class ArchiveSession private constructor(
             }
             val reached = bytes.exceeded
             return when {
-                status == Status.OK -> EntryResult.Data(bytes.toByteArray())
+                status == Status.OK || (status == Status.STOPPED && bytes.prefixComplete) -> EntryResult.Data(bytes.toByteArray())
                 reached != null -> EntryResult.TooLarge(reached)
                 else -> EntryResult.Failed(archive.failure())
             }
@@ -329,8 +347,8 @@ class ArchiveSession private constructor(
     }
 }
 
-/** Collects the data of one entry, stopping once it would pass [limit] bytes. */
-internal class EntryBytes(private val limit: Int) : DataSink {
+/** Collects one entry, or just its prefix; prefix mode stops successfully at [limit] bytes. */
+internal class EntryBytes(private val limit: Int, private val prefix: Boolean = false) : DataSink {
     private var bytes = ByteArray(min(INITIAL_CAPACITY, limit))
     private var size = 0
 
@@ -338,7 +356,13 @@ internal class EntryBytes(private val limit: Int) : DataSink {
     var exceeded: Long? = null
         private set
 
+    val prefixComplete: Boolean get() = prefix && size == limit
+
     override fun write(block: ByteBuffer, offset: Long): Boolean {
+        if (prefix) {
+            if (offset >= limit) return false
+            block.limit(block.position() + minOf(block.remaining(), limit - offset.toInt()))
+        }
         val end = offset + block.remaining()
         if (end > limit) {
             exceeded = end
@@ -347,7 +371,7 @@ internal class EntryBytes(private val limit: Int) : DataSink {
         if (end > bytes.size) bytes = bytes.copyOf(max(end, min(bytes.size * 2L, limit.toLong())).toInt())
         block.get(bytes, offset.toInt(), block.remaining())
         size = max(size, end.toInt())
-        return true
+        return !prefixComplete
     }
 
     fun toByteArray(): ByteArray = if (size == bytes.size) bytes else bytes.copyOf(size)

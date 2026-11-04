@@ -155,26 +155,27 @@ internal object CentralZip {
      * as the size allows (docs/spec.md section 3.3). The checks and failures are libarchive's: a local header
      * without its signature, a stream that does not end where the record says, a size or CRC-32 that differs from
      * the record are [ArchiveFailure.Corrupt], and the file ending first is [ArchiveFailure.Truncated].
+     * With [prefix], stops once [maxBytes] decoded bytes are available; the full page read checks the rest and CRC.
      *
      * @throws CancellationException when [job] is cancelled.
      */
-    fun read(source: ByteSource, record: ZipRecord, maxBytes: Int, job: Job): EntryResult {
+    fun read(source: ByteSource, record: ZipRecord, maxBytes: Int, job: Job, prefix: Boolean = false): EntryResult {
         if (record.kind == ZipKind.Link) return EntryResult.Data(ByteArray(0))
-        val unpacker = Unpacker(record.method, EntryBytes(maxBytes))
+        val unpacker = Unpacker(record.method, EntryBytes(maxBytes, prefix), if (prefix) maxBytes else INFLATE_BUFFER)
         try {
-            val first = readUpTo(source, record.headerOffset, chunk(record.expectedHeaderLength + record.compressedSize), job)
+            val first = readUpTo(source, record.headerOffset, if (prefix) LOCAL_SIZE else chunk(record.expectedHeaderLength + record.compressedSize), job)
             if (first.size < LOCAL_SIZE) return EntryResult.Failed(ArchiveFailure.Truncated)
             if (first.u32(0) != LOCAL_SIGNATURE) return EntryResult.Failed(ArchiveFailure.Corrupt)
             val dataStart = LOCAL_SIZE + first.u16(26) + first.u16(28)
             var remaining = record.compressedSize
             val inFirst = minOf(maxOf(first.size - dataStart, 0).toLong(), remaining).toInt()
-            if (!unpacker.take(first, dataStart, inFirst)) return unpacker.tooLarge()
+            if (!unpacker.take(first, dataStart, inFirst)) return unpacker.stopped()
             remaining -= inFirst
             var position = record.headerOffset + dataStart + inFirst
             while (remaining > 0) {
-                val length = chunk(remaining)
+                val length = if (prefix) minOf(remaining, maxBytes.toLong()).toInt() else chunk(remaining)
                 val bytes = readUpTo(source, position, length, job)
-                if (bytes.isNotEmpty() && !unpacker.take(bytes, 0, bytes.size)) return unpacker.tooLarge()
+                if (bytes.isNotEmpty() && !unpacker.take(bytes, 0, bytes.size)) return unpacker.stopped()
                 if (bytes.size < length) return EntryResult.Failed(ArchiveFailure.Truncated)
                 remaining -= length
                 position += length
@@ -193,9 +194,9 @@ internal object CentralZip {
     private fun chunk(remaining: Long): Int = if (remaining <= CHUNK + CHUNK / 4) remaining.toInt() else CHUNK
 
     /** Turns the compressed bytes of one entry into its data, counting its size and CRC-32. */
-    private class Unpacker(method: Int, private val bytes: EntryBytes) {
+    private class Unpacker(method: Int, private val bytes: EntryBytes, outputSize: Int) {
         private val inflater = if (method == DEFLATED) Inflater(true) else null
-        private val output = if (inflater != null) ByteArray(INFLATE_BUFFER) else null
+        private val output = if (inflater != null) ByteArray(outputSize) else null
         private val crc = CRC32()
         private var size = 0L
         private var endedEarly = false
@@ -226,7 +227,7 @@ internal object CentralZip {
             return true
         }
 
-        fun tooLarge(): EntryResult = EntryResult.TooLarge(bytes.exceeded!!)
+        fun stopped(): EntryResult = if (bytes.prefixComplete) EntryResult.Data(bytes.toByteArray()) else EntryResult.TooLarge(bytes.exceeded!!)
 
         fun finish(record: ZipRecord): EntryResult {
             val whole = inflater == null || (inflater.finished() && !endedEarly)

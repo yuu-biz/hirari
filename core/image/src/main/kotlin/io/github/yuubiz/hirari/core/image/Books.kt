@@ -84,15 +84,11 @@ object Books {
         }
         return try {
             val charset = session.nameCharset(naming.chosen, Charset.forName(naming.undetermined.charsetName))
-            val pages = session.entries.mapNotNull { entry ->
-                val name = session.name(entry, charset)
-                val page = PageEntry(-1, entry.entryIndex, entry.rawName, name, entry.declaredSize, sniffed = null)
-                when (pageCandidate(name, entry.isDirectory)) {
-                    PageCandidate.Image -> page
-                    PageCandidate.Excluded -> null
-                    PageCandidate.Sniff -> (session.read(entry.entryIndex) as? EntryResult.Data)
-                        ?.let { sniffImage(it.bytes) }
-                        ?.let { page.copy(sniffed = it) }
+            val pages = when (val listed = archivePages(session.entries, session.solid, { session.name(it, charset) }, session::readPrefix)) {
+                is Safely.Done -> listed.value
+                is Safely.Failed -> {
+                    session.close()
+                    return BookResult.Failed(listed.reason)
                 }
             }
             val extracted = session.solid && extractDir != null
@@ -312,7 +308,7 @@ private fun ArchiveFormat?.container(): Container = when (this) {
     ArchiveFormat.Tar -> Container.Tar
 }
 
-private fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
+internal fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
     ArchiveFailure.Corrupt -> BookFailure.Corrupt
     ArchiveFailure.Truncated -> BookFailure.Truncated
     ArchiveFailure.ReadError, ArchiveFailure.ConnectionLost -> BookFailure.ReadError

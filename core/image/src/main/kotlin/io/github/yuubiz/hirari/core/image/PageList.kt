@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
+import io.github.yuubiz.hirari.core.archive.ArchiveEntry
+import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FileFormats
 import io.github.yuubiz.hirari.core.model.NaturalPageOrder
@@ -15,6 +17,30 @@ enum class PageCandidate {
     Sniff,
 
     Excluded,
+}
+
+/** Builds the fixed archive page list; only a successful non-image sniff removes an unknown entry (3.5). */
+internal suspend fun archivePages(
+    entries: List<ArchiveEntry>,
+    solid: Boolean,
+    name: (ArchiveEntry) -> String,
+    readPrefix: suspend (Int, Int) -> EntryResult,
+): Books.Safely<List<PageEntry>> {
+    val pages = ArrayList<PageEntry>()
+    for (entry in entries) {
+        val decoded = name(entry)
+        val page = PageEntry(-1, entry.entryIndex, entry.rawName, decoded, entry.declaredSize, sniffed = null)
+        when (pageCandidate(decoded, entry.isDirectory)) {
+            PageCandidate.Image -> pages += page
+            PageCandidate.Excluded -> Unit
+            PageCandidate.Sniff -> if (!solid) when (val read = readPrefix(entry.entryIndex, 32)) {
+                is EntryResult.Data -> sniffImage(read.bytes)?.let { pages += page.copy(sniffed = it) }
+                is EntryResult.Failed -> return Books.Safely.Failed(read.reason.bookFailure())
+                else -> pages += page
+            }
+        }
+    }
+    return Books.Safely.Done(pages)
 }
 
 /** [name] is the path inside the book, with `/` or `\` between folders. */
