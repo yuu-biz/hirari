@@ -3,11 +3,14 @@ package io.github.yuubiz.hirari.core.ui
 import android.os.Build
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.mandatorySystemGestures
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.runtime.Composable
@@ -19,21 +22,39 @@ import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.model.SystemGestureEdges
 
 /**
- * Where system gestures start on this screen, in dp (docs/spec.md section 4.8, 画面の領域). From Android 10 the window
- * reports them; before, only the bars come out, from the top and bottom edges.
+ * How far in from the edges of the screen a reader lies (docs/spec.md section 4.8, 画面の領域): not at all while the
+ * system bars are hidden, and inside the shown bars and the display cutout otherwise.
  */
 @Composable
-fun systemGestureEdges(): SystemGestureEdges {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return SystemGestureEdges.Fixed
+fun readerInsets(hideSystemBars: Boolean): WindowInsets =
+    if (hideSystemBars) WindowInsets(0) else WindowInsets.systemBars.union(WindowInsets.displayCutout)
+
+/**
+ * Where system gestures start in a reader laid out by [readerInsets], in dp (docs/spec.md section 4.8, 画面の領域). From
+ * Android 10 the window reports them; before, only the bars come out, from the top and bottom edges.
+ */
+@Composable
+fun systemGestureEdges(hideSystemBars: Boolean): SystemGestureEdges {
     val density = LocalDensity.current
-    val mandatory = WindowInsets.mandatorySystemGestures
-    val gestures = WindowInsets.systemGestures
     fun dp(px: Int) = px / density.density
-    return SystemGestureEdges.of(
-        mandatoryTop = dp(mandatory.getTop(density)),
-        mandatoryBottom = dp(mandatory.getBottom(density)),
-        left = dp(gestures.getLeft(density, LayoutDirection.Ltr)),
-        right = dp(gestures.getRight(density, LayoutDirection.Ltr)),
+    val screen = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        SystemGestureEdges.Fixed
+    } else {
+        val mandatory = WindowInsets.mandatorySystemGestures
+        val gestures = WindowInsets.systemGestures
+        SystemGestureEdges.of(
+            mandatoryTop = dp(mandatory.getTop(density)),
+            mandatoryBottom = dp(mandatory.getBottom(density)),
+            left = dp(gestures.getLeft(density, LayoutDirection.Ltr)),
+            right = dp(gestures.getRight(density, LayoutDirection.Ltr)),
+        )
+    }
+    if (hideSystemBars) return screen
+    val bars = readerInsets(hideSystemBars = false)
+    return screen.insideShownBars(
+        bottom = dp(bars.getBottom(density)),
+        left = dp(bars.getLeft(density, LayoutDirection.Ltr)),
+        right = dp(bars.getRight(density, LayoutDirection.Ltr)),
     )
 }
 

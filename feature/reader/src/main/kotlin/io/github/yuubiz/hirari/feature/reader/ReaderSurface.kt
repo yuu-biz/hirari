@@ -142,7 +142,7 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         }
     }
 
-    val edges by rememberUpdatedState(systemGestureEdges())
+    val edges by rememberUpdatedState(systemGestureEdges(viewModel.hideSystemBars))
     val input = remember(viewModel) {
         ReaderInput(
             viewModel = viewModel,

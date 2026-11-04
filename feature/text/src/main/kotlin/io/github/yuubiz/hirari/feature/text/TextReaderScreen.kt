@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
@@ -45,7 +46,9 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -84,6 +87,7 @@ import io.github.yuubiz.hirari.core.ui.DefaultReaderBackground
 import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
 import io.github.yuubiz.hirari.core.ui.keepsAwake
 import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
+import io.github.yuubiz.hirari.core.ui.readerInsets
 import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
 import io.github.yuubiz.hirari.core.ui.performTurnHaptic
@@ -213,7 +217,12 @@ fun TextReaderScreen(
                     ReaderOrientation.Landscape -> ReaderOrientation.System
                 }
             }
-            Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(readerBackgroundColor(s.settings.readerBackground))
+                    .windowInsetsPadding(readerInsets(s.settings.hideSystemBars)),
+            ) {
                 Reading(
                     s, viewModel, touch, bounds,
                     onRegionTouch = { touched++ },
@@ -292,7 +301,7 @@ private fun Reading(
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(state)
-    val edges by rememberUpdatedState(systemGestureEdges())
+    val edges by rememberUpdatedState(systemGestureEdges(state.settings.hideSystemBars))
     val input = remember(viewModel, panelBounds) {
         TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, panelBounds, onItem, { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }, turn, { edges })
     }
@@ -300,6 +309,7 @@ private fun Reading(
         Modifier
             .fillMaxSize()
             .background(readerBackgroundColor(state.settings.readerBackground))
+            .onGloballyPositioned { panelBounds.origin = it.positionInRoot() }
             .onSizeChanged { viewModel.onViewport(Viewport(it.width, it.height, density.density, density.fontScale)) }
             .pointerInput(input) { with(input) { handle() } }
             .then(if (accessible) Modifier.textAccessibility(state, onControl) else Modifier.clearAndSetSemantics {}),

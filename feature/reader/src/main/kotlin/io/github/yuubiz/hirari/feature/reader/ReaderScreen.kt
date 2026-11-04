@@ -63,6 +63,7 @@ import io.github.yuubiz.hirari.core.ui.announced
 import io.github.yuubiz.hirari.core.ui.keepsAwake
 import io.github.yuubiz.hirari.core.ui.readableOn
 import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
+import io.github.yuubiz.hirari.core.ui.readerInsets
 import kotlinx.coroutines.delay
 
 /**
@@ -142,7 +143,8 @@ fun ReaderScreen(
 
     ReaderBackdrop(
         viewModel.background,
-        Modifier
+        insets = readerInsets(viewModel.hideSystemBars),
+        modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { viewModel.onViewport(Viewport(it.width.toFloat(), it.height.toFloat(), density)) }
             .pointerInput(ui) {

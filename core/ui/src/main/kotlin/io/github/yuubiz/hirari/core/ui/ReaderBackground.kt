@@ -3,6 +3,9 @@ package io.github.yuubiz.hirari.core.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -26,8 +29,11 @@ fun readerBackgroundColor(background: ReaderBackground): Color = when (backgroun
 /** Black or white, whichever reads on [background]: for the text a reader sets straight on its background. */
 fun readableOn(background: Color): Color = if (background.luminance() > 0.5f) Color.Black else Color.White
 
-/** The surface of a reader: [background] fills it around the pages and between them, and [content] sits on it. */
+/**
+ * The surface of a reader, filling the screen: [background] fills it around the pages and between them, also under
+ * [insets], and [content] sits on it inside [insets]. [modifier] applies inside [insets].
+ */
 @Composable
-fun ReaderBackdrop(background: ReaderBackground, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    Box(modifier.background(readerBackgroundColor(background)), content = content)
+fun ReaderBackdrop(background: ReaderBackground, modifier: Modifier = Modifier, insets: WindowInsets = WindowInsets(0), content: @Composable BoxScope.() -> Unit) {
+    Box(Modifier.fillMaxSize().background(readerBackgroundColor(background)).windowInsetsPadding(insets).then(modifier), content = content)
 }

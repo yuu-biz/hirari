@@ -44,6 +44,17 @@ data class SystemGestureEdges(val top: Float, val bottom: Float, val left: Float
         fun of(mandatoryTop: Float, mandatoryBottom: Float, left: Float, right: Float) =
             SystemGestureEdges(maxOf(mandatoryTop, SYSTEM_EDGE_DP), maxOf(mandatoryBottom, SYSTEM_EDGE_DP), left, right)
     }
+
+    /**
+     * The bands of a reader laid inside the shown system bars, which lie [bottom], [left], and [right] in from those
+     * edges of the screen. The shown status bar takes the swipe from the top itself, and none starts below it.
+     */
+    fun insideShownBars(bottom: Float, left: Float, right: Float) = SystemGestureEdges(
+        top = 0f,
+        bottom = (this.bottom - bottom).coerceAtLeast(0f),
+        left = (this.left - left).coerceAtLeast(0f),
+        right = (this.right - right).coerceAtLeast(0f),
+    )
 }
 
 /** The three regions of the reader screen (docs/spec.md section 4.8). Every length is in dp. */

@@ -96,19 +96,21 @@ internal sealed interface TextPanelItem : PanelTarget {
 }
 
 /**
- * Where the command panel and its items are on screen, as the panel lays them out in pixels of the root; the reader
- * fills the root, so they match its touches once turned into dp by [density]. Empty while the panel is closed.
+ * Where the command panel and its items are on screen, as the panel lays them out in pixels of the root. The reader's
+ * touches come in dp from its own top left, which lies at [origin] in the root, so they are turned into the root's
+ * pixels by [density] and [origin] before they are matched. Empty while the panel is closed.
  */
 internal class TextPanelBounds(private val density: Float) : CommandTargets {
     var panel: Rect? = null
     val items = HashMap<TextPanelItem, Rect>()
+    var origin: Offset = Offset.Zero
 
     fun clear() {
         panel = null
         items.clear()
     }
 
-    private fun Point.px() = Offset(x * density, y * density)
+    private fun Point.px() = Offset(x * density, y * density) + origin
 
     override fun contains(point: Point): Boolean = panel?.contains(point.px()) == true
 

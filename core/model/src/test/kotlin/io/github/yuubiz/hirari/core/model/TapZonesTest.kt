@@ -165,6 +165,14 @@ class TapZonesTest {
         assertEquals(setOf(ScreenEdge.Top), fixed.systemEdgesAt(Point(200f, 5f)))
     }
 
+    /** With the bars shown, the API 37 emulator's 24 dp navigation bar leaves 8 dp of the 32 dp bottom band. */
+    @Test
+    fun aReaderInsideTheShownBarsKeepsOnlyTheBandsReachingPastThem() {
+        assertEquals(SystemGestureEdges(0f, 8f, 30f, 30f), api37.insideShownBars(bottom = 24f, left = 0f, right = 0f))
+        assertEquals(SystemGestureEdges(0f, 0f, 0f, 0f), SystemGestureEdges.Fixed.insideShownBars(bottom = 48f, left = 0f, right = 0f))
+        assertEquals(SystemGestureEdges(0f, 48f, 0f, 0f), SystemGestureEdges.of(24f, 48f, 0f, 0f).insideShownBars(bottom = 0f, left = 0f, right = 48f), "a navigation bar on the right in landscape")
+    }
+
     @Test
     fun onlyASwipeIntoTheScreenFromAnEdgeIsTheSystems() {
         val origin = Point(200f, 10f)
