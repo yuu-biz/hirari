@@ -354,8 +354,10 @@ class Thumbnails internal constructor(
             val flight = running ?: FolderFlight(Urgency.borrowed()).also { folderFlights[key] = it }
             flight.urgency.follow(urgency)
             if (running == null || mode == Mode.Remake) {
-                running?.search?.cancel()
+                val replaced = running?.search
                 fly(folder, key, flight, Search(request, mode, flight.urgency, folder.lane))
+                // Cancelled once replaced: a search that ends inside cancel(), as on an immediate dispatcher, settles nothing.
+                replaced?.cancel()
             }
             flight.waiters++
             flight
@@ -377,13 +379,16 @@ class Thumbnails internal constructor(
         job.start()
     }
 
-    /** Answers everyone waiting for [flight], unless a regeneration replaced [search] with another. */
+    /**
+     * Answers everyone waiting for [flight], unless a regeneration replaced [search] with another. The answer goes
+     * out of the lock, since a waiter on an immediate dispatcher resumes inside it.
+     */
     private fun settle(key: ThumbnailKey, flight: FolderFlight, search: Job, outcome: Result<ThumbResult>) {
         synchronized(folderFlights) {
             if (flight.search !== search) return
             folderFlights.remove(key, flight)
-            flight.result.completeWith(outcome)
         }
+        flight.result.completeWith(outcome)
     }
 
     private fun leave(key: ThumbnailKey, flight: FolderFlight, urgency: Urgency) {

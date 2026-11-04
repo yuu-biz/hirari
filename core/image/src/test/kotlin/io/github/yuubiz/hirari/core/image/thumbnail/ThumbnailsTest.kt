@@ -7,6 +7,7 @@ import io.github.yuubiz.hirari.core.model.CoverCrop
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -1043,6 +1044,26 @@ class ThumbnailsTest {
         val hit = async { thumbnails.cached(request(folder(item("1")))) }
         runCurrent()
         assertEquals("B", shows(hit.await()))
+    }
+
+    /**
+     * The search a regeneration replaces ends inside the call that cancels it, as it does on an immediate dispatcher.
+     * Its end must not answer the regeneration with its cancellation.
+     */
+    @Test
+    fun aSearchCancelledAtOnceByARegenerationDoesNotAnswerIt() = runTest {
+        val thumbnails = Thumbnails(store, maker, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), Dispatchers.Unconfined, now = { clock })
+        val oldSearch = CompletableDeferred<Unit>()
+        maker.script = {
+            if (it.id.value == "A") oldSearch.await()
+            image(it)
+        }
+        val first = async(Dispatchers.Unconfined) { thumbnails.thumbnail(request(folder(item("1"), chosen = book("A")))) }
+        val regenerated = async { runCatching { thumbnails.regenerate(request(folder(item("1"), chosen = book("B")))) } }
+        runCurrent()
+        assertEquals("B", shows(regenerated.await().getOrThrow()))
+        assertEquals("B", shows(first.await()))
+        thumbnails.close()
     }
 
     @Test
