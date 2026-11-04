@@ -15,9 +15,11 @@ import io.kotest.property.checkAll
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class TapZonesTest {
     private val area = Size(400f, 800f)
@@ -140,5 +142,26 @@ class TapZonesTest {
         assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 7f)))
         assertNull(regions.regionAt(Point(200f, 794f)))
         assertEquals(ReaderRegion.PageBar, regions.regionAt(Point(200f, 793f)))
+    }
+
+    @Test
+    fun theSystemGestureInsetsSetTheIgnoredBandsAndNeverNarrowerThanSixDp() {
+        val edges = SystemGestureEdges.of(mandatoryTop = 24f, mandatoryBottom = 2f, left = 30f, right = 30f)
+        assertEquals(SystemGestureEdges(24f, SYSTEM_EDGE_DP, 30f, 30f), edges)
+        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, systemBarsHidden = true, edges)
+        assertNull(regions.regionAt(Point(200f, 24f)))
+        assertEquals(ReaderRegion.CommandBar, regions.regionAt(Point(200f, 25f)))
+        assertNull(regions.regionAt(Point(200f, 794f)))
+        assertEquals(ReaderRegion.PageBar, regions.regionAt(Point(200f, 793f)))
+    }
+
+    @Test
+    fun aDragFromTheSideGestureInsetsIsTheBackGesture() {
+        val regions = ReaderRegions(Size(400f, 800f), barHeight = 60f, systemBarsHidden = true, SystemGestureEdges.of(0f, 0f, left = 30f, right = 20f))
+        assertTrue(regions.startsBackGesture(Point(29f, 400f)))
+        assertFalse(regions.startsBackGesture(Point(30f, 400f)))
+        assertFalse(regions.startsBackGesture(Point(380f, 400f)))
+        assertTrue(regions.startsBackGesture(Point(381f, 400f)))
+        assertFalse(ReaderRegions(Size(400f, 800f), 60f, true).startsBackGesture(Point(0f, 400f)), "no side gestures before Android 10")
     }
 }

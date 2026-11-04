@@ -81,6 +81,16 @@ import io.github.yuubiz.hirari.core.ui.performTurnHaptic
 import io.github.yuubiz.hirari.core.ui.readerBackgroundColor
 import io.github.yuubiz.hirari.feature.reader.prefetch.PreparedPage
 import kotlin.math.roundToInt
+import android.os.Build
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.mandatorySystemGestures
+import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.ui.unit.LayoutDirection
+import io.github.yuubiz.hirari.core.model.SystemGestureEdges
 
 /** The panel background of docs/spec.md section 4.8 (コマンドバー). */
 private val PanelBackground = Color(0x80000070)
@@ -139,11 +149,13 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         }
     }
 
+    val edges by rememberUpdatedState(systemGestureEdges())
     val input = remember(viewModel) {
         ReaderInput(
             viewModel = viewModel,
             ui = ui,
             state = { latest },
+            edges = { edges },
             haptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
             holdHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
             onClose = { close() },
@@ -167,6 +179,16 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         viewModel.traces.drawn(state.current, viewModel.preparedView(state.current) != null)
         state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter, background) }
     }
+
+    // The page bar keeps a drag that reaches the ends of the screen from the system's back gesture.
+    Spacer(
+        Modifier
+            .fillMaxSize()
+            .wrapContentHeight(Alignment.Bottom)
+            .height(state.config.barHeightDp.dp)
+            .fillMaxWidth()
+            .systemGestureExclusion(),
+    )
 
     for ((page, rect) in state.stripPages()) {
         val result = errorOf(viewModel, PageView.One(page), 0, page) ?: continue
@@ -247,6 +269,25 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
             }
         }
     }
+}
+
+/**
+ * Where system gestures start on this screen, in dp (docs/spec.md section 4.8, 画面の領域). From Android 10 the window
+ * reports them; before, only the bars come out, from the top and bottom edges.
+ */
+@Composable
+private fun systemGestureEdges(): SystemGestureEdges {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return SystemGestureEdges.Fixed
+    val density = LocalDensity.current
+    val mandatory = WindowInsets.mandatorySystemGestures
+    val gestures = WindowInsets.systemGestures
+    fun dp(px: Int) = px / density.density
+    return SystemGestureEdges.of(
+        mandatoryTop = dp(mandatory.getTop(density)),
+        mandatoryBottom = dp(mandatory.getBottom(density)),
+        left = dp(gestures.getLeft(density, LayoutDirection.Ltr)),
+        right = dp(gestures.getRight(density, LayoutDirection.Ltr)),
+    )
 }
 
 /** Whether a frame moves something, so the frames tick. */

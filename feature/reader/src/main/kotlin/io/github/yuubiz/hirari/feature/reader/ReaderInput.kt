@@ -24,6 +24,7 @@ import io.github.yuubiz.hirari.core.model.ReaderRegion
 import io.github.yuubiz.hirari.core.model.ReaderRegions
 import io.github.yuubiz.hirari.core.model.ScrollMotion
 import io.github.yuubiz.hirari.core.model.Size
+import io.github.yuubiz.hirari.core.model.SystemGestureEdges
 import io.github.yuubiz.hirari.core.model.TouchEvent
 import io.github.yuubiz.hirari.core.model.TouchOutcome
 import io.github.yuubiz.hirari.core.model.TouchState
@@ -46,6 +47,8 @@ internal class ReaderInput(
     private val viewModel: ReaderViewModel,
     private val ui: ReaderUi,
     private val state: () -> ReaderState,
+    /** Where system gestures start on this screen. */
+    private val edges: () -> SystemGestureEdges,
     private val haptic: () -> Unit,
     /** The feedback of a hold that brings up the loupe. */
     private val holdHaptic: () -> Unit,
@@ -57,7 +60,7 @@ internal class ReaderInput(
             val current = state()
             val density = current.viewport.density
             val point = down.position.dp(density)
-            val regions = ReaderRegions(Size(size.width / density, size.height / density), current.config.barHeightDp, systemBarsHidden = true)
+            val regions = ReaderRegions(Size(size.width / density, size.height / density), current.config.barHeightDp, systemBarsHidden = true, edges())
             val slop = viewConfiguration.touchSlop / density
             if (current.autoPlay != null) {
                 viewModel.dispatch(ReaderEvent.AutoPlayStopped)
@@ -181,7 +184,8 @@ internal class ReaderInput(
         val pullable = if (current.scroll != null) emptySet() else pullableSides(hiddenLeft, hiddenRight)
         val caught = current.scroll?.motion is ScrollMotion.Glide || current.place is Place.Gliding
         if (caught) viewModel.dispatch(ReaderEvent.Catch)
-        var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(down.position.dp(density), down.uptimeMillis, pullable)).state
+        val point = down.position.dp(density)
+        var touchState = touch.reduce(TouchState.Idle, TouchEvent.Down(point, down.uptimeMillis, pullable, regions.startsBackGesture(point))).state
         val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
         var last = down.position
         val hold = HoldTimer(down.uptimeMillis, config.loupeHoldMs)
@@ -205,7 +209,7 @@ internal class ReaderInput(
                     is TouchState.Pulling -> viewModel.dispatch(ReaderEvent.Pulling(now.turn, now.pulled))
                     TouchState.Scrolling -> viewModel.dispatch(ReaderEvent.Pan(change.position.x - last.x, change.position.y - last.y))
                     is TouchState.Loupe -> viewModel.dispatch(ReaderEvent.LoupeMoved(Point(change.position.x, change.position.y), change.uptimeMillis))
-                    TouchState.Idle, is TouchState.Pressed -> Unit
+                    TouchState.Idle, TouchState.System, is TouchState.Pressed -> Unit
                 }
                 last = change.position
             }

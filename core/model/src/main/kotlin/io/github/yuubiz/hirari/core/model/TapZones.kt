@@ -4,16 +4,39 @@ enum class Turn { Forward, Back }
 
 enum class ReaderRegion { CommandBar, TurnArea, PageBar }
 
-/** System gestures start this close to the top and bottom edges while the system bars are hidden. */
+/** System gestures start at least this close to the top and bottom edges while the system bars are hidden. */
 const val SYSTEM_EDGE_DP = 6f
 
+/**
+ * How far in from each edge of the screen system gestures start, in dp (docs/spec.md section 4.8, 画面の領域). [top]
+ * and [bottom] are where the system bars come out, and [left] and [right] where a drag is the back gesture.
+ */
+data class SystemGestureEdges(val top: Float, val bottom: Float, val left: Float, val right: Float) {
+    companion object {
+        /** Before Android 10 no gesture comes in from the sides, and the window reports no gesture insets. */
+        val Fixed = SystemGestureEdges(SYSTEM_EDGE_DP, SYSTEM_EDGE_DP, 0f, 0f)
+
+        /** The insets of system gestures from Android 10, never narrower at the top and bottom than [Fixed]. */
+        fun of(mandatoryTop: Float, mandatoryBottom: Float, left: Float, right: Float) =
+            SystemGestureEdges(maxOf(mandatoryTop, SYSTEM_EDGE_DP), maxOf(mandatoryBottom, SYSTEM_EDGE_DP), left, right)
+    }
+}
+
 /** The three regions of the reader screen (docs/spec.md section 4.8). Every length is in dp. */
-data class ReaderRegions(val screen: Size, val barHeight: Float, val systemBarsHidden: Boolean) {
+data class ReaderRegions(
+    val screen: Size,
+    val barHeight: Float,
+    val systemBarsHidden: Boolean,
+    val edges: SystemGestureEdges = SystemGestureEdges.Fixed,
+) {
     val turnArea: Rect get() = Rect(0f, barHeight, screen.width, screen.height - barHeight)
+
+    /** Whether a drag from [point] is the system's back gesture, which the reader leaves to the system. */
+    fun startsBackGesture(point: Point): Boolean = point.x < edges.left || point.x > screen.width - edges.right
 
     /** The region a touch starting at [point] belongs to, or `null` when the reader ignores it. */
     fun regionAt(point: Point): ReaderRegion? = when {
-        systemBarsHidden && (point.y <= SYSTEM_EDGE_DP || point.y >= screen.height - SYSTEM_EDGE_DP) -> null
+        systemBarsHidden && (point.y <= edges.top || point.y >= screen.height - edges.bottom) -> null
         point.y < barHeight -> ReaderRegion.CommandBar
         point.y >= screen.height - barHeight -> ReaderRegion.PageBar
         else -> ReaderRegion.TurnArea

@@ -49,6 +49,16 @@ class EdgePullTest {
     }
 
     @Test
+    fun aDragFromWhereTheBackGestureStartsNeitherPullsNorScrollsButATapThereTaps() {
+        val edge = Point(5f, 400f)
+        val dragged = rtl.reduce(rtl.reduce(TouchState.Idle, Down(edge, 0, both, backGesture = true)).state, Move(Point(80f, 400f))).state
+        assertEquals(TouchState.System, dragged)
+        assertNull(rtl.reduce(dragged, Up(Point(80f, 400f), 100, velocityX = 3000f)).outcome)
+        assertEquals(TouchOutcome.Tap(edge), rtl.outcome(Down(edge, 0, both, backGesture = true), Up(edge, 100, 0f)))
+        assertIs<TouchState.Pulling>(rtl.reduce(rtl.reduce(TouchState.Idle, Down(edge, 0, both)).state, Move(Point(80f, 400f))).state)
+    }
+
+    @Test
     fun aViewThatFitsCanBePulledBothWays() {
         assertEquals(both, pullableSides(hiddenLeft = 0f, hiddenRight = 0f))
         assertEquals(setOf(Side.Right), pullableSides(hiddenLeft = 0f, hiddenRight = 300f))
