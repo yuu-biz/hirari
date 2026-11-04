@@ -11,6 +11,9 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNull
+import java.io.IOException
 
 class DataStoreSettingsRepositoryTest {
     @get:Rule
@@ -43,5 +46,28 @@ class DataStoreSettingsRepositoryTest {
             repository.settings.first()
         }
         assertEquals(GlobalSettings.BAR_HEIGHT_DP.last, stored.barHeightDp)
+    }
+
+    @Test
+    fun `an unreadable file supplies defaults to every reader and reports the failure once`() = runBlocking {
+        val directory = folder.newFolder("settings.json")
+        withRepository(directory) { repository ->
+            assertEquals(GlobalSettings(), repository.settings.first())
+            assertIs<IOException>(repository.takeReadFailure())
+            repeat(3) {
+                assertEquals(GlobalSettings(), repository.settings.first())
+                assertNull(repository.takeReadFailure())
+            }
+        }
+    }
+
+    @Test
+    fun `corrupt settings reset silently without reporting a read failure`() = runBlocking {
+        val file = folder.newFile("settings.json").apply { writeBytes(byteArrayOf(0, -1, 0x7b)) }
+        withRepository(file) { repository ->
+            assertEquals(GlobalSettings(), repository.settings.first())
+            assertNull(repository.takeReadFailure())
+        }
+        assertEquals(GlobalSettings(), withRepository(file) { it.settings.first() })
     }
 }

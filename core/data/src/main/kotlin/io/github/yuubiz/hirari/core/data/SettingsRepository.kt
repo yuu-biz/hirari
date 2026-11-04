@@ -11,24 +11,40 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /** Safe to call from the main thread. */
 interface SettingsRepository {
     val settings: Flow<GlobalSettings>
 
+    /** Takes the first read failure once per process, after [settings] has supplied defaults instead. */
+    fun takeReadFailure(): IOException? = null
+
     suspend fun update(transform: (GlobalSettings) -> GlobalSettings)
 }
 
 internal class DataStoreSettingsRepository(private val store: DataStore<GlobalSettings>) : SettingsRepository {
-    override val settings: Flow<GlobalSettings> = store.data
+    private val takenReadFailure = AtomicBoolean(false)
+    private val readFailure = AtomicReference<IOException?>(null)
+
+    override val settings: Flow<GlobalSettings> = store.data.catch { failure ->
+        if (failure !is IOException) throw failure
+        readFailure.compareAndSet(null, failure)
+        emit(GlobalSettings())
+    }
+
+    override fun takeReadFailure(): IOException? = readFailure.get()?.takeIf { takenReadFailure.compareAndSet(false, true) }
 
     override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) {
         store.updateData { transform(it).normalized() }

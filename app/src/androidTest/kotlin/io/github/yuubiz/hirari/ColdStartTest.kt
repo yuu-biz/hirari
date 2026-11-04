@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -78,12 +77,7 @@ class ColdStartTest {
         }
     }
 
-    /**
-     * Fails today: the file is a directory, which DataStore reports as an IOException and not as corruption, so the
-     * collector in `themeChoice` (Appearance.kt) throws on the main thread and ends the app with a FATAL EXCEPTION,
-     * where section 4.3 asks for the home screen and this notice. Remove the @Ignore when the start survives it.
-     */
-    @Ignore("the app ends on an unreadable settings file instead of starting at home")
+    /** An IOException must reach the start as a notice while every settings collector receives defaults. */
     @Test
     fun aSettingsFileThatCannotBeReadStartsAtHomeAndSaysSo() {
         datastore.mkdirs()

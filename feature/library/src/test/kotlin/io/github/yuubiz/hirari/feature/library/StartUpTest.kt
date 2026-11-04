@@ -59,6 +59,16 @@ class StartUpTest {
     }
 
     @Test
+    fun `settings replaced with defaults after a read failure show a notice without counting the start`() = runTest {
+        for (restoring in listOf(false, true)) {
+            given(ReopenLastBook.Immediately)
+            fixture.settings.recoveredReadFailure = java.io.IOException("settings.json is a directory")
+            assertEquals(StartPlan.Unplanned, fixture.services.planStart(restoring))
+            assertEquals(0, fixture.launch.record.unfinishedStarts)
+        }
+    }
+
+    @Test
     fun `a start with the folder setting off still records the last folder for when it is turned on`() = runTest {
         given(ReopenLastBook.Off, reopenFolder = false)
         fixture.services.planStart()

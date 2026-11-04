@@ -17,7 +17,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +48,7 @@ import io.github.yuubiz.hirari.feature.library.FolderContent
 import io.github.yuubiz.hirari.feature.library.FolderScreen
 import io.github.yuubiz.hirari.feature.library.FolderViewModel
 import io.github.yuubiz.hirari.feature.library.HomeActions
+import io.github.yuubiz.hirari.feature.library.HomeOverflowButton
 import io.github.yuubiz.hirari.feature.library.HomeScreen
 import io.github.yuubiz.hirari.feature.library.HomeViewModel
 import io.github.yuubiz.hirari.feature.library.Loadable
@@ -138,7 +138,6 @@ class MainActivity : ComponentActivity() {
                                         onOpenFile = { pickDocument.launch(DOCUMENT_TYPES) },
                                         onOpenFolder = { pickFolder.launch(null) },
                                         onSettings = { nav.navigate(SettingsRoute()) },
-                                        onOpen = { nav.navigate(it) },
                                     )
                                 },
                             ),
@@ -327,9 +326,9 @@ class MainActivity : ComponentActivity() {
 
 /** A book opens without registering a place from here (docs/spec.md section 4.2). */
 @Composable
-private fun HomeMenu(onOpenFile: () -> Unit, onOpenFolder: () -> Unit, onSettings: () -> Unit, onOpen: (Any) -> Unit) {
+private fun HomeMenu(onOpenFile: () -> Unit, onOpenFolder: () -> Unit, onSettings: () -> Unit) {
     var open by remember { mutableStateOf(false) }
-    TextButton(onClick = { open = true }) { Text(stringResource(R.string.menu)) }
+    HomeOverflowButton(onClick = { open = true })
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
         DropdownMenuItem(
             text = { Text(stringResource(R.string.menu_open_file)) },
@@ -352,9 +351,5 @@ private fun HomeMenu(onOpenFile: () -> Unit, onOpenFolder: () -> Unit, onSetting
                 onSettings()
             },
         )
-        PrototypeMenuItem {
-            open = false
-            onOpen(it)
-        }
     }
 }

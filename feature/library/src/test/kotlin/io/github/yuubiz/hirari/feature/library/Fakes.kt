@@ -285,7 +285,10 @@ internal class FakeBookmarks : BookmarkRepository {
 internal class FakeSettings : SettingsRepository {
     val value = MutableStateFlow(GlobalSettings())
     var failure: Throwable? = null
+    var recoveredReadFailure: java.io.IOException? = null
     override val settings: Flow<GlobalSettings> = value.map { settings -> failure?.let { throw it }; settings }
+
+    override fun takeReadFailure(): java.io.IOException? = recoveredReadFailure.also { recoveredReadFailure = null }
 
     override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = value.update(transform)
 }

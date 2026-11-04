@@ -79,6 +79,8 @@ suspend fun LibraryServices.planStart(restoring: Boolean = false): StartPlan = t
 }
 
 private suspend fun LibraryServices.plan(restoring: Boolean): StartPlan {
+    val current = settings.settings.first()
+    if (settings.takeReadFailure() != null) return StartPlan.Unplanned
     try {
         locations.syncGrants(grants.held())
     } catch (e: CancellationException) {
@@ -92,7 +94,6 @@ private suspend fun LibraryServices.plan(restoring: Boolean): StartPlan {
         return StartPlan.Open(diedOpening = record.diedOpening)
     }
     if (restoring) return StartPlan.Restore(record.diedOpening)
-    val current = settings.settings.first()
     val reopen = current.reopenLastBook
     val last = if (reopen == ReopenLastBook.Off || current.historyLimit == 0) null else history.observe(HistorySort.Newest).first().firstOrNull()
     return decideStart(record, current.reopenLastFolder, reopen, last, locations.locations.first())

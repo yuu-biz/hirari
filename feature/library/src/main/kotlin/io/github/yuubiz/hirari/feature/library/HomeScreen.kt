@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -102,5 +104,13 @@ private fun <T> Loaded(value: Loadable<T>, content: @Composable (T) -> Unit) {
 internal fun EmptyNote(@StringRes text: Int) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Text(stringResource(text), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** The home menu uses the same overflow icon and spoken name as the file list. */
+@Composable
+fun HomeOverflowButton(onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(ListIcons.More, contentDescription = stringResource(R.string.list_menu))
     }
 }

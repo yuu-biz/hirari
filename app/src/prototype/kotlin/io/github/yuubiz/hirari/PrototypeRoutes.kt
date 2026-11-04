@@ -1,9 +1,6 @@
 package io.github.yuubiz.hirari
 
 import android.content.Intent
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
@@ -34,9 +31,4 @@ internal fun debugBookRoute(intent: Intent): Any? =
 
 internal fun NavGraphBuilder.prototypeRoutes() {
     composable<PrototypeRoute> { PrototypeScreen(it.toRoute<PrototypeRoute>().variant) }
-}
-
-@Composable
-internal fun PrototypeMenuItem(onOpen: (Any) -> Unit) {
-    DropdownMenuItem(text = { Text("Q1 prototype") }, onClick = { onOpen(PrototypeRoute("compose-hardware")) })
 }

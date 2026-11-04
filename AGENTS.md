@@ -43,6 +43,8 @@ Hirari は、自炊した本（主に漫画）の画像書庫を読む Android �
 
 ## ビルドと試験
 
+Q1 の描画面の試作は、デバッグ版か計測用の版を入れ、`adb shell am start -n io.github.yuubiz.hirari/.MainActivity --es prototype compose-hardware` で開きます。ホームのメニューには出しません。
+
 必要なもの:
 
 - JDK 21。`JAVA_HOME` で指します。
