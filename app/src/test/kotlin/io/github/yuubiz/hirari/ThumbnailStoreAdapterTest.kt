@@ -92,6 +92,8 @@ class ThumbnailStoreAdapterTest {
         assertEquals(StoredThumb.Hit(file), store.get(book))
         cache.lookup = ThumbLookup.Failed
         assertEquals(StoredThumb.Failed, store.get(book))
+        cache.lookup = ThumbLookup.Interrupted
+        assertEquals(StoredThumb.Interrupted, store.get(book))
         cache.lookup = ThumbLookup.Miss
         assertEquals(StoredThumb.Miss, store.get(book))
     }

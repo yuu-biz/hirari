@@ -54,7 +54,7 @@ class ThumbnailCacheTest {
         File(making, key("dying").digest).createNewFile()
         val nextStart = DiskThumbnailCache(dir, index.thumbs(), makingDir = making)
         assertTrue(nextStart.settleInterrupted())
-        assertIs<ThumbLookup.Failed>(nextStart.get(key("dying")))
+        assertIs<ThumbLookup.Interrupted>(nextStart.get(key("dying")))
         val reopened = DiskThumbnailCache(dir, index.thumbs(), makingDir = making)
         reopened.clearInterrupted()
         assertIs<ThumbLookup.Miss>(reopened.get(key("dying")))
@@ -208,7 +208,7 @@ class ThumbnailCacheTest {
     }
 
     @Test
-    fun `a thumbnail being made when the process died is failed for that version at the next start`() = runTest {
+    fun `a thumbnail being made when the process ended is interrupted for that version at the next start`() = runTest {
         val making = File(folder.root, "making")
         val dying = DiskThumbnailCache(dir, index.thumbs(), limitBytes = 100, makingDir = making)
         val nextStart = DiskThumbnailCache(dir, index.thumbs(), limitBytes = 100, makingDir = making)
@@ -216,7 +216,7 @@ class ThumbnailCacheTest {
         dying.making(key("dying")) {
             assertTrue(nextStart.settleInterrupted(), "the record of the cover being made was not left")
         }
-        assertIs<ThumbLookup.Failed>(nextStart.get(key("dying")))
+        assertIs<ThumbLookup.Interrupted>(nextStart.get(key("dying")))
         assertIs<ThumbLookup.Hit>(nextStart.get(key("done")))
         assertEquals(false, nextStart.settleInterrupted(), "a record outlived the start that settled it")
     }

@@ -104,7 +104,7 @@ class Covers(
         else -> Unit
     }
 
-    /** Whether covers are not made, since the last process died making one (docs/spec.md section 4.4), until [resume]. */
+    /** Whether covers are not made, since the last process crashed making one (docs/spec.md section 4.4), until [resume]. */
     val held: Flow<Boolean> get() = source.held
 
     /** 表紙を作る: makes covers again, and the rows that showed none meanwhile ask for theirs. */

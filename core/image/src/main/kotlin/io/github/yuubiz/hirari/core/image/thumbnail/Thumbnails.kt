@@ -49,9 +49,10 @@ import kotlin.coroutines.cancellation.CancellationException
  * visible item first. [thumbnail] also makes what is missing. [observe] does both for one item and holds the
  * thumbnail in the store for as long as the item is shown.
  *
- * Each thumbnail is recorded in the store while it is made. When the process died making one, the next process
- * records that one as failed and makes none until [resume] ([held]): only what the store has shows, and the rest is
- * unavailable. A regeneration still makes its own.
+ * Each thumbnail is recorded in the store while it is made. When the process ended making one, the next process
+ * skips that one: it stays unavailable in that process, and the process after it makes it again. When the system
+ * says that process crashed or stopped responding ([previousExit]), the next process makes none at all until
+ * [resume] ([held]): only what the store has shows, and the rest is unavailable. A regeneration still makes its own.
  *
  * Every function is safe to call from the main thread.
  */
@@ -62,12 +63,14 @@ class Thumbnails internal constructor(
     private val io: CoroutineDispatcher,
     private val now: () -> Long,
     private val previewer: PagePreviewer = PagePreviewer { _, _, _ -> PagePreview.Unavailable },
+    private val previousExit: () -> PreviousExit = { PreviousExit.Unknown },
 ) {
     private val bookFlights = Flights<ThumbnailKey, ThumbResult>(scope)
     private val folderFlights = HashMap<ThumbnailKey, FolderFlight>()
     private val folderWrites = Mutex()
     private val gates = ThumbLane.entries.associateWith { PriorityGate(it.parallelism) }
     private val unavailableUntil = ConcurrentHashMap<ThumbnailKey, Long>()
+    private val skipped: MutableSet<ThumbnailKey> = ConcurrentHashMap.newKeySet()
     private val making = MutableStateFlow(Making.Unknown)
     private val resumed = MutableStateFlow(false)
 
@@ -75,18 +78,18 @@ class Thumbnails internal constructor(
 
     init {
         scope.launch {
-            val interrupted = try {
-                store.settleInterrupted()
+            val held = try {
+                store.settleInterrupted() && withContext(io) { previousExit() } == PreviousExit.Crashed
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 false
             }
-            making.compareAndSet(Making.Unknown, if (interrupted) Making.Held else Making.Allowed)
+            making.compareAndSet(Making.Unknown, if (held) Making.Held else Making.Allowed)
         }
     }
 
-    /** Whether thumbnails are not made, since the last process died making one (docs/spec.md section 4.4). */
+    /** Whether thumbnails are not made, since the last process crashed making one (docs/spec.md section 4.4). */
     val held: Flow<Boolean> = making.map { it == Making.Held }.distinctUntilChanged()
 
     /** Retains that [resume] allowed making covers, including for collectors that start later. */
@@ -214,8 +217,12 @@ class Thumbnails internal constructor(
 
     private suspend fun book(book: ThumbSubject.Book, request: ThumbRequest, mode: Mode, urgency: Urgency): ThumbResult? {
         val key = keyOf(book, request)
-        if (mode == Mode.Remake) store.remove(key)
+        if (mode == Mode.Remake) {
+            store.remove(key)
+            skipped.remove(key)
+        }
         if (mode == Mode.Remake || mode == Mode.Retry) unavailableUntil.remove(key)
+        if (key in skipped) return ThumbResult.Unavailable
         stored(key)?.let { return it }
         if (mode == Mode.CacheOnly) return null
         if (mode != Mode.Remake && isHeld()) return ThumbResult.Unavailable
@@ -226,7 +233,18 @@ class Thumbnails internal constructor(
     private suspend fun stored(key: ThumbnailKey): ThumbResult? = when (val found = store.get(key)) {
         is StoredThumb.Hit -> ThumbResult.Ready(found.file, key)
         StoredThumb.Failed -> ThumbResult.Failed
+        StoredThumb.Interrupted -> if (isHeld()) ThumbResult.Failed else skip(key)
         StoredThumb.Miss -> null
+    }
+
+    /**
+     * A thumbnail the last process was making when it ended is not made in this process, so a book that ends the
+     * process cannot end every one, and its mark goes so that the next process makes it (section 4.4).
+     */
+    private suspend fun skip(key: ThumbnailKey): ThumbResult {
+        skipped += key
+        store.remove(key)
+        return ThumbResult.Unavailable
     }
 
     private suspend fun make(book: ThumbSubject.Book, key: ThumbnailKey, urgency: Urgency): ThumbResult =
@@ -466,8 +484,11 @@ class Thumbnails internal constructor(
         /** The `coverEntry` of the key that stands for a folder, which no page has. */
         private const val FOLDER_COVER = -2
 
-        /** Thumbnails that decode with [decoding], a decoder of their own. Make one for the process. */
-        fun create(store: ThumbnailStore, decoding: ImageDecoding): Thumbnails {
+        /**
+         * Thumbnails that decode with [decoding], a decoder of their own, and ask [previousExit] whether the last
+         * process crashed. Make one for the process.
+         */
+        fun create(store: ThumbnailStore, decoding: ImageDecoding, previousExit: () -> PreviousExit): Thumbnails {
             val maker = BookThumbnailMaker(decoding)
             return Thumbnails(
                 store,
@@ -476,6 +497,7 @@ class Thumbnails internal constructor(
                 Dispatchers.IO,
                 now = { System.nanoTime() / 1_000_000 },
                 previewer = maker,
+                previousExit = previousExit,
             )
         }
 
@@ -486,7 +508,8 @@ class Thumbnails internal constructor(
         fun forDevice(context: Context, store: ThumbnailStore): Thumbnails {
             val budget = ImageDecoding.deviceBudget(context)
             val parallelism = if (budget < LOW_MEMORY_BYTES) 1 else ThumbLane.Local.parallelism
-            return create(store, ImageDecoding(budget / 2, parallelism, context.getSystemService(StorageManager::class.java)))
+            val decoding = ImageDecoding(budget / 2, parallelism, context.getSystemService(StorageManager::class.java))
+            return create(store, decoding) { previousExit(context) }
         }
 
         private const val LOW_MEMORY_BYTES = 128L shl 20

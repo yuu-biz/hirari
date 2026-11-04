@@ -18,6 +18,7 @@ internal class ThumbnailStoreAdapter(private val cache: ThumbnailCache) : Thumbn
     override suspend fun get(key: ThumbnailKey): StoredThumb = when (val found = cache.get(key.toCacheKey())) {
         is ThumbLookup.Hit -> StoredThumb.Hit(found.file)
         ThumbLookup.Failed -> StoredThumb.Failed
+        ThumbLookup.Interrupted -> StoredThumb.Interrupted
         ThumbLookup.Miss -> StoredThumb.Miss
     }
 

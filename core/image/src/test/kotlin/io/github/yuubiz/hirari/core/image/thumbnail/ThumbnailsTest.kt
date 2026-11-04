@@ -53,6 +53,7 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
     }
 
     override suspend fun get(key: ThumbnailKey): StoredThumb = when {
+        settled && key in interrupted -> StoredThumb.Interrupted
         key in failed -> StoredThumb.Failed
         else -> files[key]?.let(StoredThumb::Hit) ?: StoredThumb.Miss
     }.also { afterGet(key) }
@@ -68,6 +69,7 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
         beforeRemove(key)
         files.remove(key)
         failed.remove(key)
+        interrupted.remove(key)
     }
 
     override fun hold(key: ThumbnailKey): Closeable {
@@ -78,8 +80,9 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
     /** The keys whose making is recorded now. */
     val making = LinkedHashSet<ThumbnailKey>()
 
-    /** What a process that died left: these are failed and the next start holds the making back. */
+    /** What a process that ended while making them left, which the next start settles. */
     val interrupted = LinkedHashSet<ThumbnailKey>()
+    private var settled = false
 
     override suspend fun <T> making(key: ThumbnailKey, block: suspend () -> T): T {
         making += key
@@ -91,12 +94,11 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
     }
 
     override suspend fun settleInterrupted(): Boolean {
-        failed += interrupted
+        settled = true
         return interrupted.isNotEmpty()
     }
 
     override suspend fun clearInterrupted() {
-        failed.removeAll(interrupted)
         interrupted.clear()
     }
 }
@@ -136,10 +138,11 @@ class ThumbnailsTest {
     private val store by lazy { MemoryStore(temp.root) }
     private val maker = FakeMaker()
     private var clock = 0L
+    private var previousExit = PreviousExit.Crashed
 
     private fun TestScope.thumbnails(): Thumbnails {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        return Thumbnails(store, maker, CoroutineScope(SupervisorJob() + dispatcher), dispatcher, now = { clock })
+        return Thumbnails(store, maker, CoroutineScope(SupervisorJob() + dispatcher), dispatcher, now = { clock }, previousExit = { previousExit })
     }
 
     private fun book(
@@ -379,6 +382,42 @@ class ThumbnailsTest {
         assertEquals("dying", shows(thumbnails.thumbnail(dying)))
         assertEquals(ThumbResult.Failed, thumbnails.thumbnail(corrupt))
         assertFalse(maker.ids.contains("corrupt"))
+        thumbnails.close()
+    }
+
+    @Test
+    fun afterAProcessEndedWithoutACrashCoversGoOnAndOnlyTheInterruptedOneWaitsForTheNextProcess() = runTest {
+        for (exit in listOf(PreviousExit.Ended, PreviousExit.Unknown)) {
+            previousExit = exit
+            maker.calls.clear()
+            store.interrupted += ThumbnailKey(BookId("dying"), Instant.ofEpochMilli(1000), 5000, null, 300, ReadingDirection.RightToLeft)
+            val thumbnails = thumbnails()
+            val held = async { thumbnails.held.first() }
+            runCurrent()
+            assertFalse("covers were held after $exit", held.await())
+            assertEquals("other $exit", shows(thumbnails.thumbnail(request(book("other $exit")))))
+            val dying = request(book("dying"))
+            assertEquals(ThumbResult.Unavailable, thumbnails.cached(dying))
+            assertEquals(ThumbResult.Unavailable, thumbnails.thumbnail(dying))
+            clock += Thumbnails.UNAVAILABLE_BACKOFF_MILLIS
+            assertEquals(ThumbResult.Unavailable, thumbnails.thumbnail(dying))
+            assertFalse("the interrupted cover was made in the process after $exit", maker.ids.contains("dying"))
+            thumbnails.close()
+            val next = thumbnails()
+            assertEquals("the interrupted cover was not made in the process after that", "dying", shows(next.thumbnail(dying)))
+            next.close()
+            store.files.clear()
+        }
+    }
+
+    @Test
+    fun aCrashWithoutARecordLeftHoldsNothing() = runTest {
+        previousExit = PreviousExit.Crashed
+        val thumbnails = thumbnails()
+        val held = async { thumbnails.held.first() }
+        runCurrent()
+        assertFalse(held.await())
+        assertEquals("a", shows(thumbnails.thumbnail(request(book("a")))))
         thumbnails.close()
     }
 

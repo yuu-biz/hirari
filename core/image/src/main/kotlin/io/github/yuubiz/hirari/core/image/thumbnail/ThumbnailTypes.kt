@@ -36,7 +36,26 @@ sealed interface StoredThumb {
     /** Making it failed for this version of the file; section 4.4 does not try again. */
     data object Failed : StoredThumb
 
+    /** The process before this one ended while making it (section 4.4): [ThumbnailStore.settleInterrupted] left this. */
+    data object Interrupted : StoredThumb
+
     data object Miss : StoredThumb
+}
+
+/**
+ * How the process before this one ended, as the system reports it (docs/spec.md section 4.4). Only [Crashed] holds
+ * the making of covers back: a crash or an ANR may come from the covers being made, while the system or the person
+ * ending a process in the background says nothing about them.
+ */
+enum class PreviousExit {
+    /** A crash, a native crash or an ANR. */
+    Crashed,
+
+    /** Any other end: a force stop, the system freeing memory or freezing a cached app, and so on. */
+    Ended,
+
+    /** The system keeps no exit reasons (API 28 and 29) or had none for this app. */
+    Unknown,
 }
 
 /**
@@ -60,10 +79,10 @@ interface ThumbnailStore {
     /** Makes the thumbnail of [key] with [block], recorded on disk while it runs, so a death in between is found at the next start. */
     suspend fun <T> making(key: ThumbnailKey, block: suspend () -> T): T
 
-    /** Records as failed what a process that died while making it left, and says whether there was any. Once, before [making]. */
+    /** Turns what a process that ended while making it left into [StoredThumb.Interrupted], and says whether there was any. Once, before [making]. */
     suspend fun settleInterrupted(): Boolean
 
-    /** Forgets failures from interrupted records, keeping actual decode failures. */
+    /** Forgets every [StoredThumb.Interrupted], keeping actual decode failures. */
     suspend fun clearInterrupted()
 }
 

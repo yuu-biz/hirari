@@ -63,6 +63,9 @@ sealed interface ThumbLookup {
     /** Making it failed before for this version of the file; docs/spec.md section 4.4 does not retry. */
     data object Failed : ThumbLookup
 
+    /** A process ended while making it (docs/spec.md section 4.4): [ThumbnailCache.settleInterrupted] left this in place of the record. */
+    data object Interrupted : ThumbLookup
+
     data object Miss : ThumbLookup
 }
 
@@ -98,13 +101,12 @@ interface ThumbnailCache {
     suspend fun <T> making(key: ThumbKey, block: suspend () -> T): T
 
     /**
-     * Turns the records that a process which died while making thumbnails left into failures, so those are not made
-     * again until explicitly resumed, and says whether there were any. Call once at start, before the first
-     * [making].
+     * Turns the records that a process which ended while making thumbnails left into [ThumbLookup.Interrupted], and
+     * says whether there were any. Call once at start, before the first [making].
      */
     suspend fun settleInterrupted(): Boolean
 
-    /** 表紙を作る: forgets only failures made from interrupted records. */
+    /** 表紙を作る: forgets only the [ThumbLookup.Interrupted] ones, keeping actual decode failures. */
     suspend fun clearInterrupted()
 }
 
@@ -159,6 +161,9 @@ internal fun openThumbnailIndex(context: Context): ThumbnailIndexDatabase =
 
 internal const val THUMBNAIL_LIMIT_BYTES = 256L * 1024 * 1024
 
+/** The `bytes` of a failure that an interrupted record left, which [ThumbDao.deleteInterrupted] matches. */
+private const val INTERRUPTED_BYTES = -1L
+
 /**
  * [makingDir] holds an empty file per thumbnail being made, named by its digest. It is outside the cache directory,
  * which the system may clear while the app runs.
@@ -178,7 +183,7 @@ internal class DiskThumbnailCache(
 
     override suspend fun get(key: ThumbKey): ThumbLookup {
         val row = dao.get(key.digest) ?: return ThumbLookup.Miss
-        if (row.failed) return ThumbLookup.Failed
+        if (row.failed) return row.failure()
         val file = fileOf(row.digest)
         if (!withContext(io) { file.isFile }) return forgetIfStillMissing(row.digest)
         dao.touch(row.digest, now().toEpochMilli())
@@ -191,7 +196,7 @@ internal class DiskThumbnailCache(
      */
     private suspend fun forgetIfStillMissing(digest: String): ThumbLookup = writing.withLock {
         val row = dao.get(digest) ?: return@withLock ThumbLookup.Miss
-        if (row.failed) return@withLock ThumbLookup.Failed
+        if (row.failed) return@withLock row.failure()
         val file = fileOf(digest)
         if (withContext(io) { file.isFile }) {
             dao.touch(digest, now().toEpochMilli())
@@ -201,6 +206,8 @@ internal class DiskThumbnailCache(
             ThumbLookup.Miss
         }
     }
+
+    private fun ThumbRow.failure(): ThumbLookup = if (bytes == INTERRUPTED_BYTES) ThumbLookup.Interrupted else ThumbLookup.Failed
 
     /**
      * Not cancellable once started: a cancel between the file and its row, or inside the eviction, would leave a
@@ -245,7 +252,7 @@ internal class DiskThumbnailCache(
 
     private suspend fun markFailed(digest: String, interrupted: Boolean = false) = writing.withLock {
         withContext(io) { fileOf(digest).delete() }
-        dao.upsert(ThumbRow(digest, if (interrupted) -1 else 0, now().toEpochMilli(), failed = true))
+        dao.upsert(ThumbRow(digest, if (interrupted) INTERRUPTED_BYTES else 0, now().toEpochMilli(), failed = true))
     }
 
     override suspend fun remove(key: ThumbKey) = writing.withLock {
