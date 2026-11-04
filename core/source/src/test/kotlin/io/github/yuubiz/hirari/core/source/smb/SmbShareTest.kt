@@ -61,7 +61,7 @@ class SmbShareTest {
             smb.open(SmbFixture.BIG).use { source ->
                 assertEquals(SmbFixture.BIG_SIZE.toLong(), source.size)
                 val random = Random(7)
-                val offsets = listOf(0L, SMB_READ_BLOCK - 10L, 3L * SMB_READ_BLOCK, SmbFixture.BIG_SIZE - 5000L) +
+                val offsets = listOf(0L, FAR_OFFSET - 10L, 3L * FAR_OFFSET, SmbFixture.BIG_SIZE - 5000L) +
                     List(40) { random.nextLong(SmbFixture.BIG_SIZE.toLong()) }
                 for (offset in offsets) {
                     val length = minOf(listOf(4096, 65536, 300_000).random(random).toLong(), SmbFixture.BIG_SIZE - offset).toInt()

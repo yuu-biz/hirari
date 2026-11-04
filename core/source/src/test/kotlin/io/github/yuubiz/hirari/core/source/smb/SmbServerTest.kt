@@ -32,7 +32,7 @@ import kotlin.time.Duration.Companion.seconds
 /** The reconnect policy of docs/spec.md section 6.5 over an in-memory share, in virtual time. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SmbServerTest {
-    private val bytes = ByteArray(3 * SMB_READ_BLOCK + 100) { (it * 7 + it / 251).toByte() }
+    private val bytes = ByteArray(3 * FAR_OFFSET + 100) { (it * 7 + it / 251).toByte() }
     private val connector = FakeConnector(mapOf("book.zip" to bytes))
 
     private fun TestScope.server(networkAvailable: Flow<Unit> = emptyFlow()) =
@@ -65,7 +65,7 @@ class SmbServerTest {
         val source = server.open("book.zip")
         assertArrayEquals(bytes.copyOf(100), source.readAt(0, 100))
         connector.current.breakConnection()
-        assertThrows(ConnectionLostException::class.java) { source.readAt(SMB_READ_BLOCK.toLong(), 100) }
+        assertThrows(ConnectionLostException::class.java) { source.readAt(FAR_OFFSET.toLong(), 100) }
         assertEquals(Reconnecting(1), server.state.value)
 
         testScheduler.advanceTimeBy(499)
@@ -76,8 +76,8 @@ class SmbServerTest {
         assertEquals(Connected, server.state.value)
         assertArrayEquals(
             "the source reopens its file on the new connection",
-            bytes.copyOfRange(SMB_READ_BLOCK, SMB_READ_BLOCK + 100),
-            source.readAt(SMB_READ_BLOCK.toLong(), 100),
+            bytes.copyOfRange(FAR_OFFSET, FAR_OFFSET + 100),
+            source.readAt(FAR_OFFSET.toLong(), 100),
         )
         assertEquals(1, connector.current.opens.get())
     }
@@ -90,7 +90,7 @@ class SmbServerTest {
         assertArrayEquals(bytes.copyOf(100), source.readAt(0, 100))
         connector.current.end()
         assertEquals(emptyList<SmbEntry>(), server.list("folder"))
-        assertArrayEquals(bytes.copyOfRange(SMB_READ_BLOCK, SMB_READ_BLOCK + 100), source.readAt(SMB_READ_BLOCK.toLong(), 100))
+        assertArrayEquals(bytes.copyOfRange(FAR_OFFSET, FAR_OFFSET + 100), source.readAt(FAR_OFFSET.toLong(), 100))
         connector.current.end()
         server.open("book.zip").use { assertArrayEquals(bytes.copyOf(10), it.readAt(0, 10)) }
         settle()
@@ -223,7 +223,7 @@ class SmbServerTest {
         assertThrows(ConnectionLostException::class.java) { source.readAt(0, 10) }
         val attempts = connector.attempts.get()
         assertThrows(ConnectionLostException::class.java) { server.open("book.zip") }
-        assertThrows(ConnectionLostException::class.java) { source.readAt(SMB_READ_BLOCK * 2L, 10) }
+        assertThrows(ConnectionLostException::class.java) { source.readAt(FAR_OFFSET * 2L, 10) }
         assertEquals(attempts, connector.attempts.get())
     }
 
@@ -253,17 +253,6 @@ class SmbServerTest {
         assertEquals(SmbConnectResult.Failed(SmbConnectFailure.Unreachable), server.check())
         assertEquals(SmbConnectionState.Idle, server.state.value)
         assertEquals(SmbConnectResult.Connected, server.check())
-    }
-
-    @Test
-    fun `small reads inside one block take one request`() = runTest {
-        val server = server()
-        server.open("book.zip").use { source ->
-            for (offset in 0L until SMB_READ_BLOCK step 4096) source.readAt(offset, 4096)
-            assertEquals(1, connector.current.reads.get())
-            assertArrayEquals(bytes.copyOfRange(bytes.size - 50, bytes.size), source.readAt(bytes.size - 50L, 50))
-            assertEquals(-1, source.read(bytes.size.toLong(), ByteBuffer.allocate(1)))
-        }
     }
 
     @Test
@@ -299,7 +288,7 @@ class SmbServerTest {
         assertArrayEquals(bytes.copyOf(100), source.readAt(0, 100))
         server.close()
         assertEquals(Lost, server.state.value)
-        assertThrows(ConnectionLostException::class.java) { source.readAt(SMB_READ_BLOCK.toLong(), 100) }
+        assertThrows(ConnectionLostException::class.java) { source.readAt(FAR_OFFSET.toLong(), 100) }
         assertThrows(ConnectionLostException::class.java) { server.open("book.zip") }
 
         server.retry()

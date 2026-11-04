@@ -4,6 +4,9 @@ import java.io.FileNotFoundException
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
+/** An offset past what the first small read of a file fetches, so that reading there takes another request. */
+internal const val FAR_OFFSET = 128 * 1024
+
 /**
  * An in-memory share. [breakConnection] makes every later request on it fail as a dropped connection does; [end] also
  * makes it report itself closed, as a transport that saw its socket reset does.
@@ -17,6 +20,9 @@ internal class FakeShare(private val files: Map<String, ByteArray>, private val 
     private var ended = false
     val reads = AtomicInteger()
     val opens = AtomicInteger()
+
+    /** Where each read started and how much it asked for. */
+    val requested: MutableList<Pair<Long, Int>> = java.util.Collections.synchronizedList(mutableListOf())
 
     override val isOpen: Boolean get() = !ended
 
@@ -52,6 +58,7 @@ internal class FakeShare(private val files: Map<String, ByteArray>, private val 
             override fun read(offset: Long, dst: ByteArray, dstOffset: Int, length: Int): Int {
                 ensureOpen()
                 reads.incrementAndGet()
+                requested += offset to length
                 onRead()
                 if (offset >= bytes.size) return -1
                 val n = minOf(length.toLong(), bytes.size - offset).toInt()

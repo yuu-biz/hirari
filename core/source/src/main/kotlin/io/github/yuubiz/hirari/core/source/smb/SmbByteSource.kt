@@ -4,13 +4,18 @@ import io.github.yuubiz.hirari.core.source.ByteSource
 import java.nio.ByteBuffer
 import java.time.Instant
 
-/** The bytes [SmbByteSource] fetches per request and keeps for the reads that follow (docs/spec.md section 3.1). */
-const val SMB_READ_BLOCK = 128 * 1024
+/** The least one fetch takes: a small read, such as one header, gets this much for the reads near it (3.1). */
+const val SMB_MIN_FETCH = 16 * 1024
+
+/** What an [SmbByteSource] asked of the server: one request per SMB READ, and the bytes they returned. */
+data class SmbTraffic(val requests: Int, val bytes: Long)
 
 /**
- * A file on an SMB share as a [ByteSource] (docs/spec.md section 3.1). Fetches aligned blocks of [SMB_READ_BLOCK]
- * bytes and serves the small reads of libarchive from the last one. After the server reconnects, the next read
- * opens the file again on the new connection.
+ * A file on an SMB share as a [ByteSource] (docs/spec.md section 3.1). Each fetch from the server is as large as the
+ * read that needs it: a small read fetches [SMB_MIN_FETCH], a run of small reads one after another fetches twice as
+ * much each time, and a larger read fetches exactly what it asks for. The last few fetched ranges stay in memory,
+ * so reads that go back and forth between the head, the tail and the place being read do not fetch again. After the
+ * server reconnects, the next fetch opens the file again on the new connection.
  *
  * [read] throws [ConnectionLostException] when the connection broke, timed out, or is being re-established.
  */
@@ -27,10 +32,22 @@ class SmbByteSource internal constructor(
 
     private var file: RemoteFile? = file
     private var fileGeneration = generation
-    private val block = ByteArray(SMB_READ_BLOCK)
-    private var blockStart = 0L
-    private var blockLength = 0
+
+    /** Most recently used first. */
+    private val windows = ArrayDeque<Window>()
+    private var requests = 0
+    private var bytes = 0L
     private var closed = false
+
+    /** The traffic so far, which the cover target of docs/spec.md section 5.2 counts. */
+    val traffic: SmbTraffic
+        @Synchronized get() = SmbTraffic(requests, bytes)
+
+    private class Window(val start: Long, val bytes: ByteArray, val length: Int) {
+        val end: Long get() = start + length
+
+        operator fun contains(offset: Long) = offset >= start && offset < end
+    }
 
     @Synchronized
     override fun read(offset: Long, dst: ByteBuffer): Int {
@@ -38,11 +55,12 @@ class SmbByteSource internal constructor(
         require(offset >= 0) { "negative offset $offset" }
         if (offset >= size) return -1
         if (!dst.hasRemaining()) return 0
-        if (offset !in blockStart..<blockStart + blockLength) fill(offset - offset % SMB_READ_BLOCK)
-        if (offset !in blockStart..<blockStart + blockLength) return -1
-        val from = (offset - blockStart).toInt()
-        val count = minOf(dst.remaining(), blockLength - from)
-        dst.put(block, from, count)
+        val window = windows.firstOrNull { offset in it } ?: fetch(offset, dst.remaining()) ?: return -1
+        windows.remove(window)
+        windows.addFirst(window)
+        val from = (offset - window.start).toInt()
+        val count = minOf(dst.remaining(), window.length - from)
+        dst.put(window.bytes, from, count)
         return count
     }
 
@@ -50,24 +68,37 @@ class SmbByteSource internal constructor(
     override fun close() {
         if (closed) return
         closed = true
+        windows.clear()
         file?.let { server.closeLater(it, fileGeneration) }
         file = null
     }
 
-    private fun fill(start: Long) {
-        blockLength = 0
-        val wanted = minOf(SMB_READ_BLOCK.toLong(), size - start).toInt()
+    /** Fetches the range a read of [wanted] bytes at [offset] needs, or null when the server has nothing there. */
+    private fun fetch(offset: Long, wanted: Int): Window? {
+        val previous = windows.firstOrNull { it.end == offset }
+        val length = when {
+            wanted > PIECE -> minOf(wanted, MAX_FETCH)
+            previous != null -> maxOf(wanted, minOf(previous.length * 2, MAX_READ_AHEAD))
+            else -> maxOf(wanted, SMB_MIN_FETCH)
+        }.toLong().coerceAtMost(size - offset).toInt()
+        previous?.let(windows::remove)
+        val buffer = previous?.bytes?.takeIf { it.size >= length } ?: ByteArray(length)
         var got = 0
         server.request { link ->
             val remote = fileOn(link)
-            while (got < wanted) {
-                val n = remote.read(start + got, block, got, wanted - got)
+            while (got < length) {
+                val n = remote.read(offset + got, buffer, got, length - got)
+                requests++
                 if (n <= 0) break
                 got += n
+                bytes += n
             }
         }
-        blockStart = start
-        blockLength = got
+        if (got == 0) return null
+        val window = Window(offset, buffer, got)
+        windows.addFirst(window)
+        while (windows.size > MAX_WINDOWS || (windows.size > 1 && windows.sumOf { it.bytes.size.toLong() } > WINDOW_BYTES)) windows.removeLast()
+        return window
     }
 
     private fun fileOn(link: SmbServer.Link): RemoteFile {
@@ -77,5 +108,22 @@ class SmbByteSource internal constructor(
             file = it
             fileGeneration = link.generation
         }
+    }
+
+    private companion object {
+        /** Reads of up to this much are pieces of a longer read, as libarchive's 4 KB and 64 KB reads are (3.3). */
+        const val PIECE = 64 * 1024
+
+        /** The most a run of pieces fetches at once. */
+        const val MAX_READ_AHEAD = 1 shl 20
+
+        /** The most one fetch takes for a larger read, which then reads the rest with the next fetch. */
+        const val MAX_FETCH = 4 shl 20
+
+        /** Enough for the head, the tail, the place being read and one more. */
+        const val MAX_WINDOWS = 4
+
+        /** What the windows may hold together. The newest window stays whatever its size. */
+        const val WINDOW_BYTES = 2L shl 20
     }
 }

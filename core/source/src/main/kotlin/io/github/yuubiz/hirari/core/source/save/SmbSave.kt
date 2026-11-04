@@ -1,7 +1,6 @@
 package io.github.yuubiz.hirari.core.source.save
 
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
-import io.github.yuubiz.hirari.core.source.smb.SMB_READ_BLOCK
 import io.github.yuubiz.hirari.core.source.smb.SmbByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectFailure
@@ -26,6 +25,9 @@ const val SAVE_MAX_RECOVERIES = 3
 
 /** How long a save waits for the server to connect again before it gives up (docs/spec.md section 4.5). */
 val SAVE_RECONNECT_WAIT = 30.seconds
+
+/** The bytes a save reads from the server and writes at a time (docs/spec.md section 4.5). */
+const val SAVE_BLOCK = 128 * 1024
 
 /** The deepest folder a save descends into, so a share that loops on itself ends. */
 const val SAVE_MAX_DEPTH = 64
@@ -154,7 +156,7 @@ private class SmbSaveRun(
             val file = onDestination { into.create(part) }
             try {
                 onDestination { file.freeBytes }?.let { if (it < source.size) throw NoRoomException() }
-                val buffer = ByteBuffer.allocate(SMB_READ_BLOCK)
+                val buffer = ByteBuffer.allocate(SAVE_BLOCK)
                 var offset = 0L
                 while (offset < source.size) {
                     currentCoroutineContext().ensureActive()

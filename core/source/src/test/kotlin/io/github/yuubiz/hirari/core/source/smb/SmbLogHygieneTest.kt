@@ -58,7 +58,7 @@ class SmbLogHygieneTest {
                 val source = smb.open(SmbFixture.BIG)
                 relay.silenceOpenConnections()
                 expectFailure { source.read(0, ByteBuffer.allocate(10)) }
-                expectFailure { source.read(SMB_READ_BLOCK * 3L, ByteBuffer.allocate(10)) }
+                expectFailure { source.read(FAR_OFFSET * 3L, ByteBuffer.allocate(10)) }
             }
         }
 

@@ -54,12 +54,12 @@ class SmbRecoveryTest {
             val source = server.open(SmbFixture.BIG)
             source.check(0)
             relay.silenceOpenConnections()
-            val (millis, result) = timed("read on a silent connection") { source.check(4L * SMB_READ_BLOCK) }
+            val (millis, result) = timed("read on a silent connection") { source.check(4L * FAR_OFFSET) }
             assertTrue("fails as a lost connection: ${result.exceptionOrNull()}", result.exceptionOrNull() is ConnectionLostException)
             assertTrue("fails after the request timeout: $millis ms", millis in requestTimeout - 100..requestTimeout + 3000)
             val (reconnect, _) = timed("reconnect after the silent connection") { server.awaitState(SmbConnectionState.Connected, 10) }
             assertTrue("the first attempt after 0.5 s connects: $reconnect ms", reconnect < 3000)
-            source.check(4L * SMB_READ_BLOCK)
+            source.check(4L * FAR_OFFSET)
             assertEquals("a new TCP connection", 2, relay.accepted.get())
         }
     }
@@ -71,7 +71,7 @@ class SmbRecoveryTest {
             val source = server.open(SmbFixture.BIG)
             source.check(0)
             relay.answerDelayMillis = 3000
-            val (millis, result) = timed("read with every answer 3 s late") { source.check(6L * SMB_READ_BLOCK) }
+            val (millis, result) = timed("read with every answer 3 s late") { source.check(6L * FAR_OFFSET) }
             relay.answerDelayMillis = 0
             assertTrue("the slow read succeeds: ${result.exceptionOrNull()}", result.isSuccess)
             assertTrue("it waited for the late answers: $millis ms", millis >= 3000)
@@ -87,7 +87,7 @@ class SmbRecoveryTest {
             val source = server.open(SmbFixture.BIG)
             source.check(0)
             Thread.sleep(20_000)
-            val (millis, result) = timed("read after 20 s idle") { source.check(5L * SMB_READ_BLOCK) }
+            val (millis, result) = timed("read after 20 s idle") { source.check(5L * FAR_OFFSET) }
             assertTrue(result.isSuccess)
             assertTrue("no wait: $millis ms", millis < 2000)
             assertEquals(1, relay.accepted.get())
@@ -102,7 +102,7 @@ class SmbRecoveryTest {
             source.check(0)
             SmbFixture.docker("pause")
             paused = true
-            val (millis, result) = timed("read while the server is paused") { source.check(7L * SMB_READ_BLOCK) }
+            val (millis, result) = timed("read while the server is paused") { source.check(7L * FAR_OFFSET) }
             assertTrue("fails as a lost connection: ${result.exceptionOrNull()}", result.exceptionOrNull() is ConnectionLostException)
             assertTrue("fails after the request timeout: $millis ms", millis in requestTimeout - 100..requestTimeout + 3000)
             val (attempt, _) = timed("first reconnect attempt while paused") { server.awaitState(SmbConnectionState.Reconnecting(2), 15) }
@@ -111,7 +111,7 @@ class SmbRecoveryTest {
             paused = false
             val (back, _) = timed("reconnect after unpause") { server.awaitState(SmbConnectionState.Connected, 20) }
             assertTrue("reconnects within the remaining attempts: $back ms", back < 20_000)
-            source.check(7L * SMB_READ_BLOCK)
+            source.check(7L * FAR_OFFSET)
         }
     }
 }

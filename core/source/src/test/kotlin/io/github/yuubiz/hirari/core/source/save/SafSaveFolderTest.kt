@@ -15,7 +15,6 @@ import android.system.ErrnoException
 import android.system.OsConstants
 import androidx.test.core.app.ApplicationProvider
 import io.github.yuubiz.hirari.core.source.smb.FakeConnector
-import io.github.yuubiz.hirari.core.source.smb.SMB_READ_BLOCK
 import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import kotlinx.coroutines.CoroutineScope
@@ -217,7 +216,7 @@ class SafSaveFolderTest {
 
     @Test
     fun `a whole copy from the server lands in the tree`() {
-        val bytes = ByteArray(2 * SMB_READ_BLOCK + 5) { (it * 13).toByte() }
+        val bytes = ByteArray(2 * SAVE_BLOCK + 5) { (it * 13).toByte() }
         val files = mapOf("shelf/vol1.cbz" to bytes, "shelf/extras/cover.jpg" to byteArrayOf(8, 9))
         val server = SmbServer(FakeConnector(files), SmbLogin.Guest, scope, emptyFlow(), Dispatchers.IO, 15.seconds)
         val root = SafSaveFolder(resolver, tree)

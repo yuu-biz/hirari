@@ -2,7 +2,6 @@ package io.github.yuubiz.hirari.core.source.save
 
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import io.github.yuubiz.hirari.core.source.smb.RemoteFile
-import io.github.yuubiz.hirari.core.source.smb.SMB_READ_BLOCK
 import io.github.yuubiz.hirari.core.source.smb.ShareConnection
 import io.github.yuubiz.hirari.core.source.smb.ShareConnector
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
@@ -143,7 +142,7 @@ private class MemoryFolder(
 
 class SmbSaveTest {
     private val scope = CoroutineScope(SupervisorJob())
-    private val pattern = ByteArray(2 * SMB_READ_BLOCK + 777) { (it * 31 + it / 97).toByte() }
+    private val pattern = ByteArray(2 * SAVE_BLOCK + 777) { (it * 31 + it / 97).toByte() }
 
     @After
     fun tearDown() {
@@ -165,7 +164,7 @@ class SmbSaveTest {
         assertEquals(listOf("vol1.cbz.part"), into.log)
         assertArrayEquals(pattern, into.files.getValue("vol1.cbz"))
         assertEquals(listOf("vol1.cbz"), into.files.keys.toList())
-        assertEquals(listOf(SMB_READ_BLOCK, 2 * SMB_READ_BLOCK, pattern.size).map { it.toLong() }, progress.drop(1).map { it.bytesDone }.distinct())
+        assertEquals(listOf(SAVE_BLOCK, 2 * SAVE_BLOCK, pattern.size).map { it.toLong() }, progress.drop(1).map { it.bytesDone }.distinct())
         assertEquals(100, progress.last().percent)
         assertEquals(pattern.size.toLong(), progress.last().bytesTotal)
         assertEquals(1, progress.last().filesDone)
@@ -376,7 +375,7 @@ class SmbSaveTest {
 
     @Test
     fun `a destination that fills up while writing fails with the part deleted`() {
-        val into = MemoryFolder().apply { fullAfter = SMB_READ_BLOCK + 1L }
+        val into = MemoryFolder().apply { fullAfter = SAVE_BLOCK + 1L }
         assertEquals(SaveOutcome.Failed(SaveFailure.NoRoom), save(server(mapOf("vol1.cbz" to pattern)), "vol1.cbz", false, into))
         assertTrue(into.files.isEmpty())
     }
