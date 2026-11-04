@@ -41,10 +41,40 @@ class FileGridTest {
         return FileRow(requireNotNull(entry.toItem(showDotFiles = false)), path = name, filterKey = name)
     }
 
-    private fun shown(rows: List<FileRow>) = FolderContent.Shown(
-        rows, rows.size, "", LibraryView.Grid, ThumbSize.Medium, LibrarySort.Name, foldersFirst = true,
-        CoverLayout(fixture.covers, fixture.covers.sizePx(ThumbSize.Medium)), folderCoverPath = null,
+    private fun shown(rows: List<FileRow>, look: ListLook = ListLook()) = FolderContent.Shown(
+        rows, rows.size, "", LibraryView.Grid, look, LibrarySort.Name, foldersFirst = true,
+        CoverLayout(fixture.covers, fixture.covers.sizePx(look.thumbSize)), folderCoverPath = null,
     )
+
+    private fun volumes(count: Int) = (1..count).map { "[堀越耕平] 僕のヒーローアカデミア 第%02d巻.zip".format(it) }
+
+    private fun showGrid(rows: List<FileRow>, look: ListLook, width: Int = 360) {
+        rule.setContent {
+            MaterialTheme { Box(Modifier.size(width.dp, 800.dp)) { FileList(shown(rows, look), reveal = null, onOpen = {}, onLongPress = {}) } }
+        }
+    }
+
+    private fun columnCount() = rule.onAllNodesWithClick().map { it.boundsInRoot.left }.distinct().size
+
+    @Test
+    fun `a portrait window shows the portrait column count`() {
+        showGrid(volumes(12).map(::row), ListLook(portraitColumns = 3, landscapeColumns = 6))
+        assertEquals(3, columnCount())
+    }
+
+    @Test
+    @Config(qualifiers = "w900dp-h480dp")
+    fun `a landscape window shows the landscape column count`() {
+        showGrid(volumes(12).map(::row), ListLook(portraitColumns = 3, landscapeColumns = 6), width = 900)
+        assertEquals(6, columnCount())
+    }
+
+    @Test
+    @Config(qualifiers = "w900dp-h480dp")
+    fun `an automatic landscape window fits cells of the thumbnail size`() {
+        showGrid(volumes(12).map(::row), ListLook(portraitColumns = 3), width = 900)
+        assertEquals(10, columnCount())
+    }
 
     @Test
     fun `a 360 dp phone shows 4 columns, and each cell reads as the whole file name`() {

@@ -13,7 +13,6 @@ import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.ReadState
 import io.github.yuubiz.hirari.core.model.StartAt
-import io.github.yuubiz.hirari.core.model.ThumbSize
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
 import io.github.yuubiz.hirari.core.model.normalizePath
@@ -55,7 +54,7 @@ sealed interface FolderContent {
         val total: Int,
         val filter: String,
         val view: LibraryView,
-        val thumbSize: ThumbSize,
+        val look: ListLook,
         val sort: LibrarySort,
         val foldersFirst: Boolean,
         val covers: CoverLayout,
@@ -125,7 +124,7 @@ private sealed interface ListingState {
     data class Done(val listing: Listing) : ListingState
 }
 
-private data class Layout(val view: LibraryView, val thumbSize: ThumbSize, val ordering: Ordering, val showParentItem: Boolean)
+private data class Layout(val view: LibraryView, val look: ListLook, val ordering: Ordering, val showParentItem: Boolean)
 
 /**
  * One folder of a SAF place. The folder is listed once; sorting, filtering and the read-state marks are worked
@@ -149,7 +148,7 @@ class FolderViewModel(
     val state: StateFlow<FolderUi> = flow { emit(services.await()) }
         .flatMapLatest { services ->
             val layout = services.settings.settings
-                .map { Layout(it.libraryView, it.thumbSize, Ordering(it.librarySort, it.foldersFirst, it.showDotFiles), it.showParentItem) }
+                .map { Layout(it.libraryView, it.listLook(), Ordering(it.librarySort, it.foldersFirst, it.showDotFiles), it.showParentItem) }
                 .distinctUntilChanged()
             val content = listing.flatMapLatest { state ->
                 when (state) {
@@ -191,9 +190,9 @@ class FolderViewModel(
         }.flowOn(compute)
         val chosenHere = services.coverIndex.folderCovers(folder.location).map { it[folder.path]?.takeIf { cover -> cover.entry == null }?.imagePath }.distinctUntilChanged()
         return combine(marked, query, layout, chosenHere) { rows, query, layout, chosenHere ->
-            val covers = CoverLayout(services.covers, services.covers.sizePx(layout.thumbSize))
+            val covers = CoverLayout(services.covers, services.covers.sizePx(layout.look.thumbSize))
             val parentItem = layout.showParentItem && folderTrail("", folder.path).parent != null
-            FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.thumbSize, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem)
+            FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem)
         }.flowOn(compute)
     }
 
@@ -375,7 +374,7 @@ class FolderViewModel(
     /** サムネイルを作り直す of the long-press sheet (docs/spec.md section 4.4). */
     fun remake(row: FileRow) {
         val spec = row.cover ?: return
-        val size = (state.value.content as? FolderContent.Shown)?.thumbSize ?: return
+        val size = (state.value.content as? FolderContent.Shown)?.look?.thumbSize ?: return
         write { covers.regenerate(spec, covers.sizesFrom(size)) }
     }
 

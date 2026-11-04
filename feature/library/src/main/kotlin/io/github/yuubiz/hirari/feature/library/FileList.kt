@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -117,7 +118,10 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                 LibraryView.Grid -> {
                     val grid = rememberLazyGridState()
                     LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
-                    val columns = gridColumns(maxWidth, content.thumbSize)
+                    val landscape = LocalConfiguration.current.run { screenWidthDp > screenHeightDp }
+                    val columns = content.look.columns(maxWidth, landscape)
+                    val size = content.look.gridThumbSize(maxWidth / columns, landscape)
+                    val covers = remember(content.covers, size) { content.covers.copy(sizePx = content.covers.covers.sizePx(size)) }
                     val fitter = rememberTitleFitter(constraints.maxWidth / columns)
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
@@ -127,12 +131,12 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                         items(cells, key = { it.key }) { cell ->
                             when (cell) {
                                 ListCell.Parent -> GridParentCell(fitter, onUp ?: {})
-                                is ListCell.Entry -> GridCell(cell.row, content.covers, focus, fitter, onOpen, onLongPress)
+                                is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, onOpen, onLongPress)
                             }
                         }
                         if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
                     }
-                    PrefetchCovers(cells.coverRefs(content.covers), content.covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
+                    PrefetchCovers(cells.coverRefs(covers), covers.covers, focus) { grid.layoutInfo.visibleItemsInfo.visibleRange() }
                     FastScroller(cells.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                 }
                 LibraryView.ThumbnailList, LibraryView.List -> {
@@ -142,8 +146,8 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
                         items(cells, key = { it.key }) { cell ->
                             when (cell) {
-                                ListCell.Parent -> ListParentRow(covers != null, content.thumbSize, onUp ?: {})
-                                is ListCell.Entry -> ListRow(cell.row, covers, focus, content.thumbSize, onOpen, onLongPress)
+                                ListCell.Parent -> ListParentRow(covers != null, content.look.thumbSize, onUp ?: {})
+                                is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look.thumbSize, onOpen, onLongPress)
                             }
                         }
                         if (empty != null) item { EmptyRow(empty) }
@@ -222,8 +226,6 @@ private val ThumbSize.listCoverWidth get() = when (this) {
     ThumbSize.Medium -> 44.dp
     ThumbSize.Large -> 56.dp
 }
-
-private val CELL_PADDING = 6.dp
 
 /** The fitter of the titles of cells [cellWidthPx] wide, after their padding. */
 @Composable

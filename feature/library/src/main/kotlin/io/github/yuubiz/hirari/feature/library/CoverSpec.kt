@@ -132,12 +132,16 @@ internal fun gridColumns(width: Dp, size: ThumbSize): Int = max(MIN_COLUMNS, flo
 private const val MIN_COLUMNS = 2
 
 /**
- * The long side of a thumbnail in pixels (docs/spec.md section 5.4): the height of the cover box of a cell 1.5 times
- * the narrowest cell of [size], on a screen of [density]. A cell is narrower than twice the narrowest, so a cover is
- * seldom enlarged. The only place the size is worked out, so the lists, the regeneration and the store all name the
- * same thumbnail.
+ * The long side of the thumbnails of a size (docs/spec.md section 5.4): the height of the book cover box of a cell 1.5
+ * times the narrowest cell of the size. A cell is narrower than twice the narrowest, so a cover is seldom enlarged.
  */
-fun coverSizePx(size: ThumbSize, density: Float): Int = ceil(size.minCellWidth.value * COVER_CELL_SCALE / COVER_RATIO * density).toInt()
+internal val ThumbSize.coverLongSide: Dp get() = minCellWidth * COVER_CELL_SCALE / COVER_RATIO
+
+/**
+ * The long side of a thumbnail of [size] in pixels on a screen of [density]. The only place the pixels are worked
+ * out, so the lists, the regeneration and the store all name the same thumbnail.
+ */
+fun coverSizePx(size: ThumbSize, density: Float): Int = ceil(size.coverLongSide.value * density).toInt()
 
 private const val COVER_CELL_SCALE = 1.5f
 
