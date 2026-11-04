@@ -235,9 +235,10 @@ class FolderViewModel(
     /**
      * 読み直す of the top bar's menu and the pull on the list (docs/spec.md section 4.3, 読み直し): while the rows are
      * shown, lists the folder again under them, so the scroll and the filter stay, and swaps the rows when it ends. A
-     * folder not shown is listed as by [load].
+     * folder not shown is listed as by [load]. A 読み直し asked while one runs is the same one.
      */
     fun refresh() {
+        if (refreshing.value) return
         if ((listing.value as? ListingState.Done)?.listing !is Listing.Listed) return load()
         loading?.cancel()
         refreshing.value = true
