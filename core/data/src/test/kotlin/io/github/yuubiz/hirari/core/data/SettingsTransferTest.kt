@@ -1,6 +1,10 @@
 package io.github.yuubiz.hirari.core.data
 
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.Book
+import io.github.yuubiz.hirari.core.model.BookFormat
+import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.BookmarkSort
@@ -91,6 +95,41 @@ class SettingsTransferTest {
                 val error = assertFailsWith<SettingsExportReadException> { transfer.export(includeReading) }
                 assertEquals(failure, error.cause)
             }
+        }
+    }
+
+    @Test
+    fun `importing a deleted server relinks its existing book index without restoring pins or favorites`() = runBlocking {
+        withDatabase { storage, database ->
+            val oldId = storage.locations.addSmbShare(server, password.toCharArray())
+            val bookId = locationBookId(storage.locations.get(oldId)!!, "a.zip")
+            storage.books.record(Book(bookId, BookSource.InLocation(oldId, "a.zip"), BookFormat.Images(Container.Zip), "a.zip", 1000, at(0), 100))
+            storage.history.record(bookId, at(1), 100)
+            storage.locations.pin(oldId, "series", at(2))
+            storage.locations.addFavorite(oldId, "a.zip", FavoriteKind.Book, "a.zip", at(3))
+            val exported = storage.transfer.export(includeReading = true)
+            storage.locations.delete(oldId)
+
+            val plan = assertIs<ImportPreparation.Ready>(storage.transfer.prepare(exported)).plan
+            val broken = object : SettingsRepository {
+                override val settings = storage.settings.settings
+
+                override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = throw IOException("disk full")
+            }
+            assertFailsWith<IOException> { SettingsTransfer(broken, database).apply(plan) }
+            assertEquals(emptyList(), storage.locations.locations.first())
+            assertEquals(BookSource.InLocation(oldId, "a.zip"), storage.books.get(bookId)!!.book.source)
+            assertEquals(emptyList(), storage.locations.pinned.first())
+            assertEquals(emptyList(), storage.locations.favorites.first())
+
+            storage.transfer.apply(plan)
+            val id = storage.locations.locations.first().single().id
+            assertTrue(oldId != id)
+            val history = storage.history.observe(HistorySort.Newest).first().single()
+            assertEquals(id, history.location!!.id)
+            assertEquals(BookSource.InLocation(id, "a.zip"), history.book!!.source)
+            assertEquals(emptyList(), storage.locations.pinned.first())
+            assertEquals(emptyList(), storage.locations.favorites.first())
         }
     }
 

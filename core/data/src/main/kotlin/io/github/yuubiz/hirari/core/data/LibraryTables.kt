@@ -29,6 +29,13 @@ import java.time.Instant
 
 internal enum class LocationKind { Saf, Smb }
 
+/** Keeps only the identity of a deleted place, so its index and pins can follow a later registration. */
+@Entity(tableName = "deleted_locations")
+internal data class DeletedLocationRow(
+    @PrimaryKey @ColumnInfo(name = "location_id") val locationId: Long,
+    @ColumnInfo(name = "address_key") val addressKey: String,
+)
+
 /** One row per place; the columns of the other kind are `null`. No secret is stored here (docs/spec.md section 7). */
 @Entity(tableName = "locations")
 internal data class LocationRow(
@@ -83,6 +90,15 @@ internal interface LocationDao {
 
     @Query("DELETE FROM locations WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Upsert
+    suspend fun rememberDeleted(row: DeletedLocationRow)
+
+    @Query("SELECT location_id FROM deleted_locations WHERE address_key = :addressKey AND location_id NOT IN (SELECT id FROM locations) ORDER BY location_id")
+    suspend fun deletedAt(addressKey: String): List<Long>
+
+    @Query("DELETE FROM deleted_locations WHERE location_id = :id")
+    suspend fun forgetDeleted(id: Long)
 
     @Query("UPDATE locations SET permission_held = (tree_uri IN (:granted)) WHERE kind = 'Saf'")
     suspend fun setGrants(granted: List<String>)
@@ -163,6 +179,9 @@ internal data class BookWithProgress(
 
 @Dao
 internal interface BookDao {
+    @Query("UPDATE books SET location_id = :newId WHERE location_id = :oldId")
+    suspend fun relinkLocation(oldId: Long, newId: Long)
+
     @Query("SELECT * FROM books WHERE book_id = :bookId")
     suspend fun get(bookId: String): BookRow?
 
@@ -354,6 +373,8 @@ internal data class FolderCoverRow(
 
 @Dao
 internal interface FolderDao {
+
+
     @Query("SELECT * FROM favorites ORDER BY added_at DESC, location_id, path")
     fun observeFavorites(): Flow<List<FavoriteRow>>
 

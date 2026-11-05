@@ -149,7 +149,7 @@ class SettingsTransfer internal constructor(
             database.bookmarks().insert(newBookmarks(plan))
             database.history().upsert(newerHistory(plan))
             database.history().keepNewest(plan.settings.historyLimit)
-            newServers(plan).forEach { database.locations().insert(it.toRow(id = 0, credential = null)) }
+            newServers(plan).forEach { database.insertLocation(it.toRow(id = 0, credential = null)) }
             settings.update { plan.settings }
         }
     }

@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.locationBookId
 import io.github.yuubiz.hirari.core.model.normalizePath
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -59,7 +60,7 @@ interface LocationRepository {
 
     /**
      * Removes the place with its pins, favorites, folder covers and password, and returns it so the caller can release
-     * its SAF grant. Reading progress stays, so registering the place again brings it back (docs/spec.md 2.2).
+     * its SAF grant. Reading records stay and follow a later registration of the same place (docs/spec.md 2.2).
      */
     suspend fun delete(id: LocationId): LibraryLocation?
 
@@ -97,12 +98,12 @@ internal class RoomLocationRepository(
     override suspend fun get(id: LocationId): LibraryLocation? = dao.get(id.value)?.toModel()
 
     override suspend fun addSafTree(displayName: String, treeUri: UriString): LocationId = LocationId(
-        dao.insert(LocationRow(kind = LocationKind.Saf, displayName = displayName, treeUri = treeUri.value, permissionHeld = true)),
+        database.insertLocation(LocationRow(kind = LocationKind.Saf, displayName = displayName, treeUri = treeUri.value, permissionHeld = true)),
     )
 
     override suspend fun addSmbShare(server: SmbServer, password: CharArray?): LocationId {
         val ref = password?.let { credentials.store(it) }
-        return LocationId(dao.insert(server.toRow(id = 0, credential = ref)))
+        return LocationId(database.insertLocation(server.toRow(id = 0, credential = ref)))
     }
 
     override suspend fun updateSmbShare(id: LocationId, server: SmbServer, password: PasswordChange) {
@@ -123,6 +124,7 @@ internal class RoomLocationRepository(
             dao.get(id.value)?.also {
                 folders.unpinLocation(id.value)
                 folders.clearLocationFavorites(id.value)
+                dao.rememberDeleted(DeletedLocationRow(id.value, it.addressKey()))
                 folders.clearLocationCovers(id.value)
                 dao.delete(id.value)
             }
@@ -163,6 +165,20 @@ internal class RoomLocationRepository(
         }
     }
 }
+
+/** Inserts and repairs orphaned references atomically, including when settings import adds a server. */
+internal suspend fun HirariDatabase.insertLocation(row: LocationRow): Long = withWriteTransaction {
+    val dao = locations()
+    val id = dao.insert(row)
+    for (oldId in dao.deletedAt(row.addressKey())) {
+        books().relinkLocation(oldId, id)
+        dao.forgetDeleted(oldId)
+    }
+    id
+}
+
+/** The empty relative path identifies the place with the same normalization as its book ids, without secrets. */
+private fun LocationRow.addressKey(): String = locationBookId(toModel(), "").value
 
 internal fun SmbServer.toRow(id: Long, credential: CredentialRef?) = LocationRow(
     id = id,

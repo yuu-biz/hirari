@@ -32,6 +32,7 @@ import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertNotEquals
 
 @RunWith(RobolectricTestRunner::class)
 class LibraryRepositoriesTest {
@@ -88,7 +89,7 @@ class LibraryRepositoriesTest {
         assertEquals(1, locations.pinned.first().size)
         assertEquals(2, locations.favorites.first().size)
         reopened.delete(local)
-        assertEquals(listOf(remote), locations.favorites.first().map { it.location })
+        assertEquals(listOf(Favorite(remote, "series", FavoriteKind.Folder, "remote series", at(3))), locations.favorites.first())
         assertEquals(emptyList(), locations.pinned.first())
     }
 
@@ -137,19 +138,161 @@ class LibraryRepositoriesTest {
     }
 
     @Test
-    fun `deleting a place removes its pins, covers and password but keeps progress`() = runTest {
+    fun `deleting a place removes its pins favorites covers and password but keeps progress`() = runTest {
         val id = locations.addSmbShare(nas, "secret".toCharArray())
         val ref = (locations.get(id) as LibraryLocation.SmbShare).credential!!
         locations.pin(id, "series/a", at(1))
+        locations.addFavorite(id, "series/a", FavoriteKind.Folder, "a", at(1))
         locations.setFolderCover(id, "series/a", FolderCover("series/a/vol1.zip", entry = 3))
         progress.save(listOf(BookProgress(BookId("b"), ReadState.Reading, null, at(1))))
 
         assertEquals(nas.displayName, locations.delete(id)?.displayName)
         assertEquals(emptyList(), locations.locations.first())
         assertEquals(emptyList(), locations.pinned.first())
+        assertEquals(emptyList(), locations.favorites.first())
         assertNull(locations.folderCover(id, "series/a").first())
         assertEquals(StoredSecret.Missing, credentials.read(ref))
         assertEquals(ReadState.Reading, progress.get(BookId("b"))?.state)
+    }
+
+    @Test
+    fun `registering the same tree relinks history and bookmarks, while deleting the place drops its pins and favorites`() = runTest {
+        val tree = UriString("content://tree/manga")
+        val oldId = locations.addSafTree("Manga", tree)
+        val original = book(locationBookId(locations.get(oldId)!!, "series/a.zip").value, oldId, "series/a.zip", pageCount = 100)
+        books.record(original)
+        books.setCover(original.id, 7)
+        val saved = BookProgress(original.id, ReadState.Reading, ReadingPosition.Image(12, 100), at(1))
+        progress.save(listOf(saved))
+        history.record(original.id, at(2), 100)
+        val mark = bookmarks.add(original.id, ReadingPosition.Image(6, 100), "chapter", at(3))
+        locations.pin(oldId, "series", at(4))
+        locations.addFavorite(oldId, "series/a.zip", FavoriteKind.Book, "a.zip", at(5))
+        locations.addFavorite(oldId, "series", FavoriteKind.Folder, "series", at(6))
+        assertEquals(1, locations.pinned.first().size)
+        assertEquals(2, locations.favorites.first().size)
+
+        locations.delete(oldId)
+        assertNull(history.observe(HistorySort.Newest).first().single().location)
+        assertEquals(emptyList(), locations.pinned.first())
+        assertEquals(emptyList(), locations.favorites.first())
+        val other = locations.addSafTree("Manga", UriString("content://tree/other"))
+        assertEquals(BookSource.InLocation(oldId, "series/a.zip"), books.get(original.id)!!.book.source)
+        assertNull(history.observe(HistorySort.Newest).first().single().location)
+
+        // A new repository must recover from the persisted address, without in-memory state.
+        val reopened = RoomLocationRepository(database, credentials)
+        val newId = reopened.addSafTree("Renamed", tree)
+        assertNotEquals(oldId, newId)
+        val expected = original.copy(source = BookSource.InLocation(newId, "series/a.zip"))
+        val item = history.observe(HistorySort.Newest).first().single()
+        assertEquals(expected, item.book)
+        assertEquals(newId, item.location!!.id)
+        assertEquals(at(2), item.entry.openedAt)
+        assertEquals(saved, item.progress)
+        assertEquals(7, item.coverEntry)
+        val group = bookmarks.observe(BookmarkSort.Newest).first().single()
+        assertEquals(expected, group.info)
+        assertEquals(newId, group.location!!.id)
+        assertEquals(listOf(mark), group.bookmarks)
+        assertEquals(emptyList(), locations.pinned.first())
+        assertEquals(emptyList(), locations.favorites.first())
+        assertEquals(listOf(other, newId), locations.locations.first().map { it.id })
+
+        reopened.delete(newId)
+        val thirdId = reopened.addSafTree("Again", tree)
+        assertEquals(thirdId, history.observe(HistorySort.Newest).first().single().location!!.id)
+        assertEquals(emptyList(), locations.pinned.first())
+    }
+
+    @Test
+    fun `a server relinks only with the same host port share and normalized folder`() = runTest {
+        val oldId = locations.addSmbShare(nas, "old-secret".toCharArray())
+        val original = book(locationBookId(locations.get(oldId)!!, "a.zip").value, oldId, "a.zip")
+        books.record(original)
+        history.record(original.id, at(1), 100)
+        bookmarks.add(original.id, ReadingPosition.Image(0, 100), null, at(2))
+        locations.pin(oldId, "series", at(3))
+        locations.addFavorite(oldId, "a.zip", FavoriteKind.Book, "a.zip", at(4))
+        locations.delete(oldId)
+
+        for (different in listOf(
+            nas.copy(host = "other.local"), nas.copy(port = 1445), nas.copy(share = "other"), nas.copy(basePath = "Manga"),
+        )) {
+            locations.addSmbShare(different, null)
+            assertNull(history.observe(HistorySort.Newest).first().single().location)
+        }
+        val same = nas.copy(host = "NAS.LOCAL", share = "BOOKS", basePath = "/./manga/", displayName = "New", user = "another", domain = "other")
+        val newId = locations.addSmbShare(same, null)
+        assertNotEquals(oldId, newId)
+        assertEquals(original.id, locationBookId(locations.get(newId)!!, "a.zip"))
+        assertEquals(BookSource.InLocation(newId, "a.zip"), history.observe(HistorySort.Newest).first().single().book!!.source)
+        assertEquals(newId, history.observe(HistorySort.Newest).first().single().location!!.id)
+        assertEquals(newId, bookmarks.observe(BookmarkSort.Newest).first().single().location!!.id)
+        assertEquals(emptyList(), locations.pinned.first())
+        assertEquals(emptyList(), locations.favorites.first())
+    }
+
+    @Test
+    fun `adding the same address leaves a still registered places references alone`() = runTest {
+        val tree = UriString("content://tree/manga")
+        val alive = locations.addSafTree("Manga", tree)
+        val removed = locations.addSafTree("Duplicate", tree)
+        books.record(book("alive", alive, "a.zip"))
+        books.record(book("removed", removed, "b.zip"))
+        locations.pin(alive, "series", at(1))
+        locations.pin(removed, "series", at(2))
+        locations.addFavorite(alive, "a.zip", FavoriteKind.Book, "a.zip", at(1))
+        locations.addFavorite(removed, "b.zip", FavoriteKind.Book, "b.zip", at(2))
+        val keptPins = locations.pinned.first().filter { it.location == alive }
+        val keptFavorites = locations.favorites.first().filter { it.location == alive }
+        locations.delete(removed)
+
+        val newId = locations.addSafTree("Again", tree)
+        assertEquals(BookSource.InLocation(alive, "a.zip"), books.get(BookId("alive"))!!.book.source)
+        assertEquals(BookSource.InLocation(newId, "b.zip"), books.get(BookId("removed"))!!.book.source)
+        assertEquals(keptPins, locations.pinned.first())
+        assertEquals(keptFavorites, locations.favorites.first())
+    }
+
+    @Test
+    fun `several deleted copies of the same address relink their history and bookmarks`() = runTest {
+        val tree = UriString("content://tree/manga")
+        val first = locations.addSafTree("First", tree)
+        val second = locations.addSafTree("Second", tree)
+        val originals = listOf(book("first", first, "a.zip", 100), book("second", second, "b.zip", 100))
+        val marks = originals.map { original ->
+            books.record(original)
+            progress.save(listOf(BookProgress(original.id, ReadState.Reading, ReadingPosition.Image(12, 100), at(1))))
+            history.record(original.id, at(2), 100)
+            bookmarks.add(original.id, ReadingPosition.Image(6, 100), "chapter", at(3))
+        }
+        val before = history.observe(HistorySort.Newest).first().associateBy { it.entry.book }
+        for (id in listOf(first, second)) {
+            locations.pin(id, "series", at(1))
+            locations.addFavorite(id, "series", FavoriteKind.Folder, "series", at(2))
+            locations.delete(id)
+        }
+        assertEquals(listOf(null, null), history.observe(HistorySort.Newest).first().map { it.location })
+        val id = locations.addSafTree("Again", tree)
+        val after = history.observe(HistorySort.Newest).first().associateBy { it.entry.book }
+        val groups = bookmarks.observe(BookmarkSort.Newest).first().associateBy { it.info!!.id }
+        assertEquals(before.keys, after.keys)
+        assertEquals(before.keys, groups.keys)
+        originals.forEachIndexed { index, original ->
+            val expected = original.copy(source = BookSource.InLocation(id, (original.source as BookSource.InLocation).path))
+            val item = after.getValue(original.id)
+            assertEquals(expected, item.book)
+            assertEquals(id, item.location!!.id)
+            assertEquals(before.getValue(original.id).entry, item.entry)
+            assertEquals(before.getValue(original.id).progress, item.progress)
+            val group = groups.getValue(original.id)
+            assertEquals(expected, group.info)
+            assertEquals(id, group.location!!.id)
+            assertEquals(listOf(marks[index]), group.bookmarks)
+        }
+        assertEquals(emptyList(), locations.pinned.first())
+        assertEquals(emptyList(), locations.favorites.first())
     }
 
     @Test
