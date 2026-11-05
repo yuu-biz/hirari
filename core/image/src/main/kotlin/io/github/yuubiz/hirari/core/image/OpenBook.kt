@@ -127,8 +127,10 @@ class OpenBook internal constructor(
                     content.document.render(pages[index].entryIndex, target, decoding.budgetBytes)
                 } catch (_: OutOfMemoryError) {
                     readError
-                } catch (_: RuntimeException) {
-                    corrupt
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    content.document.pageFailure(e)
                 }
             }
         }
@@ -144,8 +146,10 @@ class OpenBook internal constructor(
             decodeWithTimeout(scope, content.document.dispatcher, release = {}) { _ ->
                 try {
                     PageResult.Ready(content.document.shape(pages[index].entryIndex))
-                } catch (_: RuntimeException) {
-                    corrupt
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    content.document.pageFailure(e)
                 }
             }
         }

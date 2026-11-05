@@ -13,6 +13,7 @@ import android.system.OsConstants
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.source.ByteSource
+import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -22,6 +23,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 
@@ -32,6 +34,7 @@ import kotlin.math.roundToInt
 internal class PdfDocument private constructor(
     private val renderer: PdfRenderer,
     private val executor: ExecutorService,
+    private val input: ProxyReads,
 ) : Closeable {
     val dispatcher: CoroutineDispatcher = executor.asCoroutineDispatcher()
 
@@ -57,6 +60,8 @@ internal class PdfDocument private constructor(
     }
 
     private fun shapeOf(page: PdfRenderer.Page) = PageShape.Known(page.width, page.height)
+
+    fun pageFailure(error: Exception): PageResult.Failed = input.pageFailure(error)
 
     private fun draw(page: PdfRenderer.Page, size: PixelSize): Bitmap {
         val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
@@ -93,12 +98,13 @@ internal class PdfDocument private constructor(
             val executor = Executors.newSingleThreadExecutor { Thread(it, "pdf") }
             val dispatcher: ExecutorCoroutineDispatcher = executor.asCoroutineDispatcher()
             var renderer: PdfRenderer? = null
+            val input = ProxyReads(source)
             // Until the proxy descriptor exists, closing the source is up to this function, then to the descriptor.
             var proxied = false
             try {
                 return withContext(dispatcher) {
                     val descriptor = try {
-                        storage.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY, ProxyReads(source), proxyHandler)
+                        storage.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY, input, proxyHandler)
                     } catch (e: IOException) {
                         source.close()
                         throw e
@@ -110,7 +116,7 @@ internal class PdfDocument private constructor(
                         descriptor.close()
                         throw e
                     }
-                    Opened.Document(PdfDocument(renderer!!, executor))
+                    Opened.Document(PdfDocument(renderer!!, executor, input))
                 }
             } catch (e: CancellationException) {
                 if (!proxied) source.close()
@@ -121,10 +127,8 @@ internal class PdfDocument private constructor(
                 renderer?.let { executor.execute { it.close() } }
                 executor.shutdown()
                 return when (e) {
-                    is SecurityException -> Opened.Failed(BookFailure.Encrypted)
                     is OutOfMemoryError -> Opened.Failed(BookFailure.ReadError)
-                    is IOException -> Opened.Failed(BookFailure.Corrupt)
-                    is Exception -> Opened.Failed(BookFailure.ReadError)
+                    is Exception -> Opened.Failed(input.openFailure(e))
                     else -> throw e
                 }
             }
@@ -136,17 +140,43 @@ internal class PdfDocument private constructor(
 }
 
 /** Serves the reads of a proxy descriptor from [source], and closes it when the descriptor is released. */
-private class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorCallback() {
-    override fun onGetSize(): Long = source.size
+internal class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorCallback() {
+    // Callbacks run on the proxy thread; the PDF session reads this after PdfRenderer fails.
+    private val failure = AtomicReference<IOException?>()
+
+    override fun onGetSize(): Long = try {
+        source.size
+    } catch (e: IOException) {
+        failure.compareAndSet(null, e)
+        throw ErrnoException("getSize", OsConstants.EIO, e)
+    }
 
     override fun onRead(offset: Long, size: Int, data: ByteArray): Int {
         val buffer = ByteBuffer.wrap(data, 0, size)
         try {
             while (buffer.hasRemaining() && source.read(offset + buffer.position(), buffer) > 0) Unit
         } catch (e: IOException) {
+            failure.compareAndSet(null, e)
             throw ErrnoException("read", OsConstants.EIO, e)
         }
+        failure.set(null)
         return buffer.position()
+    }
+
+    /** The input error takes precedence over the renderer's rejection of the missing data (section 3.9). */
+    fun pageFailure(error: Exception): PageResult.Failed = when (failure.get()) {
+        is ConnectionLostException -> connectionLost
+        null -> when (error) {
+            is RuntimeException, is IOException -> corrupt
+            else -> readError
+        }
+        else -> readError
+    }
+
+    fun openFailure(error: Exception): BookFailure = if (failure.get() != null) BookFailure.ReadError else when (error) {
+        is SecurityException -> BookFailure.Encrypted
+        is IOException -> BookFailure.Corrupt
+        else -> BookFailure.ReadError
     }
 
     override fun onRelease() = source.close()
