@@ -13,6 +13,9 @@ import java.nio.channels.FileChannel
 interface ByteSource : Closeable {
     val size: Long
 
+    /** Last write time in epoch milliseconds when opened, or null when the input does not report it. */
+    val lastModifiedMs: Long? get() = null
+
     /**
      * Reads into [dst] from its position up to its limit, starting at [offset] in the file, and advances the
      * position of [dst]. Returns the number of bytes read, which is 0 only when [dst] has no room, or -1 when
@@ -24,7 +27,7 @@ interface ByteSource : Closeable {
 }
 
 /** A [ByteSource] over [channel], which it closes. Positional reads leave the channel's position alone. */
-class FileChannelSource(private val channel: FileChannel) : ByteSource {
+class FileChannelSource(private val channel: FileChannel, override val lastModifiedMs: Long? = null) : ByteSource {
     override val size: Long = channel.size()
 
     override fun read(offset: Long, dst: ByteBuffer): Int {
@@ -37,5 +40,5 @@ class FileChannelSource(private val channel: FileChannel) : ByteSource {
 }
 
 /** A [ByteSource] that owns [this] and closes it when the source closes. */
-fun ParcelFileDescriptor.asByteSource(): ByteSource =
-    FileChannelSource(ParcelFileDescriptor.AutoCloseInputStream(this).channel)
+fun ParcelFileDescriptor.asByteSource(lastModifiedMs: Long? = null): ByteSource =
+    FileChannelSource(ParcelFileDescriptor.AutoCloseInputStream(this).channel, lastModifiedMs)

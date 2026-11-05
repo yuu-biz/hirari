@@ -75,6 +75,7 @@ import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
+import io.github.yuubiz.hirari.core.source.documentLastModifiedMs
 import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
@@ -1054,7 +1055,11 @@ class ReaderViewModel internal constructor(
     private suspend fun openDocument(id: BookId?, source: BookSource, uri: Uri, opening: Opening): Located {
         fun failed(e: Exception) = Located(BookId(""), source, uri, folder = false, BookResult.Failed(e.openFailure()))
         val bytes = try {
-            application.contentResolver.openByteSource(uri, opening.copyDir)
+            val resolver = application.contentResolver
+            val modified = resolver.documentLastModifiedMs(uri)
+            resolver.openByteSource(uri, opening.copyDir, modified)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return failed(e)
         }

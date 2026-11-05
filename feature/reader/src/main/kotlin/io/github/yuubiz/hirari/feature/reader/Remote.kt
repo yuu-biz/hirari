@@ -40,6 +40,7 @@ class FetchMeter {
     /** [source] with every byte it reads counted here. */
     fun counted(source: ByteSource): ByteSource = object : ByteSource {
         override val size: Long get() = source.size
+        override val lastModifiedMs: Long? get() = source.lastModifiedMs
 
         override fun read(offset: Long, dst: ByteBuffer): Int = source.read(offset, dst).also { if (it > 0) total.addAndGet(it.toLong()) }
 

@@ -16,6 +16,7 @@ import io.github.yuubiz.hirari.core.model.PageEntry
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
+import io.github.yuubiz.hirari.core.source.documentLastModifiedMs
 import io.github.yuubiz.hirari.core.source.listChildren
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
@@ -192,7 +193,10 @@ object Books {
         extractDir: File? = null,
         naming: EntryNaming = EntryNaming(),
     ): BookResult {
-        val source = when (val opened = safely(release = ByteSource::close) { resolver.openByteSource(uri, copyDir) }) {
+        val modified = withContext(Dispatchers.IO) { resolver.documentLastModifiedMs(uri) }
+        val source = when (val opened = safely(release = ByteSource::close) {
+            resolver.openByteSource(uri, copyDir, modified)
+        }) {
             is Safely.Done -> opened.value
             is Safely.Failed -> return BookResult.Failed(opened.reason)
         }

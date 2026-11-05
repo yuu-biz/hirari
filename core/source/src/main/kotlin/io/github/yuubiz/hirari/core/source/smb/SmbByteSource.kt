@@ -33,6 +33,8 @@ class SmbByteSource internal constructor(
     /** The file's last write time when it was opened. */
     val modified: Instant = file.modified
 
+    override val lastModifiedMs: Long? = modified.toEpochMilli().takeIf { it > 0 }
+
     private var file: RemoteFile? = file
     private var fileGeneration = generation
 

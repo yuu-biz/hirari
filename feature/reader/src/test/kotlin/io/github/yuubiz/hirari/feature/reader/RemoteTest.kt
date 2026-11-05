@@ -41,6 +41,7 @@ class RemoteTest {
         val meter = FetchMeter()
         val source = meter.counted(object : ByteSource {
             override val size = 10L
+            override val lastModifiedMs = 5_000L
 
             override fun read(offset: Long, dst: ByteBuffer): Int {
                 if (offset >= size) return -1
@@ -51,6 +52,8 @@ class RemoteTest {
 
             override fun close() = Unit
         })
+        assertEquals(10L, source.size)
+        assertEquals(5_000L, source.lastModifiedMs)
         source.read(0, ByteBuffer.allocate(4))
         source.read(4, ByteBuffer.allocate(100))
         source.read(10, ByteBuffer.allocate(4))

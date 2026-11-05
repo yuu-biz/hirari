@@ -11,6 +11,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -20,16 +21,17 @@ class NoRoomForCopyException(val reserveBytes: Long) : IOException("not enough f
 /**
  * Opens the document at [uri] for random access (docs/spec.md section 3.1). When the provider hands over a pipe
  * instead of a file, copies the document into [copyDir] first. The copy has no name on disk once it is open, so
- * it disappears when the source closes. Blocks on Binder and disk, so never call it on the main thread.
+ * it disappears when the source closes. [lastModifiedMs] is the provider's time, also for a copied document.
+ * Blocks on Binder and disk, so never call it on the main thread.
  *
  * @throws java.io.FileNotFoundException when the document is gone.
  * @throws SecurityException when the permission to read it is gone.
  * @throws NoRoomForCopyException when the copy would leave less than [COPY_RESERVE_BYTES] free.
  * @throws IOException when reading fails.
  */
-fun ContentResolver.openByteSource(uri: Uri, copyDir: File): ByteSource {
+fun ContentResolver.openByteSource(uri: Uri, copyDir: File, lastModifiedMs: Long? = null): ByteSource {
     val descriptor = openFileDescriptor(uri, "r") ?: throw IOException("the provider returned no descriptor")
-    if (descriptor.statSize >= 0) return descriptor.asByteSource()
+    if (descriptor.statSize >= 0) return descriptor.asByteSource(lastModifiedMs)
     return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
         copyDir.mkdirs()
         val file = File.createTempFile("copy", null, copyDir)
@@ -53,7 +55,7 @@ fun ContentResolver.openByteSource(uri: Uri, copyDir: File): ByteSource {
                 copy.write(buffer, 0, read)
                 sinceCheck += read
             }
-            FileChannelSource(copy.channel)
+            FileChannelSource(copy.channel, lastModifiedMs)
         } catch (e: Throwable) {
             copy.close()
             throw e
@@ -147,6 +149,15 @@ suspend fun ContentResolver.locateDocument(treeUri: Uri, path: String): String? 
 
 /** What a provider reports about one document; a field is null when it does not report it. */
 class DocumentInfo(val name: String?, val size: Long?, val lastModifiedMs: Long?)
+
+/** Optional cache metadata, queried off the main thread. Failure leaves the time unknown, cancellation propagates. */
+suspend fun ContentResolver.documentLastModifiedMs(uri: Uri): Long? = try {
+    documentInfo(uri)?.lastModifiedMs
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    null
+}
 
 /**
  * The name, size and modification time of the document at [uri], from one query. A provider that is no document
