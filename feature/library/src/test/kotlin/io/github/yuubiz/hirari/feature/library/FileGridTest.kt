@@ -82,13 +82,18 @@ class FileGridTest {
 
     @Test
     fun `a cell grows by a line for each name line and for the author line`() {
-        val (one, oneWithNote, two, three) = firstItemHeight(
-            LibraryView.Grid, ListLook(nameLines = 1, noteLine = false), ListLook(nameLines = 1), ListLook(), ListLook(nameLines = 3),
+        val heights = firstItemHeight(
+            LibraryView.Grid,
+            ListLook(nameLines = 1, noteLine = false), ListLook(nameLines = 1),
+            ListLook(nameLines = 2, noteLine = false), ListLook(nameLines = 3, noteLine = false),
+            ListLook(nameLines = 2), ListLook(nameLines = 3),
         )
+        val (one, oneWithNote, two, three) = heights
         assertTrue(oneWithNote > one, "the author line takes no height")
-        val line = two - oneWithNote
+        val line = two - one
         assertTrue(line > 0f, "a second name line takes no height")
         assertEquals(line, three - two, 0.5f)
+        assertEquals(heights[4], heights[5], 0.5f, "the author line lets the name take a third line")
     }
 
     private fun firstItemHeight(view: LibraryView, vararg looks: ListLook): List<Float> {

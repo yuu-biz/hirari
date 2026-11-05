@@ -125,7 +125,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                         val columns = content.look.columns(maxWidth, landscape)
                         val size = content.look.gridThumbSize(maxWidth / columns, landscape)
                         val covers = remember(content.covers, size) { content.covers.copy(sizePx = content.covers.covers.sizePx(size)) }
-                        val fitter = rememberTitleFitter(constraints.maxWidth / columns, content.look.nameLines)
+                        val fitter = rememberTitleFitter(constraints.maxWidth / columns, content.look.bodyLines)
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(columns),
                             state = grid,
@@ -290,7 +290,7 @@ private fun rememberTitleFitter(cellWidthPx: Int, lines: Int): TitleFitter {
 
 /**
  * A grid cell (docs/spec.md section 4.3, グリッドの名前): the cover, the title on the fitter's lines and, with
- * the author line, the note on one more, each kept even when empty so the cells of a row line up. Without the author
+ * the author line, the note within three total lines, each kept even when empty so the cells of a row line up. Without the author
  * line the title keeps its brackets. A screen reader and a search by text get the whole name.
  */
 @Composable

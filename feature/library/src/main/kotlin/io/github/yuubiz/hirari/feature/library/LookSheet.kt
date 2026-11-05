@@ -105,7 +105,7 @@ private fun LookSettings(look: ListLook, landscape: Boolean, change: ((GlobalSet
                 change { it.copy(gridColumnsPortrait = v) }
             }
         }
-        Choices(stringResource(R.string.look_name_lines), GlobalSettings.GRID_NAME_LINES.toList(), look.nameLines, lines) { v ->
+        Choices(stringResource(R.string.look_name_lines), (if (look.noteLine) 1..2 else GlobalSettings.GRID_NAME_LINES).toList(), look.bodyLines, lines) { v ->
             change { it.copy(gridNameLines = v) }
         }
         Row(

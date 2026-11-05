@@ -210,7 +210,9 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                         actions.openBook(it)
                     }
                     SheetAction.Contents -> actions.openArchive(ArchiveKey(model.folder.location, row.path, row.item.entry.documentId))
-                    SheetAction.FromStart -> open(row, StartAt.Page(0))
+                    SheetAction.FromStart -> if (row.item is FileItem.Folder) {
+                        folderBook?.let { actions.openBook(it.copy(start = StartAt.Page(0))) }
+                    } else open(row, StartAt.Page(0))
                     SheetAction.MarkRead -> model.mark(row, ReadState.Read)
                     SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)
                     SheetAction.Pin -> model.pin(row)
@@ -456,24 +458,7 @@ internal enum class SheetAction { Open, ReadFolder, Contents, FromStart, MarkRea
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
 internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, canSave: Boolean = false, canReadFolder: Boolean = false, onAction: (SheetAction) -> Unit) {
-    val actions = buildList {
-        add(SheetAction.Open to R.string.sheet_open)
-        if (row.item is FileItem.Folder && canReadFolder) add(SheetAction.ReadFolder to R.string.sheet_read_folder)
-        if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
-        if (row.item is FileItem.Archive && row.mark != null && row.mark != ReadMark.Unread) add(SheetAction.FromStart to R.string.sheet_from_start)
-        if (row.item is FileItem.Archive || row.item is FileItem.Text) {
-            if (row.mark != ReadMark.Read) add(SheetAction.MarkRead to R.string.sheet_mark_read)
-            if (row.mark != ReadMark.Unread) add(SheetAction.MarkUnread to R.string.sheet_mark_unread)
-        }
-        if (row.item is FileItem.Folder) add(SheetAction.Pin to R.string.sheet_pin)
-        if (row.item !is FileItem.Image) add(SheetAction.Favorite to if (row.favorite) R.string.favorite_remove else R.string.favorite_add)
-        if (row.item is FileItem.Image && canChooseCover) {
-            add(SheetAction.FolderCover to if (folderCoverChosen) R.string.sheet_folder_cover_off else R.string.sheet_folder_cover)
-        }
-        if (row.cover != null) add(SheetAction.Remake to R.string.sheet_remake)
-        if (hasShortcut) add(SheetAction.Shortcut to R.string.sheet_shortcut)
-        if (canSave) add(SheetAction.Save to R.string.sheet_save)
-    }
+    val actions = rowSheetActions(row, hasShortcut, folderCoverChosen, canChooseCover, canSave, canReadFolder)
     SheetActions(row.item.entry.name) {
         actions.forEach { (action, label) ->
             ListItem(
@@ -520,4 +505,25 @@ internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: (() -> Unit)?):
             onClick = onClick,
             onLongClick = onLongClick,
         )
+}
+
+internal fun rowSheetActions(row: FileRow, hasShortcut: Boolean = false, folderCoverChosen: Boolean = false, canChooseCover: Boolean = false, canSave: Boolean = false, canReadFolder: Boolean = false): List<Pair<SheetAction, Int>> {
+    return buildList {
+        add(SheetAction.Open to R.string.sheet_open)
+        if (row.item is FileItem.Folder && canReadFolder) add(SheetAction.ReadFolder to R.string.sheet_read_folder)
+        if (row.item is FileItem.Archive && row.item.kind != ArchiveKind.Pdf) add(SheetAction.Contents to R.string.sheet_contents)
+        if ((row.item is FileItem.Archive || row.item is FileItem.Folder && (canReadFolder || row.mark != null)) && row.mark != null && row.mark != ReadMark.Unread) add(SheetAction.FromStart to R.string.sheet_from_start)
+        if (row.item is FileItem.Archive || row.item is FileItem.Text || row.item is FileItem.Folder && (canReadFolder || row.mark != null)) {
+            if (row.mark != ReadMark.Read) add(SheetAction.MarkRead to R.string.sheet_mark_read)
+            if (row.mark != ReadMark.Unread) add(SheetAction.MarkUnread to R.string.sheet_mark_unread)
+        }
+        if (row.item is FileItem.Folder) add(SheetAction.Pin to R.string.sheet_pin)
+        if (row.item !is FileItem.Image) add(SheetAction.Favorite to if (row.favorite) R.string.favorite_remove else R.string.favorite_add)
+        if (row.item is FileItem.Image && canChooseCover) {
+            add(SheetAction.FolderCover to if (folderCoverChosen) R.string.sheet_folder_cover_off else R.string.sheet_folder_cover)
+        }
+        if (row.cover != null) add(SheetAction.Remake to R.string.sheet_remake)
+        if (hasShortcut) add(SheetAction.Shortcut to R.string.sheet_shortcut)
+        if (canSave) add(SheetAction.Save to R.string.sheet_save)
+    }
 }

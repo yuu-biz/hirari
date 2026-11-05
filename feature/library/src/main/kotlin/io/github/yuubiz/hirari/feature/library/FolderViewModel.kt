@@ -229,7 +229,7 @@ class FolderViewModel(
     private fun progressOf(services: LibraryServices, rows: Flow<List<FileRow>>): Flow<Map<String, BookProgress>> {
         val tree = place.value ?: return flowOf(emptyMap())
         return rows
-            .map { list -> list.filter { it.item is FileItem.Archive || it.item is FileItem.Text }.associateBy({ locationBookId(tree, it.path) }, { it.path }) }
+            .map { list -> list.filter { it.item is FileItem.Archive || it.item is FileItem.Text || it.item is FileItem.Folder }.associateBy({ locationBookId(tree, it.path) }, { it.path }) }
             .distinctUntilChanged()
             .flatMapLatest { paths -> services.progress.observe(paths.keys).map { found -> found.mapKeys { (id, _) -> paths.getValue(id) } } }
     }

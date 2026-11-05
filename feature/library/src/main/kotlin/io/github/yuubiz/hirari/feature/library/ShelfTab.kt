@@ -33,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -64,12 +66,7 @@ internal fun ShelfTab(shelf: Shelf, home: HomeViewModel, actions: HomeActions) {
         if (shelf.pinned.isNotEmpty()) {
             item(key = "pinned-header") { SectionHeader(R.string.shelf_pinned) }
             items(shelf.pinned, key = { "pin-${it.pin.id}" }) { item ->
-                val name = item.pin.path.substringAfterLast('/').ifEmpty { item.place?.displayName.orEmpty() }
-                ListItem(
-                    headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = { Text(listOfNotNull(item.place?.displayName, item.pin.path.ifEmpty { null }).joinToString(" / ")) },
-                    modifier = Modifier.clickable(role = Role.Button) { home.folderOf(item)?.let(actions.openFolder) },
-                )
+                PinnedRow(item, onOpen = { home.folderOf(item)?.let(actions.openFolder) }, onUnpin = { home.unpin(item) })
             }
         }
         item(key = "places-header") { SectionHeader(R.string.shelf_places) }
@@ -218,6 +215,23 @@ private fun PlaceRow(
                 menu = false
                 onRemove()
             })
+        }
+    }
+}
+
+@Composable
+private fun PinnedRow(item: PinnedItem, onOpen: () -> Unit, onUnpin: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    val unpin = stringResource(R.string.shelf_unpin)
+    Box {
+        ListItem(
+            headlineContent = { Text(item.pin.path.substringAfterLast('/').ifEmpty { item.place?.displayName.orEmpty() }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            supportingContent = { Text(listOfNotNull(item.place?.displayName, item.pin.path.ifEmpty { null }).joinToString(" / ")) },
+            modifier = Modifier.combinedClickable(role = Role.Button, onClick = onOpen, onLongClickLabel = stringResource(R.string.row_menu), onLongClick = { menu = true })
+                .semantics { customActions = listOf(CustomAccessibilityAction(unpin) { onUnpin(); true }) },
+        )
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text(unpin) }, onClick = { menu = false; onUnpin() })
         }
     }
 }

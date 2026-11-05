@@ -26,6 +26,8 @@ data class ListLook(
     val section: LibrarySection = LibrarySection.None,
     val subgrouping: LibraryGrouping = LibraryGrouping.None,
 ) {
+    val bodyLines: Int get() = nameLines.coerceIn(1, if (noteLine) 2 else 3)
+
     val effectiveSubgrouping: LibraryGrouping
         get() = subgrouping.takeUnless { grouping == LibraryGrouping.None || it == grouping } ?: LibraryGrouping.None
 

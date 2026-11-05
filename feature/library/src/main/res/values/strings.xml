@@ -216,4 +216,13 @@
     <string name="favorite_remove">お気に入りから外す</string>
     <string name="favorites_empty">お気に入りはありません</string>
     <string name="favorite_place_missing">（場所が見つかりません）</string>
+    <string name="shelf_unpin">固定を外す</string>
+    <string name="bookmarks_bulk_delete">しおりをまとめて削除</string>
+    <string name="bookmarks_scope_all">すべて</string>
+    <string name="bookmarks_scope_missing">見つからない本</string>
+    <string name="bookmarks_scope_device">端末内</string>
+    <string name="bookmarks_scope_place">場所：%1$s</string>
+    <string name="bookmarks_scope_folder">フォルダ：%1$s / %2$s</string>
+    <string name="bookmarks_delete_confirm">しおりを %1$d 件削除しますか？</string>
+    <string name="bookmarks_check_failed">しおりの削除対象を確認できませんでした。</string>
 </resources>

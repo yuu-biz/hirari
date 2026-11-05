@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.data.BookmarkScope
 import io.github.yuubiz.hirari.core.data.BookmarkGroup
 import io.github.yuubiz.hirari.core.data.HistoryItem
 import io.github.yuubiz.hirari.core.data.LibraryBook
@@ -247,6 +248,12 @@ class HomeViewModel(private val services: Deferred<LibraryServices>, private val
     fun setBookmarkSort(sort: BookmarkSort) = write { settings.update { it.copy(bookmarkSort = sort) } }
 
     fun renameBookmark(id: Long, label: String) = write { bookmarks.rename(id, label.trim()) }
+
+    fun unpin(item: PinnedItem) = write { locations.unpin(item.pin.id) }
+
+    internal suspend fun bookmarkDeletion(scope: BookmarkScope?): BookmarkDeletion = services.await().bookmarkDeletion(scope)
+
+    internal fun deleteBookmarks(plan: BookmarkDeletion) = write { bookmarks.delete(plan.scope) }
 
     fun deleteBookmark(id: Long) = write { bookmarks.delete(listOf(id)) }
 

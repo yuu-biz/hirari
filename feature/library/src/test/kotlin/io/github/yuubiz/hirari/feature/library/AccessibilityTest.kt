@@ -93,6 +93,17 @@ class AccessibilityTest {
     }
 
     @Test
+    fun `an image folder book offers restart and both read state actions`() {
+        rule.setContent {
+            RowSheet(row("images", directory = true, mark = ReadMark.Reading(50)), hasShortcut = false,
+                folderCoverChosen = false, canChooseCover = false, canReadFolder = true) {}
+        }
+        rule.onNodeWithText("最初から読む").assertExists()
+        rule.onNodeWithText("既読にする").assertExists()
+        rule.onNodeWithText("未読にする").assertExists()
+    }
+
+    @Test
     fun `an image page has no favorite action`() {
         rule.setContent { RowSheet(row("a.jpg"), hasShortcut = false, folderCoverChosen = false, canChooseCover = false) {} }
         rule.onNodeWithText("お気に入りに追加").assertDoesNotExist()

@@ -290,10 +290,12 @@ internal class FakeHistory(private val books: FakeBooks, private val locations: 
 }
 
 internal class FakeBookmarks : BookmarkRepository {
+    var groups: List<BookmarkGroup>? = null
+    val deletedScopes = mutableListOf<BookmarkScope>()
     val marks = MutableStateFlow<List<Bookmark>>(emptyList())
 
     override fun observe(sort: BookmarkSort): Flow<List<BookmarkGroup>> =
-        marks.map { list -> list.groupBy { it.book }.map { (book, marks) -> BookmarkGroup(book, null, null, marks) } }
+        marks.map { list -> groups ?: list.groupBy { it.book }.map { (book, marks) -> BookmarkGroup(book, null, null, marks) } }
 
     override fun inBook(book: BookId): Flow<List<Bookmark>> = marks.map { list -> list.filter { it.book == book } }
 
@@ -304,7 +306,7 @@ internal class FakeBookmarks : BookmarkRepository {
 
     override suspend fun delete(ids: Collection<Long>) = marks.update { list -> list.filterNot { it.id in ids } }
 
-    override suspend fun delete(scope: BookmarkScope) = Unit
+    override suspend fun delete(scope: BookmarkScope) { deletedScopes += scope }
 }
 
 internal class FakeSettings : SettingsRepository {

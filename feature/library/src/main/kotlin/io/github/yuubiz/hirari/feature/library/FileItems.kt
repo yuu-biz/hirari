@@ -127,7 +127,7 @@ private val SIZE_UNITS = listOf("B", "KB", "MB", "GB", "TB")
 /**
  * The read state of each row (docs/spec.md sections 4.3 and 7). A book or text takes it from its [progress] by
  * path, which it has once read or marked, whether or not the index knows it; without progress it is unread. A
- * folder is marked only once the index holds it as a book, and an image file never. The page count comes from
+ * folder is marked once indexed as a book or given a read state, and an image file never. The page count comes from
  * the books the index holds directly in the folder.
  */
 fun List<FileRow>.withMarks(indexed: List<LibraryBook>, progress: Map<String, BookProgress>): List<FileRow> {
@@ -137,7 +137,7 @@ fun List<FileRow>.withMarks(indexed: List<LibraryBook>, progress: Map<String, Bo
         val known = byPath[row.path]
         val mark = when (row.item) {
             is FileItem.Archive, is FileItem.Text -> progress[row.path].mark()
-            is FileItem.Folder -> known?.let { it.progress.mark() }
+            is FileItem.Folder -> progress[row.path]?.mark() ?: known?.let { it.progress.mark() }
             is FileItem.Image -> null
         }
         if (mark == row.mark && known?.book?.pageCount == row.pageCount) row else row.copy(mark = mark, pageCount = known?.book?.pageCount)
