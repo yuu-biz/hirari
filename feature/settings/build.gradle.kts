@@ -46,6 +46,9 @@ abstract class GenerateBuildInfo : DefaultTask() {
     @get:Input
     abstract val commitTime: Property<String>
 
+    @get:Input
+    abstract val commit: Property<String>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -54,7 +57,8 @@ abstract class GenerateBuildInfo : DefaultTask() {
         val out = outputDir.get().asFile
         out.deleteRecursively()
         val time = commitTime.get().takeIf { it.isNotEmpty() }?.let { "\"$it\"" } ?: "null"
-        out.resolve("about").apply { mkdirs() }.resolve("build-info.json").writeText("{\"commitTime\":$time}")
+        out.resolve("about").apply { mkdirs() }.resolve("build-info.json")
+            .writeText("{\"commitTime\":$time,\"commit\":\"${commit.get()}\"}")
     }
 }
 
@@ -62,11 +66,26 @@ val headCommitTime = providers.of(CommitTime::class) {
     parameters.directory.set(rootProject.layout.projectDirectory)
 }
 
+// The exec provider's output is tracked as a configuration-cache input.
+val headCommit = try {
+    val description = providers.exec {
+        workingDir(rootProject.layout.projectDirectory)
+        commandLine("git", "describe", "--always", "--dirty", "--abbrev=7", "--match=no-such-tag")
+        isIgnoreExitValue = true
+    }
+    if (description.result.get().exitValue == 0) {
+        description.standardOutput.asText.get().trim().ifEmpty { "unknown" }
+    } else "unknown"
+} catch (_: Exception) {
+    "unknown"
+}
+
 androidComponents {
     onVariants { variant ->
         val name = variant.name.replaceFirstChar { it.uppercase() }
         val task = tasks.register<GenerateBuildInfo>("generate${name}BuildInfo") {
             commitTime.set(headCommitTime)
+            commit.set(headCommit)
         }
         variant.sources.assets?.addGeneratedSourceDirectory(task, GenerateBuildInfo::outputDir)
     }

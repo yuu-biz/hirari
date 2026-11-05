@@ -27,6 +27,10 @@
 
     <string name="about_title">このアプリについて</string>
     <string name="about_version">版</string>
+    <string name="about_version_code">版番号</string>
+    <string name="about_commit">コミット</string>
+    <string name="about_source">ソースコード</string>
+    <string name="about_privacy">プライバシー</string>
     <string name="about_build_date">ビルドの日付</string>
     <string name="about_unknown">不明</string>
     <string name="about_changes">この版の変更点</string>

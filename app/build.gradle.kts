@@ -8,8 +8,8 @@ plugins {
 android {
     defaultConfig {
         applicationId = "io.github.yuubiz.hirari"
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 8
+        versionName = "1.0.0-rc.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
     }

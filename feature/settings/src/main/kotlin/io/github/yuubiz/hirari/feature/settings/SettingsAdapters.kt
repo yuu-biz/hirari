@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.settings
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -30,20 +31,21 @@ fun settingsServices(storage: Storage, context: Context): SettingsServices {
     )
 }
 
-/** Reads the version from the package and the build date and the changes from the assets. */
+/** Reads the package version and the bundled build identity, date and changes. */
 internal class BundledAbout(private val context: Context, private val io: CoroutineDispatcher = Dispatchers.IO) {
     suspend fun load(): AboutInfo = withContext(io) {
-        AboutInfo.parse(versionName(), asset(AboutInfo.BUILD_INFO_ASSET), asset(AboutInfo.CHANGES_ASSET))
+        val info = packageInfo()
+        AboutInfo.parse(info?.versionName, asset(AboutInfo.BUILD_INFO_ASSET), asset(AboutInfo.CHANGES_ASSET), info?.longVersionCode)
     }
 
-    private fun versionName(): String? = try {
+    private fun packageInfo(): PackageInfo? = try {
         val packages = context.packageManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packages.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
         } else {
             @Suppress("DEPRECATION")
             packages.getPackageInfo(context.packageName, 0)
-        }.versionName
+        }
     } catch (_: PackageManager.NameNotFoundException) {
         null
     }

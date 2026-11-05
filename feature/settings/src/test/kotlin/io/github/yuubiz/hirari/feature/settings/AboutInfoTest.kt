@@ -1,11 +1,14 @@
 package io.github.yuubiz.hirari.feature.settings
 
+import android.app.Application
 import android.content.Context
+import android.content.Intent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -13,6 +16,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import java.time.LocalDate
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -55,30 +59,62 @@ class AboutInfoTest {
     }
 
     @Test
+    fun `the build identity preserves dirty and falls back when missing or unreadable`() {
+        val info = AboutInfo.parse("1.0.0-rc.1", """{"commit":"123abcd-dirty"}""", null, 8L)
+        assertEquals("1.0.0-rc.1", info.version)
+        assertEquals(8L, info.versionCode)
+        assertEquals("123abcd-dirty", info.commit)
+        assertEquals("123abcd", AboutInfo.parse(null, """{"commit":"123abcd"}""", null).commit)
+        for (json in listOf(null, "{}", "not json", """{"commit":" "}""")) {
+            assertEquals("unknown", AboutInfo.parse(null, json, null).commit)
+        }
+    }
+
+    @Test
     fun `the bundled assets give the changes of this version and a build date or none`() {
         val info = runBlocking { BundledAbout(context, UnconfinedTestDispatcher()).load() }
         val changes = assertNotNull(info.changes, "the changes text is not bundled")
         assertTrue("0.0.1" in changes, changes)
         val buildInfo = context.assets.open(AboutInfo.BUILD_INFO_ASSET).bufferedReader().use { it.readText() }
         assertEquals(AboutInfo.parse(null, buildInfo, null).builtOn, info.builtOn)
+        assertEquals(AboutInfo.parse(null, buildInfo, null).commit, info.commit)
+        assertTrue(Regex("(?:[0-9a-f]{7,}(?:-dirty)?|unknown)").matches(info.commit))
+        @Suppress("DEPRECATION")
+        val installed = context.packageManager.getPackageInfo(context.packageName, 0)
+        assertEquals(installed.versionName, info.version)
+        assertEquals(installed.longVersionCode, info.versionCode)
     }
 
     @Test
-    fun `the dialog shows the version, the build date and the changes and opens the licenses`() {
+    fun `the dialog names the build and opens both browser links and the licenses`() {
         var licenses = 0
-        val info = AboutInfo("0.0.1", LocalDate.of(2026, 11, 3), "最初の版です。")
+        val info = AboutInfo("1.0.0-rc.1", LocalDate.of(2026, 11, 3), "最初の版です。", 8L, "123abcd-dirty")
         rule.setContent { MaterialTheme { AboutDialog({ info }, onOpenLicenses = { licenses++ }, onDismiss = {}) } }
-        rule.onNodeWithText("0.0.1").assertExists()
+        rule.onNodeWithText("1.0.0-rc.1").assertExists()
+        rule.onNodeWithText("8").assertExists()
+        rule.onNodeWithText("123abcd-dirty").assertExists()
         rule.onNodeWithText("2026年11月3日").assertExists()
         rule.onNodeWithText("最初の版です。").assertExists()
-        rule.onNodeWithText(context.getString(R.string.settings_licenses)).performClick()
+        val application = shadowOf(context as Application)
+        for ((label, url) in listOf(
+            R.string.about_source to "https://github.com/yuu-biz/hirari",
+            R.string.about_privacy to "https://github.com/yuu-biz/hirari/blob/main/docs/privacy.md",
+        )) {
+            rule.onNodeWithText(context.getString(label)).performScrollTo().performClick()
+            val intent = assertNotNull(application.nextStartedActivity)
+            assertEquals(Intent.ACTION_VIEW, intent.action)
+            assertEquals(url, intent.dataString)
+            assertNull(intent.component)
+        }
+        rule.onNodeWithText(context.getString(R.string.settings_licenses)).performScrollTo().performClick()
         assertEquals(1, licenses)
     }
 
     @Test
     fun `the dialog says what is unknown`() {
         rule.setContent { MaterialTheme { AboutDialog({ AboutInfo(null, null, null) }, onOpenLicenses = {}, onDismiss = {}) } }
-        assertEquals(2, rule.onAllNodesWithText(context.getString(R.string.about_unknown)).fetchSemanticsNodes().size)
+        assertEquals(3, rule.onAllNodesWithText(context.getString(R.string.about_unknown)).fetchSemanticsNodes().size)
+        rule.onNodeWithText("unknown").assertExists()
         rule.onNodeWithText(context.getString(R.string.about_changes_missing)).assertExists()
     }
 }

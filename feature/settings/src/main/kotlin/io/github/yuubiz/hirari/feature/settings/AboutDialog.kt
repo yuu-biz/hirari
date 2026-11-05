@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.feature.settings
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlin.coroutines.cancellation.CancellationException
@@ -50,9 +53,18 @@ internal fun AboutDialog(load: suspend () -> AboutInfo, onOpenLicenses: () -> Un
 
 @Composable
 private fun AboutContent(info: AboutInfo, onOpenLicenses: () -> Unit) {
+    val context = LocalContext.current
     Column(Modifier.verticalScroll(rememberScrollState())) {
         FactRow(stringResource(R.string.about_version), info.version ?: stringResource(R.string.about_unknown))
+        FactRow(stringResource(R.string.about_version_code), info.versionCode?.toString() ?: stringResource(R.string.about_unknown))
+        FactRow(stringResource(R.string.about_commit), info.commit)
         FactRow(stringResource(R.string.about_build_date), info.builtOn?.let(AboutInfo::dateText) ?: stringResource(R.string.about_unknown))
+        TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/yuu-biz/hirari"))) }) {
+            Text(stringResource(R.string.about_source))
+        }
+        TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/yuu-biz/hirari/blob/main/docs/privacy.md"))) }) {
+            Text(stringResource(R.string.about_privacy))
+        }
         TextButton(onClick = onOpenLicenses) { Text(stringResource(R.string.settings_licenses)) }
         Text(stringResource(R.string.about_changes), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleSmall)
         Text(info.changes ?: stringResource(R.string.about_changes_missing), Modifier.padding(top = 4.dp))
