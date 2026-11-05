@@ -2488,8 +2488,8 @@ M6 の点検で確かめ、直したことを次に書く。ライブラリ、�
 | 言語 | Kotlin 2 系。ネイティブは C と C++17 |
 | UI | Jetpack Compose と Material 3。リーダーの描画面は Q1 |
 | NDK | 28.2.13676358（r28c）。AGP 9.4.1 の既定の版で、r28 から 64 ビットの ABI のネイティブライブラリを 16 KB のページサイズに合わせて整列する。`llvm-readelf -l` で、`arm64-v8a` と `x86_64` の `.so` の LOAD セグメントの整列が 0x4000 であることを確かめた。`armeabi-v7a` は 0x1000 のまま |
-| ABI | `arm64-v8a`、`armeabi-v7a`、`x86_64`（エミュレータ用）。`armeabi-v7a` を残すかは APK の大きさで決める (要検証) |
-| 配布の単位 | Android App Bundle。ABI ごとに分割する |
+| ABI | `arm64-v8a`、`armeabi-v7a`、`x86_64`（エミュレータ用）。`armeabi-v7a` は残す。ネイティブのコードの合計は 1 MB 未満で、対象の端末を減らすほどの増分ではない（8.5 節と Q7） |
+| 配布の単位 | GitHub Releases で APK 1 個を配布する。3 つの ABI をすべて含める。端末に合うファイルを選ばずに入れられるようにする |
 | 縮小 | release は R8 でコードとリソースを縮める（`isMinifyEnabled`、`isShrinkResources`）。lint も release のビルドで掛ける。`benchmark` は release を写すので、縮めた APK をデバッグ鍵で入れて試せる。keep 規則は、ネイティブから名前で引くクラスと、実行時に反射で引く依存の持ち主のモジュールの `consumer-rules.pro` に置く（`:core:archive` の libarchive の呼び戻し、`:core:image` の JXL、`:core:source` の smbj と mbassador）。アプリだけに要る規則は `app/proguard-rules.pro` に置く（ナビゲーションの経路の enum の名前）。`:core:archive` の呼び戻しは、`KeepRulesTest` が JNI の記述と規則を Kotlin の署名と照らす。規則を足すときは、縮めた APK で該当の経路を動かして確かめる。`mapping.txt` は `app/build/outputs/mapping/<ビルドの種類>/` に出る。配った版ごとに保管する（落ちたときの読み解きに要る）。縮める前の `benchmark` は 41.6 MB、縮めたあとは 10.3 MB（3 つの ABI） |
 
 ### 8.2 モジュール
