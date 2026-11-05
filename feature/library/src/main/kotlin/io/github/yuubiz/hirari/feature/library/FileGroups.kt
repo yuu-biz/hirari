@@ -1,8 +1,14 @@
 package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.model.LibraryGrouping
+import io.github.yuubiz.hirari.core.model.LibrarySection
+import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.NaturalOrder
 import java.text.Normalizer
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
 /** Cells after filtering and sorting, including rows that never request a cover. */
@@ -13,7 +19,7 @@ internal sealed interface ListCell {
         override val key = PARENT_KEY
     }
 
-    data class Header(val author: String?, val count: Int, override val key: String) : ListCell
+    data class Header(val name: String, val count: Int, override val key: String) : ListCell
 
     data class Entry(val row: FileRow) : ListCell {
         override val key get() = row.path
@@ -23,11 +29,8 @@ internal sealed interface ListCell {
 internal const val PARENT_KEY = ".."
 
 /** Upper then lower case folds ß and final sigma too. */
-private fun normalizedName(name: String): String =
+internal fun normalizedName(name: String): String =
     Normalizer.normalize(name, Normalizer.Form.NFKC).trim().uppercase(Locale.ROOT).lowercase(Locale.ROOT)
-
-/** Paths are relative, so header keys starting with `/` cannot collide with an item's key. */
-private fun authorKey(name: String?): String = if (name == null) "/no-author" else "/author:$name"
 
 /** Each root is the smallest normalized name in its component, independent of list order. */
 private class CreatorGroups {
@@ -57,9 +60,8 @@ private class CreatorGroups {
 }
 
 private data class CreatorRow(val row: FileRow, val parsed: LibraryName) {
-    val names = parsed.names.map(::normalizedName).distinct()
+    val names = parsed.names.map(::normalizedName).filter { it.isNotEmpty() }.distinct()
 }
-
 /** Count exact full spellings; linked map order breaks ties by the first appearance in the sorted list. */
 private fun groupSpelling(items: List<CreatorRow>): String? {
     val both = items.filter { it.parsed.circle != null && it.parsed.author != null }
@@ -67,38 +69,98 @@ private fun groupSpelling(items: List<CreatorRow>): String? {
         .maxByOrNull { it.value }?.key
 }
 
-/** [rows] have already been filtered and sorted; preserve that order within each author. */
-internal fun fileCells(
-    rows: List<FileRow>,
-    grouping: LibraryGrouping,
-    parent: Boolean,
-    folded: Set<String> = emptySet(),
-    mergeCircleAuthors: Boolean = true,
-): List<ListCell> = buildList {
+/** Navigation metadata, separate from a storage path. */
+data class PseudoFolder(val key: String, val name: String, val kind: LibraryGrouping, val merge: Boolean, val filter: String)
+
+internal data class FileGroup(val key: String, val name: String, val rows: List<FileRow>)
+
+/** The input is filtered and sorted. Real folders never join a component, even as a creator link. */
+internal fun fileGroups(rows: List<FileRow>, kind: LibraryGrouping, merge: Boolean): List<FileGroup> {
+    if (kind == LibraryGrouping.None) return emptyList()
+    val creators = rows.filter { it.item !is FileItem.Folder }.map { CreatorRow(it, parseLibraryName(it.item.groupBase())) }
+    val unions = CreatorGroups()
+    if (kind == LibraryGrouping.Author && merge) creators.forEach { unions.join(it.names) }
+    fun spelling(it: CreatorRow): String? = when (kind) {
+        LibraryGrouping.None -> null
+        LibraryGrouping.Author -> it.parsed.creator
+        LibraryGrouping.Series -> seriesTitle(it.parsed.title)
+        LibraryGrouping.Original -> it.parsed.original
+        LibraryGrouping.Event -> it.parsed.event
+    }?.takeIf { name -> name.isNotBlank() }
+    return creators.groupBy {
+        val name = if (kind == LibraryGrouping.Author && merge) it.names.firstOrNull()?.let(unions::root)
+            else spelling(it)?.let(::normalizedName)
+        name?.let { "/group:${kind.name}:$it" }
+    }.mapNotNull { (key, items) ->
+        if (key == null) null else FileGroup(key,
+            (if (kind == LibraryGrouping.Author && merge) groupSpelling(items) else spelling(items.first())).orEmpty(),
+            items.map { it.row })
+    }
+}
+
+private fun FileItem.groupBase(): String = if (this is FileItem.Folder) entry.name else
+    entry.name.substringBeforeLast('.', entry.name).trim()
+
+/** Replace only multi-item groups. A synthetic folder reuses its first member's exact CoverSpec. */
+internal fun pseudoFolders(rows: List<FileRow>, kind: LibraryGrouping, merge: Boolean, filter: String,
+    sort: LibrarySort, foldersFirst: Boolean): List<FileRow> {
+    if (kind == LibraryGrouping.None) return rows
+    val groups = fileGroups(rows, kind, merge).filter { it.rows.size >= 2 }
+    val groupedPaths = groups.flatMap { it.rows }.mapTo(hashSetOf()) { it.path }
+    val result = rows.filterNot { it.path in groupedPaths } + groups.map { group ->
+        FileRow(FileItem.Folder(FolderEntry(group.name, null, true, null, null)), group.key, normalizedName(group.name),
+            cover = group.rows.first().cover, gridName = GridName(group.name, "${group.rows.size} 件"),
+            sizeText = "${group.rows.size} 件", pseudo = PseudoFolder(group.key, group.name, kind, merge, filter))
+    }
+    val byName = compareBy<FileRow, String>(NaturalOrder) { it.item.entry.name }
+    val byFiles = when (sort) {
+        LibrarySort.Name -> byName
+        LibrarySort.Newest -> compareBy<FileRow, Instant?>(nullsLast(reverseOrder())) { it.item.entry.modified }.then(byName)
+        LibrarySort.Oldest -> compareBy<FileRow, Instant?>(nullsLast(naturalOrder())) { it.item.entry.modified }.then(byName)
+    }
+    // With mixed date ordering, fill folder slots in name order and preserve the sorted file slots.
+    val mixed = result.sortedWith(if (foldersFirst) compareBy<FileRow> { it.item !is FileItem.Folder }.then(byFiles) else byFiles)
+    val folders = mixed.filter { it.item is FileItem.Folder }.sortedWith(byName).iterator()
+    return mixed.map { if (it.item is FileItem.Folder) folders.next() else it }
+}
+
+private enum class Section(val title: String) {
+    Folders("フォルダ"), Unread("未読"), Reading("読みかけ"), Read("読了"),
+    Today("今日"), Yesterday("昨日"), Week("今週"), Month("今月"), Year("今年"), Older("それ以前"), Unknown("日時不明"),
+}
+
+/** Headers are independent of grouping and use stable non-path keys for saved scroll positions. */
+internal fun fileCells(rows: List<FileRow>, section: LibrarySection, parent: Boolean,
+    folded: Set<String> = emptySet(), now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): List<ListCell> = buildList {
     if (parent) add(ListCell.Parent)
-    if (grouping == LibraryGrouping.None) {
+    if (section == LibrarySection.None) {
         rows.mapTo(this) { ListCell.Entry(it) }
-    } else {
-        val creators = rows.map { CreatorRow(it, parseLibraryName(it.item.gridBase())) }
-        val unions = CreatorGroups()
-        if (mergeCircleAuthors) creators.forEach { unions.join(it.names) }
-        val groups = creators.groupBy {
-            authorKey(if (mergeCircleAuthors) it.names.firstOrNull()?.let(unions::root) else it.parsed.creator?.let(::normalizedName))
-        }
-        val headers = groups.map { (key, items) ->
-            val spelling = if (mergeCircleAuthors) groupSpelling(items) else items.first().parsed.creator
-            ListCell.Header(spelling, items.size, key)
-        }
-        val ordered = headers.sortedWith { a, b ->
+        return@buildList
+    }
+    val today = now.atZone(zone).toLocalDate()
+    val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val groups = rows.groupBy { row ->
+        if (row.item is FileItem.Folder) Section.Folders
+        else if (section == LibrarySection.ReadState) when (row.mark) {
+            ReadMark.Read -> Section.Read
+            is ReadMark.Reading -> Section.Reading
+            else -> Section.Unread
+        } else {
+            val date = row.item.entry.modified?.atZone(zone)?.toLocalDate()
             when {
-                a.key == "/no-author" -> if (b.key == a.key) 0 else 1
-                b.key == "/no-author" -> -1
-                else -> NaturalOrder.compare(normalizedName(a.author.orEmpty()), normalizedName(b.author.orEmpty()))
+                date == null -> Section.Unknown
+                date >= today -> Section.Today
+                date == today.minusDays(1) -> Section.Yesterday
+                date >= monday -> Section.Week
+                date >= today.withDayOfMonth(1) -> Section.Month
+                date >= today.withDayOfYear(1) -> Section.Year
+                else -> Section.Older
             }
         }
-        for (header in ordered) {
-            add(header)
-            if (header.key !in folded) groups.getValue(header.key).mapTo(this) { ListCell.Entry(it.row) }
-        }
+    }
+    for ((kind, items) in groups.toSortedMap()) {
+        val key = "/section:${section.name}:${kind.name}"
+        add(ListCell.Header(kind.title, items.size, key))
+        if (key !in folded) items.mapTo(this) { ListCell.Entry(it) }
     }
 }

@@ -47,6 +47,36 @@ class FolderViewModelTest {
     private fun FolderViewModel.shown() = assertIs<FolderContent.Shown>(state.value.content)
 
     @Test
+    fun `pseudo child keeps matching members item addresses and parent filter without nesting`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = io.github.yuubiz.hirari.core.model.LibraryGrouping.Author)
+        fixture.lister.folders["作品"] = listOf(file("[A] keep1.zip"), file("[A] keep2.zip"), file("[A] hidden.zip"), file("[B] alone.zip"))
+        val parent = viewModel()
+        parent.setFilter("keep")
+        val cell = parent.shown().rows.single()
+        val target = assertIs<FileTarget.Folder>(parent.open(cell)).key
+        assertEquals("作品", target.path)
+        assertEquals("keep", parent.shown().filter)
+        assertEquals("A", target.pseudo!!.name)
+        val child = FolderViewModel(CompletableDeferred(fixture.services), target, UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        assertEquals(listOf("[A] keep1.zip", "[A] keep2.zip"), child.shown().rows.map { it.item.entry.name })
+        assertTrue(child.shown().rows.all { it.pseudo == null })
+        assertTrue(child.shown().parentItem)
+        val request = assertIs<FileTarget.Book>(child.open(child.shown().rows.first())).request
+        assertEquals(BookAddress.InLocation(place.id, "作品/[A] keep1.zip", folder = false, documentId = "doc:作品/[A] keep1.zip"), request.book)
+        child.setFilter("keep2")
+        assertEquals("[A] keep2.zip", child.shown().rows.single().item.entry.name)
+        child.togglePin()
+        child.toggleFavorite()
+        assertTrue(fixture.locations.pins.value.isEmpty())
+        assertTrue(fixture.locations.favorites.value.isEmpty())
+        assertEquals("keep", parent.shown().filter)
+        assertEquals(cell.path, parent.shown().rows.single().path)
+        assertEquals(2, fixture.lister.calls)
+    }
+
+    @Test
     fun `favorites toggle on books and folders and follow changes from other screens`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(file("1.cbz"), file("notes.txt"), file("p01.jpg"), FolderEntry("外伝", null, true, null, null))

@@ -202,8 +202,14 @@ class FolderViewModel(
         val starred = combine(marked, favorites) { rows, paths -> rows.map { it.copy(favorite = it.path in paths) } }
         return combine(starred, query, layout, chosenHere) { rows, query, layout, chosenHere ->
             val covers = CoverLayout(services.covers, services.covers.sizePx(layout.look.thumbSize))
-            val parentItem = layout.showParentItem && folderTrail("", folder.path).parent != null
-            FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem)
+            val pseudo = folder.pseudo
+            val members = if (pseudo == null) rows else fileGroups(rows.filtered(pseudo.filter), pseudo.kind, pseudo.merge)
+                .firstOrNull { it.key == pseudo.key }?.rows.orEmpty()
+            val filtered = members.filtered(query)
+            val visible = if (pseudo != null) filtered else pseudoFolders(filtered, layout.look.grouping,
+                layout.look.mergeCircleAuthors, query, layout.ordering.sort, layout.ordering.foldersFirst)
+            val parentItem = layout.showParentItem && (pseudo != null || folderTrail("", folder.path).parent != null)
+            FolderContent.Shown(visible, members.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem)
         }.flowOn(compute)
     }
 
@@ -312,6 +318,7 @@ class FolderViewModel(
 
     /** The folder book offered by the sheet, after one listing of its direct children (section 4.3). */
     suspend fun folderBook(row: FileRow): OpenBookRequest? {
+        if (row.pseudo != null) return null
         if (row.item !is FileItem.Folder) return null
         val services = services.await()
         val location = place.value ?: return null
@@ -329,22 +336,25 @@ class FolderViewModel(
      * What tapping [row] opens (docs/spec.md section 4.3), in a place of either kind. An image file opens its folder
      * as one book at that image. A text file opens in the text reader. Moving to another folder clears the filter.
      */
-    fun open(row: FileRow, start: StartAt = StartAt.Saved): FileTarget = when (val item = row.item) {
-        is FileItem.Folder -> {
-            query.value = ""
-            FileTarget.Folder(FolderKey(folder.location, row.path, item.entry.documentId))
+    fun open(row: FileRow, start: StartAt = StartAt.Saved): FileTarget {
+        row.pseudo?.let { return FileTarget.Folder(folder.copy(pseudo = it)) }
+        return when (val item = row.item) {
+            is FileItem.Folder -> {
+                query.value = ""
+                FileTarget.Folder(FolderKey(folder.location, row.path, item.entry.documentId))
+            }
+            is FileItem.Archive -> {
+                FirstPageTrace.begin()
+                FileTarget.Book(OpenBookRequest(BookAddress.InLocation(folder.location, row.path, folder = false, item.entry.documentId), start))
+            }
+            is FileItem.Image -> {
+                FirstPageTrace.begin()
+                FileTarget.Book(
+                    OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),
+                )
+            }
+            is FileItem.Text -> FileTarget.Text(TextAddress.InLocation(folder.location, row.path, item.entry.documentId))
         }
-        is FileItem.Archive -> {
-            FirstPageTrace.begin()
-            FileTarget.Book(OpenBookRequest(BookAddress.InLocation(folder.location, row.path, folder = false, item.entry.documentId), start))
-        }
-        is FileItem.Image -> {
-            FirstPageTrace.begin()
-            FileTarget.Book(
-                OpenBookRequest(BookAddress.InLocation(folder.location, folder.path, folder = true, folderDocumentId), StartAt.Image(item.entry.name)),
-            )
-        }
-        is FileItem.Text -> FileTarget.Text(TextAddress.InLocation(folder.location, row.path, item.entry.documentId))
     }
 
     /** 既読にする and 未読にする of the long-press sheet (docs/spec.md sections 2.7 and 4.3). */
@@ -361,6 +371,7 @@ class FolderViewModel(
     }
 
     fun toggleFavorite() {
+        if (folder.pseudo != null) return
         if (normalizePath(folder.path).isEmpty()) return
         toggleFavorite(folder.path, FavoriteKind.Folder, folderTrail(state.value.placeName, folder.path).current)
     }
@@ -373,6 +384,7 @@ class FolderViewModel(
 
     /** このフォルダをピン留め and ピン留めを外す of the top bar's menu (docs/spec.md section 4.3). */
     fun togglePin() {
+        if (folder.pseudo != null) return
         val pinned = state.value.pinnedId
         write { if (pinned == null) locations.pin(folder.location, folder.path, clock()) else locations.unpin(pinned) }
     }

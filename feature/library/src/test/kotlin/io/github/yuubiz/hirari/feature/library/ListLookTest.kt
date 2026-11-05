@@ -13,6 +13,9 @@ class ListLookTest {
     @Test
     fun `grouping defaults to none and the look follows the saved author choice`() {
         assertEquals(LibraryGrouping.None, GlobalSettings().listLook().grouping)
+        assertEquals(io.github.yuubiz.hirari.core.model.LibrarySection.None, GlobalSettings().listLook().section)
+        assertEquals(io.github.yuubiz.hirari.core.model.LibrarySection.AddedTime,
+            GlobalSettings(librarySection = io.github.yuubiz.hirari.core.model.LibrarySection.AddedTime).listLook().section)
         assertEquals(LibraryGrouping.Author, GlobalSettings(libraryGrouping = LibraryGrouping.Author).listLook().grouping)
         assertEquals(true, GlobalSettings().listLook().mergeCircleAuthors)
         assertEquals(false, GlobalSettings(mergeCircleAuthors = false).listLook().mergeCircleAuthors)

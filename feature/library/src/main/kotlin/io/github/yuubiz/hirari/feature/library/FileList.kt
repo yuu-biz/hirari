@@ -87,8 +87,8 @@ import kotlin.math.roundToInt
 internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null, folderKey: FolderKey? = null) {
     val scope = rememberCoroutineScope()
     var folded by rememberSaveable(folderKey) { mutableStateOf(arrayListOf<String>()) }
-    val cells = remember(content.rows, content.look.grouping, content.look.mergeCircleAuthors, onUp != null, folded) {
-        fileCells(content.rows, content.look.grouping, onUp != null, folded.toSet(), content.look.mergeCircleAuthors)
+    val cells = remember(content.rows, content.look.section, onUp != null, folded) {
+        fileCells(content.rows, content.look.section, onUp != null, folded.toSet())
     }
     fun toggle(header: ListCell.Header) {
         folded = ArrayList(if (header.key in folded) folded - header.key else folded + header.key)
@@ -176,7 +176,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
 /** A full-width header with one accessible toggle; it never binds a CoverBox. */
 @Composable
 private fun GroupHeader(header: ListCell.Header, folded: Boolean, toggle: () -> Unit) {
-    val name = header.author ?: stringResource(R.string.group_no_author)
+    val name = header.name
     val action = stringResource(if (folded) R.string.group_unfold else R.string.group_fold)
     val description = stringResource(R.string.group_description, name, header.count, action)
     Row(
@@ -289,10 +289,10 @@ private fun rememberTitleFitter(cellWidthPx: Int, lines: Int): TitleFitter {
 private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitter: TitleFitter, look: ListLook, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
     val name = row.gridName
-    val whole = if (look.noteLine) name.title else row.item.gridBase()
+    val whole = if (look.noteLine) name.title else row.item.gridBase() + if (row.pseudo != null) " (${row.sizeText})" else ""
     val title = remember(whole, fitter) { fitter.fit(whole) }
     Column(
-        Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).semantics { text = AnnotatedString(row.item.entry.name) }.padding(CELL_PADDING),
+        Modifier.rowPress({ onOpen(row) }, if (row.pseudo == null) ({ onLongPress(row) }) else null).rowState(row).semantics { text = AnnotatedString(row.item.entry.name + if (row.pseudo != null) "、${row.sizeText}" else "") }.padding(CELL_PADDING),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(look.aspect.ratio)) {
             Cover(row, covers, focus, Modifier.fillMaxSize())
@@ -323,13 +323,15 @@ private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitte
 private fun ListRow(row: FileRow, covers: CoverLayout?, focus: CoverFocus, look: ListLook, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit) {
     val colors = LocalLibraryColors.current
     Row(
-        Modifier.fillMaxWidth().rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).minTouchTarget().padding(horizontal = 12.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().rowPress({ onOpen(row) }, if (row.pseudo == null) ({ onLongPress(row) }) else null).rowState(row).minTouchTarget().padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (covers != null) {
             Cover(row, covers, focus, look.listCoverSlot())
         } else {
-            Box(Modifier.width(32.dp).decorative(), contentAlignment = Alignment.Center) { MarkGlyph(row.mark) }
+            Box(Modifier.width(32.dp).decorative(), contentAlignment = Alignment.Center) {
+                if (row.pseudo != null) Icon(ListIcons.Folder, null, tint = colors.stateFolder) else MarkGlyph(row.mark)
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -374,13 +376,13 @@ private fun List<ListCell>.coverRefs(covers: CoverLayout): List<CoverRef?> =
     remember(this, covers.sizePx) { map { cell -> (cell as? ListCell.Entry)?.row?.cover?.let { CoverRef(it, covers.sizePx) } } }
 
 private fun List<LazyGridItemInfo>.visibleRange(): IntRange {
-    val entries = filterNot { (it.key as? String)?.startsWith('/') == true }
+    val entries = filterNot { (it.key as? String)?.startsWith("/section:") == true }
     return if (entries.isEmpty()) IntRange.EMPTY else entries.minOf { it.index }..entries.maxOf { it.index }
 }
 
 @JvmName("visibleListRange")
 private fun List<LazyListItemInfo>.visibleRange(): IntRange {
-    val entries = filterNot { (it.key as? String)?.startsWith('/') == true }
+    val entries = filterNot { (it.key as? String)?.startsWith("/section:") == true }
     return if (entries.isEmpty()) IntRange.EMPTY else entries.minOf { it.index }..entries.maxOf { it.index }
 }
 

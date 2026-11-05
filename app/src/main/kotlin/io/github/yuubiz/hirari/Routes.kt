@@ -17,6 +17,8 @@ import io.github.yuubiz.hirari.feature.library.ArchiveFile
 import io.github.yuubiz.hirari.feature.library.ArchiveKey
 import io.github.yuubiz.hirari.feature.library.CoverRangeKey
 import io.github.yuubiz.hirari.feature.library.FolderKey
+import io.github.yuubiz.hirari.feature.library.PseudoFolder
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.feature.library.TextAddress
 import io.github.yuubiz.hirari.feature.text.EntryArchive
 import io.github.yuubiz.hirari.feature.text.TextBookRef
@@ -54,8 +56,11 @@ internal data class SmbServerRoute(val location: Long? = null)
  * the path of a row the list scrolls to when it first shows.
  */
 @Serializable
-internal data class FolderRoute(val location: Long, val path: String, val documentId: String? = null, val reveal: String? = null) {
-    fun toKey() = FolderKey(LocationId(location), path, documentId)
+internal data class FolderRoute(val location: Long, val path: String, val documentId: String? = null, val reveal: String? = null,
+    val groupKey: String? = null, val groupName: String = "", val groupKind: LibraryGrouping = LibraryGrouping.None,
+    val groupMerge: Boolean = true, val groupFilter: String = "") {
+    fun toKey() = FolderKey(LocationId(location), path, documentId,
+        groupKey?.let { PseudoFolder(it, groupName, groupKind, groupMerge, groupFilter) })
 }
 
 /** 書庫内一覧 of an archive book in a place (docs/spec.md section 4.7). */
@@ -74,7 +79,8 @@ internal data class CoverRangeRoute(val book: String, val entry: Int) {
 
 internal fun CoverRangeKey.toRoute() = CoverRangeRoute(book.value, entry)
 
-internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.value, path, documentId, reveal)
+internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.value, path, documentId, reveal,
+    pseudo?.key, pseudo?.name.orEmpty(), pseudo?.kind ?: LibraryGrouping.None, pseudo?.merge ?: true, pseudo?.filter.orEmpty())
 
 /**
  * Goes up from the folder at [from] to the folder [to] of the same place (docs/spec.md section 4.3, 上部バー and
@@ -95,7 +101,11 @@ internal fun goUp(to: FolderKey, from: String, top: () -> FolderRoute?, pop: () 
     while (true) {
         val folder = top() ?: break
         if (folder.location != to.location.value) break
-        if (normalizePath(folder.path) == normalizePath(to.path)) return
+        if (normalizePath(folder.path) == normalizePath(to.path)) {
+            if (folder.groupKey == to.pseudo?.key) return
+            if (folder.groupKey != null && to.pseudo == null) { pop(); continue }
+            break
+        }
         if (childToward(to.path, folder.path) == null) break
         pop()
     }

@@ -7,6 +7,19 @@ import org.junit.Test
 
 /** docs/spec.md section 4.3: 上へ, the parent item and the title's menu go up to the folder's real parent. */
 class GoUpTest {
+    @Test
+    fun pseudoFolderRouteRoundTripsAndUpReusesItsParentsBackStackEntry() {
+        val parent = FolderRoute(1, "manga", documentId = "doc:manga")
+        val group = io.github.yuubiz.hirari.feature.library.PseudoFolder("/group:Series:title", "Title",
+            io.github.yuubiz.hirari.core.model.LibraryGrouping.Series, true, "keep")
+        val key = parent.toKey().copy(pseudo = group)
+        assertEquals(key, key.toRoute().toKey())
+        stack += listOf(null, parent, key.toRoute())
+        up(to = "manga", from = "manga")
+        assertEquals(listOf(null, parent), stack)
+        org.junit.Assert.assertSame(parent, stack.last())
+    }
+
     /** The back stack, bottom first; `null` stands for a screen that is not a file list, such as home. */
     private val stack = mutableListOf<FolderRoute?>()
 

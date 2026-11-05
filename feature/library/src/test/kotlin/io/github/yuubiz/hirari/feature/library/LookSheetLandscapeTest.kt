@@ -71,7 +71,7 @@ class LookSheetLandscapeTest {
         rule.onNodeWithText("4 列").performScrollTo().performClick()
         rule.waitForIdle()
         // A chip's own scrolling parent is its row, so the sheet is scrolled to the label below the row first.
-        rule.onNodeWithText("サムネイルの大きさ").performScrollTo()
+        rule.onNodeWithText("セクション").performScrollTo()
         rule.onNodeWithText("作者").performClick()
         rule.waitForIdle()
         assertEquals(LibraryGrouping.Author, fixture.settings.value.value.libraryGrouping)
@@ -84,11 +84,26 @@ class LookSheetLandscapeTest {
         show()
         rule.onNodeWithText("サークルと作者をまとめる").performScrollTo().assertIsNotEnabled()
         assertEquals(true, fixture.settings.value.value.mergeCircleAuthors)
-        rule.onNodeWithText("サムネイルの大きさ").performScrollTo()
+        rule.onNodeWithText("セクション").performScrollTo()
         rule.onNodeWithText("作者").performClick()
         rule.onNodeWithText("サークルと作者をまとめる").performScrollTo().performClick()
         rule.waitForIdle()
         assertEquals(false, fixture.settings.value.value.mergeCircleAuthors)
+    }
+
+    @Test
+    fun `sections save independently beside grouping`() {
+        show()
+        rule.onNodeWithText("サークルと作者をまとめる").performScrollTo()
+        rule.onNodeWithText("読書状態").performClick()
+        rule.waitForIdle()
+        assertEquals(io.github.yuubiz.hirari.core.model.LibrarySection.ReadState, fixture.settings.value.value.librarySection)
+        assertEquals(LibraryGrouping.None, fixture.settings.value.value.libraryGrouping)
+        rule.onNodeWithText("セクション").performScrollTo()
+        rule.onNodeWithText("作者").performClick()
+        rule.waitForIdle()
+        assertEquals(LibraryGrouping.Author, fixture.settings.value.value.libraryGrouping)
+        assertEquals(io.github.yuubiz.hirari.core.model.LibrarySection.ReadState, fixture.settings.value.value.librarySection)
     }
 
     @Test

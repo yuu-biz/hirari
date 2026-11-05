@@ -76,6 +76,8 @@ data class FileRow(
     val cover: CoverSpec? = null,
     val gridName: GridName = item.gridName(),
     val favorite: Boolean = false,
+    /** UI-only folder metadata; [path] is a cell key when this is present, never a storage path. */
+    val pseudo: PseudoFolder? = null,
 )
 
 data class Ordering(val sort: LibrarySort, val foldersFirst: Boolean, val showDotFiles: Boolean)

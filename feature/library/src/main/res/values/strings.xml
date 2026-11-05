@@ -199,7 +199,12 @@
     <string name="look_merge_circle_authors">サークルと作者をまとめる</string>
     <string name="look_group_none">なし</string>
     <string name="look_group_author">作者</string>
-    <string name="group_no_author">作者なし</string>
+    <string name="look_group_series">シリーズ</string>
+    <string name="look_group_original">元ネタ</string>
+    <string name="look_group_event">イベント</string>
+    <string name="look_section">セクション</string>
+    <string name="look_section_read_state">読書状態</string>
+    <string name="look_section_added_time">追加時期</string>
     <string name="group_count">%1$d 件</string>
     <string name="group_fold">折りたたみ</string>
     <string name="group_unfold">展開</string>

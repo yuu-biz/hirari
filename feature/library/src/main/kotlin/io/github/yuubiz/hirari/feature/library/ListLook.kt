@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.LibrarySection
 import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.LibraryTextSize
@@ -22,6 +23,7 @@ data class ListLook(
     val textSize: LibraryTextSize = LibraryTextSize.Medium,
     val grouping: LibraryGrouping = LibraryGrouping.None,
     val mergeCircleAuthors: Boolean = true,
+    val section: LibrarySection = LibrarySection.None,
 ) {
     private fun fixedColumns(landscape: Boolean): Int? = if (landscape) landscapeColumns else portraitColumns
 
@@ -44,5 +46,5 @@ data class ListLook(
 internal val CELL_PADDING = 6.dp
 
 fun GlobalSettings.listLook() = ListLook(
-    thumbSize, gridColumnsPortrait, gridColumnsLandscape, gridNameLines, gridNoteLine, coverAspect, libraryTextSize, libraryGrouping, mergeCircleAuthors,
+    thumbSize, gridColumnsPortrait, gridColumnsLandscape, gridNameLines, gridNoteLine, coverAspect, libraryTextSize, libraryGrouping, mergeCircleAuthors, librarySection,
 )

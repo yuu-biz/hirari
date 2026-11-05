@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.LibrarySection
 import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.LibraryTextSize
@@ -123,9 +124,16 @@ private fun LookSettings(look: ListLook, landscape: Boolean, change: ((GlobalSet
         Choices(stringResource(R.string.look_text_size), LibraryTextSize.entries, look.textSize, { textNames.getValue(it) }) { v ->
             change { it.copy(libraryTextSize = v) }
         }
-        val groupNames = mapOf(LibraryGrouping.None to stringResource(R.string.look_group_none), LibraryGrouping.Author to stringResource(R.string.look_group_author))
+        val groupNames = mapOf(LibraryGrouping.None to stringResource(R.string.look_group_none), LibraryGrouping.Author to stringResource(R.string.look_group_author),
+            LibraryGrouping.Series to stringResource(R.string.look_group_series), LibraryGrouping.Original to stringResource(R.string.look_group_original),
+            LibraryGrouping.Event to stringResource(R.string.look_group_event))
         Choices(stringResource(R.string.look_group), LibraryGrouping.entries, look.grouping, { groupNames.getValue(it) }) { v ->
             change { it.copy(libraryGrouping = v) }
+        }
+        val sectionNames = mapOf(LibrarySection.None to stringResource(R.string.look_group_none),
+            LibrarySection.ReadState to stringResource(R.string.look_section_read_state), LibrarySection.AddedTime to stringResource(R.string.look_section_added_time))
+        Choices(stringResource(R.string.look_section), LibrarySection.entries, look.section, { sectionNames.getValue(it) }) { v ->
+            change { it.copy(librarySection = v) }
         }
         val authorGrouping = look.grouping == LibraryGrouping.Author
         Row(

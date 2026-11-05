@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
+import io.github.yuubiz.hirari.core.model.LibrarySection
 import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.EntryOrder
@@ -269,7 +270,10 @@ val SettingsTable: List<Setting> = buildList {
     add(choice(GlobalSettings::libraryTextSize, library, "一覧の文字の大きさ", { s, v -> s.copy(libraryTextSize = v) },
         LibraryTextSize.Small to "小", LibraryTextSize.Medium to "中", LibraryTextSize.Large to "大"))
     add(choice(GlobalSettings::libraryGrouping, library, "グループ", { s, v -> s.copy(libraryGrouping = v) },
-        LibraryGrouping.None to "なし", LibraryGrouping.Author to "作者"))
+        LibraryGrouping.None to "なし", LibraryGrouping.Author to "作者", LibraryGrouping.Series to "シリーズ",
+        LibraryGrouping.Original to "元ネタ", LibraryGrouping.Event to "イベント"))
+    add(choice(GlobalSettings::librarySection, library, "セクション", { s, v -> s.copy(librarySection = v) },
+        LibrarySection.None to "なし", LibrarySection.ReadState to "読書状態", LibrarySection.AddedTime to "追加時期"))
     add(toggle(GlobalSettings::mergeCircleAuthors, library, "サークルと作者をまとめる",
         note = "グループが作者のとき、共通のサークル名や作者名を持つ本をまとめます。",
     ) { s, v -> s.copy(mergeCircleAuthors = v) })

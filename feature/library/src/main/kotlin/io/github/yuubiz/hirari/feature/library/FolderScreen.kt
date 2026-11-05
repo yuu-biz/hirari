@@ -127,7 +127,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     fun open(row: FileRow, start: StartAt = StartAt.Saved) {
         when (val target = model.open(row, start)) {
             is FileTarget.Folder -> {
-                filtering = false
+                if (target.key.pseudo == null) filtering = false
                 actions.openFolder(target.key)
             }
             is FileTarget.Book -> actions.openBook(target.request)
@@ -136,11 +136,12 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     }
 
     val trail = remember(state.placeName, state.path) { folderTrail(state.placeName, state.path) }
-    val up = trail.parent?.let { parent -> { actions.openAncestor(parent) } }
+    val pseudo = model.folder.pseudo
+    val up: (() -> Unit)? = if (pseudo != null) actions.close else trail.parent?.let { parent -> { actions.openAncestor(parent) } }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { FolderTitle(state.placeName, trail, actions.openAncestor) },
+                title = { if (pseudo != null) Text(pseudo.name, maxLines = 1, overflow = TextOverflow.StartEllipsis) else FolderTitle(state.placeName, trail, actions.openAncestor) },
                 navigationIcon = {
                     if (up == null) {
                         IconAction(ListIcons.Close, stringResource(R.string.folder_close), actions.close)
@@ -155,7 +156,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     (state.content as? FolderContent.Shown)?.let { shown ->
                         ViewButton(shown.view) { model.setView(shown.view.next()) }
-                        ListMenu(shown, model, atTop = up == null, pinned = state.pinnedId != null, favorite = state.favorite, onAdjust = { adjusting = true }) {
+                        ListMenu(shown, model, atTop = up == null || pseudo != null, pinned = state.pinnedId != null, favorite = state.favorite, onAdjust = { adjusting = true }) {
                             scope.launch { if (!actions.pinShortcut(model.folderShortcut())) model.show(Notice.ShortcutUnsupported) }
                         }
                     }
@@ -389,7 +390,7 @@ private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: 
                     },
                 )
             }
-            DropdownMenuItem(
+            if (model.folder.pseudo == null) DropdownMenuItem(
                 text = { Text(stringResource(R.string.sheet_shortcut)) },
                 onClick = {
                     open = false

@@ -51,7 +51,7 @@ sealed interface Loadable<out T> {
 }
 
 /** A folder of a place, as the file list opens it. Without [documentId] a SAF list looks the path up. */
-data class FolderKey(val location: LocationId, val path: String, val documentId: String? = null)
+data class FolderKey(val location: LocationId, val path: String, val documentId: String? = null, val pseudo: PseudoFolder? = null)
 
 data class ContinueItem(val book: LibraryBook, val percent: Int, val cover: CoverSpec.Book? = null)
 

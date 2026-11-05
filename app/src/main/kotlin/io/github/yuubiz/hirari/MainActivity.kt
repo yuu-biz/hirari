@@ -157,7 +157,7 @@ class MainActivity : ComponentActivity() {
                                     openArchive = { nav.navigate(it.toRoute()) },
                                     openFolder = { nav.navigate(it.toRoute()) },
                                     pinShortcut = { pinShortcut(it) },
-                                    openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null), from = key.path) },
+                                    openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null, pseudo = null), from = key.path) },
                                     close = { nav.popBackStack() },
                                 ),
                                 reveal = route.reveal,

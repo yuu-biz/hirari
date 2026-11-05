@@ -95,6 +95,7 @@ val everything = GlobalSettings(
     gridNameLines = 3,
     gridNoteLine = false,
     libraryGrouping = LibraryGrouping.Author,
+    librarySection = io.github.yuubiz.hirari.core.model.LibrarySection.AddedTime,
     mergeCircleAuthors = false,
     coverAspect = CoverAspect.Square,
     libraryTextSize = LibraryTextSize.Large,

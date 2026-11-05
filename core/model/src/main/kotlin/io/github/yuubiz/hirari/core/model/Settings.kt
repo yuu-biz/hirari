@@ -87,7 +87,10 @@ enum class TextPaper { White, Cream, Sepia, Black }
 enum class LibraryView { Grid, ThumbnailList, List }
 
 /** Grouping of the folder file list (docs/spec.md section 4.3). */
-enum class LibraryGrouping { None, Author }
+enum class LibraryGrouping { None, Author, Series, Original, Event }
+
+/** Headers of the visible list, independent of pseudo folders. */
+enum class LibrarySection { None, ReadState, AddedTime }
 
 enum class ThumbSize { Small, Medium, Large }
 
