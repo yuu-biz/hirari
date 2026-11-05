@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.text
 import android.content.ContentResolver
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.CancellationSignal
 import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ArchiveSession
 import io.github.yuubiz.hirari.core.archive.EntryResult
@@ -38,8 +39,10 @@ import io.github.yuubiz.hirari.core.text.resolvePicturePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
@@ -49,7 +52,11 @@ import java.nio.charset.Charset
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * A text book (docs/spec.md section 4.9), with what its id is made of (section 2.2), so the file list, the reader,
@@ -139,7 +146,7 @@ private suspend fun openInLocation(sources: TextSources, ref: TextBookRef.InLoca
                     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, document)
                     val size = sources.resolver.documentInfo(uri)?.size
                     if (size != null && size > sources.pictureBudget) return@withContext null
-                    sources.resolver.openInputStream(uri)?.use { readCapped(it, sources.pictureBudget) }
+                    sources.resolver.readDocumentPicture(uri, sources.pictureBudget)
                 }
                 is LibraryLocation.SmbShare -> sources.smb.open(place, resolved).use { readPicture(it, sources.pictureBudget) }
             }
@@ -199,7 +206,7 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId
     } catch (_: Exception) {
         null
     }
-    val bytes = (resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())).use { readCapped(it, MAX_TEXT_BYTES) }
+    val bytes = (resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())).use { readCapped(it, MAX_TEXT_BYTES, coroutineContext) }
         ?: return TextOpenResult.Failed(TextFailure.TooLarge)
     val bookId = id ?: documentBookId(bytes.copyOf(minOf(bytes.size, BOOK_ID_PREFIX_BYTES)), bytes.size.toLong())
     val title = info?.name ?: (source as? BookSource.InLocation)?.path?.substringAfterLast('/') ?: uri.lastPathSegment ?: uri.toString()
@@ -280,11 +287,27 @@ private suspend fun guarded(open: suspend () -> TextOpenResult): TextOpenResult 
     )
 }
 
+/** Cancels a provider waiting in open too; descriptors and streams close before returning bytes. */
+private suspend fun ContentResolver.readDocumentPicture(uri: Uri, budget: Int): ByteArray? = suspendCancellableCoroutine { continuation ->
+    val signal = CancellationSignal()
+    continuation.invokeOnCancellation { signal.cancel() }
+    try {
+        continuation.context.ensureActive()
+        val bytes = openAssetFileDescriptor(uri, "r", signal)?.use { descriptor ->
+            descriptor.createInputStream().use { readCapped(it, budget, continuation.context) }
+        }
+        continuation.resume(bytes)
+    } catch (e: Throwable) {
+        continuation.resumeWithException(e)
+    }
+}
+
 /** The whole stream, or null when it is longer than [limit], including streams without a declared size. */
-private fun readCapped(input: InputStream, limit: Int): ByteArray? {
+internal fun readCapped(input: InputStream, limit: Int, context: CoroutineContext): ByteArray? {
     val out = java.io.ByteArrayOutputStream()
     val buffer = ByteArray(64 * 1024)
     while (true) {
+        context.ensureActive()
         val read = input.read(buffer)
         if (read < 0) return out.toByteArray()
         if (out.size() + read > limit) return null
@@ -293,10 +316,13 @@ private fun readCapped(input: InputStream, limit: Int): ByteArray? {
 }
 
 /** Check the server's declared length before allocating or making the first read. */
-internal fun readPicture(file: ByteSource, budget: Int): ByteArray? {
+internal suspend fun readPicture(file: ByteSource, budget: Int): ByteArray? {
     if (file.size < 0 || file.size > budget) return null
     val buffer = ByteBuffer.allocate(file.size.toInt())
-    while (buffer.hasRemaining() && file.read(buffer.position().toLong(), buffer) >= 0) Unit
+    while (buffer.hasRemaining()) {
+        coroutineContext.ensureActive()
+        if (file.read(buffer.position().toLong(), buffer) < 0) break
+    }
     return if (buffer.hasRemaining()) null else buffer.array()
 }
 

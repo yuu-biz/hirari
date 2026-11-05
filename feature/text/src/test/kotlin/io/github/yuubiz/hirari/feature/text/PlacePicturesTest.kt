@@ -3,9 +3,12 @@ package io.github.yuubiz.hirari.feature.text
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
+import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
@@ -17,7 +20,14 @@ import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.text.Figure
 import io.github.yuubiz.hirari.core.text.parseAozora
 import io.github.yuubiz.hirari.core.text.resolvePicturePath
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -25,9 +35,14 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.io.InputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -39,6 +54,7 @@ class PictureTreeProvider : ContentProvider() {
     val files = mutableMapOf<String, File>()
     val opened = mutableListOf<String>()
     var reportSize = true
+    var beforeOpenPicture: ((CancellationSignal?) -> Unit)? = null
 
     override fun onCreate() = true
     override fun query(uri: Uri, projection: Array<String>?, selection: String?, selectionArgs: Array<String>?, sortOrder: String?): Cursor {
@@ -66,6 +82,14 @@ class PictureTreeProvider : ContentProvider() {
         opened += id
         return ParcelFileDescriptor.open(checkNotNull(files[id]), ParcelFileDescriptor.MODE_READ_ONLY)
     }
+
+    override fun openAssetFile(uri: Uri, mode: String, signal: CancellationSignal?): AssetFileDescriptor {
+        if (DocumentsContract.getDocumentId(uri).endsWith(".png")) beforeOpenPicture?.invoke(signal)
+        return AssetFileDescriptor(openFile(uri, mode), 0, AssetFileDescriptor.UNKNOWN_LENGTH)
+    }
+
+    override fun openTypedAssetFile(uri: Uri, mimeTypeFilter: String, opts: Bundle?, signal: CancellationSignal?): AssetFileDescriptor =
+        openAssetFile(uri, "r", signal)
 
     override fun getType(uri: Uri): String? = null
     override fun insert(uri: Uri, values: ContentValues?): Uri? = null
@@ -151,7 +175,7 @@ class PlacePicturesTest {
     }
 
     @Test
-    fun `TX01 an over budget SMB file is refused before the first read`() {
+    fun `TX01 an over budget SMB file is refused before the first read`() = runBlocking {
         var reads = 0
         val file = object : ByteSource {
             override val size = pictureBudgetBytes() + 1L
@@ -160,5 +184,73 @@ class PlacePicturesTest {
         }
         assertNull(readPicture(file, pictureBudgetBytes()))
         assertEquals(0, reads)
+    }
+
+    @Test
+    fun `a cancelled SMB picture stops before the next chunk and closes its source`() = runBlocking {
+        val job = Job()
+        var reads = 0
+        var closed = false
+        val file = object : ByteSource {
+            override val size = 8L
+            override fun read(offset: Long, dst: ByteBuffer): Int {
+                reads++
+                dst.put(1.toByte())
+                job.cancel()
+                return 1
+            }
+            override fun close() { closed = true }
+        }
+        assertFailsWith<CancellationException> {
+            withContext(job) { file.use { readPicture(it, 8) } }
+        }
+        assertEquals(1, reads)
+        assertTrue(closed)
+    }
+
+    @Test
+    fun `a cancelled stream stops before the next chunk and closes`() {
+        val job = Job()
+        var reads = 0
+        var closed = false
+        val input = object : InputStream() {
+            override fun read(): Int = error("use chunk reads")
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                reads++
+                buffer[offset] = 1
+                job.cancel()
+                return 1
+            }
+            override fun close() { closed = true }
+        }
+        assertFailsWith<CancellationException> { input.use { readCapped(it, 8, job) } }
+        assertEquals(1, reads)
+        assertTrue(closed)
+    }
+
+    @Test
+    fun `cancelling a SAF picture releases a provider waiting in open`() = runBlocking {
+        val sources = safSources()
+        val opened = assertIs<TextOpenResult.Opened>(opener(TextBookRef.InLocation(saf.id, "dir/story.txt"), sources).open())
+        val entered = CompletableDeferred<Unit>()
+        val cancelled = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        provider.beforeOpenPicture = { signal ->
+            signal?.setOnCancelListener { cancelled.countDown(); release.countDown() }
+            entered.complete(Unit)
+            check(release.await(5, TimeUnit.SECONDS)) { "provider was not released" }
+            signal?.throwIfCanceled()
+        }
+        val load = launch(Dispatchers.IO) { illustration(opened) }
+        try {
+            withTimeout(5_000) { entered.await() }
+            load.cancel()
+            assertTrue(withContext(Dispatchers.IO) { cancelled.await(5, TimeUnit.SECONDS) })
+        } finally {
+            release.countDown()
+            load.cancelAndJoin()
+            opened.text.close()
+        }
+        assertEquals(listOf("dir/story.txt"), provider.opened)
     }
 }

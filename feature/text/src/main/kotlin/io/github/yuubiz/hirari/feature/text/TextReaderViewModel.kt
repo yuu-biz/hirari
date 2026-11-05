@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.text
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.graphics.Typeface
 import android.os.Build
@@ -228,9 +229,10 @@ class TextReaderViewModel(
 
 private fun decodeFitting(bytes: ByteArray, maxWidth: Int, maxHeight: Int): Bitmap? = try {
     ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
-        val memoryScale = kotlin.math.sqrt(pictureBudgetBytes().toDouble() / 2 / (info.size.width.toDouble() * info.size.height * 4)).toFloat()
-        val scale = minOf(1f, maxWidth.toFloat() / info.size.width, maxHeight.toFloat() / info.size.height, memoryScale)
-        decoder.setTargetSize(maxOf(1, (info.size.width * scale).toInt()), maxOf(1, (info.size.height * scale).toInt()))
+        val options = pictureDecodeOptions(info.size.width, info.size.height, maxWidth, maxHeight)
+        decoder.allocator = options.allocator
+        decoder.setTargetColorSpace(options.colorSpace)
+        decoder.setTargetSize(options.width, options.height)
     }
 } catch (e: CancellationException) {
     throw e
@@ -238,4 +240,17 @@ private fun decodeFitting(bytes: ByteArray, maxWidth: Int, maxHeight: Int): Bitm
     null
 } catch (_: OutOfMemoryError) {
     null
+}
+
+internal data class PictureDecodeOptions(val width: Int, val height: Int, val colorSpace: ColorSpace, val allocator: Int)
+
+/** The 挿絵 fits both the viewport and half the budget (docs/spec.md section 4.9). */
+internal fun pictureDecodeOptions(width: Int, height: Int, maxWidth: Int, maxHeight: Int, budget: Int = pictureBudgetBytes()): PictureDecodeOptions {
+    // sRGB output uses 8 bits per channel, so the estimate stays at 4 bytes per pixel.
+    val memoryScale = kotlin.math.sqrt(budget.toDouble() / 2 / (width.toDouble() * height * 4)).toFloat()
+    val scale = minOf(1f, maxWidth.toFloat() / width, maxHeight.toFloat() / height, memoryScale)
+    return PictureDecodeOptions(
+        maxOf(1, (width * scale).toInt()), maxOf(1, (height * scale).toInt()),
+        ColorSpace.get(ColorSpace.Named.SRGB), ImageDecoder.ALLOCATOR_DEFAULT,
+    )
 }
