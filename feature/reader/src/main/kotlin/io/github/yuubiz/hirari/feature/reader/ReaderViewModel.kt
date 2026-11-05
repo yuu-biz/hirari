@@ -262,26 +262,26 @@ class ReaderViewModel internal constructor(
     var prepared: Int by mutableIntStateOf(0)
         private set
 
-    /** Changes whenever a tile of 縦に連続 arrives or goes. */
+    /** Changes whenever a tile arrives or goes. */
     var tilesDrawn: Int by mutableIntStateOf(0)
         private set
 
-    private val stripTiles = StripTiles(
+    private val pageTiles = PageTiles(
         viewModelScope,
         open = ::openTiles,
         close = { source -> services.getCompleted().appScope.launch { source.close() } },
         changed = { tilesDrawn++ },
     )
 
-    /** The tiles of [page] read so far, which draw over its prepared page in 縦に連続. */
-    fun drawnTiles(page: Int): List<DrawnTile> = stripTiles.drawn(page)
+    /** The tiles of [page] read so far, which draw over its prepared page. */
+    fun drawnTiles(page: Int): List<DrawnTile> = pageTiles.drawn(page)
 
     /** The tiles of [page], from its data the raw-data layer holds when it has it. */
     private suspend fun openTiles(page: Int): TileOpening {
         val book = opened ?: return TileOpening.Whole
         val current = state ?: return TileOpening.Whole
         val shape = current.pagination.shapes[page] as? PageShape.Known ?: return TileOpening.Whole
-        return when (val result = book.book.page(page, shape.atWidth(current.viewport.width), book.prefetcher.raw(page), Tiling.AsPlanned)) {
+        return when (val result = book.book.page(page, shape.atWidth(current.viewport.width), book.prefetcher.raw(page), Tiling.Always)) {
             is PageResult.Ready -> when (val image = result.image) {
                 is PreparedImage.Tiled -> TileOpening.Tiled(image.source)
                 is PreparedImage.Whole -> TileOpening.Whole.also { image.bitmap.recycle() }
@@ -342,7 +342,7 @@ class ReaderViewModel internal constructor(
             @Suppress("DEPRECATION")
             if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
                 opened?.prefetcher?.trim()
-                stripTiles.clear()
+                pageTiles.clear()
             }
         }
 
@@ -554,7 +554,7 @@ class ReaderViewModel internal constructor(
     fun retry(page: Int) {
         opened?.prefetcher?.retry(page)
         opened?.remote?.server?.retry()
-        stripTiles.retry()
+        pageTiles.retry()
     }
 
     /** What the book has fetched from its server, for 取得の状況; `null` for a book not on a server. */
@@ -698,7 +698,7 @@ class ReaderViewModel internal constructor(
         traces.close()
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
-        stripTiles.clear()
+        pageTiles.clear()
         opened?.let {
             it.disk?.stop()
             it.prefetcher.close()
@@ -840,7 +840,10 @@ class ReaderViewModel internal constructor(
         val book = opened ?: return
         val viewport = viewport ?: return
         if (state != null) return
-        val first = ReaderState.open(book.book.pages.size, book.start, book.config, viewport, book.startOffset).copy(connection = book.remote?.server?.state?.value)
+        val first = ReaderState.open(book.book.pages.size, book.start, book.config, viewport, book.startOffset).copy(
+            connection = book.remote?.server?.state?.value,
+            zoomReads = ZoomReads(book.services.decoding.budgetBytes, drawn = book.book.container == Container.Pdf),
+        )
         state = first
         changed(null, first)
     }
@@ -848,7 +851,8 @@ class ReaderViewModel internal constructor(
     private fun changed(before: ReaderState?, after: ReaderState) {
         val book = opened ?: return
         if (before == null || before.pagination !== after.pagination || before.shownViews != after.shownViews ||
-            before.viewport != after.viewport || before.config != after.config || before.margins !== after.margins
+            before.viewport != after.viewport || before.config != after.config || before.margins !== after.margins ||
+            before.zoom.settledFactor != after.zoom.settledFactor
         ) {
             book.prefetcher.update(after.prefetchInput(paused = stripShown || !onScreen))
         }
@@ -860,12 +864,12 @@ class ReaderViewModel internal constructor(
             book.overrides.update { it.changedBy(before.config, after.config, book.global) }
         }
         readForLoupe(book.loader, after.loupeSource())
-        stripTiles.update(after.tileWindows())
+        if (after.zoom.pinch?.active != true) pageTiles.update(after.tileWindows())
         prefetchToDisk()
         if (reconnected(before?.connection, after.connection)) {
             book.prefetcher.retryLost()
             if (onScreen && !stripShown) book.disk?.restart()
-            stripTiles.retry()
+            pageTiles.retry()
         }
         val hit = after.edgeHit
         if (hit != null && hit != before?.edgeHit) {

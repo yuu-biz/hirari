@@ -64,6 +64,7 @@ suspend fun pageMismatches(book: OpenBook, expected: ExpectedBook, target: Pixel
             val shape = describe(book.shape(page.index))
             if (shape != actual) problems += "${page.name}: shape gave $shape"
             problems += tileProblems(book, page.index, target, result.image).map { "${page.name}: $it" }
+            problems += zoomTileProblems(book, page.index, target, result.image, page.sniffed).map { "${page.name}: $it" }
         }
         when (val raw = book.raw(page.index)) {
             is PageResult.Ready -> {
@@ -110,6 +111,30 @@ private suspend fun tileProblems(book: OpenBook, index: Int, target: PixelSize, 
         }
     }
     return problems + if (tiles.any { it.isRecycled }) listOf("closing the source recycled a tile") else emptyList()
+}
+
+/**
+ * How the page at [index] read with tiles always, as a zoom reads it (docs/spec.md section 4.8), differs from
+ * [whole]: every page but a JPEG XL one comes as tiles of the same shape, a PDF page on its finer grid, and the
+ * visible tiles at the top of a fit-width view have their planned size and about the colors of the same part.
+ */
+private suspend fun zoomTileProblems(book: OpenBook, index: Int, target: PixelSize, whole: PreparedImage, type: ImageType?): List<String> {
+    val result = book.page(index, target, tiling = Tiling.Always)
+    val image = (result as? PageResult.Ready)?.image ?: return listOf("with tiles always gave ${describe(result)}")
+    if (image !is PreparedImage.Tiled) {
+        (image as PreparedImage.Whole).bitmap.recycle()
+        return if (type == ImageType.JpegXl) emptyList() else listOf("not tiled always")
+    }
+    val tiles = ArrayList<Bitmap>()
+    return image.source.use { source ->
+        if (image.shape != whole.shape) return@use listOf("tiled always with the shape ${image.shape}")
+        val size = source.size
+        val scale = target.width / size.width.toDouble()
+        val viewHeight = minOf(size.height, (target.height / scale).toInt())
+        source.plan(PixelRect(0, 0, size.width, viewHeight), scale).visible.mapNotNull { key ->
+            tileProblem(source, key, (whole as PreparedImage.Whole).bitmap, tiles)?.let { "tile always $key: $it" }
+        }
+    }
 }
 
 private suspend fun tileProblem(source: TileSource, key: TileKey, whole: Bitmap, tiles: MutableList<Bitmap>): String? {

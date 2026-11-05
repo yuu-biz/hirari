@@ -25,6 +25,7 @@ import io.github.yuubiz.hirari.feature.reader.scanOf
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.feature.reader.Viewport
 import io.github.yuubiz.hirari.feature.reader.WIDE
+import io.github.yuubiz.hirari.feature.reader.ZoomEvent
 import io.github.yuubiz.hirari.feature.reader.spreadConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -144,10 +145,19 @@ private class Reader(
         val before = state
         state = state.reduce(event)
         val same = before.pagination === state.pagination && before.shownViews == state.shownViews &&
-            before.viewport == state.viewport && before.config == state.config && before.margins === state.margins
+            before.viewport == state.viewport && before.config == state.config && before.margins === state.margins &&
+            before.zoom.settledFactor == state.zoom.settledFactor
         if (same) return
         val input = state.prefetchInput()
         prefetcher.update(PrefetchInput(input.views, input.current, input.shapes, input.travel, input.targets, input.shown + alsoShown, readsMargins = input.readsMargins))
+    }
+
+    /** A pinch that grows the span by [ratio] once it starts, and lets go. */
+    fun pinch(ratio: Float) {
+        apply(ReaderEvent.Zoom(ZoomEvent.FingersDown(100f)))
+        apply(ReaderEvent.Zoom(ZoomEvent.SpanChanged(120f)))
+        apply(ReaderEvent.Zoom(ZoomEvent.SpanChanged(120f * ratio)))
+        apply(ReaderEvent.Zoom(ZoomEvent.FingersUp))
     }
 
     fun turn(turn: Turn) {
@@ -183,6 +193,32 @@ class PrefetcherTest {
         assertTrue(reader.prefetcher.canPrefetch)
         assertTrue(12 in reader.loader.rawReads)
         assertTrue(9 in reader.loader.rawReads)
+    }
+
+    @Test
+    fun aSettledZoomPreparesTheCurrentViewAgainKeepingTheOldUntilThenAndALaterZoomDropsTheFirst() = runTest {
+        val scan = PageShape.Known(3000, 4500)
+        val loader = FakeLoader(shapes = (0 until 3).associateWith { PageResult.Ready(scan) }.toMutableMap())
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        val first = PageView.One(0)
+        assertEquals(PreparedPage.Image("0@1080x1620"), reader.prefetcher[first]!!.pages.single())
+        val gate = CompletableDeferred<Unit>()
+        loader.pageGates[0] = gate
+        reader.pinch(1.5625f)
+        advanceUntilIdle()
+        assertEquals(PreparedPage.Image("0@1080x1620"), reader.prefetcher[first]!!.pages.single(), "the old page draws until the new one is ready")
+        reader.pinch(0.81f)
+        advanceUntilIdle()
+        assertTrue(0 in loader.cancelled, "the read for the first zoom stops")
+        gate.complete(Unit)
+        advanceUntilIdle()
+        val prepared = reader.prefetcher[first]!!
+        assertEquals(reader.state.prefetchTarget(first), prepared.target)
+        assertTrue(prepared.target.sizes.single().width in 1081 until 2109, "the second zoom, 1.42 times: ${prepared.target.sizes}")
+        assertEquals(2, loader.prepares[0], "the first zoom was never made")
+        assertEquals(listOf("0@1080x1620"), reader.released)
+        assertEquals(PreparedPage.Image("1@1080x1620"), reader.prefetcher[PageView.One(1)]!!.pages.single(), "the next view stays at the scale mode")
     }
 
     @Test

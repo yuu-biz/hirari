@@ -92,11 +92,16 @@ data class ReaderState(
     val margins: Map<Int, MarginScan> = emptyMap(),
     /** Where the screen is over the [strip] in 縦に連続, and `null` in the other layouts (docs/spec.md section 2.5). */
     val scroll: StripScroll? = null,
+    /** What reading the pages again for a zoom may take (docs/spec.md section 4.8, ピンチと拡大率). */
+    val zoomReads: ZoomReads = ZoomReads(),
 ) {
     val current: PageView get() = pagination.current
 
     /** The pages one under another, as 縦に連続 lays them out. */
     val strip: Strip by lazy { Strip.of(pagination.shapes) }
+
+    /** How the current view is read again for the settled zoom. */
+    val zoomRead: ZoomRead by lazy { planZoomRead() }
 
     /** The screen over the [strip], with the pinch zoom. */
     val stripScreen: StripScreen get() = StripScreen(viewport.width, viewport.height, zoom.factor)
@@ -114,12 +119,12 @@ data class ReaderState(
         if (scroll != null) null else ViewGeometry.of(view, pagination.shapes, keptParts(view), config, viewport, zoom.factor)
 
     /**
-     * The geometry of [view] at the zoom of its scale mode, which sets the size of its prepared pages. In 縦に連続
-     * every page fits the width of the screen.
+     * The geometry of [view] at the zoom of its scale mode, which sets the size of its prepared pages, or at [factor]
+     * over it. In 縦に連続 every page fits the width of the screen.
      */
-    fun preparedGeometry(view: PageView): ViewGeometry? {
+    fun preparedGeometry(view: PageView, factor: Float = 1f): ViewGeometry? {
         val shown = if (scroll != null) config.copy(scaleMode = ScaleMode.FitWidth, capAtOriginal = false) else config
-        return ViewGeometry.of(view, pagination.shapes, keptParts(view), shown, viewport, 1f)
+        return ViewGeometry.of(view, pagination.shapes, keptParts(view), shown, viewport, factor)
     }
 
     /** The stop index the screen rests on, or `null` while the geometry is unknown or the view was panned. */

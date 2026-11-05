@@ -31,6 +31,7 @@ private val STRIP = ReaderConfig(layout = LayoutSettings(LayoutMode.Vertical, Re
 
 /** 800 × 6000: narrower than 1:3, so it shows as tiles, 8100 pixels tall on the portrait screen. */
 private val LONG = PageShape.Known(800, 6000)
+private val LONG_SIZE = PixelSize(LONG.width, LONG.height)
 
 private class FakeTiles(override val size: PixelSize) : TileSource {
     val asked = mutableListOf<TileKey>()
@@ -53,8 +54,8 @@ private class FakeTiles(override val size: PixelSize) : TileSource {
 }
 
 @RunWith(RobolectricTestRunner::class)
-class StripTilesTest {
-    private fun TestScope.tiles(sources: MutableMap<Int, FakeTiles>, changes: IntArray = IntArray(1)) = StripTiles(
+class PageTilesTest {
+    private fun TestScope.tiles(sources: MutableMap<Int, FakeTiles>, changes: IntArray = IntArray(1)) = PageTiles(
         CoroutineScope(StandardTestDispatcher(testScheduler)),
         open = { page -> TileOpening.Tiled(sources.getOrPut(page) { FakeTiles(PixelSize(LONG.width, LONG.height)) }) },
         close = { it.close() },
@@ -80,7 +81,7 @@ class StripTilesTest {
     fun turningSharpenOnReadsTheTilesAgainSharpenedFromTheSameSource() = runTest {
         val sources = HashMap<Int, FakeTiles>()
         val tiles = tiles(sources)
-        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35)
+        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35, LONG_SIZE)
         tiles.update(mapOf(0 to window))
         advanceUntilIdle()
         val source = sources.getValue(0)
@@ -102,7 +103,7 @@ class StripTilesTest {
         val sources = HashMap<Int, FakeTiles>()
         val changes = IntArray(1)
         val tiles = tiles(sources, changes)
-        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35)
+        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35, LONG_SIZE)
         tiles.update(mapOf(0 to window))
         advanceUntilIdle()
         val source = sources.getValue(0)
@@ -115,12 +116,24 @@ class StripTilesTest {
     }
 
     @Test
+    fun aSourceOnAFinerGridThanThePageIsPlannedAndDrawnInItsOwnPixels() = runTest {
+        val fine = FakeTiles(PixelSize(LONG.width * 64, LONG.height * 64))
+        val tiles = PageTiles(CoroutineScope(StandardTestDispatcher(testScheduler)), open = { TileOpening.Tiled(fine) }, close = {}, changed = {})
+        tiles.update(mapOf(0 to TileWindow(PixelRect(0, 0, 800, 1422), 1.35, LONG_SIZE)))
+        advanceUntilIdle()
+        val plan = fine.plan(PixelRect(0, 0, 800 * 64, 1422 * 64), 1.35 / 64)
+        assertEquals(plan.all.toSet(), fine.asked.toSet())
+        assertEquals(plan.all.size, tiles.drawn(0).size)
+        assertTrue(tiles.drawn(0).all { it.of == fine.size })
+    }
+
+    @Test
     fun aPageThatComesBackWholeIsNotAskedAgain() = runTest {
         var opened = 0
-        val tiles = StripTiles(CoroutineScope(StandardTestDispatcher(testScheduler)), open = { opened++; TileOpening.Whole }, close = {}, changed = {})
-        tiles.update(mapOf(0 to TileWindow(PixelRect(0, 0, 10, 10), 1.0)))
+        val tiles = PageTiles(CoroutineScope(StandardTestDispatcher(testScheduler)), open = { opened++; TileOpening.Whole }, close = {}, changed = {})
+        tiles.update(mapOf(0 to TileWindow(PixelRect(0, 0, 10, 10), 1.0, PixelSize(10, 20))))
         advanceUntilIdle()
-        tiles.update(mapOf(0 to TileWindow(PixelRect(0, 5, 10, 15), 1.0)))
+        tiles.update(mapOf(0 to TileWindow(PixelRect(0, 5, 10, 15), 1.0, PixelSize(10, 20))))
         advanceUntilIdle()
         assertEquals(1, opened)
     }
@@ -129,13 +142,13 @@ class StripTilesTest {
     fun aPageWhoseTilesFailedForNowIsAskedAgainOnceItComesBackOnScreenOrTheConnectionDoes() = runTest {
         var opened = 0
         val source = FakeTiles(PixelSize(LONG.width, LONG.height))
-        val tiles = StripTiles(
+        val tiles = PageTiles(
             CoroutineScope(StandardTestDispatcher(testScheduler)),
             open = { opened++; if (opened < 3) TileOpening.Failed else TileOpening.Tiled(source) },
             close = { it.close() },
             changed = {},
         )
-        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35)
+        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35, LONG_SIZE)
         tiles.update(mapOf(0 to window))
         advanceUntilIdle()
         tiles.update(mapOf(0 to window.copy(shown = PixelRect(0, 10, 800, 1432))))

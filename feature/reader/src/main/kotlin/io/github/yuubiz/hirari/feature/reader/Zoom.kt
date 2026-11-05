@@ -108,6 +108,9 @@ data class ZoomState(val factor: Float = 1f, val pinch: Pinch? = null, val lastR
     /** The `150%` shown during a pinch. */
     val percent: Int get() = (factor * 100f).roundToInt()
 
+    /** The factor the fingers last left, which a pinch in progress does not change until they come up. */
+    val settledFactor: Float get() = pinch?.startFactor ?: factor
+
     /** [startSpan] is in dp. Until [active], the span has not changed by [PINCH_START_DP]. */
     data class Pinch(val startSpan: Float, val startFactor: Float, val active: Boolean)
 

@@ -26,6 +26,9 @@ enum class Tiling {
 
     /** Tiles where section 3.7 plans them: images narrower than 1:3. */
     AsPlanned,
+
+    /** Tiles of every image and PDF page that can have them, for a page zoomed past what one bitmap holds (section 4.8). */
+    Always,
 }
 
 /**

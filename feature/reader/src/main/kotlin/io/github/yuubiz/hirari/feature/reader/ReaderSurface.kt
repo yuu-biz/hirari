@@ -70,7 +70,6 @@ import io.github.yuubiz.hirari.core.model.turnMovement
 import kotlinx.coroutines.delay
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageResult
-import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
@@ -338,6 +337,8 @@ private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, 
                 val covered = sharper?.source?.steps?.part ?: prepared.target.steps[i].part
                 val shown = Rect(left, top, left + rect.width, top + rect.height)
                 drawPage(bitmap, wanted[i], covered, shown, layer.alpha, colorFilter)
+                val tiles = if (sharper == null && layer.view == state.current) viewModel.drawnTiles(layer.view.pages[i]) else emptyList()
+                if (tiles.isNotEmpty()) clipRect(shown.left, shown.top, shown.right, shown.bottom) { drawTiles(tiles, wanted[i].wholeAt(shown), colorFilter) }
             }
             is PreparedPage.Error -> drawRect(CardBackground, Offset(left, top), androidx.compose.ui.geometry.Size(rect.width, rect.height), layer.alpha)
             null -> Unit
@@ -368,20 +369,19 @@ private fun DrawScope.drawStrip(viewModel: ReaderViewModel, state: ReaderState, 
             is PreparedPage.Error -> drawRect(CardBackground, Offset(rect.left, rect.top), androidx.compose.ui.geometry.Size(rect.width, rect.height))
             null -> Unit
         }
-        val shape = state.pagination.shapes[page] as? PageShape.Known ?: continue
-        if (detail?.source?.view != view) drawTiles(viewModel.drawnTiles(page), rect, rect.width / shape.width, colorFilter)
+        if (detail?.source?.view != view) drawTiles(viewModel.drawnTiles(page), rect, colorFilter)
     }
 }
 
 /**
- * [tiles] of a page drawn at [rect] with [scale] screen pixels for each pixel of its image. Each edge is rounded from
- * the image's own position, so neighboring tiles meet without a seam.
+ * [tiles] of a page whose whole image lies at [whole]. Each edge is rounded from the image's own position, so
+ * neighboring tiles meet without a seam.
  */
-private fun DrawScope.drawTiles(tiles: List<DrawnTile>, rect: Rect, scale: Float, colorFilter: ColorFilter?) {
-    fun x(at: Int) = (rect.left + at * scale).roundToInt()
-    fun y(at: Int) = (rect.top + at * scale).roundToInt()
+private fun DrawScope.drawTiles(tiles: List<DrawnTile>, whole: Rect, colorFilter: ColorFilter?) {
     for (tile in tiles) {
         if (tile.bitmap.isRecycled) continue
+        fun x(at: Int) = (whole.left + at * whole.width / tile.of.width).roundToInt()
+        fun y(at: Int) = (whole.top + at * whole.height / tile.of.height).roundToInt()
         val left = x(tile.rect.left)
         val top = y(tile.rect.top)
         drawImage(

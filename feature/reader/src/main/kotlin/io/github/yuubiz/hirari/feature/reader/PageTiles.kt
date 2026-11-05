@@ -10,42 +10,86 @@ import io.github.yuubiz.hirari.core.image.isElongated
 import io.github.yuubiz.hirari.core.image.tileRect
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
+import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Rotation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlin.math.floor
 import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 
 /**
- * The part of a page's image on screen, in image pixels, how many screen pixels show one image pixel, and whether
- * シャープ is on the tiles.
+ * The part of a page's image on screen, in the pixels of its [image], how many screen pixels show one of them, and
+ * whether シャープ is on the tiles.
  */
-data class TileWindow(val shown: PixelRect, val scale: Double, val sharpen: Boolean = false)
+data class TileWindow(val shown: PixelRect, val scale: Double, val image: PixelSize, val sharpen: Boolean = false) {
+    /** [shown] in the pixels of an image of [size] that holds the same page, as the tiles of a PDF page are planned on. */
+    fun inPixelsOf(size: PixelSize): PixelRect {
+        if (size == image) return shown
+        val x = size.width.toDouble() / image.width
+        val y = size.height.toDouble() / image.height
+        return PixelRect(
+            floor(shown.left * x).toInt(),
+            floor(shown.top * y).toInt(),
+            ceil(shown.right * x).toInt(),
+            ceil(shown.bottom * y).toInt(),
+        ).clippedTo(PixelRect(0, 0, size.width, size.height))
+    }
+}
 
 /**
- * The pages of 縦に連続 on screen that show as tiles (docs/spec.md sections 3.7 and 4.8): those narrower than 1:3, as
- * the book stores them, and the part of each on screen. A turned page keeps its prepared bitmap, since tiles come
- * in the image's own orientation.
+ * The pages on screen that show as tiles over their prepared pages (docs/spec.md sections 3.7 and 4.8), and the part
+ * of each on screen. In 縦に連続 they are the pages narrower than 1:3, as the book stores them, and while a zoom past
+ * the width of the screen has settled, every page it shows sharper than its prepared page. In the other layouts they
+ * are the pages of the current view at rest when the settled zoom reads them as [ZoomRead.Tiles]. A turned page
+ * keeps its prepared bitmap, since tiles come in the image's own orientation.
  */
 fun ReaderState.tileWindows(): Map<Int, TileWindow> {
-    if (scroll == null || config.rotation != Rotation.None) return emptyMap()
+    if (config.rotation != Rotation.None) return emptyMap()
+    return if (scroll != null) stripWindows() else zoomWindows()
+}
+
+private fun ReaderState.stripWindows(): Map<Int, TileWindow> {
+    val zoomed = zoom.settledFactor > 1f
     return stripPages().mapNotNull { (page, rect) ->
         val shape = pagination.shapes[page] as? PageShape.Known ?: return@mapNotNull null
-        if (!isElongated(shape.width, shape.height)) return@mapNotNull null
-        val scale = rect.width.toDouble() / shape.width
-        val shown = PixelRect(
-            floor(-rect.left / scale).toInt().coerceIn(0, shape.width),
-            floor(-rect.top / scale).toInt().coerceIn(0, shape.height),
-            ceil((viewport.width - rect.left) / scale).toInt().coerceIn(0, shape.width),
-            ceil((viewport.height - rect.top) / scale).toInt().coerceIn(0, shape.height),
-        )
-        if (shown.isEmpty) null else page to TileWindow(shown, scale, config.adjust.sharpen)
+        val tiled = isElongated(shape.width, shape.height) || zoomed && zoomedPastPrepared(shape, rect.width)
+        if (tiled) window(shape, rect, rect)?.let { page to it } else null
     }.toMap()
 }
 
-/** A tile ready to draw: its [bitmap] covers [rect] of the page's image, in image pixels. */
-class DrawnTile(val rect: PixelRect, val bitmap: Bitmap)
+private fun ReaderState.zoomWindows(): Map<Int, TileWindow> {
+    if (zoomRead != ZoomRead.Tiles || transition != null || pull != null) return emptyMap()
+    val geometry = geometry() ?: return emptyMap()
+    val at = positionAt(Long.MAX_VALUE) ?: return emptyMap()
+    val parts = shownParts(current)
+    return current.pages.indices.mapNotNull { i ->
+        val page = current.pages[i]
+        val shape = pagination.shapes[page] as? PageShape.Known ?: return@mapNotNull null
+        val laid = geometry.pages[i]
+        val shown = Rect(laid.left - at.x, laid.top - at.y, laid.right - at.x, laid.bottom - at.y)
+        window(shape, parts[i].wholeAt(shown), shown)?.let { page to it }
+    }.toMap()
+}
+
+/** What the screen shows of [shown], part of a page of [shape] whose whole image lies at [whole], in screen pixels. */
+private fun ReaderState.window(shape: PageShape.Known, whole: Rect, shown: Rect): TileWindow? {
+    val scaleX = whole.width.toDouble() / shape.width
+    val scaleY = whole.height.toDouble() / shape.height
+    val pixels = PixelRect(
+        floor((max(shown.left, 0f) - whole.left) / scaleX).toInt().coerceIn(0, shape.width),
+        floor((max(shown.top, 0f) - whole.top) / scaleY).toInt().coerceIn(0, shape.height),
+        ceil((min(shown.right, viewport.width) - whole.left) / scaleX).toInt().coerceIn(0, shape.width),
+        ceil((min(shown.bottom, viewport.height) - whole.top) / scaleY).toInt().coerceIn(0, shape.height),
+    )
+    if (pixels.isEmpty) return null
+    return TileWindow(pixels, max(scaleX, scaleY), PixelSize(shape.width, shape.height), config.adjust.sharpen)
+}
+
+/** A tile ready to draw: its [bitmap] covers [rect] of an image of [of] pixels, the page's own or finer. */
+class DrawnTile(val rect: PixelRect, val bitmap: Bitmap, val of: PixelSize)
 
 /** What reading a page for its tiles gave. */
 internal sealed interface TileOpening {
@@ -59,13 +103,14 @@ internal sealed interface TileOpening {
 }
 
 /**
- * The tiles of the pages [tileWindows] names, read over their prepared pages while they are on screen. Each page
+ * The tiles of the pages [tileWindows] names, read over their prepared pages while they are on screen: the long pages
+ * of 縦に連続, and the pages of a settled zoom (docs/spec.md section 4.8). Each page
  * gets its [TileSource] once it shows; a page that leaves the screen closes it. A page whose read [TileOpening.Failed]
  * is read again when it comes back on screen and on [retry]. Tiles are never recycled here, as section 3.7 asks,
  * since a frame may still draw one. Everything runs in [scope], on the main thread; [open] and the tile reads move
  * their work off it, and [close] closes a source off it.
  */
-internal class StripTiles(
+internal class PageTiles(
     private val scope: CoroutineScope,
     private val open: suspend (page: Int) -> TileOpening,
     private val close: (TileSource) -> Unit,
@@ -119,7 +164,7 @@ internal class StripTiles(
         val entry = held[page] ?: return emptyList()
         val source = entry.source ?: return emptyList()
         val plan = entry.plan ?: return emptyList()
-        return plan.all.mapNotNull { key -> entry.tiles[key]?.let { DrawnTile(tileRect(key, source.size), it) } }
+        return plan.all.mapNotNull { key -> entry.tiles[key]?.let { DrawnTile(tileRect(key, source.size), it, source.size) } }
     }
 
     fun clear() {
@@ -148,7 +193,7 @@ internal class StripTiles(
     }
 
     private fun plan(entry: Held, source: TileSource, window: TileWindow) {
-        val plan = source.plan(window.shown, window.scale)
+        val plan = source.plan(window.inPixelsOf(source.size), window.scale * window.image.width / source.size.width)
         entry.plan = plan
         if (entry.sharpen != window.sharpen) {
             entry.sharpen = window.sharpen

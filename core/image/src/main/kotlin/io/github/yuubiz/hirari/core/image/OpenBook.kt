@@ -112,8 +112,9 @@ class OpenBook internal constructor(
 
     /**
      * The page at [index] scaled to fit [target], in pixels, decoded from [raw] when it is given. With
-     * [Tiling.AsPlanned] an image narrower than 1:3 comes as [PreparedImage.Tiled] (docs/spec.md section 3.7).
-     * A PDF page is drawn to fit [target], enlarged when it is smaller (section 3.9).
+     * [Tiling.AsPlanned] an image narrower than 1:3 comes as [PreparedImage.Tiled] (docs/spec.md section 3.7), and
+     * with [Tiling.Always] every page that can, a PDF page as tiles drawn with a matrix. A PDF page is otherwise
+     * drawn to fit [target], enlarged when it is smaller (section 3.9).
      */
     suspend fun page(
         index: Int,
@@ -123,7 +124,11 @@ class OpenBook internal constructor(
     ): PageResult<PreparedImage> = when (content) {
         is BookContent.Pdf -> guarded {
             decodeWithTimeout(scope, content.document.dispatcher) { _ ->
-                content.document.render(pages[index].entryIndex, target, decoding.budgetBytes)
+                if (tiling == Tiling.Always) {
+                    content.document.tiles(pages[index].entryIndex, decoding)
+                } else {
+                    content.document.render(pages[index].entryIndex, target, decoding.budgetBytes)
+                }
             }
         }
         is BookContent.Images -> withBytes(content, index, raw) { data, isActive ->

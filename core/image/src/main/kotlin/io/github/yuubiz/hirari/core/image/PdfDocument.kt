@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.image
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.Handler
 import android.os.HandlerThread
@@ -67,13 +68,36 @@ internal class PdfDocument private constructor(
         if (result is PageResult.Ready) shapes[index] = result.image.shape
     }
 
+    /** The page at [index] as tiles drawn with a matrix (docs/spec.md section 3.9). Runs on [dispatcher]'s thread. */
+    fun tiles(index: Int, decoding: ImageDecoding): PageResult<PreparedImage> = when (val shape = shape(index)) {
+        is PageResult.Ready -> PageResult.Ready(PreparedImage.Tiled(PdfTiles(this, index, shape.image, decoding), shape.image))
+        is PageResult.Failed -> shape
+        is PageResult.Unsupported -> shape
+    }
+
+    /**
+     * The part [rect] of the page at [index], planned as an image of [pixelsPerPoint] pixels a point, drawn on white
+     * at 1/[sample] of that. Runs on [dispatcher]'s thread.
+     */
+    fun renderTile(index: Int, rect: PixelRect, sample: Int, pixelsPerPoint: Int): PageResult<Bitmap> = input.pageOperation {
+        renderer.openPage(index).use { page ->
+            val scale = pixelsPerPoint.toFloat() / sample
+            val matrix = Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(-rect.left.toFloat() / sample, -rect.top.toFloat() / sample)
+            }
+            PageResult.Ready(draw(page, PixelSize(sampled(rect.width, sample), sampled(rect.height, sample)), matrix))
+        }
+    }
+
     private fun shapeOf(page: PdfRenderer.Page) = PageShape.Known(page.width, page.height)
 
-    private fun draw(page: PdfRenderer.Page, size: PixelSize): Bitmap {
+    /** [page] on white in a bitmap of [size], fitted to it, or placed by [transform] from points when one is given. */
+    private fun draw(page: PdfRenderer.Page, size: PixelSize, transform: Matrix? = null): Bitmap {
         val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
         try {
             bitmap.eraseColor(Color.WHITE)
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            page.render(bitmap, null, transform, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
             bitmap.prepareToDraw()
         } catch (e: Throwable) {
             bitmap.recycle()
@@ -209,6 +233,24 @@ internal class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorC
     }
 
     override fun onRelease() = source.close()
+}
+
+/**
+ * The pixels a point of the grid the tiles of a PDF page are planned on (docs/spec.md section 3.9). The sample size
+ * of a plan sets how finely a tile is drawn, so a page reads sharp up to this many pixels a point.
+ */
+internal const val PDF_TILE_PIXELS_PER_POINT: Int = 64
+
+/**
+ * The tiles of the page at [index] of [document], planned as an image of [PDF_TILE_PIXELS_PER_POINT] pixels a point
+ * of [shape], each drawn for the part it covers on the document's thread. Closing them leaves the document open.
+ */
+internal class PdfTiles(private val document: PdfDocument, private val index: Int, shape: PageShape.Known, decoding: ImageDecoding) :
+    CachedTiles(PixelSize(shape.width * PDF_TILE_PIXELS_PER_POINT, shape.height * PDF_TILE_PIXELS_PER_POINT), decoding, document.dispatcher) {
+    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap? =
+        (document.renderTile(index, rect, sample * reduction, PDF_TILE_PIXELS_PER_POINT) as? PageResult.Ready)?.image
+
+    override fun release() = Unit
 }
 
 /**

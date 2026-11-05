@@ -4,16 +4,19 @@ import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.feature.reader.ReaderState
+import io.github.yuubiz.hirari.feature.reader.ZoomRead
 import io.github.yuubiz.hirari.feature.reader.shownParts
 import kotlin.math.roundToInt
 
 /**
- * The sizes [view] is prepared at: its pages on screen at the scale of the scale mode. A pinch stretches them
- * until tiles arrive (docs/spec.md section 4.8, ピンチと拡大率).
+ * The sizes [view] is prepared at: its pages on screen at the scale of the scale mode, and for the current view
+ * those of a settled zoom that reads its pages whole again. A pinch stretches them until the sharper pages or
+ * their tiles arrive (docs/spec.md section 4.8, ピンチと拡大率).
  */
 fun ReaderState.prefetchTarget(view: PageView): ViewTarget? {
     val geometry = preparedGeometry(view) ?: return null
-    val sizes = geometry.pages.map { PixelSize(it.width.roundToInt().coerceAtLeast(1), it.height.roundToInt().coerceAtLeast(1)) }
+    val zoomed = (zoomRead as? ZoomRead.Whole)?.takeIf { view == current }
+    val sizes = zoomed?.sizes ?: geometry.pages.map { PixelSize(it.width.roundToInt().coerceAtLeast(1), it.height.roundToInt().coerceAtLeast(1)) }
     return ViewTarget(view, sizes, shownParts(view).map { PageSteps(it, config.rotation, config.adjust.sharpen) })
 }
 

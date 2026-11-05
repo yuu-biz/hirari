@@ -20,7 +20,7 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * Decodes [bytes] to fit [target] by the steps of docs/spec.md section 3.7, on the calling thread. [isActive]
  * is checked once the header is read, which is the last point `ImageDecoder` can stop. With [Tiling.AsPlanned],
- * an image narrower than 1:3 becomes tiles instead.
+ * an image narrower than 1:3 becomes tiles instead, and with [Tiling.Always] every image does.
  */
 internal fun decodePage(
     bytes: ByteArray,
@@ -36,8 +36,8 @@ internal fun decodePage(
     }
     val bytesPerPixel = if (isSixteenBitPng(bytes)) 8 else 4
     return converted(type, codec, bytes) {
-        val shape = if (tiling == Tiling.AsPlanned) header(bytes) else null
-        if (shape != null && isElongated(shape.width, shape.height)) {
+        val shape = if (tiling != Tiling.Never) header(bytes) else null
+        if (shape != null && (tiling == Tiling.Always || isElongated(shape.width, shape.height))) {
             tiled(bytes, shape, codec, bytesPerPixel, decoding, isActive)
         } else {
             retryingOnce { extraSample ->

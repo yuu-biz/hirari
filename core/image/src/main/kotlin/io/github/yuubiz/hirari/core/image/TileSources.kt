@@ -9,6 +9,7 @@ import android.graphics.Rect
 import android.media.ExifInterface
 import android.os.Build
 import io.github.yuubiz.hirari.core.model.PageResult
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -42,11 +43,15 @@ interface TileSource : Closeable {
 private data class Held(val key: TileKey, val sharpen: Boolean)
 
 /**
- * What both tile sources share: the plan, the bound on tiles held, and the cache. The cache keeps the tiles most
+ * What the tile sources share: the plan, the bound on tiles held, and the cache. The cache keeps the tiles most
  * recently asked for, up to [maxTiles] plain and sharpened together, which is also what a plan asks for at most,
- * so a viewport's tiles stay while the screen keeps asking for them.
+ * so a viewport's tiles stay while the screen keeps asking for them. Tiles are read on [dispatcher].
  */
-internal abstract class CachedTiles(override val size: PixelSize, private val decoding: ImageDecoding) : TileSource {
+internal abstract class CachedTiles(
+    override val size: PixelSize,
+    decoding: ImageDecoding,
+    private val dispatcher: CoroutineDispatcher = decoding.dispatcher,
+) : TileSource {
     private val maxTiles = tileLimit(decoding.budgetBytes)
     private val cache = object : LinkedHashMap<Held, Bitmap>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Held, Bitmap>) = size > maxTiles
@@ -61,7 +66,7 @@ internal abstract class CachedTiles(override val size: PixelSize, private val de
         val rect = tileRect(key, size)
         if (rect.isEmpty) return corrupt
         val result = try {
-            decodeWithTimeout(scope, decoding.dispatcher) { _ ->
+            decodeWithTimeout(scope, dispatcher) { _ ->
                 retryingOnce { reduction ->
                     decodeTile(rect, key.sample, reduction)?.let { PageResult.Ready(if (sharpen) it.sharpenedTile() else it) } ?: corrupt
                 }
