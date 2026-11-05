@@ -78,6 +78,21 @@ class ProgressLogTest {
     }
 
     @Test
+    fun anIncompleteIndexNeverMakesAnUnreadBookReadAtItsListedEnd() {
+        val log = ProgressLog(BOOK, pageCount = 3, opened = null, indexComplete = false)
+        val first = readerOf(List(3) { TALL }, SINGLE, PORTRAIT)
+        assertEquals(ReadState.Reading, log.next(first, NOW)?.state)
+        assertEquals(ReadState.Reading, log.next(first.turned().turned(), NOW)?.state)
+    }
+
+    @Test
+    fun anIncompleteIndexKeepsABookThatWasAlreadyRead() {
+        val log = ProgressLog(BOOK, pageCount = 3, opened = stored(ReadState.Read, 2, 5), indexComplete = false)
+        val last = readerOf(List(3) { TALL }, SINGLE, PORTRAIT, start = 2)
+        assertEquals(ReadState.Read, log.next(last, NOW)?.state)
+    }
+
+    @Test
     fun restoringGivesBackWhatTheBookHadWhenItOpened() {
         val before = stored(ReadState.Reading, 1, 3)
         val log = ProgressLog(BOOK, pageCount = 3, opened = before)

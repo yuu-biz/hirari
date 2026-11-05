@@ -161,7 +161,10 @@ fun ReaderScreen(
     ) {
         when (val phase = viewModel.phase) {
             ReaderPhase.Opening -> DelayedProgress(Modifier.align(Alignment.Center))
-            is ReaderPhase.Failed -> BookError(stringResource(phase.reason.message), viewModel.background, onClose)
+            is ReaderPhase.Failed -> BookError(
+                stringResource(phase.reason.message), viewModel.background, onClose,
+                onRetry = if (phase.retryable) viewModel::retryOpen else null,
+            )
             ReaderPhase.NoPages -> BookError(stringResource(R.string.reader_no_pages), viewModel.background, onClose)
             ReaderPhase.Reading -> viewModel.state?.let { state ->
                 AutoPlayClock(viewModel, state.autoPlay)
@@ -374,7 +377,7 @@ internal fun DelayedProgress(modifier: Modifier = Modifier) {
 internal const val PROGRESS_DELAY_MS = 300L
 
 @Composable
-private fun BookError(text: String, background: ReaderBackground, onBack: () -> Unit) {
+private fun BookError(text: String, background: ReaderBackground, onBack: () -> Unit, onRetry: (() -> Unit)? = null) {
     val color = readerBackgroundColor(background)
     Column(
         Modifier.fillMaxSize().background(color).padding(24.dp),
@@ -382,6 +385,9 @@ private fun BookError(text: String, background: ReaderBackground, onBack: () -> 
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(text, color = readableOn(color), style = MaterialTheme.typography.titleMedium)
+        if (onRetry != null) {
+            Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.page_error_retry)) }
+        }
         Button(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.reader_back)) }
     }
 }

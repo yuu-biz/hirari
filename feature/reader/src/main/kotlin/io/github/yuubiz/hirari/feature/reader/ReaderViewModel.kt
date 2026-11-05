@@ -48,6 +48,7 @@ import io.github.yuubiz.hirari.core.model.BookSource
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
+import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.ImageAdjust
 import io.github.yuubiz.hirari.core.model.ImageType
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -155,7 +156,7 @@ private fun BookAddress.initialPath(): String = when (this) {
  * since its chosen charset decodes the names (docs/spec.md section 3.4); null when the book was not found.
  * [fileSize] is the size of a file on a server, which has no document to report it.
  */
-private class Located(
+internal class Located(
     val id: BookId,
     val source: BookSource,
     val documentUri: Uri,
@@ -167,7 +168,7 @@ private class Located(
 )
 
 /** A book read from an SMB server, and the meter of what it fetched. */
-private class Remote(val server: SmbServer, val meter: FetchMeter)
+internal class Remote(val server: SmbServer, val meter: FetchMeter)
 
 /** The page of an indexed book that 範囲を選んで表紙にする works on. */
 data class CoverRangeTarget(val book: BookId, val entry: Int)
@@ -175,7 +176,7 @@ data class CoverRangeTarget(val book: BookId, val entry: Int)
 sealed interface ReaderPhase {
     data object Opening : ReaderPhase
 
-    data class Failed(val reason: BookFailure) : ReaderPhase
+    data class Failed(val reason: BookFailure, val retryable: Boolean = reason == BookFailure.ReadError) : ReaderPhase
 
     /** The book opened but holds no image. */
     data object NoPages : ReaderPhase
@@ -188,12 +189,20 @@ sealed interface ReaderPhase {
  * [ReaderEvent] for [ReaderState]. Everything here runs on the main thread; the book, the database, and the
  * decoder move their work off it.
  */
-class ReaderViewModel(
+class ReaderViewModel internal constructor(
     private val application: Application,
     private val services: Deferred<ReaderServices>,
     private val request: OpenBookRequest,
-    microphone: Microphone = DeviceMicrophone,
+    microphone: Microphone,
+    private val locateBook: (suspend () -> Located)?,
 ) : ViewModel() {
+    constructor(
+        application: Application,
+        services: Deferred<ReaderServices>,
+        request: OpenBookRequest,
+        microphone: Microphone = DeviceMicrophone,
+    ) : this(application, services, request, microphone, locateBook = null)
+
     var phase: ReaderPhase by mutableStateOf(ReaderPhase.Opening)
         private set
 
@@ -698,6 +707,13 @@ class ReaderViewModel(
         bookOwner.release()
     }
 
+    /** Repeats the original open request, with a new source and archive listing (docs/spec.md section 6.5). */
+    fun retryOpen() {
+        if ((phase as? ReaderPhase.Failed)?.retryable != true) return
+        phase = ReaderPhase.Opening
+        viewModelScope.launch { open() }
+    }
+
     private suspend fun open() {
         val services = services.await()
         val (copyDir, shareDir) = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") to File(application.cacheDir, SHARE_DIR) }
@@ -710,7 +726,7 @@ class ReaderViewModel(
         val name = request.book.initialPath().substringAfterLast('/')
         OpeningRecord(services.appScope, services.storage.launch, OpeningBook(request.book, name), onScreen).also { openingRecord = it }.begin()
         val located = withContext(Dispatchers.IO) {
-            openBook(Opening(services, copyDir, settings.fallbackCharset)).inOrder(settings.entryOrder).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
+            (locateBook?.invoke() ?: openBook(Opening(services, copyDir, settings.fallbackCharset))).forReading().inOrder(settings.entryOrder).also { (it.result as? BookResult.Opened)?.let { opened -> bookOwner.take(opened.book) } }
         }
         val id = located.id
         val book = when (val result = located.result) {
@@ -761,7 +777,7 @@ class ReaderViewModel(
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         val remote = located.remote
         val disk = book.stash?.let { DiskPrefetch(viewModelScope, it, book.pages.size) }
-        opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved), writer, ReaderConfig.of(settings), settings, shareDir, loader, session, remote, disk)
+        opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved, indexComplete = book.indexError == null), writer, ReaderConfig.of(settings), settings, shareDir, loader, session, remote, disk)
         remote?.server?.state?.let { connection -> viewModelScope.launch { connection.collect { dispatch(ReaderEvent.ConnectionChanged(it)) } } }
         stops.attach(session)
         phase = ReaderPhase.Reading
@@ -903,6 +919,14 @@ class ReaderViewModel(
             val bitmap = (result as? PageResult.Ready)?.image?.image ?: return@launch
             if (loupeWanted == wanted) loupeDetail = LoupeDetail(wanted, bitmap) else bitmap.recycle()
         }
+    }
+
+    /** A disconnected listing is not a shorter book to read (docs/spec.md sections 3.3 and 6.5). */
+    private fun Located.forReading(): Located {
+        val opened = result as? BookResult.Opened ?: return this
+        if (opened.book.indexError != FailureReason.ConnectionLost) return this
+        opened.book.close()
+        return Located(id, source, documentUri, folder, BookResult.Failed(BookFailure.ReadError), remote, overrides, fileSize)
     }
 
     /**
