@@ -38,7 +38,7 @@ internal fun decodePage(
     return converted(type, codec, bytes) {
         val shape = if (tiling != Tiling.Never) header(bytes) else null
         if (shape != null && (tiling == Tiling.Always || isElongated(shape.width, shape.height))) {
-            tiled(bytes, shape, codec, bytesPerPixel, decoding, isActive)
+            tiled(bytes, shape, target, codec, bytesPerPixel, decoding, isActive)
         } else {
             retryingOnce { extraSample ->
                 decodeOnce(bytes, target, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes, isActive, extraSample)
@@ -70,12 +70,13 @@ private fun header(bytes: ByteArray): PageShape.Known {
 
 /**
  * The image as tiles: read from [bytes] region by region when the platform can, and otherwise cut from one
- * bitmap of the whole image when that fits [slicedWholeFits]. When it does not, the image is [PreparedImage.Untiled]
- * (docs/spec.md section 3.7).
+ * bitmap of the whole image, read at the size [slicedWholeSize] gives. When even that would be no sharper than the
+ * image read to fit [target], the image is [PreparedImage.Untiled] (docs/spec.md section 3.7).
  */
 private fun tiled(
     bytes: ByteArray,
     shape: PageShape.Known,
+    target: PixelSize,
     codec: Codec.Platform,
     bytesPerPixel: Int,
     decoding: ImageDecoding,
@@ -84,11 +85,16 @@ private fun tiled(
     if (codec.regions) {
         RegionTiles.open(bytes, codec.averagingLimit, decoding)?.let { return PageResult.Ready(PreparedImage.Tiled(it, PageShape.Known(it.size.width, it.size.height))) }
     }
-    if (!slicedWholeFits(shape.width, shape.height, decoding.budgetBytes)) return PageResult.Ready(PreparedImage.Untiled(shape))
+    val prepared = when (val plan = planDecode(shape.width, shape.height, target, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes)) {
+        is DecodePlan.Decode -> plan.output
+        is DecodePlan.Refuse -> return PageResult.Ready(PreparedImage.Untiled(shape))
+    }
+    val read = slicedWholeSize(shape.width, shape.height, decoding.budgetBytes, prepared)
+        ?: return PageResult.Ready(PreparedImage.Untiled(shape))
     val full = PixelSize(shape.width, shape.height)
     return when (
         val whole = retryingOnce { extraSample ->
-            decodeOnce(bytes, full, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes, isActive, extraSample, maxSide = Int.MAX_VALUE)
+            decodeOnce(bytes, read, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes, isActive, extraSample, maxSide = Int.MAX_VALUE)
         }
     ) {
         is PageResult.Ready -> {

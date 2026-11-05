@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 /** A rectangle of pixels from [left] and [top] inclusive to [right] and [bottom] exclusive. */
 data class PixelRect(val left: Int, val top: Int, val right: Int, val bottom: Int) {
@@ -37,12 +38,21 @@ fun tileLimit(budgetBytes: Long, tileSide: Int = TILE_SIDE, reservedBytes: Long 
     ((budgetBytes / 4 - reservedBytes) / (tileSide.toLong() * tileSide * 4)).toInt().coerceAtLeast(1)
 
 /**
- * Whether an image of [width] x [height] pixels may be cut into tiles from one bitmap of the whole image, which the
- * tiles are then drawn from for as long as they show (docs/spec.md section 3.7). That bitmap takes up to an eighth
- * of [budgetBytes], half of the quarter that the tiles of a page share; the tiles it leaves room for take the rest.
+ * The size of the one bitmap that an image of [width] x [height] pixels is cut into tiles from, for a format that
+ * cannot be read by region, which the tiles are then drawn from for as long as they show (docs/spec.md section
+ * 3.7). That bitmap takes up to an eighth of [budgetBytes], half of the quarter that the tiles of a page share; the
+ * tiles it leaves room for take the rest. The image whole when it fits that; otherwise the image scaled down, with
+ * its aspect ratio, to the largest that does, or null when that is no sharper than the image read to fit the screen,
+ * which is [prepared]: then there is nothing to gain from tiles.
  */
-fun slicedWholeFits(width: Int, height: Int, budgetBytes: Long): Boolean =
-    width.toLong() * height * 4 <= budgetBytes / 8
+fun slicedWholeSize(width: Int, height: Int, budgetBytes: Long, prepared: PixelSize): PixelSize? {
+    val share = budgetBytes / 8
+    val bytes = width.toLong() * height * 4
+    if (bytes <= share) return PixelSize(width, height)
+    val k = sqrt(share.toDouble() / bytes)
+    val whole = PixelSize((width * k).toInt().coerceAtLeast(1), (height * k).toInt().coerceAtLeast(1))
+    return whole.takeIf { it.width > prepared.width || it.height > prepared.height }
+}
 
 /** The sample size to read tiles at when the screen shows [scale] screen pixels per image pixel. */
 fun tileSample(scale: Double): Int {

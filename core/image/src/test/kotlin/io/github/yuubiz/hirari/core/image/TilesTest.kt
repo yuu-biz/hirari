@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.image
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -131,11 +132,38 @@ class TilesTest {
     }
 
     @Test
-    fun aWholeImageIsCutIntoTilesOnlyWhenItTakesAnEighthOfTheBudgetOrLess() {
+    fun aWholeImageIsCutIntoTilesAtOriginalSizeWhenItTakesAnEighthOfTheBudgetOrLess() {
         val budget = 256L shl 20
-        assertTrue(slicedWholeFits(2896, 2896, budget))
-        assertFalse("6000 x 4000 takes 96 MB, three eighths of the budget", slicedWholeFits(6000, 4000, budget))
-        assertTrue(slicedWholeFits(6000, 4000, 768L shl 20))
+        val prepared = PixelSize(1080, 1620)
+        assertEquals(PixelSize(2896, 2896), slicedWholeSize(2896, 2896, budget, prepared))
+        assertEquals(PixelSize(6000, 4000), slicedWholeSize(6000, 4000, 768L shl 20, prepared))
+    }
+
+    @Test
+    fun aLargerImageIsCutFromTheWholeScaledDownToAnEighthOfTheBudgetWithItsAspectRatio() {
+        val budget = 256L shl 20
+        val whole = slicedWholeSize(6000, 4000, budget, PixelSize(1080, 720))!!
+        assertTrue("$whole", whole.width.toLong() * whole.height * 4 <= budget / 8)
+        assertTrue("$whole", whole.width.toLong() * whole.height * 4 > budget / 8 * 99 / 100)
+        assertEquals(6000 / 4000.0, whole.width / whole.height.toDouble(), 0.001)
+    }
+
+    @Test
+    fun aTallImageOfAFormatWithoutRegionsGetsTilesFromAWholeSharperThanItsCappedPreparedImage() {
+        val budget = 256L shl 20
+        val target = PixelSize(1080, 67_500)
+        val prepared = (planDecode(tall.width, tall.height, target, Int.MAX_VALUE, 4, budget) as DecodePlan.Decode).output
+        assertEquals(PixelSize(66, 4096), prepared)
+        val whole = slicedWholeSize(tall.width, tall.height, budget, prepared)!!
+        assertEquals(PixelSize(366, 22_897), whole)
+        assertTrue("$whole", whole.width.toLong() * whole.height * 4 <= budget / 8)
+        assertTrue("$whole is wider than $prepared", whole.width > prepared.width * 4)
+        assertEquals(tall.width / tall.height.toDouble(), whole.width / whole.height.toDouble(), 0.001)
+    }
+
+    @Test
+    fun noTilesWhenEvenTheScaledWholeIsNoSharperThanThePreparedImage() {
+        assertNull(slicedWholeSize(6000, 4000, 256L shl 20, PixelSize(4096, 2731)))
     }
 
     private val roomy = 512L shl 20
