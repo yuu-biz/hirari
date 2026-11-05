@@ -66,6 +66,6 @@ class ListLookTest {
         val settings = GlobalSettings(gridColumnsPortrait = 9, gridColumnsLandscape = 1, gridNameLines = 7).normalized()
         assertEquals(6, settings.gridColumnsPortrait)
         assertEquals(2, settings.gridColumnsLandscape)
-        assertEquals(2, settings.gridNameLines)
+        assertEquals(3, settings.gridNameLines)
     }
 }

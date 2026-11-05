@@ -130,14 +130,13 @@ class LibraryGapsTest {
         assertTrue(fixture.smb.listed.isEmpty())
     }
 
-    @Test fun `name and author lines never exceed three including normalization`() {
+    @Test fun `name and author lines never take more than three lines`() {
         assertEquals(2, ListLook(nameLines = 3, noteLine = true).bodyLines)
         assertEquals(3, ListLook(nameLines = 3, noteLine = false).bodyLines)
-        assertEquals(2, GlobalSettings(gridNameLines = 3, gridNoteLine = true).normalized().gridNameLines)
+        assertEquals(3, GlobalSettings(gridNameLines = 3, gridNoteLine = true).normalized().gridNameLines)
         assertEquals(3, GlobalSettings(gridNameLines = 3, gridNoteLine = false).normalized().gridNameLines)
         for (lines in -1..5) for (note in listOf(false, true)) {
             val settings = GlobalSettings(gridNameLines = lines, gridNoteLine = note).normalized()
-            assertTrue(settings.gridNameLines + (if (note) 1 else 0) <= 3)
             assertTrue(settings.listLook().bodyLines + (if (note) 1 else 0) <= 3)
         }
     }

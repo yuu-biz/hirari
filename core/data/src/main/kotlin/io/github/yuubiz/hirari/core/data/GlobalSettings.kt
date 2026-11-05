@@ -154,7 +154,7 @@ data class GlobalSettings(
         readerBrightness = readerBrightness?.snapTo(READER_BRIGHTNESS),
         gridColumnsPortrait = gridColumnsPortrait?.coerceIn(GRID_COLUMNS_PORTRAIT.first, GRID_COLUMNS_PORTRAIT.last),
         gridColumnsLandscape = gridColumnsLandscape?.coerceIn(GRID_COLUMNS_LANDSCAPE.first, GRID_COLUMNS_LANDSCAPE.last),
-        gridNameLines = gridNameLines.coerceIn(GRID_NAME_LINES.first, if (gridNoteLine) 2 else GRID_NAME_LINES.last),
+        gridNameLines = gridNameLines.coerceIn(GRID_NAME_LINES.first, GRID_NAME_LINES.last),
         textSizeSp = textSizeSp.snapTo(TEXT_SIZE_SP),
         textLineGap = TEXT_LINE_GAP.snap(textLineGap),
         textLetterGap = TEXT_LETTER_GAP.snap(textLetterGap),
