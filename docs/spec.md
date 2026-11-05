@@ -630,7 +630,7 @@ libarchive は順に読む形の API を持つ。任意のエントリを開く�
 - 表は、区画の符号をその文字コードの変換器（Java の `Charset`）で文字にして作る。ほかのアプリの表や辞書は使わない。
 - ある文字コードのバイト列を別の文字コードで読むと、文字の多くがその文字コードのよく使う文字から外れる。EUC-JP と GB 2312 はかなの区が同じ位置にあるので、かなを日本語の候補にだけ数えることで、かなを含む日本語の名前と中国語の名前を分ける。かなを含まず、第 1 水準漢字としても第 1 級漢字としても読める短い名前は、どちらも 100 になり、日本語を選ぶ。手動の選び直しで直す。
 - JVM の試験の名前での値は次のとおり。EUC-JP の 3 つの名前は EUC-JP が 100、Big5 が 82、GB18030 が 67。GB18030（簡体字）の 3 つの名前は GB18030 が 100、EUC-JP が 77、Big5 が 70。Big5（繁体字）の 3 つの名前は Big5 が 100、GB18030 が 37 で、EUC-JP では変換できない。
-- ICU の `CharsetDetector` は使わない。`android.icu` は `CharsetDetector` を公開の API に含めず（API 37 の `android.jar` で確かめた）、ICU4J（Unicode-3.0）を同梱するとライブラリ全体が APK に入り、縮小（R8）を掛けていない今の構成では約 13 MB 増えるためである。利用者が同梱しないと決めた。
+- ICU の `CharsetDetector` は使わない。`android.icu` は `CharsetDetector` を公開の API に含めず（API 37 の `android.jar` で確かめた）、ICU4J（Unicode-3.0）を同梱するとライブラリ全体が APK に入り、約 13 MB 増える（R8 を掛ける前に測った値）ためである。利用者が同梱しないと決めた。
 - 2 の判定より前に置くので、CP932 としても正しいバイト列になる EUC-JP と Big5 の名前は CP932 になる。EUC-JP のバイトはすべて 0xA1 以上で、CP932 の 1 バイトの半角カナか 2 バイトの文字として読めることが多い。Big5 の常用字の先行バイト（0xA4〜0xC6）も CP932 の半角カナである。手動の選び直しで直す。
 - UTF-8 フラグの立った名前とフラグのない CP932 の名前が混ざった書庫は、1 にも 2 にも当たらず、フラグの立った名前が化ける。libarchive はフラグを公開の API で返さず、名前を変換してから返す。中央ディレクトリから一覧を作る ZIP（3.3 節）ではフラグが分かるが、libarchive で開く ZIP と判定を揃えるため、v1 ではフラグを判定に使わず、この制限を受け入れる。手動で UTF-8 を選ぶと、フラグの立った名前は正しく、フラグのない CP932 の名前は化ける。
 
@@ -2479,6 +2479,7 @@ M6 の点検で確かめ、直したことを次に書く。ライブラリ、�
 | NDK | 28.2.13676358（r28c）。AGP 9.4.1 の既定の版で、r28 から 64 ビットの ABI のネイティブライブラリを 16 KB のページサイズに合わせて整列する。`llvm-readelf -l` で、`arm64-v8a` と `x86_64` の `.so` の LOAD セグメントの整列が 0x4000 であることを確かめた。`armeabi-v7a` は 0x1000 のまま |
 | ABI | `arm64-v8a`、`armeabi-v7a`、`x86_64`（エミュレータ用）。`armeabi-v7a` を残すかは APK の大きさで決める (要検証) |
 | 配布の単位 | Android App Bundle。ABI ごとに分割する |
+| 縮小 | release は R8 でコードとリソースを縮める（`isMinifyEnabled`、`isShrinkResources`）。lint も release のビルドで掛ける。`benchmark` は release を写すので、縮めた APK をデバッグ鍵で入れて試せる。keep 規則は、ネイティブから名前で引くクラスと、実行時に反射で引く依存の持ち主のモジュールの `consumer-rules.pro` に置く（`:core:archive` の libarchive の呼び戻し、`:core:image` の JXL、`:core:source` の smbj と mbassador）。アプリだけに要る規則は `app/proguard-rules.pro` に置く（ナビゲーションの経路の enum の名前）。`:core:archive` の呼び戻しは、`KeepRulesTest` が JNI の記述と規則を Kotlin の署名と照らす。規則を足すときは、縮めた APK で該当の経路を動かして確かめる。`mapping.txt` は `app/build/outputs/mapping/<ビルドの種類>/` に出る。配った版ごとに保管する（落ちたときの読み解きに要る）。縮める前の `benchmark` は 41.6 MB、縮めたあとは 10.3 MB（3 つの ABI） |
 
 ### 8.2 モジュール
 

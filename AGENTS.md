@@ -57,6 +57,7 @@ Q1 の描画面の試作は、デバッグ版か計測用の版を入れ、`adb 
 |---|---|
 | ビルド、単体試験、lint のすべて（CI と同じ） | `./gradlew check` |
 | デバッグ版の APK | `./gradlew :app:assembleDebug` |
+| R8 で縮めた APK（`benchmark`。デバッグ鍵で署名するので、そのまま入れて試せる。`app/build/outputs/apk/benchmark/` に出る） | `./gradlew :app:assembleBenchmark` |
 | 書庫の端末上の試験（接続した端末かエミュレータで動く） | `./gradlew :core:archive:connectedDebugAndroidTest` |
 | コーパスの生成（`tools/corpus/build/corpus` に出る） | `./gradlew :tools:corpus:generateCorpus` |
 | 標準コーパス（`docs/spec.md` の 5.1 節）の生成。P1 から P4 と P10 の計測が読む（`tools/corpus/build/standard-corpus/standard.zip` に出る。約 350 MB） | `./gradlew :tools:corpus:generateStandardCorpus` |
