@@ -126,6 +126,7 @@ private fun ActionResult.message(): String = when (this) {
     is ActionResult.Failed -> stringResource(
         when (problem) {
             Problem.CannotWrite -> R.string.problem_cannot_write
+            Problem.CannotReadSettings -> R.string.problem_cannot_read_settings
             Problem.CannotRead -> R.string.problem_cannot_read
             Problem.TooLarge -> R.string.problem_too_large
             Problem.NotASettingsFile -> R.string.problem_not_a_settings_file

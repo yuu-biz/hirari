@@ -21,6 +21,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import java.io.IOException
 import java.time.Instant
 
 /** An SMB server as the settings file holds it: never the user name, the domain or the password. */
@@ -82,6 +83,9 @@ sealed interface ImportPreparation {
     data class Ready(val plan: ImportPlan, val changes: ImportChanges) : ImportPreparation
 }
 
+/** Export cannot substitute runtime defaults for settings that could not be read. */
+class SettingsExportReadException(cause: IOException) : IOException("Cannot export settings because the stored settings could not be read", cause)
+
 /** 設定の書き出しと読み込み of docs/spec.md section 4.11. Safe to call from the main thread. */
 class SettingsTransfer internal constructor(
     private val settings: SettingsRepository,
@@ -89,9 +93,14 @@ class SettingsTransfer internal constructor(
 ) {
     /** [includeReading] adds positions, read states, bookmarks and history. */
     suspend fun export(includeReading: Boolean): String {
+        val stored = try {
+            settings.storedSettings.first()
+        } catch (e: IOException) {
+            throw SettingsExportReadException(e)
+        }
         val file = buildJsonObject {
             put(FORMAT, SETTINGS_FORMAT)
-            put(SETTINGS, SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), settings.settings.first()))
+            put(SETTINGS, SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), stored))
             put(
                 BOOK_OVERRIDES,
                 JsonObject(database.bookOverrides().all().associate { it.bookId to it.overrides.toBookOverrides().toJson() }),

@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.data.FontImport
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ImportChanges
 import io.github.yuubiz.hirari.core.data.SettingsRepository
+import io.github.yuubiz.hirari.core.data.SettingsExportReadException
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CoroutineDispatcher
@@ -78,7 +79,7 @@ sealed interface SettingsLoad {
 
 enum class Step { Exporting, Reading, Applying, ClearingThumbnails, ClearingExtraction, ImportingFont }
 
-enum class Problem { CannotWrite, CannotRead, TooLarge, NotASettingsFile, ApplyFailed, CannotClear, CannotSave, NotAFont, NoRoomForFont, CannotReadFont }
+enum class Problem { CannotWrite, CannotReadSettings, CannotRead, TooLarge, NotASettingsFile, ApplyFailed, CannotClear, CannotSave, NotAFont, NoRoomForFont, CannotReadFont }
 
 sealed interface ActionResult {
     data class Exported(val includedReading: Boolean) : ActionResult
@@ -131,7 +132,7 @@ class SettingsViewModel(
     /** Kept out of [ActionState] so that the state stays comparable. */
     private var pending: PreparedImport? = null
 
-    private val load: Flow<SettingsLoad> = services.settings.settings
+    private val load: Flow<SettingsLoad> = services.settings.storedSettings
         .map<GlobalSettings, SettingsLoad> { SettingsLoad.Ready(it) }
         .catch { if (it is IOException) emit(SettingsLoad.Failed) else throw it }
 
@@ -296,6 +297,8 @@ class SettingsViewModel(
         block()
     } catch (e: CancellationException) {
         throw e
+    } catch (e: SettingsExportReadException) {
+        ActionResult.Failed(Problem.CannotReadSettings)
     } catch (e: Exception) {
         ActionResult.Failed(problem)
     }

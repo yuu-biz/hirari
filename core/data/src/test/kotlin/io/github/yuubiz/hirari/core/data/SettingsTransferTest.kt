@@ -16,11 +16,14 @@ import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.TrimStrength
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.locationBookId
+import androidx.datastore.core.DataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -71,6 +74,25 @@ class SettingsTransferTest {
     }
 
     private fun at(seconds: Long) = Instant.ofEpochSecond(1_700_000_000 + seconds)
+
+    @Test
+    fun `export fails on an IO read failure even after defaults were supplied and the notice was taken`() = runBlocking {
+        val failure = IOException("disk read failed")
+        val repository = DataStoreSettingsRepository(object : DataStore<GlobalSettings> {
+            override val data: Flow<GlobalSettings> = flow { throw failure }
+
+            override suspend fun updateData(transform: suspend (GlobalSettings) -> GlobalSettings): GlobalSettings = throw failure
+        })
+        assertEquals(GlobalSettings(), repository.settings.first())
+        assertEquals(failure, repository.takeReadFailure())
+        withDatabase { _, database ->
+            val transfer = SettingsTransfer(repository, database)
+            for (includeReading in listOf(false, true)) {
+                val error = assertFailsWith<SettingsExportReadException> { transfer.export(includeReading) }
+                assertEquals(failure, error.cause)
+            }
+        }
+    }
 
     @Test
     fun `favorites like pins stay out of settings export and import`() = runBlocking {

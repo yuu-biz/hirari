@@ -14,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
 import java.io.IOException
 
 class DataStoreSettingsRepositoryTest {
@@ -68,6 +69,7 @@ class DataStoreSettingsRepositoryTest {
             assertIs<IOException>(repository.takeReadFailure())
             repeat(3) {
                 assertEquals(GlobalSettings(), repository.settings.first())
+                assertFailsWith<IOException> { repository.storedSettings.first() }
                 assertNull(repository.takeReadFailure())
             }
         }
@@ -78,6 +80,7 @@ class DataStoreSettingsRepositoryTest {
         val file = folder.newFile("settings.json").apply { writeBytes(byteArrayOf(0, -1, 0x7b)) }
         withRepository(file) { repository ->
             assertEquals(GlobalSettings(), repository.settings.first())
+            assertEquals(GlobalSettings(), repository.storedSettings.first())
             assertNull(repository.takeReadFailure())
         }
         assertEquals(GlobalSettings(), withRepository(file) { it.settings.first() })

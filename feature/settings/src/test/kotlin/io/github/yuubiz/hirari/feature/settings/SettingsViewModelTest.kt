@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.data.FontImport
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ImportChanges
 import io.github.yuubiz.hirari.core.data.SettingsRepository
+import io.github.yuubiz.hirari.core.data.SettingsExportReadException
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.TextTypeface
 import io.github.yuubiz.hirari.core.model.UriString
@@ -13,6 +14,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -87,9 +90,11 @@ class SettingsViewModelTest {
         var changes = ImportChanges(settings = 3, bookOverrides = 1, servers = 1, progress = 2, bookmarks = 0, history = 4)
         var applyFailure: Exception? = null
         var applied = 0
+        var exportFailure: Exception? = null
 
         override suspend fun export(includeReading: Boolean): String {
             exports += includeReading
+            exportFailure?.let { throw it }
             return exported
         }
 
@@ -155,13 +160,24 @@ class SettingsViewModelTest {
     @Test
     fun `a setting that cannot be read leaves a failed state`() = runTest {
         val broken = object : SettingsRepository {
-            override val settings: Flow<GlobalSettings> = flow { throw IOException("disk") }
+            override val settings: Flow<GlobalSettings> = flowOf(GlobalSettings())
+            override val storedSettings: Flow<GlobalSettings> = flow { throw IOException("disk") }
 
             override suspend fun update(transform: (GlobalSettings) -> GlobalSettings) = Unit
         }
         val vm = SettingsViewModel(SettingsServices(broken, transfer, documents, clearThumbnails = {}, clearExtraction = { 0L }, about = NO_ABOUT, fonts = FakeFonts()), UnconfinedTestDispatcher(testScheduler))
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
+        assertEquals(GlobalSettings(), broken.settings.first())
         assertEquals(SettingsLoad.Failed, vm.state.value.load)
+    }
+
+    @Test
+    fun `export reports unreadable stored settings without writing a document or reporting success`() = runTest {
+        transfer.exportFailure = SettingsExportReadException(IOException("disk"))
+        val vm = viewModel(this)
+        vm.export(uri, includeReading = true)
+        assertEquals(ActionState.Done(ActionResult.Failed(Problem.CannotReadSettings)), vm.state.value.action)
+        assertTrue(documents.written.isEmpty())
     }
 
     @Test

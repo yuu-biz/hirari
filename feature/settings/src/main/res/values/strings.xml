@@ -74,6 +74,7 @@
     <string name="clear_extraction_nothing">消す展開キャッシュはありませんでした。</string>
 
     <string name="problem_cannot_write">書き出せませんでした。保存先を変えて、もう一度試してください。</string>
+    <string name="problem_cannot_read_settings">保存済みの設定を読めないため、書き出せませんでした。</string>
     <string name="problem_cannot_read">ファイルを読めませんでした。</string>
     <string name="problem_too_large">ファイルが大きすぎます。設定のファイルではありません。</string>
     <string name="problem_not_a_settings_file">設定のファイルではありません。何も変えていません。</string>

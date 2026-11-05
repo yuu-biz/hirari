@@ -26,7 +26,11 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Safe to call from the main thread. */
 interface SettingsRepository {
+    /** Settings for running the app; a read failure supplies defaults. */
     val settings: Flow<GlobalSettings>
+
+    /** Stored settings, with read failures propagated instead of replaced by defaults. */
+    val storedSettings: Flow<GlobalSettings> get() = settings
 
     /** Takes the first read failure once per process, after [settings] has supplied defaults instead. */
     fun takeReadFailure(): IOException? = null
@@ -38,7 +42,11 @@ internal class DataStoreSettingsRepository(private val store: DataStore<GlobalSe
     private val takenReadFailure = AtomicBoolean(false)
     private val readFailure = AtomicReference<IOException?>(null)
 
-    override val settings: Flow<GlobalSettings> = store.data.catch { failure ->
+    override val storedSettings: Flow<GlobalSettings> = store.data.catch { failure ->
+        if (failure is CorruptionException) emit(GlobalSettings()) else throw failure
+    }
+
+    override val settings: Flow<GlobalSettings> = storedSettings.catch { failure ->
         if (failure !is IOException) throw failure
         // A corrupt file is reset without a word (spec 4.3); only a file that cannot be read at all is reported.
         if (failure !is CorruptionException) readFailure.compareAndSet(null, failure)
