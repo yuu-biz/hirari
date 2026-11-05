@@ -76,4 +76,18 @@ class JumpTest {
             assertEquals("no second jump once one missed", opens + 1, archive.opens.get())
         }
     }
+
+    @Test
+    fun aSolidRarWithoutAnExtractionDirectoryWalksInsteadOfJumping() {
+        // The first entry's bytes start the source, so they carry the RAR 5 signature and a main header marked solid.
+        val head = byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0, 0, 0, 0, 3, 1, 0, 4)
+        val entries = listOf("000.jpg" to head + letters(500, 0)) + pages
+        val (session, archive) = open(ArchiveFormat.Rar5, entries)
+        session.use {
+            assertTrue(session.solid)
+            val listed = archive.headers.get()
+            assertArrayEquals(entries[30].second, session.data(30))
+            assertEquals(31, archive.headers.get() - listed)
+        }
+    }
 }
