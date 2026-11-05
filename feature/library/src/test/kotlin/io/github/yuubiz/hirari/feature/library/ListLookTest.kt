@@ -3,12 +3,19 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.CoverAspect
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.ThumbSize
 import org.junit.Test
 import kotlin.test.assertEquals
 
 /** docs/spec.md section 4.3, グリッドの列数, and section 5.4, 大きさ. */
 class ListLookTest {
+    @Test
+    fun `grouping defaults to none and the look follows the saved author choice`() {
+        assertEquals(LibraryGrouping.None, GlobalSettings().listLook().grouping)
+        assertEquals(LibraryGrouping.Author, GlobalSettings(libraryGrouping = LibraryGrouping.Author).listLook().grouping)
+    }
+
     @Test
     fun `the default settings keep 4 columns on portrait phones from 360 to 449 dp`() {
         val look = GlobalSettings().listLook()

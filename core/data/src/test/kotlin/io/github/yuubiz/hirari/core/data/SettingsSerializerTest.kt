@@ -133,10 +133,10 @@ class SettingsSerializerTest {
     }
 
     @Test
-    fun `the settings are the 71 of the spec and the fixture changes each of them`() {
+    fun `the settings are the 72 of the spec and the fixture changes each of them`() {
         val defaults = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), GlobalSettings()).jsonObject
         val changed = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), everything).jsonObject
-        assertEquals(71, defaults.size)
+        assertEquals(72, defaults.size)
         assertEquals(defaults.keys, defaults.keys.filter { defaults[it] != changed[it] }.toSet())
     }
 

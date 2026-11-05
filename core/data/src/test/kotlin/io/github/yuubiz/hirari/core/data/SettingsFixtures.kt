@@ -4,6 +4,7 @@ import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
@@ -93,6 +94,7 @@ val everything = GlobalSettings(
     gridColumnsLandscape = 7,
     gridNameLines = 3,
     gridNoteLine = false,
+    libraryGrouping = LibraryGrouping.Author,
     coverAspect = CoverAspect.Square,
     libraryTextSize = LibraryTextSize.Large,
     librarySort = LibrarySort.Oldest,

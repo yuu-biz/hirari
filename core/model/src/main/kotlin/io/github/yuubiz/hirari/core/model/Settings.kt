@@ -86,6 +86,9 @@ enum class TextPaper { White, Cream, Sepia, Black }
 
 enum class LibraryView { Grid, ThumbnailList, List }
 
+/** Grouping of the folder file list (docs/spec.md section 4.3). */
+enum class LibraryGrouping { None, Author }
+
 enum class ThumbSize { Small, Medium, Large }
 
 /** Width over height of the cover box in the file list (docs/spec.md section 4.3, 表紙の枠). */

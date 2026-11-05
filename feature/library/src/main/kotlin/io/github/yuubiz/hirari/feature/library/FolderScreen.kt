@@ -185,7 +185,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
                     is FolderContent.Shown -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = model::refresh, modifier = Modifier.fillMaxSize()) {
-                        FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem })
+                        FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem }, folderKey = model.folder)
                     }
                 }
             }

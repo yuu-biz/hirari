@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.LibraryTextSize
 import io.github.yuubiz.hirari.core.model.ThumbSize
@@ -121,6 +122,10 @@ private fun LookSettings(look: ListLook, landscape: Boolean, change: ((GlobalSet
         val textNames = mapOf(LibraryTextSize.Small to small, LibraryTextSize.Medium to medium, LibraryTextSize.Large to large)
         Choices(stringResource(R.string.look_text_size), LibraryTextSize.entries, look.textSize, { textNames.getValue(it) }) { v ->
             change { it.copy(libraryTextSize = v) }
+        }
+        val groupNames = mapOf(LibraryGrouping.None to stringResource(R.string.look_group_none), LibraryGrouping.Author to stringResource(R.string.look_group_author))
+        Choices(stringResource(R.string.look_group), LibraryGrouping.entries, look.grouping, { groupNames.getValue(it) }) { v ->
+            change { it.copy(libraryGrouping = v) }
         }
         val thumbNames = mapOf(ThumbSize.Small to small, ThumbSize.Medium to medium, ThumbSize.Large to large)
         Choices(stringResource(R.string.look_thumb_size), ThumbSize.entries, look.thumbSize, { thumbNames.getValue(it) }) { v ->

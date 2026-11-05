@@ -5,6 +5,7 @@ import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
@@ -267,6 +268,8 @@ val SettingsTable: List<Setting> = buildList {
         CoverAspect.Book to "本", CoverAspect.Square to "正方形"))
     add(choice(GlobalSettings::libraryTextSize, library, "一覧の文字の大きさ", { s, v -> s.copy(libraryTextSize = v) },
         LibraryTextSize.Small to "小", LibraryTextSize.Medium to "中", LibraryTextSize.Large to "大"))
+    add(choice(GlobalSettings::libraryGrouping, library, "グループ", { s, v -> s.copy(libraryGrouping = v) },
+        LibraryGrouping.None to "なし", LibraryGrouping.Author to "作者"))
     add(choice(GlobalSettings::librarySort, library, "並べ替え", { s, v -> s.copy(librarySort = v) },
         LibrarySort.Name to "名前", LibrarySort.Newest to "新しい順", LibrarySort.Oldest to "古い順"))
     add(toggle(GlobalSettings::foldersFirst, library, "フォルダを先に") { s, v -> s.copy(foldersFirst = v) })

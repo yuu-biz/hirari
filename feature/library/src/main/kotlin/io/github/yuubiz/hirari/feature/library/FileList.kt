@@ -5,6 +5,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,12 +25,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyListItemInfo
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +54,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -73,38 +77,24 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** One item of the list: the one that goes up to the parent folder, or a row of the folder. */
-private sealed interface ListCell {
-    val key: String
-
-    data object Parent : ListCell {
-        override val key = PARENT_KEY
-    }
-
-    data class Entry(val row: FileRow) : ListCell {
-        override val key get() = row.path
-    }
-}
-
-/** No path of a place is `..`, so the parent item's key is never a row's. */
-private const val PARENT_KEY = ".."
-
 /**
  * The rows in the chosen view (docs/spec.md section 4.3), after the parent item when [onUp] is given. Binding a row
  * reads only the row: no query and no decode, so a 1000-entry folder scrolls on what the listing already holds; the
  * covers come from [CoverBox]. An empty folder, or a filter that matches nothing, says so under the parent item.
  */
 @Composable
-internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null) {
+@OptIn(ExperimentalFoundationApi::class)
+internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null, folderKey: FolderKey? = null) {
     val scope = rememberCoroutineScope()
-    val cells = remember(content.rows, onUp != null) {
-        buildList {
-            if (onUp != null) add(ListCell.Parent)
-            content.rows.mapTo(this) { ListCell.Entry(it) }
-        }
+    var folded by rememberSaveable(folderKey) { mutableStateOf(arrayListOf<String>()) }
+    val cells = remember(content.rows, content.look.grouping, onUp != null, folded) {
+        fileCells(content.rows, content.look.grouping, onUp != null, folded.toSet())
+    }
+    fun toggle(header: ListCell.Header) {
+        folded = ArrayList(if (header.key in folded) folded - header.key else folded + header.key)
     }
     val empty = if (content.rows.isEmpty()) (if (content.total == 0) R.string.folder_empty else R.string.folder_no_match) else null
-    var revealed by rememberSaveable { mutableStateOf(reveal == null) }
+    var revealed by rememberSaveable(folderKey, reveal) { mutableStateOf(reveal == null) }
     suspend fun revealOnce(scrollTo: suspend (Int) -> Unit) {
         if (revealed) return
         revealed = true
@@ -119,7 +109,11 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
             CompositionLocalProvider(LocalDensity provides rememberTextScaled(content.look.textSize)) {
                 when (content.view) {
                     LibraryView.Grid -> {
-                        val grid = rememberLazyGridState()
+                        // Save a cell key, not the header-dependent lazy index. Compose retains keys on live updates.
+                        val grid = rememberSaveable(folderKey, saver = listSaver<LazyGridState, Any>(
+                            save = { listOf(cells.getOrNull(it.firstVisibleItemIndex)?.key.orEmpty(), it.firstVisibleItemScrollOffset) },
+                            restore = { saved -> LazyGridState(cells.indexOfFirst { it.key == saved[0] }.coerceAtLeast(0), saved[1] as Int) },
+                        )) { LazyGridState() }
                         LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
                         val landscape = isLandscapeWindow()
                         val columns = content.look.columns(maxWidth, landscape)
@@ -131,10 +125,15 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             state = grid,
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            items(cells, key = { it.key }) { cell ->
-                                when (cell) {
-                                    ListCell.Parent -> GridParentCell(fitter, content.look, onUp ?: {})
-                                    is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look, onOpen, onLongPress)
+                            cells.forEach { cell ->
+                                if (cell is ListCell.Header) {
+                                    stickyHeader(key = cell.key) { GroupHeader(cell, cell.key in folded) { toggle(cell) } }
+                                } else item(key = cell.key) {
+                                    when (cell) {
+                                        ListCell.Parent -> GridParentCell(fitter, content.look, onUp ?: {})
+                                        is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look, onOpen, onLongPress)
+                                        is ListCell.Header -> Unit
+                                    }
                                 }
                             }
                             if (empty != null) item(span = { GridItemSpan(maxLineSpan) }) { EmptyRow(empty) }
@@ -143,14 +142,22 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                         FastScroller(cells.size, { grid.firstVisibleItemIndex }, { grid.isScrollInProgress }, { scope.launch { grid.scrollToItem(it) } }, Modifier.align(Alignment.CenterEnd))
                     }
                     LibraryView.ThumbnailList, LibraryView.List -> {
-                        val list = rememberLazyListState()
+                        val list = rememberSaveable(folderKey, saver = listSaver<LazyListState, Any>(
+                            save = { listOf(cells.getOrNull(it.firstVisibleItemIndex)?.key.orEmpty(), it.firstVisibleItemScrollOffset) },
+                            restore = { saved -> LazyListState(cells.indexOfFirst { it.key == saved[0] }.coerceAtLeast(0), saved[1] as Int) },
+                        )) { LazyListState() }
                         LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
                         val covers = content.covers.takeIf { content.view == LibraryView.ThumbnailList }
                         LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
-                            items(cells, key = { it.key }) { cell ->
-                                when (cell) {
-                                    ListCell.Parent -> ListParentRow(covers != null, content.look, onUp ?: {})
-                                    is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look, onOpen, onLongPress)
+                            cells.forEach { cell ->
+                                if (cell is ListCell.Header) {
+                                    stickyHeader(key = cell.key) { GroupHeader(cell, cell.key in folded) { toggle(cell) } }
+                                } else item(key = cell.key) {
+                                    when (cell) {
+                                        ListCell.Parent -> ListParentRow(covers != null, content.look, onUp ?: {})
+                                        is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look, onOpen, onLongPress)
+                                        is ListCell.Header -> Unit
+                                    }
                                 }
                             }
                             if (empty != null) item { EmptyRow(empty) }
@@ -163,6 +170,28 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                 }
             }
         }
+    }
+}
+
+/** A full-width header with one accessible toggle; it never binds a CoverBox. */
+@Composable
+private fun GroupHeader(header: ListCell.Header, folded: Boolean, toggle: () -> Unit) {
+    val name = header.author ?: stringResource(R.string.group_no_author)
+    val action = stringResource(if (folded) R.string.group_unfold else R.string.group_fold)
+    val description = stringResource(R.string.group_description, name, header.count, action)
+    Row(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(onClick = toggle).minTouchTarget()
+            .clearAndSetSemantics {
+                heading()
+                contentDescription = description
+                onClick(action) { toggle(); true }
+            }.padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.group_count, header.count), style = MaterialTheme.typography.labelLarge)
+        Text(if (folded) "+" else "−", Modifier.padding(start = 12.dp))
     }
 }
 
@@ -330,10 +359,16 @@ private fun Cover(row: FileRow, covers: CoverLayout, focus: CoverFocus, modifier
 private fun List<ListCell>.coverRefs(covers: CoverLayout): List<CoverRef?> =
     remember(this, covers.sizePx) { map { cell -> (cell as? ListCell.Entry)?.row?.cover?.let { CoverRef(it, covers.sizePx) } } }
 
-private fun List<LazyGridItemInfo>.visibleRange(): IntRange = if (isEmpty()) IntRange.EMPTY else first().index..last().index
+private fun List<LazyGridItemInfo>.visibleRange(): IntRange {
+    val entries = filterNot { (it.key as? String)?.startsWith('/') == true }
+    return if (entries.isEmpty()) IntRange.EMPTY else entries.minOf { it.index }..entries.maxOf { it.index }
+}
 
 @JvmName("visibleListRange")
-private fun List<LazyListItemInfo>.visibleRange(): IntRange = if (isEmpty()) IntRange.EMPTY else first().index..last().index
+private fun List<LazyListItemInfo>.visibleRange(): IntRange {
+    val entries = filterNot { (it.key as? String)?.startsWith('/') == true }
+    return if (entries.isEmpty()) IntRange.EMPTY else entries.minOf { it.index }..entries.maxOf { it.index }
+}
 
 /** Shapes as well as colors tell the states apart: nothing for unread, a percentage, a check. */
 @Composable

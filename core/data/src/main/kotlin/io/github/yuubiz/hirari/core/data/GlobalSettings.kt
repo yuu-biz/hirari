@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.CoverAspect
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
@@ -114,6 +115,7 @@ data class GlobalSettings(
     val gridNoteLine: Boolean = true,
     val coverAspect: CoverAspect = CoverAspect.Book,
     val libraryTextSize: LibraryTextSize = LibraryTextSize.Medium,
+    val libraryGrouping: LibraryGrouping = LibraryGrouping.None,
     val librarySort: LibrarySort = LibrarySort.Name,
     val foldersFirst: Boolean = true,
     val showDotFiles: Boolean = false,

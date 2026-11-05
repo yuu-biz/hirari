@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
@@ -68,6 +69,11 @@ class LookSheetLandscapeTest {
         show()
         rule.onNodeWithText("4 列").performScrollTo().performClick()
         rule.waitForIdle()
+        // A chip's own scrolling parent is its row, so the sheet is scrolled to the label below the row first.
+        rule.onNodeWithText("サムネイルの大きさ").performScrollTo()
+        rule.onNodeWithText("作者").performClick()
+        rule.waitForIdle()
+        assertEquals(LibraryGrouping.Author, fixture.settings.value.value.libraryGrouping)
         rule.onNodeWithText("サムネイルの大きさ").performScrollTo().assertIsDisplayed()
         assertEquals(4, fixture.settings.value.value.gridColumnsLandscape)
     }
