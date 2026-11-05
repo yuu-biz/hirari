@@ -28,7 +28,7 @@ internal suspend fun LibraryServices.bookmarkDeletion(requested: BookmarkScope?)
         val path = normalizePath(source.path)
         val parent = path.substringBeforeLast('/', "")
         when (val result = listing(place, parent)) {
-            is Listing.Listed -> path.isNotEmpty() && result.entries.none { it.name == path.substringAfterLast('/') }
+            is Listing.Listed -> path.isNotEmpty() && result.entries.none { normalizePath(it.name) == path.substringAfterLast('/') }
             is Listing.Failed -> result.reason == ListFailure.NotFound
         }
     }.map { it.book })

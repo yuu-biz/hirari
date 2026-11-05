@@ -106,6 +106,19 @@ class LibraryGapsTest {
         assertEquals(setOf(deleted.id), (home.bookmarkDeletion(null).scope as BookmarkScope.Books).books.toSet())
     }
 
+    @Test fun `decomposed listing names keep bookmarks for existing SAF and SMB books`() = runTest {
+        fixture.locations.rows.value = listOf(place, server)
+        val entry = FolderEntry("か\u3099.cbz", null, false, 1, T0)
+        fixture.lister.folders[""] = listOf(entry)
+        fixture.smb.folders[""] = listOf(entry)
+        fixture.bookmarks.groups = listOf(group(book(place.id, "が.cbz")), group(book(server.id, "が.cbz")))
+
+        val plan = home().bookmarkDeletion(null)
+
+        assertEquals(0, plan.count)
+        assertTrue((plan.scope as BookmarkScope.Books).books.isEmpty())
+    }
+
     @Test fun `shelf unpins absent folders and unavailable places without storage access`() = runTest {
         fixture.smb.lost = true
         fixture.locations.pin(server.id, "gone", T0)

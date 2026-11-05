@@ -70,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
@@ -211,7 +212,11 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     SheetAction.Contents -> actions.openArchive(ArchiveKey(model.folder.location, row.path, row.item.entry.documentId))
                     SheetAction.FromStart -> if (row.item is FileItem.Folder) {
-                        folderBook?.let { actions.openBook(it.copy(start = StartAt.Page(0))) }
+                        FirstPageTrace.begin()
+                        actions.openBook(OpenBookRequest(
+                            BookAddress.InLocation(model.folder.location, row.path, folder = true, row.item.entry.documentId),
+                            StartAt.Page(0),
+                        ))
                     } else open(row, StartAt.Page(0))
                     SheetAction.MarkRead -> model.mark(row, ReadState.Read)
                     SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)

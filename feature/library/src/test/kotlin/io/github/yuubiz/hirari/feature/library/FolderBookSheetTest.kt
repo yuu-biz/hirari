@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
@@ -33,7 +34,7 @@ class FolderBookSheetTest {
     private fun entry(name: String, directory: Boolean = false) =
         FolderEntry(name, "doc:$name", directory, null, null)
 
-    private fun show(children: List<FolderEntry>) {
+    private fun show(children: List<FolderEntry>, beforeSheet: () -> Unit = {}) {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders[""] = listOf(entry("作品", directory = true))
         fixture.lister.folders["作品"] = children
@@ -44,6 +45,7 @@ class FolderBookSheetTest {
         )
         rule.setContent { MaterialTheme { FolderScreen(model, actions) } }
         rule.waitUntil { model.state.value.content is FolderContent.Shown }
+        rule.runOnIdle { beforeSheet() }
         rule.onNodeWithText("作品").performTouchInput { longClick() }
         rule.waitForIdle()
         assertEquals(2, fixture.lister.calls, "one parent listing and one direct child listing")
@@ -58,6 +60,31 @@ class FolderBookSheetTest {
             opened,
         )
         rule.onNodeWithText(label).assertDoesNotExist()
+    }
+
+    private fun restartWithoutLookup(fail: Boolean) {
+        val book = book(place.id, "作品", container = Container.Folder)
+        fixture.books.put(book)
+        fixture.books.put(reading(book, viewStart = 4))
+        show(listOf(entry("p01.jpg"))) {
+            if (fail) fixture.lister.failure = ListFailure.ReadError else fixture.lister.delayMs = 60_000
+        }
+        rule.onNodeWithText(label).assertDoesNotExist()
+        rule.onNodeWithText("最初から読む").performClick()
+        assertEquals(
+            listOf(OpenBookRequest(BookAddress.InLocation(place.id, "作品", folder = true, "doc:作品"), StartAt.Page(0))),
+            opened,
+        )
+    }
+
+    @Test
+    fun `restart opens a known image folder while its child listing is pending`() {
+        restartWithoutLookup(fail = false)
+    }
+
+    @Test
+    fun `restart opens a known image folder after its child listing fails`() {
+        restartWithoutLookup(fail = true)
     }
 
     @Test
