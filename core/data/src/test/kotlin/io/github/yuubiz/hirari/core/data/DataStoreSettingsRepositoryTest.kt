@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.data
 
 import kotlinx.coroutines.CoroutineScope
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -36,6 +37,17 @@ class DataStoreSettingsRepositoryTest {
         }
         val reopened = withRepository(file) { it.settings.first() }
         assertEquals(GlobalSettings(coverAlone = true, tapBandPercent = 40), reopened)
+    }
+
+    @Test
+    fun `circle author merge choice survives reopening with the grouping choice`() = runBlocking {
+        val file = File(folder.root, "settings.json")
+        withRepository(file) { repository ->
+            assertEquals(true, repository.settings.first().mergeCircleAuthors)
+            repository.update { it.copy(libraryGrouping = LibraryGrouping.Author, mergeCircleAuthors = false) }
+        }
+        val reopened = withRepository(file) { it.settings.first() }
+        assertEquals(GlobalSettings(libraryGrouping = LibraryGrouping.Author, mergeCircleAuthors = false), reopened)
     }
 
     @Test

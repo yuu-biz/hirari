@@ -87,8 +87,8 @@ import kotlin.math.roundToInt
 internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null, folderKey: FolderKey? = null) {
     val scope = rememberCoroutineScope()
     var folded by rememberSaveable(folderKey) { mutableStateOf(arrayListOf<String>()) }
-    val cells = remember(content.rows, content.look.grouping, onUp != null, folded) {
-        fileCells(content.rows, content.look.grouping, onUp != null, folded.toSet())
+    val cells = remember(content.rows, content.look.grouping, content.look.mergeCircleAuthors, onUp != null, folded) {
+        fileCells(content.rows, content.look.grouping, onUp != null, folded.toSet(), content.look.mergeCircleAuthors)
     }
     fun toggle(header: ListCell.Header) {
         folded = ArrayList(if (header.key in folded) folded - header.key else folded + header.key)

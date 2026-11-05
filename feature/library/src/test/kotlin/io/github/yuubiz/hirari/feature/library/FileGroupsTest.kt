@@ -22,6 +22,69 @@ class FileGroupsTest {
     private fun List<ListCell>.names() = filterIsInstance<ListCell.Entry>().map { it.row.item.entry.name }
 
     @Test
+    fun `circle only author only and both merge while keeping list order and folding`() {
+        val input = rows("[Circle] 1.zip", "[Author] 2.zip", "(C108) [Circle (Author)] 3.zip")
+        val cells = group(input, parent = true)
+        val header = cells.headers().single()
+        assertEquals("Circle (Author)", header.author)
+        assertEquals(3, header.count)
+        assertEquals(input.map { it.item.entry.name }, cells.names())
+        assertEquals(listOf(ListCell.Parent, header), group(input, parent = true, folded = setOf(header.key)))
+    }
+
+    @Test
+    fun `shared authors merge circles transitively with normalized single names`() {
+        val cells = group(rows("[Circle1 (Author)] 1.zip", "［Ｃｉｒｃｌｅ２ （ＡＵＴＨＯＲ）］ 2.zip",
+            "[circle2 (Other)] 3.zip", "[other] 4.zip", "[ CIRCLE1 ] 5.zip"))
+        assertEquals(5, cells.headers().single().count)
+        assertEquals("/author:author", cells.headers().single().key)
+    }
+
+    @Test
+    fun `off keeps complete creator groups apart and retains first spelling`() {
+        val input = rows("[Circle] 1.zip", "[Author] 2.zip", "[Circle (Author)] 3.zip", "［ＣＩＲＣＬＥ］ 4.zip")
+        val cells = fileCells(input, LibraryGrouping.Author, false, mergeCircleAuthors = false)
+        assertEquals(listOf(1, 2, 1), cells.headers().map { it.count })
+        assertEquals(listOf("Author", "Circle", "Circle (Author)"), cells.headers().map { it.author })
+    }
+
+    @Test
+    fun `header prefers both parts then the most frequent exact spelling with first appearance breaking ties`() {
+        fun header(vararg names: String) = group(names.map { entry(it) }.toRows("", Ordering(LibrarySort.Name, false, false)))
+            .headers().single().author
+        assertEquals("Circle (Author)", header("[Author] 1.zip", "[Author] 2.zip", "[Circle (Author)] 3.zip"))
+        assertEquals("Circle (Author)", header("［Ｃｉｒｃｌｅ （Ａｕｔｈｏｒ）］ 1.zip", "[Circle (Author)] 2.zip", "[Circle (Author)] 3.zip"))
+        val input = rows("[Circle (Author)] 1.zip", "［Ｃｉｒｃｌｅ （Ａｕｔｈｏｒ）］ 2.zip")
+        assertEquals(authorInName(input.first().item.entry.name), group(input).headers().single().author)
+        assertEquals(authorInName(input.last().item.entry.name), group(input.reversed()).headers().single().author)
+        assertEquals("author", header("[Author] 1.zip", "[author] 2.zip", "[author] 3.zip"))
+    }
+
+    @Test
+    fun `keys survive filtering and spelling changes when the smallest normalized name remains`() {
+        val input = rows("[Circle (Author)] keep1.zip", "［Ｃｉｒｃｌｅ （Ａｕｔｈｏｒ）］ keep2.zip", "[author] extra.zip")
+        val key = group(input).headers().single().key
+        assertEquals("/author:author", key)
+        assertEquals(key, group(input.filtered("keep")).headers().single().key)
+        assertEquals(key, group(input.filtered("keep2")).headers().single().key)
+        assertEquals(key, group(input.filtered("extra")).headers().single().key)
+        assertEquals(key, group(input.reversed()).headers().single().key)
+    }
+
+    @Test
+    fun `natural header order uses the chosen spelling rather than the component key`() {
+        val cells = group(rows("[Circle10 (A)] 1.zip", "[Circle2 (Z)] 2.zip", "plain.zip"), parent = true)
+        assertEquals(listOf("Circle2 (Z)", "Circle10 (A)", null), cells.headers().map { it.author })
+    }
+
+    @Test
+    fun `filtered out links do not merge otherwise unrelated names`() {
+        val input = rows("[Circle] keep.zip", "[Author] keep.zip", "[Circle (Author)] remove.zip")
+        assertEquals(1, group(input).headers().size)
+        assertEquals(2, group(input.filtered("keep")).headers().size)
+    }
+
+    @Test
     fun `bracket variants NFKC spaces and case folding share a stable key and first spelling`() {
         val names = listOf("［ Ａｕｔｈｏｒ ］ 3.zip", "[author] 2.zip", "[ Author ] 1.zip")
         val input = names.map { entry(it) }.toRows("", Ordering(LibrarySort.Newest, false, false)).reversed()

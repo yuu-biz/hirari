@@ -270,6 +270,9 @@ val SettingsTable: List<Setting> = buildList {
         LibraryTextSize.Small to "小", LibraryTextSize.Medium to "中", LibraryTextSize.Large to "大"))
     add(choice(GlobalSettings::libraryGrouping, library, "グループ", { s, v -> s.copy(libraryGrouping = v) },
         LibraryGrouping.None to "なし", LibraryGrouping.Author to "作者"))
+    add(toggle(GlobalSettings::mergeCircleAuthors, library, "サークルと作者をまとめる",
+        note = "グループが作者のとき、共通のサークル名や作者名を持つ本をまとめます。",
+    ) { s, v -> s.copy(mergeCircleAuthors = v) })
     add(choice(GlobalSettings::librarySort, library, "並べ替え", { s, v -> s.copy(librarySort = v) },
         LibrarySort.Name to "名前", LibrarySort.Newest to "新しい順", LibrarySort.Oldest to "古い順"))
     add(toggle(GlobalSettings::foldersFirst, library, "フォルダを先に") { s, v -> s.copy(foldersFirst = v) })

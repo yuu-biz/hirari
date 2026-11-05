@@ -23,29 +23,19 @@ fun FileItem.gridBase(): String {
     }.trim()
 }
 
-private val BRACKETS = mapOf('[' to ']', '［' to '］')
-
-private fun firstBrackets(name: String): IntRange? {
-    for ((open, char) in name.withIndex()) {
-        val closing = BRACKETS[char] ?: continue
-        val close = name.indexOf(closing, open + 1)
-        if (close >= 0) return open..close
-    }
-    return null
-}
-
 /** The author even when the whole name is brackets and the grid uses it as its title. */
-internal fun authorInName(name: String): String? = firstBrackets(name)?.let { name.substring(it.first + 1, it.last).trim() }
+internal fun authorInName(name: String): String? = parseLibraryName(name).creator
 
 /**
  * Takes the first `[…]` or `［…］` pair out of [name] into the note. The parts around it join with one space when
  * either side had one; a name that is only the brackets keeps their inside as its title.
  */
 internal fun splitBrackets(name: String): GridName {
-    firstBrackets(name)?.let { brackets ->
+    val parsed = parseLibraryName(name)
+    parsed.creatorRange?.let { brackets ->
         val open = brackets.first
         val close = brackets.last
-        val note = name.substring(open + 1, close).trim()
+        val note = parsed.creator.orEmpty()
         val before = name.substring(0, open)
         val after = name.substring(close + 1)
         val gap = if (before.isNotBlank() && after.isNotBlank() && (before.last().isWhitespace() || after.first().isWhitespace())) " " else ""

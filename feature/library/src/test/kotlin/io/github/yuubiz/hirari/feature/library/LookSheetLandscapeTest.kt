@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -76,6 +77,18 @@ class LookSheetLandscapeTest {
         assertEquals(LibraryGrouping.Author, fixture.settings.value.value.libraryGrouping)
         rule.onNodeWithText("サムネイルの大きさ").performScrollTo().assertIsDisplayed()
         assertEquals(4, fixture.settings.value.value.gridColumnsLandscape)
+    }
+
+    @Test
+    fun `circle author merging is disabled without author grouping and saves a toggle immediately`() {
+        show()
+        rule.onNodeWithText("サークルと作者をまとめる").performScrollTo().assertIsNotEnabled()
+        assertEquals(true, fixture.settings.value.value.mergeCircleAuthors)
+        rule.onNodeWithText("サムネイルの大きさ").performScrollTo()
+        rule.onNodeWithText("作者").performClick()
+        rule.onNodeWithText("サークルと作者をまとめる").performScrollTo().performClick()
+        rule.waitForIdle()
+        assertEquals(false, fixture.settings.value.value.mergeCircleAuthors)
     }
 
     @Test

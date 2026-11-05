@@ -14,6 +14,8 @@ class ListLookTest {
     fun `grouping defaults to none and the look follows the saved author choice`() {
         assertEquals(LibraryGrouping.None, GlobalSettings().listLook().grouping)
         assertEquals(LibraryGrouping.Author, GlobalSettings(libraryGrouping = LibraryGrouping.Author).listLook().grouping)
+        assertEquals(true, GlobalSettings().listLook().mergeCircleAuthors)
+        assertEquals(false, GlobalSettings(mergeCircleAuthors = false).listLook().mergeCircleAuthors)
     }
 
     @Test

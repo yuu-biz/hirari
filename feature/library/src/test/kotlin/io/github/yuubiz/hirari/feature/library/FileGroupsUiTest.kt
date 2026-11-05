@@ -46,6 +46,19 @@ class FileGroupsUiTest {
     @Test fun `thumbnail list header folds and unfolds its items and survives recreation`() = folds(LibraryView.ThumbnailList)
     @Test fun `list header folds and unfolds its items and survives recreation`() = folds(LibraryView.List)
 
+    @Test
+    fun `changing only the merge option rebuilds the visible groups`() {
+        var shown by mutableStateOf(content(listOf("[Circle] 1.zip", "[Author] 2.zip", "[Circle (Author)] 3.zip"), LibraryView.List))
+        rule.setContent { MaterialTheme { Box(Modifier.size(400.dp, 800.dp)) {
+            FileList(shown, null, {}, {})
+        } } }
+        rule.onNodeWithContentDescription("Circle (Author)、3 件、折りたたみ").assertIsDisplayed()
+        rule.runOnIdle { shown = shown.copy(look = shown.look.copy(mergeCircleAuthors = false)) }
+        for (creator in listOf("Circle", "Author", "Circle (Author)")) {
+            rule.onNodeWithContentDescription("$creator、1 件、折りたたみ").assertIsDisplayed()
+        }
+    }
+
     private fun folds(view: LibraryView) {
         val restoration = StateRestorationTester(rule)
         val shown = content(listOf("[A] 1.zip", "[A] 2.zip", "[B] 1.zip", "plain.zip"), view)

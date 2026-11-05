@@ -21,6 +21,7 @@ data class ListLook(
     val aspect: CoverAspect = CoverAspect.Book,
     val textSize: LibraryTextSize = LibraryTextSize.Medium,
     val grouping: LibraryGrouping = LibraryGrouping.None,
+    val mergeCircleAuthors: Boolean = true,
 ) {
     private fun fixedColumns(landscape: Boolean): Int? = if (landscape) landscapeColumns else portraitColumns
 
@@ -43,5 +44,5 @@ data class ListLook(
 internal val CELL_PADDING = 6.dp
 
 fun GlobalSettings.listLook() = ListLook(
-    thumbSize, gridColumnsPortrait, gridColumnsLandscape, gridNameLines, gridNoteLine, coverAspect, libraryTextSize, libraryGrouping,
+    thumbSize, gridColumnsPortrait, gridColumnsLandscape, gridNameLines, gridNoteLine, coverAspect, libraryTextSize, libraryGrouping, mergeCircleAuthors,
 )

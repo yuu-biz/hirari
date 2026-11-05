@@ -127,6 +127,16 @@ private fun LookSettings(look: ListLook, landscape: Boolean, change: ((GlobalSet
         Choices(stringResource(R.string.look_group), LibraryGrouping.entries, look.grouping, { groupNames.getValue(it) }) { v ->
             change { it.copy(libraryGrouping = v) }
         }
+        val authorGrouping = look.grouping == LibraryGrouping.Author
+        Row(
+            Modifier.fillMaxWidth().toggleable(look.mergeCircleAuthors, enabled = authorGrouping, role = Role.Switch) { v ->
+                change { it.copy(mergeCircleAuthors = v) }
+            },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.look_merge_circle_authors), Modifier.weight(1f))
+            Switch(checked = look.mergeCircleAuthors, onCheckedChange = null, enabled = authorGrouping)
+        }
         val thumbNames = mapOf(ThumbSize.Small to small, ThumbSize.Medium to medium, ThumbSize.Large to large)
         Choices(stringResource(R.string.look_thumb_size), ThumbSize.entries, look.thumbSize, { thumbNames.getValue(it) }) { v ->
             change { it.copy(thumbSize = v) }

@@ -95,6 +95,7 @@ val everything = GlobalSettings(
     gridNameLines = 3,
     gridNoteLine = false,
     libraryGrouping = LibraryGrouping.Author,
+    mergeCircleAuthors = false,
     coverAspect = CoverAspect.Square,
     libraryTextSize = LibraryTextSize.Large,
     librarySort = LibrarySort.Oldest,
