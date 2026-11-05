@@ -3,6 +3,9 @@ plugins {
 }
 
 android {
+    defaultConfig {
+        consumerProguardFiles("consumer-rules.pro")
+    }
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all { test ->
