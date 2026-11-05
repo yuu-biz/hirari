@@ -6,8 +6,10 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -49,12 +51,18 @@ fun copyrightNotices(dir: File, exclude: File): List<String> =
 
 /**
  * Joins the Licensee report of the Maven dependencies with third_party/manifest.toml.
- * Every SPDX id gets its canonical text from [spdxTextsDir]. Native libraries also get their own
- * license file followed by the copyright notices of their sources.
+ * Maven rows use their own runtime artifacts, falling back to SPDX bodies with POM attribution.
+ * Native libraries keep their license file followed by the copyright notices of their sources.
  */
-fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: File): LicenseReport {
+fun buildLicenseReport(
+    licenseeJson: File,
+    thirdPartyDir: File,
+    spdxTextsDir: File,
+    mavenArtifacts: List<MavenLicenseArtifact>,
+): LicenseReport {
     val texts = sortedMapOf<String, String>()
     val missingTexts = sortedSetOf<String>()
+    val sources = mavenArtifacts.associateBy { it.coordinates }
 
     @Suppress("UNCHECKED_CAST")
     val artifacts = JsonSlurper().parse(licenseeJson) as List<Map<String, Any?>>
@@ -66,17 +74,17 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
         }
         val ids = (spdx + unknown).distinct()
         if (ids.isEmpty()) throw GradleException("$coordinates has no SPDX license in the Licensee report")
-        ids.forEach { id ->
-            val file = spdxTextsDir.resolve("$id.txt")
-            if (file.isFile) texts[id] = file.readText() else missingTexts += id
-        }
+        val version = artifact["version"] as String
+        val source = sources["$coordinates:$version"]
+            ?: throw GradleException("$coordinates:$version is missing from the runtime license inputs")
+        texts[coordinates] = mavenLicenseText(source, ids, spdxTextsDir)
         LicenseReportEntry(
             id = coordinates,
             name = (artifact["name"] as String?) ?: coordinates,
-            version = artifact["version"] as String,
+            version = version,
             url = (artifact["scm"] as Map<*, *>?)?.get("url") as String?,
             licenses = ids,
-            texts = ids,
+            texts = listOf(coordinates),
         )
     }
     val native = readThirdPartyManifest(thirdPartyDir).map { library ->
@@ -91,7 +99,11 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
         val ids = library.spdx.split(" AND ")
         ids.forEach { id ->
             val file = spdxTextsDir.resolve("$id.txt")
-            if (file.isFile) texts[id] = file.readText() else missingTexts += id
+            if (file.isFile) {
+                // A shared template is only a body; attribution belongs to this native row.
+                val textKey = "$key/$id"
+                texts[textKey] = fillCopyright(file.readText(), notices.joinToString("\n"))
+            } else missingTexts += id
         }
         LicenseReportEntry(
             id = key,
@@ -99,7 +111,7 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
             version = library.version,
             url = library.url,
             licenses = ids,
-            texts = listOf(key) + ids,
+            texts = listOf(key) + ids.map { "$key/$it" },
         )
     }
     if (missingTexts.isNotEmpty()) {
@@ -109,6 +121,13 @@ fun buildLicenseReport(licenseeJson: File, thirdPartyDir: File, spdxTextsDir: Fi
     val libraries = maven + native
     libraries.groupBy { it.id }.filterValues { it.size > 1 }.keys.forEach {
         throw GradleException("$it appears more than once in the license report")
+    }
+    libraries.forEach { library ->
+        val displayed = listOfNotNull(library.id, library.name, library.version, library.url) +
+            library.licenses + library.texts.map(texts::getValue)
+        if (displayed.any(COPYRIGHT_PLACEHOLDER::containsMatchIn)) {
+            throw GradleException("${library.id} has an unfilled copyright placeholder in the license report")
+        }
     }
     return LicenseReport(libraries.sortedBy { it.name.lowercase() }, texts)
 }
@@ -126,6 +145,9 @@ abstract class GenerateLicenseReportTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val spdxTextsDir: DirectoryProperty
 
+    @get:Nested
+    abstract val mavenArtifacts: ListProperty<MavenLicenseArtifact>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -135,6 +157,7 @@ abstract class GenerateLicenseReportTask : DefaultTask() {
             licenseeReport.get().asFile,
             thirdPartyDir.get().asFile,
             spdxTextsDir.get().asFile,
+            mavenArtifacts.get(),
         )
         val json = JsonOutput.toJson(
             mapOf(

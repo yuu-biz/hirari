@@ -2640,7 +2640,10 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - 二重ライセンスの依存は寛容な側を選び、選んだ側を表に書く。
 - Maven の依存は Licensee で検査し、許可リストの外のライセンスでビルドを失敗にする。
 - ネイティブの依存は `third_party/manifest.toml` に名前、版、取得元の URL、SHA-256、SPDX 識別子を書く。CI のスクリプトで、`third_party/` の下のすべてのディレクトリが目録に載り、ライセンスファイルを持つことを確かめる。
-- ライセンス画面の内容は、Licensee の出力と `third_party/manifest.toml` からビルド時に生成する。Maven の依存には、SPDX 識別子ごとの正規の全文（`build-logic/spdx/<識別子>.txt`）を付ける。全文のない識別子が出てきたらビルドを失敗にする。ネイティブの依存には、目録の `license_file` の全文を付ける。著作権の表示はこちらに含まれる。
+- ライセンスの許可と画面に載せる本文は、別に扱う。許可リストを通ったことだけでは、各依存の著作権の表示を満たさないためである。
+- ライセンス画面の内容は、Licensee の出力、Maven の実行時の依存の成果物と POM、`third_party/manifest.toml` からビルド時に生成する。Maven の依存は、JAR と AAR の `META-INF/LICENSE*`、`META-INF/NOTICE*`、直下の `LICENSE*` と `NOTICE*` を全文載せる。AAR の中の JAR も読む。Apache-2.0 の NOTICE も省かない。
+- Maven の成果物にライセンス本文がないときだけ、SPDX 識別子ごとの本文（`build-logic/spdx/<識別子>.txt`）を使う。著作権の欄は、成果物の表示を優先し、なければ POM のライセンスの著作権表示か、開発者と組織の名前で埋める。年は POM にあるときだけ付ける。成果物に本文だけあるときも、POM から得られる著作権表示を補う。補う本文や権利者が得られないときと、`<year>` や `<copyright holders>` などの未記入の欄が表示に残るときは、ビルドを失敗にする。
+- ネイティブの依存には、目録の `license_file` の全文とソースの著作権表示を付ける。補う SPDX 本文の著作権の欄にも、その表示を使う。
 
 ### 8.6 Baseline Profile
 

@@ -4,8 +4,12 @@ import app.cash.licensee.LicenseeExtension
 import app.cash.licensee.UnusedAction
 import com.android.build.api.variant.ApplicationAndroidComponentsExtension
 import org.gradle.api.Project
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.result.ResolvedArtifactResult
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.register
+import org.gradle.maven.MavenModule
+import org.gradle.maven.MavenPomArtifact
 
 /** Licenses allowed in the distributed app (docs/spec.md section 8.5). Fonts may also use OFL-1.1. */
 val allowedLicenses = listOf(
@@ -46,11 +50,39 @@ internal fun Project.checkAndBundleLicenses() {
     extensions.configure<ApplicationAndroidComponentsExtension> {
         onVariants { variant ->
             val name = variant.name.replaceFirstChar { it.uppercase() }
+            val runtime = configurations.named("${variant.name}RuntimeClasspath")
+            val licenseInputs = providers.provider {
+                val configuration = runtime.get()
+                val artifacts = configuration.incoming.artifactView {
+                    componentFilter { it is ModuleComponentIdentifier }
+                    isLenient = true
+                }.artifacts.artifacts.groupBy { it.id.componentIdentifier }
+                val components = configuration.incoming.resolutionResult.allComponents.mapNotNull {
+                    it.id as? ModuleComponentIdentifier
+                }
+                val poms = dependencies.createArtifactResolutionQuery()
+                    .forComponents(components)
+                    .withArtifacts(MavenModule::class.java, MavenPomArtifact::class.java)
+                    .execute().resolvedComponents.associate { component ->
+                        component.id to component.getArtifacts(MavenPomArtifact::class.java)
+                            .filterIsInstance<ResolvedArtifactResult>().singleOrNull()?.file
+                    }
+                components.map { component ->
+                    MavenLicenseArtifact(
+                        coordinates = "${component.group}:${component.module}:${component.version}",
+                        files = artifacts[component].orEmpty().map { it.file }.filter {
+                            it.extension.equals("jar", ignoreCase = true) || it.extension.equals("aar", ignoreCase = true)
+                        },
+                        pom = poms[component],
+                    )
+                }.sortedBy { it.coordinates }
+            }
             val task = tasks.register<GenerateLicenseReportTask>("generate${name}LicenseReport") {
                 dependsOn("licenseeAndroid$name")
                 licenseeReport.set(layout.buildDirectory.file("reports/licensee/android$name/artifacts.json"))
                 thirdPartyDir.set(rootProject.layout.projectDirectory.dir("third_party"))
                 spdxTextsDir.set(rootProject.layout.projectDirectory.dir("build-logic/spdx"))
+                mavenArtifacts.set(licenseInputs)
             }
             variant.sources.assets?.addGeneratedSourceDirectory(task, GenerateLicenseReportTask::outputDir)
         }
