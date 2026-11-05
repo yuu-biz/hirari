@@ -95,7 +95,8 @@ class FolderViewModelTest {
         assertEquals("作品", target.path)
         assertEquals("keep", parent.shown().filter)
         assertEquals("A", target.pseudo!!.name)
-        val child = FolderViewModel(CompletableDeferred(fixture.services), target, UnconfinedTestDispatcher(testScheduler))
+        val restoredTarget = target.copy(pseudo = target.pseudo!!.copy(memberKeys = emptyList()))
+        val child = FolderViewModel(CompletableDeferred(fixture.services), restoredTarget, UnconfinedTestDispatcher(testScheduler))
             .also { watch(it.state) }
         assertEquals(listOf("[A] keep1.zip", "[A] keep2.zip"), child.shown().rows.map { it.item.entry.name })
         assertTrue(child.shown().rows.all { it.pseudo == null })
@@ -137,7 +138,8 @@ class FolderViewModelTest {
         fresh.locations.rows.value = listOf(server)
         fresh.settings.value.value = fixture.settings.value.value
         fresh.smb.folders["series"] = fixture.smb.folders.getValue("series")
-        val restored = FolderViewModel(CompletableDeferred(fresh.services), target, UnconfinedTestDispatcher(testScheduler)).also { watch(it.state) }
+        val restoredTarget = target.copy(pseudo = target.pseudo!!.copy(memberKeys = emptyList()))
+        val restored = FolderViewModel(CompletableDeferred(fresh.services), restoredTarget, UnconfinedTestDispatcher(testScheduler)).also { watch(it.state) }
         assertEquals(3, restored.shown().rows.size)
         assertEquals(listOf(server to "series"), fresh.smb.listed)
     }

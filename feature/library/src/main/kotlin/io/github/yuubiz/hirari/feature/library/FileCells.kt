@@ -41,7 +41,12 @@ internal fun prepareFileCells(rows: List<FileRow>, section: LibrarySection, pare
 /** Visible cell indexes and their signed offsets from the viewport start, in lazy layout coordinates. */
 internal fun FileCells.saveAnchor(visible: List<Pair<Int, Int>>): List<Any> {
     val entry = visible.sortedBy { it.first }.firstOrNull { cells.getOrNull(it.first) is ListCell.Entry }
-    return listOf(entry?.let { cells[it.first].key }.orEmpty(), entry?.let { -it.second } ?: 0) + entryKeys
+    val key = entry?.let { cells[it.first].key }.orEmpty()
+    val at = entryKeys.indexOf(key)
+    val neighbours = if (at < 0) emptyList() else entryKeys.subList(
+        maxOf(0, at - 50), minOf(entryKeys.size, at + 51),
+    )
+    return listOf(key, entry?.let { -it.second } ?: 0) + neighbours
 }
 
 /** Exact entry, then original successors, then original predecessors. Headers are never destinations. */

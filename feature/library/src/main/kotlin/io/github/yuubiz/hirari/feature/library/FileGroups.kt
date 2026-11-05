@@ -73,6 +73,17 @@ private fun groupSpelling(items: List<CreatorRow>): String? {
 data class PseudoFolder(val key: String, val name: String, val kind: LibraryGrouping, val merge: Boolean, val filter: String,
     val parent: PseudoFolder? = null, val memberKeys: List<String> = emptyList())
 
+/** Keep the reconstructed snapshot in the screen's ViewModel, never in saved navigation arguments. */
+internal fun rememberPseudoFolder(rows: List<FileRow>, folder: PseudoFolder?): PseudoFolder? {
+    if (folder == null || folder.memberKeys.isNotEmpty()) return folder
+    val parent = rememberPseudoFolder(rows, folder.parent)
+    val members = if (parent == null) rows else {
+        val paths = parent.memberKeys.toHashSet()
+        rows.filter { it.path in paths }
+    }
+    return folder.copy(parent = parent, memberKeys = originalGroupMembers(members, folder))
+}
+
 /** Resolve each level against today's settings; a vanished group returns its nearest surviving parent. */
 internal fun resolvePseudoFolder(rows: List<FileRow>, folder: PseudoFolder?, look: ListLook): Pair<PseudoFolder?, List<FileRow>> {
     if (folder == null) return null to rows
@@ -87,15 +98,30 @@ internal fun resolvePseudoFolder(rows: List<FileRow>, folder: PseudoFolder?, loo
         }
         if (kind == LibraryGrouping.None || kind != group.kind) break
         val groups = fileGroups(members.filtered(group.filter), kind, look.mergeCircleAuthors).filter { it.rows.size >= 2 }
-        val remembered = group.memberKeys.toHashSet()
-        val match = if (remembered.isEmpty()) groups.firstOrNull { scopedGroupKey(parent, it.key) == group.key }
-            else groups.map { candidate -> candidate to candidate.rows.count { it.path in remembered } }
-                .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+        val remembered = group.memberKeys.ifEmpty { originalGroupMembers(members, group) }.toHashSet()
+        val match = groups.map { candidate -> candidate to candidate.rows.count { it.path in remembered } }
+            .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
         if (match == null) break
         parent = group
         members = match.rows
     }
     return parent to members
+}
+
+/** Routes carry only the grouping conditions; reconstruct membership from the physical folder listing. */
+private fun originalGroupMembers(rows: List<FileRow>, group: PseudoFolder): List<String> {
+    val prefix = group.parent?.let { "/group-child:${it.key.length}:${it.key}" }.orEmpty()
+    val key = group.key.removePrefix(prefix)
+    val groups = fileGroups(rows.filtered(group.filter), group.kind, group.merge)
+    val match = groups.firstOrNull { it.key == key }
+        // A newly linked creator can change the component's smallest name (and hence its key).
+        ?: if (group.kind == LibraryGrouping.Author && group.merge) {
+            val creator = key.removePrefix("/group:Author:")
+            groups.firstOrNull { candidate -> candidate.rows.any { row ->
+                parseLibraryName(row.item.groupBase()).names.any { normalizedName(it) == creator }
+            } }
+        } else null
+    return match?.rows?.map { it.path }.orEmpty()
 }
 
 private fun scopedGroupKey(parent: PseudoFolder?, key: String): String =

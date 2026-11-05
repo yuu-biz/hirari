@@ -8,6 +8,30 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class FileCellsTest {
+    @Test
+    fun `large anchor saves only fifty neighbours on each side and restores its offset`() {
+        val source = (0 until 5_000).map { FolderEntry("book$it.zip", null, false, 1, null) }
+            .toRows("", Ordering(LibrarySort.Name, false, false))
+        val before = prepareFileCells(source, LibrarySection.None, false, emptySet())
+        val saved = before.saveAnchor(listOf(2_500 to -27))
+        assertEquals(103, saved.size) // key, offset, then 50 predecessors, anchor, 50 successors
+        assertEquals(before.entryKeys.subList(2_450, 2_551), saved.drop(2))
+        assertEquals(2_500 to 27, before.restoreAnchor(saved))
+        assertEquals(53, before.saveAnchor(listOf(0 to 0)).size)
+        assertEquals(53, before.saveAnchor(listOf(4_999 to 0)).size)
+        assertEquals(listOf("", 0), before.saveAnchor(emptyList()))
+
+        fun remaining(vararg indices: Int) = prepareFileCells(indices.map { source[it] }, LibrarySection.None, false, emptySet())
+        // The last saved successor still wins over a closer predecessor, even after reordering.
+        val successor = remaining(2_499, 2_550)
+        assertEquals(1 to 0, successor.restoreAnchor(saved))
+        val predecessor = remaining(2_450)
+        assertEquals(0 to 0, predecessor.restoreAnchor(saved))
+        // Entries beyond the saved neighbourhood do not become fallback destinations.
+        val outside = remaining(4_999, 2_551, 2_449)
+        assertEquals(0 to 0, outside.restoreAnchor(saved))
+    }
+
     private val rows = (1..60).map { FolderEntry("book$it.zip", null, false, 1, null) }
         .toRows("", Ordering(LibrarySort.Name, false, false))
         .mapIndexed { index, row -> row.copy(mark = if (index < 20) ReadMark.Unread else if (index < 40) ReadMark.Reading(20) else ReadMark.Read) }

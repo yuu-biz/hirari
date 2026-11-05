@@ -147,6 +147,7 @@ class FolderViewModel(
     private val compute: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
+    private var openedPseudo = folder.pseudo
     private val listing = MutableStateFlow<ListingState>(ListingState.Loading)
     private val place = MutableStateFlow<LibraryLocation?>(null)
     private val notice = MutableStateFlow<Notice?>(null)
@@ -207,13 +208,14 @@ class FolderViewModel(
         return combine(starred, query, layout, chosenHere) { rows, query, layout, chosenHere ->
             val covers = CoverLayout(services.covers, services.covers.sizePx(layout.look.thumbSize))
             val pseudo = folder.pseudo
-            val (existing, members) = resolvePseudoFolder(rows, pseudo, layout.look)
+            openedPseudo = rememberPseudoFolder(rows, openedPseudo)
+            val (existing, members) = resolvePseudoFolder(rows, openedPseudo, layout.look)
             val filtered = members.filtered(query)
             val visible = pseudoFolders(filtered, layout.look.groupingInside(existing),
                 layout.look.mergeCircleAuthors, query, layout.ordering.sort, layout.ordering.foldersFirst, existing)
             val parentItem = layout.showParentItem && (pseudo != null || folderTrail("", folder.path).parent != null)
             FolderContent.Shown(visible, members.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem,
-                returnTo = if (existing != pseudo) folder.copy(pseudo = existing) else null)
+                returnTo = if (existing?.key != pseudo?.key) folder.copy(pseudo = existing) else null)
         }.flowOn(compute)
     }
 

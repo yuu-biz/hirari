@@ -13,6 +13,52 @@ import kotlin.test.assertTrue
 
 class FileGroupsTest {
     @Test
+    fun `metadata alone rebuilds both levels and their original filters before applying current settings`() {
+        val source = rows("[Z (B)] Story 1.zip", "[B] Story 2.zip", "[B] Story 3.zip",
+            "[B] Tale 1.zip", "[B] Tale 2.zip", "[C] Story 1.zip", "[C] Story 2.zip")
+        val author = group(source).first { it.pseudo!!.name != "C" }.pseudo!!
+        val authorMetadata = author.copy(memberKeys = emptyList())
+        val authorRows = resolvePseudoFolder(source, authorMetadata, ListLook(grouping = LibraryGrouping.Author)).second
+        val story = pseudoFolders(authorRows.filtered("Story"), LibraryGrouping.Series, true, "Story", LibrarySort.Name, true, author)
+            .single().pseudo!!
+        val metadata = story.copy(memberKeys = emptyList(), parent = authorMetadata)
+        val look = ListLook(grouping = LibraryGrouping.Author, subgrouping = LibraryGrouping.Series, mergeCircleAuthors = false)
+        val snapshot = rememberPseudoFolder(source, metadata)!!
+        assertEquals(author.memberKeys, snapshot.parent!!.memberKeys)
+        assertEquals(story.memberKeys, snapshot.memberKeys)
+        val (_, members) = resolvePseudoFolder(source, snapshot, look)
+        assertEquals(listOf("[B] Story 2.zip", "[B] Story 3.zip"), members.map { it.item.entry.name })
+        assertEquals(members, resolvePseudoFolder(source, metadata, look).second)
+        val withoutStory = source.filterNot { "Story" in it.item.entry.name }
+        assertEquals(authorMetadata, resolvePseudoFolder(withoutStory, metadata, look.copy(mergeCircleAuthors = true)).first)
+        assertEquals(null, resolvePseudoFolder(source, metadata, look.copy(grouping = LibraryGrouping.None)).first)
+    }
+
+    @Test
+    fun `metadata recognizes a merged author whose canonical key changed before opening`() {
+        val original = rows("[Z (B)] one.zip", "[B] two.zip")
+        val metadata = group(original).single().pseudo!!.copy(memberKeys = emptyList())
+        val current = original + rows("[A (B)] three.zip")
+        val look = ListLook(grouping = LibraryGrouping.Author)
+        assertEquals(current.toSet(), resolvePseudoFolder(current, metadata, look).second.toSet())
+        val snapshot = rememberPseudoFolder(original, metadata)!!
+        assertEquals(2, snapshot.memberKeys.size)
+        assertEquals(current.toSet(), resolvePseudoFolder(current, snapshot, look).second.toSet())
+    }
+
+    @Test
+    fun `ViewModel snapshot follows remaining members after the key defining link disappears`() {
+        val original = rows("[Z (B)] link.zip", "[Z] one.zip", "[Z] two.zip")
+        val metadata = group(original).single().pseudo!!.copy(memberKeys = emptyList())
+        val snapshot = rememberPseudoFolder(original, metadata)!!
+        val remaining = original.filterNot { "link" in it.item.entry.name }
+        val look = ListLook(grouping = LibraryGrouping.Author)
+        assertEquals(metadata.key, resolvePseudoFolder(remaining, snapshot, look).first!!.key)
+        assertEquals(remaining, resolvePseudoFolder(remaining, snapshot, look).second)
+        assertEquals(null, resolvePseudoFolder(remaining, metadata, look).first)
+    }
+
+    @Test
     fun `membership picks the largest surviving part after a merged group splits and falls back when all disappear`() {
         val source = rows("[Z (B)] one.zip", "[B] two.zip", "[C (B)] four.zip", "[C] five.zip", "[C] six.zip", "[C] seven.zip")
         val opened = group(source).single().pseudo!!
