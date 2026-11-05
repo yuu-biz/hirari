@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -24,6 +25,7 @@ import kotlin.math.abs
 class JxlDecoderTest {
     private val assets = InstrumentationRegistry.getInstrumentation().context.assets
     private val budget = 256L shl 20
+    private val decoding = ImageDecoding(budgetBytes = budget, parallelism = 1)
 
     private fun jxl(name: String): ByteArray = assets.open("jxl/$name").use { it.readBytes() }
 
@@ -44,7 +46,7 @@ class JxlDecoderTest {
     }
 
     private fun page(name: String, target: PixelSize, budgetBytes: Long = budget): PageResult<PreparedImage> =
-        decodeJxlPage(jxl(name), target, budgetBytes) { true }
+        decodePage(jxl(name), target, ImageDecoding(budgetBytes, parallelism = 1), Tiling.Never) { true }
 
     private fun assertColor(expected: Int, actual: Int, tolerance: Int = 0) {
         val close = listOf(Color::alpha, Color::red, Color::green, Color::blue).all { channel ->
@@ -127,13 +129,30 @@ class JxlDecoderTest {
     }
 
     @Test
+    fun aTileRequestCutsTheNativeWholeDecodeAtOriginalResolution() = runBlocking {
+        val result = decodePage(jxl("lossy_quadrants.jxl"), PixelSize(64, 64), decoding, Tiling.Always) { true } as PageResult.Ready
+        val image = result.image as PreparedImage.Tiled
+        assertEquals(PageShape.Known(256, 128), image.shape)
+        image.source.use { source ->
+            val bitmap = (source.tile(TileKey(1, 0, 0)) as PageResult.Ready).image
+            try {
+                assertEquals(256 to 128, bitmap.width to bitmap.height)
+                assertTrue(bitmap.allocationByteCount.toLong() <= budget / 4)
+                assertQuadrants(bitmap, tolerance = 12)
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    @Test
     fun implausibleHeaderIsRefusedBeforeDecoding() {
         val bytes = jxl("too_tall.jxl")
         assertEquals(JxlHeader(1, (1 shl 20) + 1, hasAnimation = false), header(bytes))
         val refused = PageResult.Unsupported(UnsupportedKind.TooLarge(1, (1 shl 20) + 1, ((1L shl 20) + 1) * 4))
         assertEquals(refused, decodeJxlShape(bytes))
         var checks = 0
-        assertEquals(refused, decodeJxlPage(bytes, PixelSize(1080, 1920), budget) { checks++; true })
+        assertEquals(refused, decodeJxlPage(bytes, PixelSize(1080, 1920), decoding, Tiling.Never) { checks++; true })
         assertEquals("only the header stage ran", 0, checks)
     }
 
@@ -162,7 +181,7 @@ class JxlDecoderTest {
         assertEquals(JxlDecodeResult.Failed(JxlFailure.Cancelled), result)
         assertEquals("no check after the one that stopped", 8, checks)
         try {
-            decodeJxlPage(bytes, PixelSize(256, 128), budget) { false }
+            decodeJxlPage(bytes, PixelSize(256, 128), decoding, Tiling.Never) { false }
             fail("expected a cancellation")
         } catch (_: CancellationException) {
         }
@@ -183,7 +202,7 @@ class JxlDecoderTest {
     fun truncatedAndCorruptInputFail() {
         val bytes = jxl("lossy_quadrants.jxl")
         val truncated = bytes.copyOf(bytes.size / 2)
-        assertEquals(PageResult.Failed(FailureReason.Truncated, retryable = false), decodeJxlPage(truncated, PixelSize(256, 128), budget) { true })
+        assertEquals(PageResult.Failed(FailureReason.Truncated, retryable = false), decodeJxlPage(truncated, PixelSize(256, 128), decoding, Tiling.Never) { true })
         val png = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) + ByteArray(64)
         assertEquals(JxlHeaderResult.Failed(JxlFailure.Corrupt), JxlDecoder.header(png))
         assertEquals(JxlHeaderResult.Failed(JxlFailure.Truncated), JxlDecoder.header(bytes.copyOf(2)))

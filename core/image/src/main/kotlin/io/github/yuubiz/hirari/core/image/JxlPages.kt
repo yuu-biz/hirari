@@ -21,39 +21,52 @@ internal fun decodeJxlShape(bytes: ByteArray): PageResult<PageShape.Known> =
 /**
  * Decodes the JPEG XL image in [bytes] to fit [target] by the steps of docs/spec.md section 3.7. libjxl cannot
  * decode at a lower resolution, so it decodes every pixel and the JNI side averages them down by the planned
- * sample size, which averages at any power of two. Half of [budgetBytes] goes to the output and the rest, less a
+ * sample size, which averages at any power of two. Half of the budget goes to the output and the rest, less a
  * reserve for what the limit cannot count, to libjxl ([jxlMemoryLimit]).
  */
 internal fun decodeJxlPage(
     bytes: ByteArray,
     target: PixelSize,
-    budgetBytes: Long,
+    decoding: ImageDecoding,
+    tiling: Tiling,
     isActive: () -> Boolean,
 ): PageResult<PreparedImage> {
     val header = when (val read = JxlDecoder.header(bytes)) {
         is JxlHeaderResult.Failed -> return read.failure.pageResult(width = 0, height = 0)
         is JxlHeaderResult.Read -> read.header
     }
-    val plan = when (val plan = planDecode(header.width, header.height, target, Int.MAX_VALUE, 4, budgetBytes)) {
-        is DecodePlan.Refuse -> return PageResult.Unsupported(plan.kind)
-        is DecodePlan.Decode -> plan
+    return prepareJxlPage(header, target, decoding, tiling, isActive) { sample ->
+        JxlDecoder.decode(bytes, header, sample, jxlMemoryLimit(decoding.budgetBytes), isActive)
     }
+}
+
+/** Plans and prepares a JPEG XL page, keeping the native decode separate from the whole/tile choice. */
+internal fun prepareJxlPage(
+    header: JxlHeader,
+    target: PixelSize,
+    decoding: ImageDecoding,
+    tiling: Tiling,
+    isActive: () -> Boolean,
+    decode: (sample: Int) -> JxlDecodeResult,
+): PageResult<PreparedImage> {
+    dimensionRefusal(header.width, header.height)?.let { return PageResult.Unsupported(it) }
     if (!isActive()) throw CancellationException("cancelled at the header")
-    fun decodeOnce(extraSample: Int): PageResult<PreparedImage> =
-        when (val decoded = JxlDecoder.decode(bytes, header, plan.sampleSize * extraSample, jxlMemoryLimit(budgetBytes), isActive)) {
+    val shape = PageShape.Known(header.width, header.height)
+    fun decodeOnce(read: PixelSize, extraSample: Int, maxSide: Int): PageResult<PreparedImage> {
+        val plan = planDecode(header.width, header.height, read, Int.MAX_VALUE, 4, decoding.budgetBytes, maxSide) as DecodePlan.Decode
+        return when (val decoded = decode(plan.sampleSize * extraSample)) {
             is JxlDecodeResult.Failed -> decoded.failure.pageResult(header.width, header.height)
             is JxlDecodeResult.Decoded -> PageResult.Ready(
-                PreparedImage.Whole(scaledToOutput(decoded.bitmap, plan.output), PageShape.Known(header.width, header.height)),
+                PreparedImage.Whole(scaledToOutput(decoded.bitmap, plan.output), shape),
             )
         }
-    return try {
-        decodeOnce(extraSample = 1)
-    } catch (_: OutOfMemoryError) {
-        try {
-            decodeOnce(extraSample = 2)
-        } catch (_: OutOfMemoryError) {
-            readError
+    }
+    return if (tiling == Tiling.Always || tiling == Tiling.AsPlanned && isElongated(header.width, header.height)) {
+        slicedWhole(shape, target, Int.MAX_VALUE, 4, decoding) { read, extraSample ->
+            decodeOnce(read, extraSample, maxSide = Int.MAX_VALUE)
         }
+    } else {
+        retryingOnce { extraSample -> decodeOnce(target, extraSample, maxSide = DecodeLimits.MAX_BITMAP_SIDE) }
     }
 }
 

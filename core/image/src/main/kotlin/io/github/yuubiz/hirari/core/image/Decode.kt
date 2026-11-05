@@ -29,7 +29,7 @@ internal fun decodePage(
     tiling: Tiling,
     isActive: () -> Boolean,
 ): PageResult<PreparedImage> {
-    if (sniffImage(bytes) == ImageType.JpegXl) return decodeJxlPage(bytes, target, decoding.budgetBytes, isActive)
+    if (sniffImage(bytes) == ImageType.JpegXl) return decodeJxlPage(bytes, target, decoding, tiling, isActive)
     val (type, codec) = when (val found = platformCodec(bytes)) {
         is Found.Decodable -> found
         is Found.Undecodable -> return found.result
@@ -85,18 +85,28 @@ private fun tiled(
     if (codec.regions) {
         RegionTiles.open(bytes, codec.averagingLimit, decoding)?.let { return PageResult.Ready(PreparedImage.Tiled(it, PageShape.Known(it.size.width, it.size.height))) }
     }
-    val prepared = when (val plan = planDecode(shape.width, shape.height, target, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes)) {
+    return slicedWhole(shape, target, codec.averagingLimit, bytesPerPixel, decoding) { read, extraSample ->
+        decodeOnce(bytes, read, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes, isActive, extraSample, maxSide = Int.MAX_VALUE)
+    }
+}
+
+/** Tiles cut from a whole decode within its share of the budget, without the single-bitmap side limit. */
+internal fun slicedWhole(
+    shape: PageShape.Known,
+    target: PixelSize,
+    averagingLimit: Int,
+    bytesPerPixel: Int,
+    decoding: ImageDecoding,
+    decode: (target: PixelSize, extraSample: Int) -> PageResult<PreparedImage>,
+): PageResult<PreparedImage> {
+    val prepared = when (val plan = planDecode(shape.width, shape.height, target, averagingLimit, bytesPerPixel, decoding.budgetBytes)) {
         is DecodePlan.Decode -> plan.output
         is DecodePlan.Refuse -> return PageResult.Ready(PreparedImage.Untiled(shape))
     }
     val read = slicedWholeSize(shape.width, shape.height, decoding.budgetBytes, prepared)
         ?: return PageResult.Ready(PreparedImage.Untiled(shape))
     val full = PixelSize(shape.width, shape.height)
-    return when (
-        val whole = retryingOnce { extraSample ->
-            decodeOnce(bytes, read, codec.averagingLimit, bytesPerPixel, decoding.budgetBytes, isActive, extraSample, maxSide = Int.MAX_VALUE)
-        }
-    ) {
+    return when (val whole = retryingOnce { extraSample -> decode(read, extraSample) }) {
         is PageResult.Ready -> {
             val bitmap = (whole.image as PreparedImage.Whole).bitmap
             PageResult.Ready(PreparedImage.Tiled(SlicedTiles(bitmap, full, decoding), shape))
