@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.SystemClock
+import android.net.Uri
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.yuubiz.hirari.core.archive.EntryNames
@@ -58,7 +59,7 @@ class TextOnDeviceTest {
             }
         }
         val archiveId = BookId("archive")
-        val opened = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(null, CP932))
+        val opened = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(null, CP932), EntryArchive.Document(Uri.fromFile(file)))
         val entry = (opened as TextOpenResult.Opened).text
         try {
             assertArrayEquals(text, opened.bytes)
@@ -84,8 +85,8 @@ class TextOnDeviceTest {
         }
         val eucJp = Charset.forName("EUC-JP")
         val archiveId = BookId("archive")
-        val detected = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(null, CP932))
-        val chosen = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(eucJp, CP932))
+        val detected = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(null, CP932), EntryArchive.Document(Uri.fromFile(file)))
+        val chosen = openEntry(FileChannelSource(FileInputStream(file).channel), archiveId, entryIndex = 0, EntryCharsets(eucJp, CP932), EntryArchive.Document(Uri.fromFile(file)))
         val texts = listOf(detected, chosen).map { (it as TextOpenResult.Opened).text }
         try {
             assertEquals(name, texts[0].path)

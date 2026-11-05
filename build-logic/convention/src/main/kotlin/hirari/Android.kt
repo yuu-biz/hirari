@@ -19,6 +19,12 @@ internal object Sdk {
 
 internal val JAVA_TARGET = JavaVersion.VERSION_17
 
+internal fun Project.checkAndroidTestCompilation() {
+    if (!file("src/androidTest").isDirectory) return
+    val compilation = tasks.matching { it.name == "compileDebugAndroidTestKotlin" }
+    tasks.named("check").configure { dependsOn(compilation) }
+}
+
 internal val Project.libs: VersionCatalog
     get() = extensions.getByType<VersionCatalogsExtension>().named("libs")
 

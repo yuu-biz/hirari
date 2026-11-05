@@ -20,6 +20,7 @@ class AndroidApplicationPlugin : Plugin<Project> {
         }
         enforceModuleRules()
         checkAndBundleLicenses()
+        checkAndroidTestCompilation()
     }
 }
 
@@ -30,6 +31,7 @@ class AndroidLibraryPlugin : Plugin<Project> {
             configureCommon()
             namespace = namespaceFor()
         }
+        checkAndroidTestCompilation()
         enforceModuleRules()
     }
 }

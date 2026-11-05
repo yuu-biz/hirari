@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
@@ -38,6 +40,22 @@ class FileGroupsUiTest {
     @get:Rule val rule = createComposeRule()
     private val fixture = Fixture()
 
+    private fun waitForHeader(description: String) {
+        rule.waitUntil(timeoutMillis = 5_000) {
+            rule.onAllNodesWithContentDescription(description).fetchSemanticsNodes().size == 1
+        }
+    }
+
+    private fun waitForText(text: String) {
+        rule.waitUntil(timeoutMillis = 5_000) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    private fun waitForList() {
+        rule.waitUntil(timeoutMillis = 5_000) {
+            rule.onAllNodes(hasScrollToIndexAction()).fetchSemanticsNodes().size == 1
+        }
+    }
+
     private fun content(rows: List<FileRow>, view: LibraryView, section: LibrarySection = LibrarySection.ReadState): FolderContent.Shown {
         val look = GlobalSettings(librarySection = section).listLook()
         return FolderContent.Shown(rows, rows.size, "", view, look, LibrarySort.Name, false,
@@ -56,16 +74,20 @@ class FileGroupsUiTest {
         restoration.setContent { MaterialTheme { Box(Modifier.size(400.dp, 800.dp)) {
             FileList(shown, null, onOpen = { opened += it.path }, onLongPress = {}, onUp = {})
         } } }
+        waitForHeader("未読、2 件、折りたたみ")
         val header = rule.onNodeWithContentDescription("未読、2 件、折りたたみ")
         assertEquals(rule.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot.width, header.fetchSemanticsNode().boundsInRoot.width, 0.5f)
         rule.onNodeWithText("a.zip").assertIsDisplayed()
         header.performClick()
+        waitForHeader("未読、2 件、展開")
         rule.onNodeWithText("a.zip").assertDoesNotExist()
         rule.onNodeWithText("b.zip").assertDoesNotExist()
         rule.onNodeWithText("read.zip").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
+        waitForHeader("未読、2 件、展開")
         rule.onNodeWithText("a.zip").assertDoesNotExist()
         rule.onNodeWithContentDescription("未読、2 件、展開").performClick()
+        waitForHeader("未読、2 件、折りたたみ")
         rule.onNodeWithText("b.zip").assertIsDisplayed().performClick()
         assertEquals(listOf("b.zip"), opened)
     }
@@ -76,11 +98,14 @@ class FileGroupsUiTest {
         val source = rows((1..70).map { "book$it.zip" })
         var shown by mutableStateOf(content(source, LibraryView.List, LibrarySection.None))
         restoration.setContent { MaterialTheme { Box(Modifier.size(400.dp, 600.dp)) { FileList(shown, null, {}, {}) } } }
+        waitForList()
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(39)
         rule.onNodeWithText("book40.zip").assertIsDisplayed()
         rule.runOnIdle { shown = shown.copy(look = shown.look.copy(section = LibrarySection.ReadState)) }
+        waitForHeader("未読、70 件、折りたたみ")
         rule.onNodeWithText("book40.zip").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
+        waitForHeader("未読、70 件、折りたたみ")
         rule.onNodeWithText("book40.zip").assertIsDisplayed()
     }
 
@@ -102,6 +127,7 @@ class FileGroupsUiTest {
             }
         }
         // Put the reading section's header at the top. The saved anchor must be book31, below it.
+        waitForList()
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(31)
         rule.onNodeWithText("book31.zip").assertIsDisplayed()
         rule.runOnIdle { showing = false }
@@ -109,6 +135,7 @@ class FileGroupsUiTest {
             shown = content(source.filter { it.mark !is ReadMark.Reading }, view)
             showing = true
         }
+        waitForText("book61.zip")
         rule.onNodeWithText("book61.zip").assertIsDisplayed()
         rule.onNodeWithText("book1.zip").assertDoesNotExist()
     }
@@ -135,25 +162,32 @@ class FileGroupsUiTest {
             }
         }
         // A folder section header occupies index 0.
+        waitForHeader("フォルダ、70 件、折りたたみ")
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(39)
         rule.onNodeWithText("Author40").assertIsDisplayed().performClick()
+        waitForHeader("フォルダ、40 件、折りたたみ")
         rule.onNodeWithContentDescription("フォルダ、40 件、折りたたみ").assertIsDisplayed()
         // Parent item and folder header precede the second-level groups. Series29 is kept below the top row,
         // where the sticky section header covers the item and takes the tap.
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(28)
         rule.onNodeWithText("Series29").assertIsDisplayed().performClick()
+        waitForHeader("未読、40 件、折りたたみ")
         rule.onNodeWithContentDescription("未読、40 件、折りたたみ").assertIsDisplayed()
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(30)
         rule.onNodeWithText("[Author40] Series29 29.zip").assertIsDisplayed()
         rule.runOnIdle { folder = folder.copy(pseudo = folder.pseudo!!.parent) }
+        waitForHeader("フォルダ、40 件、折りたたみ")
         rule.onNodeWithText("Series29").assertIsDisplayed().performClick()
+        waitForHeader("未読、40 件、折りたたみ")
         rule.onNodeWithText("[Author40] Series29 29.zip").assertIsDisplayed()
         // Up from the second level returns to the first, then to the real folder.
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         rule.onNodeWithText("上のフォルダへ").performClick()
+        waitForHeader("フォルダ、40 件、折りたたみ")
         rule.onNodeWithText("Series29").assertIsDisplayed()
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         rule.onNodeWithText("上のフォルダへ").performClick()
+        waitForHeader("フォルダ、70 件、折りたたみ")
         rule.onNodeWithText("Author40").assertIsDisplayed()
     }
 
@@ -161,6 +195,7 @@ class FileGroupsUiTest {
     fun `reveal finds an entry after section headers are inserted`() {
         val shown = content(rows((1..70).map { "book$it.zip" }), LibraryView.Grid)
         rule.setContent { MaterialTheme { Box(Modifier.size(400.dp, 600.dp)) { FileList(shown, "book60.zip", {}, {}, onUp = {}) } } }
+        waitForHeader("未読、70 件、折りたたみ")
         rule.onNodeWithText("book60.zip").assertIsDisplayed()
     }
 }
