@@ -48,20 +48,26 @@ internal class PdfDocument private constructor(
      * on a server are a request or more, so a page is opened for it only when it is wanted. Runs on the calling
      * thread, which must be [dispatcher]'s.
      */
-    fun shape(index: Int): PageShape.Known = shapes[index] ?: renderer.openPage(index).use(::shapeOf).also { shapes[index] = it }
+    fun shape(index: Int): PageResult<PageShape.Known> = input.pageOperation {
+        PageResult.Ready(shapes[index] ?: renderer.openPage(index).use(::shapeOf))
+    }.also { result ->
+        if (result is PageResult.Ready) shapes[index] = result.image
+    }
 
     /**
      * The page at [index] drawn on white to fit [target], enlarged when it is smaller, and shrunk further when it
      * would take more than half of [budgetBytes]. Runs on the calling thread, which must be [dispatcher]'s.
      */
-    fun render(index: Int, target: PixelSize, budgetBytes: Long): PageResult<PreparedImage> = renderer.openPage(index).use { page ->
-        val shape = shapeOf(page).also { shapes[index] = it }
-        drawPdfPage(shape, target, budgetBytes) { size -> PageResult.Ready(PreparedImage.Whole(draw(page, size), shape)) }
+    fun render(index: Int, target: PixelSize, budgetBytes: Long): PageResult<PreparedImage> = input.pageOperation {
+        renderer.openPage(index).use { page ->
+            val shape = shapeOf(page)
+            drawPdfPage(shape, target, budgetBytes) { size -> PageResult.Ready(PreparedImage.Whole(draw(page, size), shape)) }
+        }
+    }.also { result ->
+        if (result is PageResult.Ready) shapes[index] = result.image.shape
     }
 
     private fun shapeOf(page: PdfRenderer.Page) = PageShape.Known(page.width, page.height)
-
-    fun pageFailure(error: Exception): PageResult.Failed = input.pageFailure(error)
 
     private fun draw(page: PdfRenderer.Page, size: PixelSize): Bitmap {
         val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
@@ -103,6 +109,7 @@ internal class PdfDocument private constructor(
             var proxied = false
             try {
                 return withContext(dispatcher) {
+                    input.beginOperation()
                     val descriptor = try {
                         storage.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY, input, proxyHandler)
                     } catch (e: IOException) {
@@ -116,7 +123,9 @@ internal class PdfDocument private constructor(
                         descriptor.close()
                         throw e
                     }
-                    Opened.Document(PdfDocument(renderer!!, executor, input))
+                    val document = PdfDocument(renderer!!, executor, input)
+                    if (input.operationFailure() != null) throw IOException("PDF input failed while opening")
+                    Opened.Document(document)
                 }
             } catch (e: CancellationException) {
                 if (!proxied) source.close()
@@ -141,8 +150,33 @@ internal class PdfDocument private constructor(
 
 /** Serves the reads of a proxy descriptor from [source], and closes it when the descriptor is released. */
 internal class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorCallback() {
-    // Callbacks run on the proxy thread; the PDF session reads this after PdfRenderer fails.
+    // Callbacks record the first failure on the proxy thread; the PDF thread resets and checks it per operation.
     private val failure = AtomicReference<IOException?>()
+
+    fun beginOperation() = failure.set(null)
+
+    fun operationFailure(): PageResult.Failed? = when (failure.get()) {
+        is ConnectionLostException -> connectionLost
+        null -> null
+        else -> readError
+    }
+
+    /** A renderer may return normally after a proxy read failed, so check both return and exception paths. */
+    fun <T> pageOperation(operation: () -> PageResult<T>): PageResult<T> {
+        beginOperation()
+        val result = try {
+            operation()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: OutOfMemoryError) {
+            return operationFailure() ?: readError
+        } catch (e: Exception) {
+            return pageFailure(e)
+        }
+        val failed = operationFailure() ?: return result
+        if (result is PageResult.Ready) releaseUnwanted(result.image)
+        return failed
+    }
 
     override fun onGetSize(): Long = try {
         source.size
@@ -159,17 +193,12 @@ internal class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorC
             failure.compareAndSet(null, e)
             throw ErrnoException("read", OsConstants.EIO, e)
         }
-        failure.set(null)
         return buffer.position()
     }
 
     /** The input error takes precedence over the renderer's rejection of the missing data (section 3.9). */
-    fun pageFailure(error: Exception): PageResult.Failed = when (failure.get()) {
-        is ConnectionLostException -> connectionLost
-        null -> when (error) {
-            is RuntimeException, is IOException -> corrupt
-            else -> readError
-        }
+    fun pageFailure(error: Exception): PageResult.Failed = operationFailure() ?: when (error) {
+        is RuntimeException, is IOException -> corrupt
         else -> readError
     }
 

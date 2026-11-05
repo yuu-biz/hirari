@@ -1,14 +1,17 @@
 package io.github.yuubiz.hirari.core.image
 
+import android.graphics.Bitmap
 import android.system.ErrnoException
 import android.system.OsConstants
 import io.github.yuubiz.hirari.core.model.FailureReason
 import io.github.yuubiz.hirari.core.model.PageResult
+import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -60,7 +63,7 @@ class PdfInputFailureTest {
     }
 
     @Test
-    fun theFirstFailureIsKeptUntilAReadSucceeds() {
+    fun theFirstFailureSurvivesSuccessfulReadsUntilTheNextOperation() {
         val source = Input(ConnectionLostException("connection dropped"))
         val input = ProxyReads(source)
         failRead(input)
@@ -71,12 +74,77 @@ class PdfInputFailureTest {
 
         source.error = null
         assertEquals(16, input.onRead(0, 16, ByteArray(16)))
+        assertEquals(connectionLost, input.pageFailure(IllegalStateException()))
+        assertEquals(BookFailure.ReadError, input.openFailure(IOException()))
+
+        input.beginOperation()
         assertEquals(corrupt, input.pageFailure(IllegalStateException()))
         assertEquals(BookFailure.Corrupt, input.openFailure(IOException()))
 
         source.error = IOException("new read failure")
         failRead(input)
         assertEquals(readError, input.pageFailure(IllegalStateException()))
+    }
+
+    @Test
+    fun aRenderThatReturnsNormallyAfterConnectionLossRecyclesItsBitmap() {
+        val input = ProxyReads(Input(ConnectionLostException("connection dropped")))
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+
+        val result = input.pageOperation {
+            failRead(input)
+            PageResult.Ready(PreparedImage.Whole(bitmap, PageShape.Known(2, 2)))
+        }
+
+        assertEquals(connectionLost, result)
+        assertTrue(bitmap.isRecycled)
+    }
+
+    @Test
+    fun aSuccessfulReadAfterConnectionLossStillFailsTheOperationButTheNextStartsClean() {
+        val source = Input(ConnectionLostException("connection dropped"))
+        val input = ProxyReads(source)
+        val shape = PageShape.Known(2, 2)
+
+        val failed = input.pageOperation {
+            failRead(input)
+            source.error = null
+            assertEquals(16, input.onRead(0, 16, ByteArray(16)))
+            PageResult.Ready(shape)
+        }
+        assertEquals(connectionLost, failed)
+
+        assertEquals(PageResult.Ready(shape), input.pageOperation {
+            assertEquals(16, input.onRead(0, 16, ByteArray(16)))
+            PageResult.Ready(shape)
+        })
+        assertEquals(corrupt, input.pageOperation<Nothing> { throw IOException("bad page") })
+    }
+
+    @Test
+    fun aThrowingOperationKeepsItsInputFailureAndTheNextStartsClean() {
+        val source = Input(ConnectionLostException("connection dropped"))
+        val input = ProxyReads(source)
+
+        assertEquals(connectionLost, input.pageOperation<Nothing> {
+            failRead(input)
+            source.error = null
+            input.onRead(0, 16, ByteArray(16))
+            throw IllegalStateException("cannot render page")
+        })
+        assertEquals(corrupt, input.pageOperation<Nothing> { throw IllegalStateException("bad page") })
+    }
+
+    @Test
+    fun aNormalReturnAfterAnOrdinaryInputFailureIsAReadErrorAndRecyclesItsBitmap() {
+        val input = ProxyReads(Input(IOException("read failed")))
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+
+        assertEquals(readError, input.pageOperation {
+            failRead(input)
+            PageResult.Ready(PreparedImage.Whole(bitmap, PageShape.Known(2, 2)))
+        })
+        assertTrue(bitmap.isRecycled)
     }
 
     @Test
@@ -101,7 +169,7 @@ class PdfInputFailureTest {
     }
 
     @Test
-    fun aSizeFailureIsAlsoAnInputFailureAndIsClearedByASuccessfulRead() {
+    fun aSizeFailureIsAlsoKeptUntilTheNextOperation() {
         val source = object : ByteSource {
             override val size: Long get() = throw ConnectionLostException("size unavailable")
             override fun read(offset: Long, dst: ByteBuffer): Int = dst.remaining().also { dst.put(ByteArray(it)) }
@@ -113,6 +181,8 @@ class PdfInputFailureTest {
         assertEquals(connectionLost, input.pageFailure(IllegalStateException()))
 
         input.onRead(0, 16, ByteArray(16))
+        assertEquals(connectionLost, input.pageFailure(IllegalStateException()))
+        input.beginOperation()
         assertEquals(corrupt, input.pageFailure(IllegalStateException()))
     }
 

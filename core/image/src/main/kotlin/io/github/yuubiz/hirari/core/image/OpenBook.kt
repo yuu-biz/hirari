@@ -123,15 +123,7 @@ class OpenBook internal constructor(
     ): PageResult<PreparedImage> = when (content) {
         is BookContent.Pdf -> guarded {
             decodeWithTimeout(scope, content.document.dispatcher) { _ ->
-                try {
-                    content.document.render(pages[index].entryIndex, target, decoding.budgetBytes)
-                } catch (_: OutOfMemoryError) {
-                    readError
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    content.document.pageFailure(e)
-                }
+                content.document.render(pages[index].entryIndex, target, decoding.budgetBytes)
             }
         }
         is BookContent.Images -> withBytes(content, index, raw) { data, isActive ->
@@ -144,13 +136,7 @@ class OpenBook internal constructor(
         // Opening a page reads from the source, so it has the time limit of a page drawn (docs/spec.md section 3.9).
         is BookContent.Pdf -> guarded {
             decodeWithTimeout(scope, content.document.dispatcher, release = {}) { _ ->
-                try {
-                    PageResult.Ready(content.document.shape(pages[index].entryIndex))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    content.document.pageFailure(e)
-                }
+                content.document.shape(pages[index].entryIndex)
             }
         }
         is BookContent.Images -> if (raw != null) withBytes(content, index, raw) { data, _ -> decodeShape(data) }
