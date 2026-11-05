@@ -173,7 +173,7 @@ object Books {
             is PdfDocument.Opened.Document -> opened.document
             is PdfDocument.Opened.Failed -> return BookResult.Failed(opened.reason)
         }
-        val pages = document.shapes.indices.map { i ->
+        val pages = (0 until document.pageCount).map { i ->
             val name = "${i + 1}"
             PageEntry(i, i, name.toByteArray(Charsets.US_ASCII), name, declaredSize = null, sniffed = ImageType.PdfPage)
         }

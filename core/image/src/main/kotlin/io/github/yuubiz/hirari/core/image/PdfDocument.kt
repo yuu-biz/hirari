@@ -32,19 +32,32 @@ import kotlin.math.roundToInt
 internal class PdfDocument private constructor(
     private val renderer: PdfRenderer,
     private val executor: ExecutorService,
-    /** The size of each page in points, known without drawing it. */
-    val shapes: List<PageShape.Known>,
 ) : Closeable {
     val dispatcher: CoroutineDispatcher = executor.asCoroutineDispatcher()
+
+    val pageCount: Int = renderer.pageCount
+
+    /** The size of each page in points once a page was opened, touched only on [dispatcher]'s thread. */
+    private val shapes = arrayOfNulls<PageShape.Known>(pageCount)
+
+    /**
+     * The size of the page at [index] in points, known without drawing it. Opening a page reads its objects, which
+     * on a server are a request or more, so a page is opened for it only when it is wanted.
+     */
+    suspend fun shape(index: Int): PageShape.Known = withContext(dispatcher) {
+        shapes[index] ?: renderer.openPage(index).use(::shapeOf).also { shapes[index] = it }
+    }
 
     /**
      * The page at [index] drawn on white to fit [target], enlarged when it is smaller, and shrunk further when it
      * would take more than half of [budgetBytes]. Runs on the calling thread, which must be [dispatcher]'s.
      */
     fun render(index: Int, target: PixelSize, budgetBytes: Long): PageResult<PreparedImage> = renderer.openPage(index).use { page ->
-        val shape = shapes[index]
+        val shape = shapeOf(page).also { shapes[index] = it }
         drawPdfPage(shape, target, budgetBytes) { size -> PageResult.Ready(PreparedImage.Whole(draw(page, size), shape)) }
     }
+
+    private fun shapeOf(page: PdfRenderer.Page) = PageShape.Known(page.width, page.height)
 
     private fun draw(page: PdfRenderer.Page, size: PixelSize): Bitmap {
         val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
@@ -98,9 +111,7 @@ internal class PdfDocument private constructor(
                         descriptor.close()
                         throw e
                     }
-                    val opened = renderer!!
-                    val shapes = (0 until opened.pageCount).map { i -> opened.openPage(i).use { PageShape.Known(it.width, it.height) } }
-                    Opened.Document(PdfDocument(opened, executor, shapes))
+                    Opened.Document(PdfDocument(renderer!!, executor))
                 }
             } catch (e: CancellationException) {
                 if (!proxied) source.close()

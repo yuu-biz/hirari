@@ -139,7 +139,7 @@ class OpenBook internal constructor(
 
     /** The size of the page at [index], from the image header alone (docs/spec.md sections 2.5 and 5.3). */
     suspend fun shape(index: Int, raw: RawPage? = null): PageResult<PageShape.Known> = when (content) {
-        is BookContent.Pdf -> PageResult.Ready(content.document.shapes[pages[index].entryIndex])
+        is BookContent.Pdf -> guarded { PageResult.Ready(content.document.shape(pages[index].entryIndex)) }
         is BookContent.Images -> if (raw != null) withBytes(content, index, raw) { data, _ -> decodeShape(data) }
         else guarded {
             probeShape(content.bytes, pages[index]) { data ->
