@@ -7,6 +7,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -60,6 +63,22 @@ class FileGridTest {
     }
 
     private fun columnCount() = rule.onAllNodesWithClick().map { it.boundsInRoot.left }.distinct().size
+
+    @Test
+    fun `favorites keep their name and spoken mark in all three views`() {
+        var view by mutableStateOf(LibraryView.Grid)
+        rule.setContent {
+            MaterialTheme {
+                FileList(shown(listOf(row("1.cbz").copy(favorite = true)), view = view), reveal = null, onOpen = {}, onLongPress = {})
+            }
+        }
+        for (next in LibraryView.entries) {
+            view = next
+            rule.onNodeWithText("1.cbz").assertHasClickAction().assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "ZIP、お気に入り"),
+            )
+        }
+    }
 
     @Test
     fun `a cell grows by a line for each name line and for the author line`() {

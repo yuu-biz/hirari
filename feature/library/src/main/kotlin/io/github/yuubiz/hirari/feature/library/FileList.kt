@@ -294,7 +294,10 @@ private fun GridCell(row: FileRow, covers: CoverLayout, focus: CoverFocus, fitte
     Column(
         Modifier.rowPress({ onOpen(row) }, { onLongPress(row) }).rowState(row).semantics { text = AnnotatedString(row.item.entry.name) }.padding(CELL_PADDING),
     ) {
-        Cover(row, covers, focus, Modifier.fillMaxWidth().aspectRatio(look.aspect.ratio))
+        Box(Modifier.fillMaxWidth().aspectRatio(look.aspect.ratio)) {
+            Cover(row, covers, focus, Modifier.fillMaxSize())
+            if (row.favorite) FavoriteStar(Modifier.align(Alignment.TopEnd).padding(4.dp))
+        }
         Text(
             title,
             Modifier.fillMaxWidth().padding(top = 4.dp).decorative(),
@@ -335,7 +338,18 @@ private fun ListRow(row: FileRow, covers: CoverLayout?, focus: CoverFocus, look:
             val detail = listOfNotNull(row.dateText, row.sizeText, pages).joinToString("  ")
             if (detail.isNotEmpty()) Text(detail, color = colors.itemDetail, style = MaterialTheme.typography.bodySmall, maxLines = 2)
         }
+        if (row.favorite) FavoriteStar(Modifier.padding(start = 8.dp))
     }
+}
+
+@Composable
+private fun FavoriteStar(modifier: Modifier) {
+    Icon(
+        ListIcons.Star,
+        contentDescription = null,
+        modifier = modifier.size(18.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp)).decorative(),
+        tint = MaterialTheme.colorScheme.primary,
+    )
 }
 
 /** The thumbnail slot with the kind label and the read-state mark (docs/spec.md sections 4.3 and 4.4). */

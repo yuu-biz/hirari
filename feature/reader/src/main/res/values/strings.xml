@@ -188,4 +188,6 @@
     <string name="breath_no_permission">マイクの許可がありません</string>
     <string name="breath_unavailable">マイクを使えません</string>
     <string name="breath_save_failed">設定を保存できませんでした</string>
+    <string name="favorite_add">お気に入りに追加</string>
+    <string name="favorite_remove">お気に入りから外す</string>
 </resources>

@@ -157,10 +157,22 @@ class FolderTopBarTest {
     }
 
     @Test
+    fun `the menu toggles this folder favorite separately from its pin`() {
+        show("a/b")
+        menu("このフォルダをお気に入りに追加")
+        assertEquals(listOf(place.id to "a/b"), fixture.locations.favorites.value.map { it.location to it.path })
+        assertTrue(fixture.locations.pins.value.isEmpty())
+        menu("お気に入りから外す")
+        assertTrue(fixture.locations.favorites.value.isEmpty())
+    }
+
+    @Test
     fun `the top of a place offers its shortcut and no pin`() {
         show("")
         rule.onNode(hasContentDescription("その他の操作")).performClick()
         assertTrue(rule.onAllNodes(hasText("このフォルダをピン留め")).fetchSemanticsNodes().isEmpty())
+        assertTrue(rule.onAllNodes(hasText("このフォルダをお気に入りに追加")).fetchSemanticsNodes().isEmpty())
+        assertTrue(rule.onAllNodes(hasText("お気に入りから外す")).fetchSemanticsNodes().isEmpty())
         rule.onNodeWithText("ホーム画面にショートカットを作成").performClick()
         rule.waitForIdle()
         assertEquals(listOf(PlaceShortcut(place.id, "", folder = true, label = "漫画")), shortcuts)

@@ -271,6 +271,12 @@ internal fun MenuSheet(
                 MenuItem.entries.groupBy { it.group }.values.forEachIndexed { i, items ->
                     if (i > 0) HorizontalDivider(color = Color(0x33FFFFFF), modifier = Modifier.padding(vertical = 4.dp))
                     for (item in items) MenuRow(item, item.value(viewModel, state)) { run(item) }
+                    if (items.first().group == MenuGroup.Book) viewModel.favorite?.let { favorite ->
+                        MenuRow(if (favorite) R.string.favorite_remove else R.string.favorite_add, null) {
+                            viewModel.toggleFavorite()
+                            onCloseMenu()
+                        }
+                    }
                 }
             }
         }
@@ -279,6 +285,11 @@ internal fun MenuSheet(
 
 @Composable
 private fun MenuRow(item: MenuItem, value: String?, onClick: () -> Unit) {
+    MenuRow(item.label, value, onClick)
+}
+
+@Composable
+private fun MenuRow(label: Int, value: String?, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -287,7 +298,7 @@ private fun MenuRow(item: MenuItem, value: String?, onClick: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(stringResource(item.label), color = SheetText, modifier = Modifier.weight(1f))
+        Text(stringResource(label), color = SheetText, modifier = Modifier.weight(1f))
         if (value != null) Text(value, color = SheetDisabled)
     }
 }

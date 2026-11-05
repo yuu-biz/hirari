@@ -155,7 +155,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     (state.content as? FolderContent.Shown)?.let { shown ->
                         ViewButton(shown.view) { model.setView(shown.view.next()) }
-                        ListMenu(shown, model, atTop = up == null, pinned = state.pinnedId != null, onAdjust = { adjusting = true }) {
+                        ListMenu(shown, model, atTop = up == null, pinned = state.pinnedId != null, favorite = state.favorite, onAdjust = { adjusting = true }) {
                             scope.launch { if (!actions.pinShortcut(model.folderShortcut())) model.show(Notice.ShortcutUnsupported) }
                         }
                     }
@@ -210,6 +210,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     SheetAction.MarkRead -> model.mark(row, ReadState.Read)
                     SheetAction.MarkUnread -> model.mark(row, ReadState.Unread)
                     SheetAction.Pin -> model.pin(row)
+                    SheetAction.Favorite -> model.toggleFavorite(row)
                     SheetAction.Remake -> model.remake(row)
                     SheetAction.Save -> scope.launch {
                         savePath = row.path
@@ -328,7 +329,7 @@ private fun IconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
  * place is on the shelf already, so it has no pin.
  */
 @Composable
-private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: Boolean, pinned: Boolean, onAdjust: () -> Unit, onShortcut: () -> Unit) {
+private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: Boolean, pinned: Boolean, favorite: Boolean, onAdjust: () -> Unit, onShortcut: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconAction(ListIcons.More, stringResource(R.string.list_menu)) { open = true }
@@ -378,6 +379,13 @@ private fun ListMenu(shown: FolderContent.Shown, model: FolderViewModel, atTop: 
                     onClick = {
                         open = false
                         model.togglePin()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_folder_add)) },
+                    onClick = {
+                        open = false
+                        model.toggleFavorite()
                     },
                 )
             }
@@ -439,7 +447,7 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-internal enum class SheetAction { Open, ReadFolder, Contents, FromStart, MarkRead, MarkUnread, Pin, Shortcut, Remake, FolderCover, Save }
+internal enum class SheetAction { Open, ReadFolder, Contents, FromStart, MarkRead, MarkUnread, Pin, Favorite, Shortcut, Remake, FolderCover, Save }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
@@ -454,6 +462,7 @@ internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boo
             if (row.mark != ReadMark.Unread) add(SheetAction.MarkUnread to R.string.sheet_mark_unread)
         }
         if (row.item is FileItem.Folder) add(SheetAction.Pin to R.string.sheet_pin)
+        if (row.item !is FileItem.Image) add(SheetAction.Favorite to if (row.favorite) R.string.favorite_remove else R.string.favorite_add)
         if (row.item is FileItem.Image && canChooseCover) {
             add(SheetAction.FolderCover to if (folderCoverChosen) R.string.sheet_folder_cover_off else R.string.sheet_folder_cover)
         }

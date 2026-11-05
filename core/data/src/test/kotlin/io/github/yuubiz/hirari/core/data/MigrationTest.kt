@@ -51,6 +51,28 @@ class MigrationTest {
     }
 
     @Test
+    fun `version 5 keeps pins and progress and adds an empty favorites table`() = runTest {
+        writeVersion(5) { db ->
+            db.execSQL("INSERT INTO locations (id, kind, display_name, tree_uri, permission_held, port) VALUES (1, 'Saf', '漫画', 'content://tree/manga', 1, 0)")
+            db.execSQL("INSERT INTO pinned_folders (id, location_id, path, pinned_at) VALUES (1, 1, 'series', 1000)")
+        }
+        val database = openDatabase(context)
+        val credentialDatabase = inMemoryCredentialDatabase()
+        try {
+            val locations = RoomLocationRepository(database, testCredentials(credentialDatabase))
+            val place = io.github.yuubiz.hirari.core.model.LocationId(1)
+            assertEquals(emptyList(), locations.favorites.first())
+            assertEquals(listOf(PinnedFolder(1, place, "series")), locations.pinned.first())
+            assertEquals(ReadingPosition.Image(12, 200), RoomProgressRepository(database.bookProgress()).get(BookId("kept"))!!.position)
+            locations.addFavorite(place, "series/1.cbz", FavoriteKind.Book, "1.cbz", Instant.ofEpochMilli(2000))
+            assertEquals(listOf(Favorite(place, "series/1.cbz", FavoriteKind.Book, "1.cbz", Instant.ofEpochMilli(2000))), locations.favorites.first())
+        } finally {
+            database.close()
+            credentialDatabase.close()
+        }
+    }
+
+    @Test
     fun `version 4 bookmarks survive and archive entry addresses can be saved after migration`() = runTest {
         writeVersion(4) { db ->
             db.execSQL("INSERT INTO books (book_id, uri, format, title, byte_size, modified) VALUES ('text', 'content://books/novel.txt', 'Text', 'novel.txt', 1000, 0)")

@@ -26,7 +26,7 @@ internal fun Modifier.rowState(row: FileRow): Modifier {
         is FileItem.Text -> stringResource(R.string.kind_text)
         is FileItem.Image -> null
     }
-    val state = spokenList(kind, row.mark?.spoken())
+    val state = spokenList(kind, row.mark?.spoken(), if (row.favorite) stringResource(R.string.favorite_label) else null)
     return if (state == null) this else semantics { stateDescription = state }
 }
 

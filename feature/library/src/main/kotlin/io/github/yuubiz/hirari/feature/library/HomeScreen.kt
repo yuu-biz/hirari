@@ -39,6 +39,7 @@ enum class HomeTab(@StringRes val label: Int) {
     Shelf(R.string.home_tab_shelf),
     History(R.string.home_tab_history),
     Bookmarks(R.string.home_tab_bookmarks),
+    Favorites(R.string.favorite_label),
 }
 
 /** What the home screen asks of the app: the readers, a file list, the SMB form, and the top bar's menu. */
@@ -52,6 +53,7 @@ class HomeActions(
 )
 
 fun HomeActions.open(target: HomeTarget) = when (target) {
+    is HomeTarget.Folder -> openFolder(target.key)
     is HomeTarget.Book -> openBook(target.request)
     is HomeTarget.Text -> openText(target.address)
 }
@@ -84,6 +86,7 @@ fun HomeScreen(home: HomeViewModel, actions: HomeActions) {
                 HomeTab.Shelf -> Loaded(state.shelf) { ShelfTab(it, home, actions) }
                 HomeTab.History -> Loaded(state.history) { HistoryTabContent(it, home, actions) }
                 HomeTab.Bookmarks -> Loaded(state.bookmarks) { BookmarksTabContent(it, home, actions) }
+                HomeTab.Favorites -> Loaded(state.favorites) { FavoritesTabContent(it, home, actions) }
             }
         }
     }

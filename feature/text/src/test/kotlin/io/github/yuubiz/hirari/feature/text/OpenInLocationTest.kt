@@ -70,6 +70,7 @@ class HangingTreeProvider : ContentProvider() {
 internal class OnePlace(private val place: LibraryLocation) : LocationRepository {
     override val locations: Flow<List<LibraryLocation>> = emptyFlow()
     override val pinned: Flow<List<PinnedFolder>> = emptyFlow()
+    override val favorites: Flow<List<io.github.yuubiz.hirari.core.data.Favorite>> = emptyFlow()
 
     override suspend fun get(id: LocationId): LibraryLocation? = place.takeIf { it.id == id }
 
@@ -88,6 +89,10 @@ internal class OnePlace(private val place: LibraryLocation) : LocationRepository
     override suspend fun pin(location: LocationId, path: String, at: Instant) = error("unused")
 
     override suspend fun unpin(id: Long) = error("unused")
+
+    override suspend fun addFavorite(location: LocationId, path: String, kind: io.github.yuubiz.hirari.core.data.FavoriteKind, displayName: String, at: Instant) = error("unused")
+
+    override suspend fun removeFavorite(location: LocationId, path: String) = error("unused")
 
     override fun folderCover(location: LocationId, path: String): Flow<FolderCover?> = emptyFlow()
 

@@ -72,6 +72,25 @@ class SettingsTransferTest {
 
     private fun at(seconds: Long) = Instant.ofEpochSecond(1_700_000_000 + seconds)
 
+    @Test
+    fun `favorites like pins stay out of settings export and import`() = runBlocking {
+        withStorage { storage ->
+            val id = storage.locations.addSmbShare(server, null)
+            val before = storage.transfer.export(includeReading = true)
+            val settingsOnly = storage.transfer.export(includeReading = false)
+            storage.locations.pin(id, "series", at(1))
+            storage.locations.addFavorite(id, "series/1.cbz", FavoriteKind.Book, "1.cbz", at(2))
+            assertEquals(before, storage.transfer.export(includeReading = true))
+            assertEquals(settingsOnly, storage.transfer.export(includeReading = false))
+            withStorage { restored ->
+                val plan = assertIs<ImportPreparation.Ready>(restored.transfer.prepare(before)).plan
+                restored.transfer.apply(plan)
+                assertEquals(emptyList(), restored.locations.favorites.first())
+                assertEquals(emptyList(), restored.locations.pinned.first())
+            }
+        }
+    }
+
     private val overrides = BookOverrides(direction = ReadingDirection.LeftToRight, trim = TrimStrength.Weak, rotation = Rotation.Half, adjust = ImageAdjust(level = -2))
 
     private suspend fun Storage.fill(): BookId {

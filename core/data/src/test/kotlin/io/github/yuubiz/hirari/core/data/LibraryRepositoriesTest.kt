@@ -66,6 +66,33 @@ class LibraryRepositoriesTest {
     private val nas = SmbServer(displayName = "NAS", host = "nas.local", share = "books", basePath = "manga", user = "reader")
 
     @Test
+    fun `favorites round trip by place and normalized path independently of pins`() = runTest {
+        val local = locations.addSafTree("漫画", UriString("content://tree/manga"))
+        val remote = locations.addSmbShare(nas, null)
+        locations.pin(local, "series", at(0))
+        locations.addFavorite(local, "/series/", FavoriteKind.Folder, "series", at(1))
+        locations.addFavorite(local, "series", FavoriteKind.Folder, "duplicate", at(9))
+        locations.addFavorite(local, "series/1.cbz", FavoriteKind.Book, "1.cbz", at(2))
+        locations.addFavorite(remote, "series", FavoriteKind.Folder, "remote series", at(3))
+
+        val reopened = RoomLocationRepository(database, credentials)
+        assertEquals(
+            listOf(
+                Favorite(remote, "series", FavoriteKind.Folder, "remote series", at(3)),
+                Favorite(local, "series/1.cbz", FavoriteKind.Book, "1.cbz", at(2)),
+                Favorite(local, "series", FavoriteKind.Folder, "series", at(1)),
+            ),
+            reopened.favorites.first(),
+        )
+        reopened.removeFavorite(local, "/series/")
+        assertEquals(1, locations.pinned.first().size)
+        assertEquals(2, locations.favorites.first().size)
+        reopened.delete(local)
+        assertEquals(listOf(remote), locations.favorites.first().map { it.location })
+        assertEquals(emptyList(), locations.pinned.first())
+    }
+
+    @Test
     fun `a server keeps its password apart and an edit can keep, change or remove it`() = runTest {
         val id = locations.addSmbShare(nas, "first".toCharArray())
         val stored = assertIs<LibraryLocation.SmbShare>(locations.get(id))

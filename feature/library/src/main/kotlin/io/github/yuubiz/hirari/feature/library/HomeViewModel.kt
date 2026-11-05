@@ -6,6 +6,11 @@ import io.github.yuubiz.hirari.core.data.BookmarkGroup
 import io.github.yuubiz.hirari.core.data.HistoryItem
 import io.github.yuubiz.hirari.core.data.LibraryBook
 import io.github.yuubiz.hirari.core.data.PinnedFolder
+import io.github.yuubiz.hirari.core.data.Favorite
+import io.github.yuubiz.hirari.core.data.FavoriteKind
+import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.FileFormats
+import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
@@ -28,6 +33,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -51,6 +58,10 @@ data class ContinueItem(val book: LibraryBook, val percent: Int, val cover: Cove
 /** A pinned folder with its place, or `null` when the place is gone. */
 data class PinnedItem(val pin: PinnedFolder, val place: LibraryLocation?)
 
+data class FavoriteItem(val favorite: Favorite, val place: LibraryLocation?)
+
+data class FavoritesTab(val items: List<FavoriteItem>, val covers: CoverLayout)
+
 /** The 本棚 tab, top to bottom (docs/spec.md section 4.2). */
 data class Shelf(
     val continueReading: List<ContinueItem>,
@@ -73,8 +84,10 @@ data class BookmarksTab(val sort: BookmarkSort, val groups: List<BookmarkGroup>)
 /** A one-time message for a snackbar. */
 enum class Notice { GrantRefused, BookMissing, PlaceUnavailable, NotInPlace, ShortcutMissing, ShortcutUnsupported, IncomingUnreadable, SaveStarted, StartUnplanned }
 
-/** What a tap on a book of the home screen opens: the image reader, or the text reader for a text. */
+/** What a tap on the home screen opens: a folder, an image book, or a text. */
 sealed interface HomeTarget {
+    data class Folder(val key: FolderKey) : HomeTarget
+
     data class Book(val request: OpenBookRequest) : HomeTarget
 
     data class Text(val address: TextAddress) : HomeTarget
@@ -85,16 +98,18 @@ data class HomeUi(
     val history: Loadable<HistoryTab> = Loadable.Loading,
     val bookmarks: Loadable<BookmarksTab> = Loadable.Loading,
     val notice: Notice? = null,
+    val favorites: Loadable<FavoritesTab> = Loadable.Loading,
 )
 
-/** The three tabs of the home screen (docs/spec.md sections 4.2 and 4.6). */
+/** The tabs of the home screen (docs/spec.md sections 4.2 and 4.6). */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel() {
     private val notice = MutableStateFlow<Notice?>(null)
 
     val state: StateFlow<HomeUi> = flow { emit(services.await()) }
         .flatMapLatest { services ->
-            combine(services.shelf(), services.historyTab(), services.bookmarksTab(), notice, ::HomeUi)
+            combine(services.shelf(), services.historyTab(), services.bookmarksTab(), notice) { shelf, history, bookmarks, notice -> HomeUi(shelf, history, bookmarks, notice) }
+                .combine(services.favoritesTab()) { ui, favorites -> ui.copy(favorites = favorites) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUi())
 
@@ -132,6 +147,45 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
         settings.settings.map { it.bookmarkSort }.distinctUntilChanged()
             .flatMapLatest { sort -> bookmarks.observe(sort).map { BookmarksTab(sort, it) } }
             .loadable()
+
+    private fun LibraryServices.favoritesTab(): Flow<Loadable<FavoritesTab>> =
+        combine(locations.favorites, locations.locations, coverEnv()) { favorites, places, env ->
+            val byId = places.associateBy { it.id }
+            FavoritesTab(favorites.map { FavoriteItem(it, byId[it.location]) }, env.layout)
+        }.loadable()
+
+    fun removeFavorite(item: FavoriteItem) = write { locations.removeFavorite(item.favorite.location, item.favorite.path) }
+
+    fun request(item: FavoriteItem): HomeTarget? {
+        if (!item.place.usable()) return null.also { notice.value = Notice.PlaceUnavailable }
+        val favorite = item.favorite
+        if (favorite.kind == FavoriteKind.Folder) return HomeTarget.Folder(FolderKey(favorite.location, favorite.path))
+        val extension = favorite.path.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+        return if (extension in FileFormats.texts) HomeTarget.Text(TextAddress.InLocation(favorite.location, favorite.path))
+        else HomeTarget.Book(OpenBookRequest(BookAddress.InLocation(favorite.location, favorite.path, folder = false), StartAt.Saved))
+    }
+
+    /** Resolves metadata only for a visible favorite, then builds precisely the file list's cover key. */
+    fun favoriteCover(item: FavoriteItem): Flow<CoverSpec?> = flow {
+        val services = services.await()
+        val place = item.place
+        if (!place.usable()) {
+            emit(null)
+            return@flow
+        }
+        val favorite = item.favorite
+        val parent = favorite.path.substringBeforeLast('/', "")
+        val available = checkNotNull(place)
+        val entry = services.covers.find(available, favorite.path)
+        if (entry == null) {
+            emit(null)
+            return@flow
+        }
+        val rows = listOf(entry).toRows(parent, Ordering(LibrarySort.Name, false, true))
+        emitAll(combine(services.books.inFolder(favorite.location, parent), services.coverIndex.directions(), services.settings.settings, services.coverIndex.folderCovers(favorite.location)) { indexed, directions, settings, chosen ->
+            rows.withCovers(indexed, CoverContext(available, settings.readingDirection, directions, chosen)).singleOrNull()?.cover
+        })
+    }.catch { emit(null) }
 
     fun dismissNotice() {
         notice.value = null

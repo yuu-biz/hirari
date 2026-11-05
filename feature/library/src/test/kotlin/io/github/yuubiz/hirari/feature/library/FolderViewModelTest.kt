@@ -47,6 +47,40 @@ class FolderViewModelTest {
     private fun FolderViewModel.shown() = assertIs<FolderContent.Shown>(state.value.content)
 
     @Test
+    fun `favorites toggle on books and folders and follow changes from other screens`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders["作品"] = listOf(file("1.cbz"), file("notes.txt"), file("p01.jpg"), FolderEntry("外伝", null, true, null, null))
+        val model = viewModel()
+        for (name in listOf("1.cbz", "notes.txt", "外伝")) {
+            val row = model.shown().rows.first { it.item.entry.name == name }
+            model.toggleFavorite(row)
+            assertTrue(model.shown().rows.first { it.path == row.path }.favorite)
+            val saved = fixture.locations.favorites.value.single { it.path == row.path }
+            assertEquals(name, saved.displayName)
+            assertEquals(if (name == "外伝") io.github.yuubiz.hirari.core.data.FavoriteKind.Folder else io.github.yuubiz.hirari.core.data.FavoriteKind.Book, saved.kind)
+            model.toggleFavorite(row)
+            assertTrue(model.shown().rows.none { it.path == row.path && it.favorite })
+        }
+        model.toggleFavorite()
+        assertTrue(model.state.value.favorite)
+        assertEquals("作品", fixture.locations.favorites.value.single().path)
+        assertTrue(fixture.locations.pins.value.isEmpty())
+        fixture.locations.removeFavorite(place.id, "作品")
+        assertTrue(!model.state.value.favorite)
+        model.toggleFavorite(model.shown().rows.first { it.item is FileItem.Image })
+        assertTrue(fixture.locations.favorites.value.isEmpty())
+    }
+
+    @Test
+    fun `the top of a place cannot be favorited from its top bar`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.lister.folders[""] = emptyList()
+        val model = viewModel("")
+        model.toggleFavorite()
+        assertTrue(fixture.locations.favorites.value.isEmpty())
+    }
+
+    @Test
     fun `the folder sheet and an image tap address the same book with different starting positions`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["作品"] = listOf(FolderEntry("外伝", null, true, null, null))

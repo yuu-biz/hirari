@@ -70,6 +70,36 @@ class AccessibilityTest {
     }
 
     @Test
+    fun `a favorite book reads the favorite mark as part of its state`() {
+        assertEquals("ZIP、読みかけ 35%、お気に入り", stateOf(row("a.zip", mark = ReadMark.Reading(35)).copy(favorite = true)))
+    }
+
+    @Test
+    fun `a favorite folder reads the favorite mark as part of its state`() {
+        assertEquals("フォルダ、お気に入り", stateOf(row("series", directory = true).copy(favorite = true)))
+    }
+
+    @Test
+    fun `the row sheet follows the favorite mark and offers the matching toggle`() {
+        var favorite by mutableStateOf(false)
+        rule.setContent {
+            RowSheet(row("a.zip").copy(favorite = favorite), hasShortcut = false, folderCoverChosen = false, canChooseCover = false) { action ->
+                if (action == SheetAction.Favorite) favorite = !favorite
+            }
+        }
+        rule.onNodeWithText("お気に入りに追加").performClick()
+        rule.onNodeWithText("お気に入りから外す").assertExists().performClick()
+        rule.onNodeWithText("お気に入りに追加").assertExists()
+    }
+
+    @Test
+    fun `an image page has no favorite action`() {
+        rule.setContent { RowSheet(row("a.jpg"), hasShortcut = false, folderCoverChosen = false, canChooseCover = false) {} }
+        rule.onNodeWithText("お気に入りに追加").assertDoesNotExist()
+        rule.onNodeWithText("お気に入りから外す").assertDoesNotExist()
+    }
+
+    @Test
     fun `a single image has nothing to add to its name`() {
         assertEquals(null, stateOf(row("a.png")))
     }

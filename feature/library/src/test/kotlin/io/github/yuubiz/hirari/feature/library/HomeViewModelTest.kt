@@ -1,6 +1,11 @@
 package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.data.BookmarkGroup
+import io.github.yuubiz.hirari.core.data.FavoriteKind
+import io.github.yuubiz.hirari.core.data.Favorite
+import kotlinx.coroutines.flow.first
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.ReadingPosition
 import io.github.yuubiz.hirari.core.model.TextEntry
@@ -39,6 +44,80 @@ class HomeViewModelTest {
     fun reset() = Dispatchers.resetMain()
 
     private fun viewModel() = HomeViewModel(CompletableDeferred(fixture.services))
+
+    @Test
+    fun `favorites list newest first and open folders or unread books by their lasting address`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas", 445, "books", "", null, null, null)
+        fixture.locations.rows.value = listOf(place, server)
+        fixture.locations.addFavorite(place.id, "series", FavoriteKind.Folder, "series", T0)
+        fixture.locations.addFavorite(place.id, "series/1.cbz", FavoriteKind.Book, "1.cbz", T0.plusSeconds(1))
+        fixture.locations.addFavorite(server.id, "novel.txt", FavoriteKind.Book, "novel.txt", T0.plusSeconds(2))
+        val home = viewModel()
+        watch(home.state)
+        val tab = assertIs<Loadable.Ready<FavoritesTab>>(home.state.value.favorites).value
+        assertEquals(listOf("novel.txt", "1.cbz", "series"), tab.items.map { it.favorite.displayName })
+        assertEquals(listOf("NAS", "漫画", "漫画"), tab.items.map { it.place?.displayName })
+        assertEquals(HomeTarget.Folder(FolderKey(place.id, "series")), home.request(tab.items[2]))
+        assertEquals(HomeTarget.Book(OpenBookRequest(BookAddress.InLocation(place.id, "series/1.cbz", folder = false))), home.request(tab.items[1]))
+        assertEquals(HomeTarget.Text(TextAddress.InLocation(server.id, "novel.txt")), home.request(tab.items[0]))
+        assertTrue(fixture.coverBooks.listCalls.isEmpty(), "offscreen favorites must not ask the storage for cover metadata")
+        home.removeFavorite(tab.items[1])
+        assertEquals(listOf("novel.txt", "series"), assertIs<Loadable.Ready<FavoritesTab>>(home.state.value.favorites).value.items.map { it.favorite.displayName })
+    }
+
+    @Test
+    fun `unavailable favorites explain the reason on tap and remain listed until explicitly removed`() = runTest {
+        fixture.locations.rows.value = listOf(place.copy(permissionHeld = false))
+        fixture.locations.favorites.value = listOf(
+            Favorite(place.id, "series", FavoriteKind.Folder, "series", T0),
+            Favorite(place.id, "1.cbz", FavoriteKind.Book, "1.cbz", T0),
+            Favorite(LocationId(99), "lost", FavoriteKind.Folder, "lost", T0),
+            Favorite(LocationId(99), "lost.cbz", FavoriteKind.Book, "lost.cbz", T0),
+        )
+        val home = viewModel()
+        watch(home.state)
+        val tab = assertIs<Loadable.Ready<FavoritesTab>>(home.state.value.favorites).value
+        for (item in tab.items) {
+            home.dismissNotice()
+            assertNull(home.request(item))
+            assertEquals(Notice.PlaceUnavailable, home.state.value.notice)
+            assertNull(home.favoriteCover(item).first())
+        }
+        assertEquals(4, assertIs<Loadable.Ready<FavoritesTab>>(home.state.value.favorites).value.items.size)
+        fixture.locations.rows.value = listOf(place)
+        val restored = assertIs<Loadable.Ready<FavoritesTab>>(home.state.value.favorites).value.items.first()
+        assertEquals(HomeTarget.Folder(FolderKey(place.id, "series")), home.request(restored))
+    }
+
+    @Test
+    fun `visible favorites use the file list cover keys including folder choices and book crops`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        val entries = listOf(
+            FolderEntry("1.cbz", "doc:1", false, 500, T0),
+            FolderEntry("extra", "doc:extra", true, null, T0),
+        )
+        fixture.coverBooks.folders["series"] = entries
+        val indexed = book(place.id, "series/1.cbz").copy(id = io.github.yuubiz.hirari.core.model.locationBookId(place, "series/1.cbz"))
+        fixture.books.put(indexed)
+        fixture.books.chosenPages.value = mapOf(indexed.id to 3)
+        fixture.books.chosenCrops.value = mapOf(indexed.id to io.github.yuubiz.hirari.core.model.CoverCrop(0, 0, 5000, 5000))
+        fixture.coverIndex.folderCovers.value = mapOf("series/extra" to io.github.yuubiz.hirari.core.data.FolderCover("series/extra/cover.jpg"))
+        fixture.locations.addFavorite(place.id, "series/1.cbz", FavoriteKind.Book, "1.cbz", T0)
+        fixture.locations.addFavorite(place.id, "series/extra", FavoriteKind.Folder, "extra", T0)
+        val home = viewModel()
+        watch(home.state)
+        val tab = assertIs<Loadable.Ready<FavoritesTab>>(home.state.value.favorites).value
+        val rows = entries.toRows("series", Ordering(io.github.yuubiz.hirari.core.model.LibrarySort.Name, false, false)).withCovers(
+            fixture.books.inFolder(place.id, "series").first(),
+            CoverContext(place, fixture.settings.value.value.readingDirection, emptyMap(), fixture.coverIndex.folderCovers.value),
+        )
+        for (item in tab.items) {
+            val actual = home.favoriteCover(item).first()!!
+            val expected = rows.single { it.path == item.favorite.path }.cover!!
+            assertEquals(expected.key(tab.covers.sizePx), actual.key(tab.covers.sizePx))
+            assertEquals(expected, actual)
+        }
+    }
 
     @Test
     fun `text bookmarks dispatch to a text address with their character offset`() = runTest {

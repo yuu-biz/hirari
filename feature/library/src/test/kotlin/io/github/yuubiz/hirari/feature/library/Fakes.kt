@@ -29,6 +29,8 @@ import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.data.PasswordChange
 import io.github.yuubiz.hirari.core.data.PinnedFolder
+import io.github.yuubiz.hirari.core.data.Favorite
+import io.github.yuubiz.hirari.core.data.FavoriteKind
 import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.data.SettingsRepository
 import io.github.yuubiz.hirari.core.data.SmbServer
@@ -94,6 +96,7 @@ internal fun List<LibraryBook>.progressByPath(): Map<String, BookProgress> =
 internal class FakeLocations : LocationRepository {
     val rows = MutableStateFlow<List<LibraryLocation>>(emptyList())
     val pins = MutableStateFlow<List<PinnedFolder>>(emptyList())
+    override val favorites = MutableStateFlow<List<Favorite>>(emptyList())
     private var next = 1L
 
     override val locations: Flow<List<LibraryLocation>> = rows
@@ -139,6 +142,7 @@ internal class FakeLocations : LocationRepository {
         val row = get(id) ?: return null
         rows.update { list -> list.filterNot { it.id == id } }
         pins.update { list -> list.filterNot { it.location == id } }
+        favorites.update { list -> list.filterNot { it.location == id } }
         return row
     }
 
@@ -152,6 +156,18 @@ internal class FakeLocations : LocationRepository {
         pins.update { it + PinnedFolder(it.size + 1L, location, path) }
 
     override suspend fun unpin(id: Long) = pins.update { list -> list.filterNot { it.id == id } }
+
+    override suspend fun addFavorite(location: LocationId, path: String, kind: FavoriteKind, displayName: String, at: Instant) {
+        val normalized = io.github.yuubiz.hirari.core.model.normalizePath(path)
+        favorites.update { list ->
+            if (list.any { it.location == location && it.path == normalized }) list
+            else (list + Favorite(location, normalized, kind, displayName, at)).sortedByDescending { it.addedAt }
+        }
+    }
+
+    override suspend fun removeFavorite(location: LocationId, path: String) = favorites.update { list ->
+        list.filterNot { it.location == location && it.path == io.github.yuubiz.hirari.core.model.normalizePath(path) }
+    }
 
     private val covers = MutableStateFlow<Map<Pair<LocationId, String>, FolderCover>>(emptyMap())
 

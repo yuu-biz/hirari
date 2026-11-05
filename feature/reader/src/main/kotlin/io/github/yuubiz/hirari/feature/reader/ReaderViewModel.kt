@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.data.FavoriteKind
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.data.ProgressWriter
@@ -207,6 +208,28 @@ class ReaderViewModel(
 
     var state: ReaderState? by mutableStateOf(null)
         private set
+
+    /** `null` for a book outside a place, whose menu has no favorite toggle. */
+    var favorite: Boolean? by mutableStateOf(null)
+        private set
+    private var favoriteBook: Book? = null
+
+    fun toggleFavorite() {
+        val book = favoriteBook ?: return
+        val source = book.source as? BookSource.InLocation ?: return
+        val shared = opened?.services ?: return
+        shared.appScope.launch {
+            quietly {
+                val locations = shared.storage.locations
+                if (locations.favorites.first().any { it.location == source.location && it.path == source.path }) {
+                    locations.removeFavorite(source.location, source.path)
+                } else {
+                    val kind = if (book.format == BookFormat.Images(Container.Folder)) FavoriteKind.Folder else FavoriteKind.Book
+                    locations.addFavorite(source.location, source.path, kind, book.title, Instant.now())
+                }
+            }
+        }
+    }
 
     /** `画面の向き`: the setting until the book opens, then the reader's, which outlives the activity turning. */
     var orientation: ReaderOrientation by mutableStateOf(ReaderOrientation.System)
@@ -711,6 +734,14 @@ class ReaderViewModel(
         val writer = checkNotNull(located.overrides)
         val config = ReaderConfig.of(settings, writer.current)
         val indexed = withContext(Dispatchers.IO) { describe(located, book) }
+        favoriteBook = indexed.takeIf { it.source is BookSource.InLocation }
+        (indexed.source as? BookSource.InLocation)?.let { source ->
+            viewModelScope.launch {
+                services.storage.locations.favorites.collect { favorites ->
+                    favorite = favorites.any { it.location == source.location && it.path == source.path }
+                }
+            }
+        }
         val start = startPage(request.start, book.pages, saved?.position)
         val startOffset = startOffset(request.start, start, book.pages, saved?.position)
         val lowRam = application.getSystemService(ActivityManager::class.java).isLowRamDevice

@@ -75,6 +75,7 @@ data class FileRow(
     /** What the thumbnail is made from; `null` for a text, which shows a fixed icon (docs/spec.md section 4.4). */
     val cover: CoverSpec? = null,
     val gridName: GridName = item.gridName(),
+    val favorite: Boolean = false,
 )
 
 data class Ordering(val sort: LibrarySort, val foldersFirst: Boolean, val showDotFiles: Boolean)

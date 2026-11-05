@@ -323,6 +323,15 @@ internal interface BookOverridesDao {
     suspend fun delete(bookId: String)
 }
 
+@Entity(tableName = "favorites", primaryKeys = ["location_id", "path"])
+internal data class FavoriteRow(
+    @ColumnInfo(name = "location_id") val locationId: Long,
+    val path: String,
+    val kind: FavoriteKind,
+    @ColumnInfo(name = "display_name") val displayName: String,
+    @ColumnInfo(name = "added_at") val addedAt: Long,
+)
+
 @Entity(tableName = "pinned_folders", indices = [Index("location_id", "path", unique = true)])
 internal data class PinnedFolderRow(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -345,6 +354,18 @@ internal data class FolderCoverRow(
 
 @Dao
 internal interface FolderDao {
+    @Query("SELECT * FROM favorites ORDER BY added_at DESC, location_id, path")
+    fun observeFavorites(): Flow<List<FavoriteRow>>
+
+    @Insert(onConflict = androidx.room3.OnConflictStrategy.IGNORE)
+    suspend fun addFavorite(row: FavoriteRow)
+
+    @Query("DELETE FROM favorites WHERE location_id = :locationId AND path = :path")
+    suspend fun removeFavorite(locationId: Long, path: String)
+
+    @Query("DELETE FROM favorites WHERE location_id = :locationId")
+    suspend fun clearLocationFavorites(locationId: Long)
+
     @Query("SELECT * FROM pinned_folders ORDER BY pinned_at")
     fun observePinned(): Flow<List<PinnedFolderRow>>
 

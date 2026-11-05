@@ -35,10 +35,14 @@ sealed interface PasswordChange {
 
 data class PinnedFolder(val id: Long, val location: LocationId, val path: String)
 
+enum class FavoriteKind { Book, Folder }
+
+data class Favorite(val location: LocationId, val path: String, val kind: FavoriteKind, val displayName: String, val addedAt: Instant)
+
 /** The cover a user chose for a folder: an image file, or a page of a book with its `entryIndex`. */
 data class FolderCover(val imagePath: String, val entry: Int? = null)
 
-/** Places, pinned folders and folder covers (docs/spec.md sections 4.2, 4.4 and 4.5). Safe on the main thread. */
+/** Places, pins, favorites and folder covers (docs/spec.md sections 4.2–4.6). Safe on the main thread. */
 interface LocationRepository {
     val locations: Flow<List<LibraryLocation>>
 
@@ -54,7 +58,7 @@ interface LocationRepository {
     suspend fun rename(id: LocationId, displayName: String)
 
     /**
-     * Removes the place with its pins, folder covers and password, and returns it so the caller can release
+     * Removes the place with its pins, favorites, folder covers and password, and returns it so the caller can release
      * its SAF grant. Reading progress stays, so registering the place again brings it back (docs/spec.md 2.2).
      */
     suspend fun delete(id: LocationId): LibraryLocation?
@@ -67,6 +71,13 @@ interface LocationRepository {
     suspend fun pin(location: LocationId, path: String, at: Instant)
 
     suspend fun unpin(id: Long)
+
+    val favorites: Flow<List<Favorite>>
+
+    /** Adds a normalized address once; adding it again keeps its original name and time. */
+    suspend fun addFavorite(location: LocationId, path: String, kind: FavoriteKind, displayName: String, at: Instant)
+
+    suspend fun removeFavorite(location: LocationId, path: String)
 
     fun folderCover(location: LocationId, path: String): Flow<FolderCover?>
 
@@ -111,6 +122,7 @@ internal class RoomLocationRepository(
         val row = database.withWriteTransaction<LocationRow?> {
             dao.get(id.value)?.also {
                 folders.unpinLocation(id.value)
+                folders.clearLocationFavorites(id.value)
                 folders.clearLocationCovers(id.value)
                 dao.delete(id.value)
             }
@@ -129,6 +141,15 @@ internal class RoomLocationRepository(
         folders.pin(PinnedFolderRow(locationId = location.value, path = normalizePath(path), pinnedAt = at.toEpochMilli()))
 
     override suspend fun unpin(id: Long) = folders.unpin(id)
+
+    override val favorites: Flow<List<Favorite>> = folders.observeFavorites().map { rows ->
+        rows.map { Favorite(LocationId(it.locationId), it.path, it.kind, it.displayName, Instant.ofEpochMilli(it.addedAt)) }
+    }
+
+    override suspend fun addFavorite(location: LocationId, path: String, kind: FavoriteKind, displayName: String, at: Instant) =
+        folders.addFavorite(FavoriteRow(location.value, normalizePath(path), kind, displayName, at.toEpochMilli()))
+
+    override suspend fun removeFavorite(location: LocationId, path: String) = folders.removeFavorite(location.value, normalizePath(path))
 
     override fun folderCover(location: LocationId, path: String): Flow<FolderCover?> =
         folders.observeCover(location.value, normalizePath(path)).map { row -> row?.let { FolderCover(it.imagePath, it.entry) } }

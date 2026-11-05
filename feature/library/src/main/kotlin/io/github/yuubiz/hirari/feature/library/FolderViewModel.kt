@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.image.PageCandidate
 import io.github.yuubiz.hirari.core.image.pageCandidate
 import io.github.yuubiz.hirari.core.data.FolderCover
+import io.github.yuubiz.hirari.core.data.FavoriteKind
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookId
@@ -84,6 +85,7 @@ data class FolderUi(
     val canSave: Boolean = false,
     val pinnedId: Long? = null,
     val refreshing: Boolean = false,
+    val favorite: Boolean = false,
 )
 
 /** What a tap on a row opens. */
@@ -170,6 +172,8 @@ class FolderViewModel(
                 .distinctUntilChanged()
             combine(place, content, notice, pinnedId, refreshing) { place, content, notice, pinnedId, refreshing ->
                 FolderUi(place?.displayName.orEmpty(), folder.path, content, notice, canSave = place is LibraryLocation.SmbShare, pinnedId, refreshing)
+            }.combine(services.locations.favorites) { ui, favorites ->
+                ui.copy(favorite = favorites.any { it.location == folder.location && it.path == normalizePath(folder.path) })
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), FolderUi("", folder.path, FolderContent.Loading))
@@ -194,7 +198,9 @@ class FolderViewModel(
             if (covers == null) marked else marked.withCovers(indexed, covers)
         }.flowOn(compute)
         val chosenHere = services.coverIndex.folderCovers(folder.location).map { it[folder.path]?.takeIf { cover -> cover.entry == null }?.imagePath }.distinctUntilChanged()
-        return combine(marked, query, layout, chosenHere) { rows, query, layout, chosenHere ->
+        val favorites = services.locations.favorites.map { list -> list.filter { it.location == folder.location }.map { it.path }.toSet() }.distinctUntilChanged()
+        val starred = combine(marked, favorites) { rows, paths -> rows.map { it.copy(favorite = it.path in paths) } }
+        return combine(starred, query, layout, chosenHere) { rows, query, layout, chosenHere ->
             val covers = CoverLayout(services.covers, services.covers.sizePx(layout.look.thumbSize))
             val parentItem = layout.showParentItem && folderTrail("", folder.path).parent != null
             FolderContent.Shown(rows.filtered(query), rows.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem)
@@ -348,6 +354,22 @@ class FolderViewModel(
     }
 
     fun pin(row: FileRow) = write { locations.pin(folder.location, row.path, clock()) }
+
+    fun toggleFavorite(row: FileRow) {
+        if (row.item is FileItem.Image) return
+        toggleFavorite(row.path, if (row.item is FileItem.Folder) FavoriteKind.Folder else FavoriteKind.Book, row.item.entry.name)
+    }
+
+    fun toggleFavorite() {
+        if (normalizePath(folder.path).isEmpty()) return
+        toggleFavorite(folder.path, FavoriteKind.Folder, folderTrail(state.value.placeName, folder.path).current)
+    }
+
+    private fun toggleFavorite(path: String, kind: FavoriteKind, name: String) = write {
+        val favorite = locations.favorites.first().any { it.location == folder.location && it.path == normalizePath(path) }
+        if (favorite) locations.removeFavorite(folder.location, path)
+        else locations.addFavorite(folder.location, path, kind, name, clock())
+    }
 
     /** このフォルダをピン留め and ピン留めを外す of the top bar's menu (docs/spec.md section 4.3). */
     fun togglePin() {

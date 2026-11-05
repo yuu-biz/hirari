@@ -10,6 +10,21 @@ import androidx.compose.ui.unit.dp
 
 /** The icons of the file list, drawn on a 24 by 24 grid and tinted by where they are shown. */
 internal object ListIcons {
+    /** Filled Material star, using the same local vectors as the other list icons. */
+    val Star: ImageVector = icon("star") {
+        moveTo(12f, 17.27f)
+        lineTo(18.18f, 21f)
+        lineTo(16.54f, 13.97f)
+        lineTo(22f, 9.24f)
+        lineTo(14.81f, 8.63f)
+        lineTo(12f, 2f)
+        lineTo(9.19f, 8.63f)
+        lineTo(2f, 9.24f)
+        lineTo(7.46f, 13.97f)
+        lineTo(5.82f, 21f)
+        close()
+    }
+
     val Folder: ImageVector = icon("folder") {
         moveTo(2f, 5f)
         horizontalLineTo(9f)
