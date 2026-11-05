@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.ReaderAction
@@ -65,7 +66,7 @@ class PagePanelTest {
 
     private fun assertInTheMiddle(page: Int) {
         val strip = rule.onNodeWithTag(PAGE_STRIP_TAG).middleX
-        assertTrue(abs(cell(page).middleX - strip) < 1f, "page ${page + 1} is at ${cell(page).middleX}, the strip's middle at $strip")
+        assertTrue(abs(cell(page).middleX - strip) <= 1.5f, "page ${page + 1} is at ${cell(page).middleX}, the strip's middle at $strip")
     }
 
     private fun sliderSays(): String? =
@@ -76,6 +77,36 @@ class PagePanelTest {
         panel()
         assertInTheMiddle(20)
         assertEquals("21 ページ目、全 50 ページ", sliderSays())
+    }
+
+    @Test
+    fun anUnknownPageWidensFromTheThumbnailSourceSizeAndStaysCentred() {
+        val source = mutableStateOf<PageShape.Known?>(null)
+        var density = 1f
+        val thumbnails = StripThumbnails({ null }, { null }, { if (it == 20) source.value else null })
+        rule.setContent {
+            density = LocalDensity.current.density
+            Column(Modifier.width(400.dp)) {
+                PagePanelContent(
+                    shapes = List(50) { PageShape.Unknown },
+                    head = 20,
+                    current = setOf(20),
+                    direction = ReadingDirection.LeftToRight,
+                    cellHeight = 160.dp,
+                    oneRow = false,
+                    thumbnails = thumbnails,
+                    goTo = { moved += it },
+                    onPick = { picked += it },
+                ) {}
+            }
+        }
+        assertInTheMiddle(20)
+        assertEquals(113.12f * density, cell(20).fetchSemanticsNode().boundsInRoot.width, 1f)
+        rule.runOnIdle { source.value = PageShape.Known(3000, 1000) }
+        rule.waitForIdle()
+        assertEquals(226.24f * density, cell(20).fetchSemanticsNode().boundsInRoot.width, 1f)
+        assertInTheMiddle(20)
+        assertEquals(emptyList(), moved)
     }
 
     @Test

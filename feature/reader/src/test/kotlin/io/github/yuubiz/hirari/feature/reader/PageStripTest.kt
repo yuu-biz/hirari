@@ -17,7 +17,9 @@ class PageStripTest {
     fun anUprightPageTakesAnUprightCellAndAWidePageUpToTwice() {
         assertEquals(113.12f, PageStrip.cellWidthDp(PageShape.Known(1000, 1500), 160f), 0.01f)
         assertEquals(113.12f, PageStrip.cellWidthDp(PageShape.Known(500, 1500), 160f), 0.01f, "a narrow page is fitted into the upright cell")
-        assertEquals(160f, PageStrip.cellWidthDp(PageShape.Known(1500, 1500), 160f), 0.01f)
+        assertEquals(113.12f, PageStrip.cellWidthDp(PageShape.Known(1500, 1500), 160f), 0.01f)
+        assertEquals(113.12f, PageStrip.cellWidthDp(PageShape.Known(1400, 1500), 160f), 0.01f)
+        assertEquals(192f, PageStrip.cellWidthDp(PageShape.Known(1800, 1500), 160f), 0.01f)
         assertEquals(226.24f, PageStrip.cellWidthDp(PageShape.Known(3000, 1000), 160f), 0.01f)
         assertEquals(113.12f, PageStrip.cellWidthDp(PageShape.Unknown, 160f), 0.01f)
     }

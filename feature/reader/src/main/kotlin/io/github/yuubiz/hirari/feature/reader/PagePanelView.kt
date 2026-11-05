@@ -89,7 +89,11 @@ private val ONE_ROW_WIDTH = 600.dp
  * strip, and a change of the strip's pages starts the order again from its new middle.
  */
 @Stable
-internal class StripThumbnails(private val cached: (Int) -> ImageBitmap?, private val load: suspend (Int) -> ImageBitmap?) {
+internal class StripThumbnails(
+    private val cached: (Int) -> ImageBitmap?,
+    private val load: suspend (Int) -> ImageBitmap?,
+    val sourceShape: (Int) -> PageShape.Known? = { null },
+) {
     private val shown = mutableStateMapOf<Int, ImageBitmap>()
     private val failed = mutableStateMapOf<Int, Unit>()
     private var order by mutableStateOf(emptyList<Int>())
@@ -124,7 +128,11 @@ internal fun PagePanelSheet(viewModel: ReaderViewModel, state: ReaderState, shee
     }
     val size = stripDecodeSize()
     val thumbnails = remember(viewModel, size) {
-        StripThumbnails({ viewModel.cachedThumbnail(it)?.asImageBitmap() }, { viewModel.thumbnail(it, size)?.asImageBitmap() })
+        StripThumbnails(
+            { viewModel.cachedThumbnail(it)?.asImageBitmap() },
+            { viewModel.thumbnail(it, size)?.asImageBitmap() },
+            { viewModel.thumbnailShape(it) },
+        )
     }
 
     Scrim(stringResource(R.string.page_panel_title), onClose) {
@@ -236,7 +244,9 @@ private fun Strip(
     onPick: (Int) -> Unit,
 ) {
     val density = LocalDensity.current
-    val widths = remember(shapes, cellHeight) { shapes.map { PageStrip.cellWidthDp(it, cellHeight.value).dp } }
+    val widths = shapes.mapIndexed { page, shape ->
+        PageStrip.cellWidthDp(if (shape == PageShape.Unknown) thumbnails.sourceShape(page) ?: shape else shape, cellHeight.value).dp
+    }
     val upright = cellHeight * PageStrip.UPRIGHT_ASPECT
     // With the side padding of half the strip less half an upright cell, a cell scrolled to this offset is in the middle.
     fun middleOffset(page: Int) = with(density) { ((widths[page] - upright) / 2).roundToPx() }
@@ -251,8 +261,17 @@ private fun Strip(
     LaunchedEffect(list) {
         snapshotFlow { middle }.collect { page -> page?.let(reportMiddle) }
     }
-    LaunchedEffect(head) {
-        if (middle != null && middle != head) list.animateScrollToItem(head, middleOffset(head))
+    var followedHead by remember { mutableIntStateOf(head) }
+    var previousWidths by remember { mutableStateOf(widths) }
+    LaunchedEffect(head, widths) {
+        if (previousWidths != widths) {
+            val anchor = if (followedHead != head) head else middle ?: head
+            list.scrollToItem(anchor, middleOffset(anchor))
+        } else if (middle != null && middle != head) {
+            list.animateScrollToItem(head, middleOffset(head))
+        }
+        followedHead = head
+        previousWidths = widths
     }
     LaunchedEffect(list, thumbnails) {
         snapshotFlow { list.layoutInfo.visibleItemsInfo.map { it.index } to middle }.collect { (visible, centre) ->

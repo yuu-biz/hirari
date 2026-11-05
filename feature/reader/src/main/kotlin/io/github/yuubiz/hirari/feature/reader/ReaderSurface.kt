@@ -73,6 +73,8 @@ import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderCommand
+import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.model.TurnFrame
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.ui.SEAM_SHADOW_SHARE
 import io.github.yuubiz.hirari.core.ui.drawSeamShadow
@@ -165,9 +167,14 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
             .pointerInput(input) { with(input) { handle() } },
     ) {
         viewModel.prepared
+        viewModel.thumbnailsChanged
         viewModel.tilesDrawn
         val now = if (state.animating) frameMs else Long.MAX_VALUE
         if (state.scroll != null) drawStrip(viewModel, state, colorFilter) else for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
+        state.pull?.takeIf { it.neighbor != null }?.let { pull ->
+            val movement = turnMovement(pull.turn, state.config.direction)
+            drawPullHint(pullFrame(state.config.turnEffect, movement, pull.pulledDp * state.viewport.density / state.viewport.width), movement)
+        } ?: state.transition?.let { drawPullHint(it.animation.frameAt(now), it.animation.movement) }
         viewModel.traces.drawn(state.current, viewModel.preparedView(state.current) != null)
         viewModel.viewDrawn(state.current)
         state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter, background) }
@@ -336,12 +343,15 @@ private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, 
                 val bitmap = sharper?.bitmap ?: page.image as Bitmap
                 val covered = sharper?.source?.steps?.part ?: prepared.target.steps[i].part
                 val shown = Rect(left, top, left + rect.width, top + rect.height)
-                drawPage(bitmap, wanted[i], covered, shown, layer.alpha, colorFilter)
+                drawReaderPage(bitmap, null, wanted[i], covered, state.config.rotation, shown, layer.alpha, colorFilter)
                 val tiles = if (sharper == null && layer.view == state.current) viewModel.drawnTiles(layer.view.pages[i]) else emptyList()
                 if (tiles.isNotEmpty()) clipRect(shown.left, shown.top, shown.right, shown.bottom) { drawTiles(tiles, wanted[i].wholeAt(shown), colorFilter) }
             }
             is PreparedPage.Error -> drawRect(CardBackground, Offset(left, top), androidx.compose.ui.geometry.Size(rect.width, rect.height), layer.alpha)
-            null -> Unit
+            null -> drawReaderPage(
+                null, viewModel.cachedThumbnail(layer.view.pages[i]), wanted[i], PagePart.Whole, state.config.rotation,
+                Rect(left, top, left + rect.width, top + rect.height), layer.alpha, colorFilter,
+            )
         }
     }
     if (state.config.gutter == GutterStyle.Shadow && layer.view is PageView.Two) {
@@ -355,7 +365,7 @@ private fun DrawScope.drawLayer(viewModel: ReaderViewModel, state: ReaderState, 
 
 /**
  * The pages of 縦に連続 on screen, each from its prepared view, with [detail] in place of the page the loupe read at
- * the size of its own image. A page not prepared yet leaves the background, and a page that failed its card's.
+ * the size of its own image. A page not prepared yet shows its held thumbnail, and a page that failed its card's.
  */
 private fun DrawScope.drawStrip(viewModel: ReaderViewModel, state: ReaderState, colorFilter: ColorFilter?, detail: LoupeDetail? = null) {
     for ((page, rect) in state.stripPages()) {
@@ -364,13 +374,55 @@ private fun DrawScope.drawStrip(viewModel: ReaderViewModel, state: ReaderState, 
         when (val shown = prepared?.pages?.single()) {
             is PreparedPage.Image<*> -> {
                 val sharper = detail?.takeIf { it.source.view == view }
-                drawPage(sharper?.bitmap ?: shown.image as Bitmap, PagePart.Whole, prepared.target.steps.single().part, rect, 1f, colorFilter)
+                drawReaderPage(sharper?.bitmap ?: shown.image as Bitmap, null, PagePart.Whole, prepared.target.steps.single().part, state.config.rotation, rect, 1f, colorFilter)
             }
             is PreparedPage.Error -> drawRect(CardBackground, Offset(rect.left, rect.top), androidx.compose.ui.geometry.Size(rect.width, rect.height))
-            null -> Unit
+            null -> drawReaderPage(null, viewModel.cachedThumbnail(page), PagePart.Whole, PagePart.Whole, state.config.rotation, rect, 1f, colorFilter)
         }
         if (detail?.source?.view != view) drawTiles(viewModel.drawnTiles(page), rect, colorFilter)
     }
+}
+
+/** The prepared pixels take precedence; a held thumbnail is a whole page in its original orientation. */
+internal fun DrawScope.drawReaderPage(
+    prepared: Bitmap?,
+    thumbnail: Bitmap?,
+    wanted: PagePart,
+    covered: PagePart,
+    rotation: Rotation,
+    rect: Rect,
+    alpha: Float,
+    colorFilter: ColorFilter?,
+) {
+    if (prepared != null) {
+        drawPage(prepared, wanted, covered, rect, alpha, colorFilter)
+        return
+    }
+    val bitmap = thumbnail?.takeUnless { it.isRecycled } ?: return
+    val whole = wanted.wholeAt(rect)
+    val width = if (rotation.swapsSides) whole.height else whole.width
+    val height = if (rotation.swapsSides) whole.width else whole.height
+    clipRect(rect.left, rect.top, rect.right, rect.bottom) {
+        withTransform({
+            translate((whole.left + whole.right) / 2f, (whole.top + whole.bottom) / 2f)
+            rotate(rotation.degrees.toFloat(), Offset.Zero)
+        }) {
+            drawPage(bitmap, PagePart.Whole, PagePart.Whole, Rect(-width / 2f, -height / 2f, width / 2f, height / 2f), alpha, colorFilter)
+        }
+    }
+}
+
+/** A stationary page still reports how far the finger pulled, at the edge the neighbor enters from. */
+internal fun DrawScope.drawPullHint(frame: TurnFrame, movement: Int) {
+    if (frame.pullHint <= 0f) return
+    val width = 4.dp.toPx()
+    val height = 48.dp.toPx().coerceAtMost(size.height)
+    drawRect(
+        Color.White,
+        Offset(if (movement > 0) 0f else size.width - width, (size.height - height) / 2f),
+        androidx.compose.ui.geometry.Size(width, height),
+        alpha = frame.pullHint.coerceIn(0f, 1f),
+    )
 }
 
 /**

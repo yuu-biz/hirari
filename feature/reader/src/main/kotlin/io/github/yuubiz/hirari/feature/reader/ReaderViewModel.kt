@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
@@ -327,6 +328,9 @@ class ReaderViewModel internal constructor(
      * since a strip cell may still draw one for a frame.
      */
     private val thumbnails = ThumbnailCache<Bitmap>(PageStrip.THUMBNAIL_BYTES) { it.width.toLong() * it.height * 4 }
+    private val thumbnailShapes = mutableStateMapOf<Int, PageShape.Known>()
+    var thumbnailsChanged by mutableIntStateOf(0)
+        private set
 
     private class Opened(
         val book: OpenBook,
@@ -389,12 +393,19 @@ class ReaderViewModel internal constructor(
 
     fun cachedThumbnail(page: Int): Bitmap? = thumbnails[page]
 
+    fun thumbnailShape(page: Int): PageShape.Known? = thumbnailShapes[page]
+
     /** [page] fitted into [size], or `null` for a page that does not decode. */
     suspend fun thumbnail(page: Int, size: PixelSize): Bitmap? {
         thumbnails[page]?.let { return it }
         val book = opened?.book ?: return null
         val image = (book.page(page, size) as? PageResult.Ready)?.image as? PreparedImage.Whole ?: return null
-        return image.bitmap.also { thumbnails[page] = it }
+        return image.bitmap.also {
+            thumbnails[page] = it
+            thumbnailShapes[page] = image.shape
+            thumbnailsChanged++
+            dispatch(ReaderEvent.ShapeLearned(page, image.shape))
+        }
     }
 
     /**
@@ -712,6 +723,8 @@ class ReaderViewModel internal constructor(
         traces.close()
         application.unregisterComponentCallbacks(trimCallbacks)
         thumbnails.clear()
+        thumbnailShapes.clear()
+        thumbnailsChanged++
         pageTiles.clear()
         opened?.let {
             it.disk?.stop()

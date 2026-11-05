@@ -33,7 +33,7 @@ internal object PageStrip {
     /** The width of [shape]'s cell: an upright cell, or as wide as the page's sides give up to [WIDEST] of those. */
     fun cellWidthDp(shape: PageShape, heightDp: Float): Float {
         val upright = heightDp * UPRIGHT_ASPECT
-        if (shape !is PageShape.Known || shape.height <= 0) return upright
+        if (shape !is PageShape.Known || shape.height <= 0 || shape.width <= shape.height) return upright
         return (heightDp * shape.width / shape.height).coerceIn(upright, upright * WIDEST)
     }
 
