@@ -42,11 +42,10 @@ internal class PdfDocument private constructor(
 
     /**
      * The size of the page at [index] in points, known without drawing it. Opening a page reads its objects, which
-     * on a server are a request or more, so a page is opened for it only when it is wanted.
+     * on a server are a request or more, so a page is opened for it only when it is wanted. Runs on the calling
+     * thread, which must be [dispatcher]'s.
      */
-    suspend fun shape(index: Int): PageShape.Known = withContext(dispatcher) {
-        shapes[index] ?: renderer.openPage(index).use(::shapeOf).also { shapes[index] = it }
-    }
+    fun shape(index: Int): PageShape.Known = shapes[index] ?: renderer.openPage(index).use(::shapeOf).also { shapes[index] = it }
 
     /**
      * The page at [index] drawn on white to fit [target], enlarged when it is smaller, and shrunk further when it
