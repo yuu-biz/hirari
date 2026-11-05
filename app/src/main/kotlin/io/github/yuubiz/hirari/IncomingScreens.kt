@@ -15,13 +15,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
-import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LocationId
-import io.github.yuubiz.hirari.core.model.OpenBookRequest
-import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.feature.library.PlaceShortcut
 import io.github.yuubiz.hirari.feature.library.ShortcutTarget
-import io.github.yuubiz.hirari.feature.library.TextAddress
 import io.github.yuubiz.hirari.feature.library.resolve
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,30 +25,27 @@ import java.io.InputStream
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Reads the first bytes of the handed-over document off the main thread and opens it in the reader its content
- * calls for (docs/spec.md section 4.11). It keeps the grant when the other app offers a lasting one; otherwise the
- * document opens on the grant of this start alone.
+ * Reads the first bytes of the picked or handed-over document off the main thread and opens it in the reader its
+ * content calls for (docs/spec.md sections 4.2 and 4.11). It keeps the grant when the provider offers a lasting one;
+ * otherwise the document opens on the grant of this start alone.
  */
 @Composable
 internal fun IncomingDocument(route: IncomingRoute, nav: NavController, resolver: ContentResolver) {
     LaunchedEffect(route) {
         val uri = Uri.parse(route.uri)
-        val kind = withContext(Dispatchers.IO) {
+        val target = withContext(Dispatchers.IO) {
             try {
                 resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: SecurityException) {
             }
-            try {
-                resolver.openInputStream(uri)?.use { incomingKind(it.readPrefix()) }
+            val prefix = try {
+                resolver.openInputStream(uri)?.use { it.readPrefix() }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 null
             }
-        }
-        val target: Any = when (kind) {
-            IncomingKind.Text -> TextAddress.Document(UriString(route.uri)).toRoute()
-            IncomingKind.Images, null -> OpenBookRequest(BookAddress.Document(UriString(route.uri))).toReaderRoute()
+            route.readerRoute(prefix)
         }
         nav.navigate(target) { popUpTo<IncomingRoute> { inclusive = true } }
     }

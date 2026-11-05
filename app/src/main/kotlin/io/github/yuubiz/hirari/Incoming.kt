@@ -2,6 +2,10 @@ package io.github.yuubiz.hirari
 
 import io.github.yuubiz.hirari.core.image.isPdf
 import io.github.yuubiz.hirari.core.image.sniffImage
+import io.github.yuubiz.hirari.core.model.BookAddress
+import io.github.yuubiz.hirari.core.model.OpenBookRequest
+import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.feature.library.TextAddress
 import kotlinx.serialization.Serializable
 
 /** What another app or a home screen shortcut hands the app (docs/spec.md section 4.11). */
@@ -78,9 +82,15 @@ private fun isArchive(head: ByteArray): Boolean =
 private fun ByteArray.startsWith(vararg bytes: Int, at: Int = 0): Boolean =
     size >= at + bytes.size && bytes.indices.all { this[at + it] == bytes[it].toByte() }
 
-/** A document handed over by another app, whose kind is read off the main thread before a reader opens it. */
+/** A picked or handed-over document, whose kind is read off the main thread before a reader opens it. */
 @Serializable
 internal data class IncomingRoute(val uri: String)
+
+/** A missing prefix follows the image reader's error path, as an unreadable incoming document does. */
+internal fun IncomingRoute.readerRoute(prefix: ByteArray?): Any = when (prefix?.let(::incomingKind)) {
+    IncomingKind.Text -> TextAddress.Document(UriString(uri)).toRoute()
+    IncomingKind.Images, null -> OpenBookRequest(BookAddress.Document(UriString(uri))).toReaderRoute()
+}
 
 /** A shortcut's folder or book, looked up before it opens. */
 @Serializable

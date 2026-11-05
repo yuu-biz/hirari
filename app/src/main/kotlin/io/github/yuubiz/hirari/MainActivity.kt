@@ -72,8 +72,22 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** ZIP and CBZ as providers label them (docs/spec.md section 3.1). */
-private val DOCUMENT_TYPES = arrayOf("application/zip", "application/x-cbz", "application/vnd.comicbook+zip", "application/octet-stream")
+/** The same provider MIME types as the manifest's VIEW filter (docs/spec.md section 4.2). */
+internal val DOCUMENT_TYPES = arrayOf(
+    "application/zip",
+    "application/x-cbz",
+    "application/vnd.comicbook+zip",
+    "application/x-rar-compressed",
+    "application/vnd.rar",
+    "application/x-cbr",
+    "application/vnd.comicbook-rar",
+    "application/x-7z-compressed",
+    "application/x-tar",
+    "application/pdf",
+    "text/plain",
+    "image/*",
+    "application/octet-stream",
+)
 
 class MainActivity : ComponentActivity() {
     private val keys = KeyRelay()
@@ -107,8 +121,12 @@ class MainActivity : ComponentActivity() {
                     if (uri == null) return
                     scope.launch {
                         withContext(Dispatchers.IO) { keepPermission(uri) }
-                        val book = UriString(uri.toString()).let { if (folder) BookAddress.Tree(it) else BookAddress.Document(it) }
-                        nav.navigate(OpenBookRequest(book).toReaderRoute())
+                        val target = if (folder) {
+                            OpenBookRequest(BookAddress.Tree(UriString(uri.toString()))).toReaderRoute()
+                        } else {
+                            IncomingRoute(uri.toString())
+                        }
+                        nav.navigate(target)
                     }
                 }
                 val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, folder = false) }
