@@ -29,7 +29,15 @@ internal class Header(
     val format: Int,
     /** libarchive's code of the outermost filter, such as gzip around a tar. */
     val filter: Int,
+    /** Where the header starts in the source, or null when libarchive does not say. */
+    val position: Long? = null,
 )
+
+/**
+ * A handle opened with a jump reads the source up to [at], and from there the source from [to] on, so that the
+ * header at [to] follows the data that ends at [at] (docs/spec.md section 3.3).
+ */
+internal data class Jump(val at: Long, val to: Long)
 
 /** Takes the data of one entry, block by block. Returns false to stop reading. */
 internal fun interface DataSink {
@@ -46,7 +54,8 @@ internal interface ArchiveHandle : AutoCloseable {
 
     fun begin(job: Job)
 
-    fun open(): Int
+    /** Opens the source again from the start, with [jump] when it is given. */
+    fun open(jump: Jump? = null): Int
 
     fun nextHeader(): Int
 
@@ -131,7 +140,7 @@ internal class NativeArchive(source: ByteSource) : ArchiveHandle {
         reads.begin(job)
     }
 
-    override fun open(): Int = nativeOpen(handle)
+    override fun open(jump: Jump?): Int = nativeOpen(handle, jump?.at ?: 0, jump?.to ?: 0)
 
     override fun nextHeader(): Int {
         header = null
@@ -167,8 +176,9 @@ internal class NativeArchive(source: ByteSource) : ArchiveHandle {
         formatName: String,
         format: Int,
         filter: Int,
+        position: Long,
     ) {
-        header = Header(name, size.takeIf { it >= 0 }, isDirectory, encrypted, formatName, format, filter)
+        header = Header(name, size.takeIf { it >= 0 }, isDirectory, encrypted, formatName, format, filter, position.takeIf { it >= 0 })
     }
 
     @Suppress("unused")
@@ -179,7 +189,7 @@ internal class NativeArchive(source: ByteSource) : ArchiveHandle {
 
     private external fun nativeCreate(size: Long, buffer: ByteBuffer): Long
 
-    private external fun nativeOpen(handle: Long): Int
+    private external fun nativeOpen(handle: Long, jumpAt: Long, jumpTo: Long): Int
 
     private external fun nativeNextHeader(handle: Long): Int
 

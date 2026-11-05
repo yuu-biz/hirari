@@ -38,13 +38,31 @@ typedef struct {
 	const void *buffer;
 	jint capacity;
 	int64_t size;
+	/* The position libarchive sees, which jump_at and jump_to map to the source. */
 	int64_t position;
+	/*
+	 * libarchive sees the source up to jump_at, and from there the source
+	 * from jump_to on, so that the archive seems to go on from a header further
+	 * in. With no jump both are 0.
+	 */
+	int64_t jump_at;
+	int64_t jump_to;
 	int sequential;
 	struct archive *archive;
 } session;
 
 static session *from_handle(jlong handle) {
 	return (session *)(intptr_t)handle;
+}
+
+/* The size of the archive as libarchive sees it. */
+static int64_t seen_size(const session *s) {
+	return s->size - (s->jump_to - s->jump_at);
+}
+
+/* The source offset of the position libarchive sees at seen. */
+static int64_t source_offset(const session *s, int64_t seen) {
+	return seen < s->jump_at ? seen : seen - s->jump_at + s->jump_to;
 }
 
 static la_ssize_t read_callback(struct archive *a, void *data, const void **buffer) {
@@ -56,7 +74,9 @@ static la_ssize_t read_callback(struct archive *a, void *data, const void **buff
 	}
 	jint length = s->sequential ? s->capacity : FIRST_READ_SIZE;
 	if (length > s->capacity) length = s->capacity;
-	jint n = (*env)->CallIntMethod(env, s->bridge, s->read, (jlong)s->position, length);
+	/* A read stops at the jump, so the next one starts from the far side. */
+	if (s->position < s->jump_at && s->jump_at - s->position < length) length = (jint)(s->jump_at - s->position);
+	jint n = (*env)->CallIntMethod(env, s->bridge, s->read, (jlong)source_offset(s, s->position), length);
 	if ((*env)->ExceptionCheck(env) || n < 0 || n > length) {
 		archive_set_error(a, EIO, "ByteSource read failed");
 		return ARCHIVE_FATAL;
@@ -73,7 +93,7 @@ static la_int64_t seek_callback(struct archive *a, void *data, la_int64_t offset
 	switch (whence) {
 	case SEEK_SET: base = 0; break;
 	case SEEK_CUR: base = s->position; break;
-	case SEEK_END: base = s->size; break;
+	case SEEK_END: base = seen_size(s); break;
 	default:
 		archive_set_error(a, EINVAL, "Unknown seek origin %d", whence);
 		return ARCHIVE_FATAL;
@@ -90,7 +110,8 @@ static la_int64_t seek_callback(struct archive *a, void *data, la_int64_t offset
 static la_int64_t skip_callback(struct archive *a, void *data, la_int64_t request) {
 	(void)a;
 	session *s = data;
-	int64_t left = s->size > s->position ? s->size - s->position : 0;
+	int64_t size = seen_size(s);
+	int64_t left = size > s->position ? size - s->position : 0;
 	int64_t skipped = request < left ? request : left;
 	if (skipped < 0) skipped = 0;
 	s->position += skipped;
@@ -112,7 +133,7 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeCreate(
 	if (s == NULL) return 0;
 	jclass cls = (*env)->GetObjectClass(env, self);
 	s->read = (*env)->GetMethodID(env, cls, "read", "(JI)I");
-	if (s->read != NULL) s->header = (*env)->GetMethodID(env, cls, "header", "([BJZZLjava/lang/String;II)V");
+	if (s->read != NULL) s->header = (*env)->GetMethodID(env, cls, "header", "([BJZZLjava/lang/String;IIJ)V");
 	if (s->header != NULL) s->data = (*env)->GetMethodID(env, cls, "data", "(Ljava/nio/ByteBuffer;J)Z");
 	(*env)->DeleteLocalRef(env, cls);
 	if (s->data != NULL) s->buffer = (*env)->GetDirectBufferAddress(env, buffer);
@@ -126,13 +147,21 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeCreate(
 	return (jlong)(intptr_t)s;
 }
 
-/* Frees the archive the session had open, if any, and opens the source again from the start. */
+/*
+ * Frees the archive the session had open, if any, and opens the source again
+ * from the start. From jump_at on, libarchive reads the source from jump_to
+ * (0 and 0 for none).
+ */
 JNIEXPORT jint JNICALL
-Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeOpen(JNIEnv *env, jobject self, jlong handle) {
+Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeOpen(
+	JNIEnv *env, jobject self, jlong handle, jlong jump_at, jlong jump_to) {
 	(void)self;
 	session *s = from_handle(handle);
 	s->env = env;
 	free_archive(s);
+	if (jump_at < 0 || jump_to < jump_at || jump_to > s->size) return ARCHIVE_FATAL;
+	s->jump_at = jump_at;
+	s->jump_to = jump_to;
 	s->position = 0;
 	s->sequential = 0;
 	struct archive *a = archive_read_new();
@@ -195,7 +224,8 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeNextHeader(JNIEnv 
 		(jboolean)(archive_entry_is_data_encrypted(entry) != 0),
 		format,
 		(jint)(archive_format(s->archive) & ARCHIVE_FORMAT_BASE_MASK),
-		(jint)archive_filter_code(s->archive, 0));
+		(jint)archive_filter_code(s->archive, 0),
+		(jlong)source_offset(s, archive_read_header_position(s->archive)));
 	(*env)->DeleteLocalRef(env, name);
 	(*env)->DeleteLocalRef(env, format);
 	if ((*env)->ExceptionCheck(env)) return ARCHIVE_FATAL;

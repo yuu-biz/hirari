@@ -8,36 +8,48 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * The bytes of [entries] laid end to end, read through [source] the way libarchive reads an archive: forward
  * from [open], one header after another, and the data of the current entry in blocks. Callbacks go through
- * [SourceReads] as libarchive's do, so a failing [source] fails the same way.
+ * [SourceReads] as libarchive's do, so a failing [source] fails the same way. A header is where its entry's data
+ * starts, and a [Jump] goes from the end of one entry to the header of another, as the native handle's does.
  */
 internal class FakeArchive(
     private val source: ByteSource,
     private val entries: List<Pair<String, ByteArray>>,
     private val format: ArchiveFormat = ArchiveFormat.SevenZip,
+    /** How many entries past its target a jump lands, as when the file changed after it was listed. */
+    private val jumpOff: Int = 0,
 ) : ArchiveHandle {
     private val reads = SourceReads(source)
     private val block = ByteBuffer.allocate(BLOCK)
     private var next = 0
+    private var jump: Jump? = null
+    private val starts = entries.runningFold(0L) { start, entry -> start + entry.second.size }
 
     /** How many times the archive was opened, listing included. */
     val opens = AtomicInteger()
+
+    /** How many headers were read, listing included. */
+    val headers = AtomicInteger()
 
     override var header: Header? = null
         private set
 
     override fun begin(job: Job) = reads.begin(job)
 
-    override fun open(): Int {
+    override fun open(jump: Jump?): Int {
         opens.incrementAndGet()
         next = 0
+        this.jump = jump
         return Status.OK
     }
 
     override fun nextHeader(): Int {
         header = null
+        jump?.let { if (starts[next] == it.at) next = (starts.indexOf(it.to).takeIf { to -> to >= 0 } ?: return Status.FAILED) + jumpOff }
         if (next >= entries.size) return Status.EOF
-        val (name, data) = entries[next++]
-        header = Header(name.toByteArray(), data.size.toLong(), false, false, "fake", format.code, 0)
+        headers.incrementAndGet()
+        val (name, data) = entries[next]
+        header = Header(name.toByteArray(), data.size.toLong(), false, false, "fake", format.code, 0, starts[next])
+        next++
         return Status.OK
     }
 
