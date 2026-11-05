@@ -42,6 +42,7 @@ import java.net.Socket
 
 private const val TAG = "RouteSmbTest"
 private const val PLACE = "route-test-nas"
+private const val SHAPES_SETTLE_MS = 2_000L
 private val PAGE_LABEL = Regex("""(\d+)(?: から (\d+))? ページ目、全 (\d+) ページ""")
 
 /**
@@ -219,6 +220,9 @@ class RouteSmbTest {
             await("the reader opens", 30_000) { pages() != null }
             assertEquals("the book reopens at the view it was left on", 13, pages()!!.first)
             assertTrue("the guide is not shown again", !guideUp())
+            // Until the shapes of the view are read, the view has no stops and a tap turns the whole view
+            // (docs/spec.md section 2.6). A PDF reads them page by page after it opens (section 3.9).
+            Thread.sleep(SHAPES_SETTLE_MS)
             repeat(2) { tapForward() }
             awaitView(15)
         }
