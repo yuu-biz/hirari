@@ -29,6 +29,39 @@ import kotlin.test.assertNull
  * DataStore cannot write a file twice on a Windows JVM, whose rename does not replace an existing file.
  */
 class LaunchRepositoryTest {
+    @Test
+    fun `launch storage failures log only their type unless debuggable`() = runBlocking {
+        val records = mutableListOf<java.util.logging.LogRecord>()
+        val logger = java.util.logging.Logger.getLogger("LaunchRepository")
+        val handler = object : java.util.logging.Handler() {
+            override fun publish(record: java.util.logging.LogRecord) { records += record }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        val previousLevel = logger.level
+        logger.level = java.util.logging.Level.ALL
+        logger.addHandler(handler)
+        try {
+            val error = IOException("private-book.cbz", IOException("private-server/private-path"))
+            val store = object : DataStore<StoredLaunch> {
+                override val data: Flow<StoredLaunch> = MutableStateFlow(StoredLaunch())
+                override suspend fun updateData(transform: suspend (StoredLaunch) -> StoredLaunch): StoredLaunch = throw error
+            }
+            DataStoreLaunchRepository(store).finishStart()
+            val release = records.single()
+            assertEquals("Cannot persist launch record; using process-local state: java.io.IOException", release.message)
+            assertNull(release.thrown)
+            records.clear()
+            DataStoreLaunchRepository(store, debuggable = true).finishStart()
+            val debug = records.single()
+            assertEquals("Cannot persist launch record; using process-local state", debug.message)
+            kotlin.test.assertSame(error, debug.thrown)
+        } finally {
+            logger.removeHandler(handler)
+            logger.level = previousLevel
+        }
+    }
+
     @get:Rule
     val folder = TemporaryFolder()
 

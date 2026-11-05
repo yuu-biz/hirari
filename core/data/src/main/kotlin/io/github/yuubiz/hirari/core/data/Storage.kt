@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.data
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import androidx.datastore.core.DataStore
 import java.io.File
 
@@ -15,6 +16,7 @@ class Storage internal constructor(
     val thumbnails: ThumbnailCache,
     /** The fonts imported for the text reader. */
     val fonts: FontStore,
+    debuggable: Boolean = false,
 ) {
     constructor(context: Context) : this(
         database = openDatabase(context),
@@ -28,13 +30,14 @@ class Storage internal constructor(
             makingDir = File(context.noBackupFilesDir, "thumbs-making"),
         ),
         fonts = FontStore(File(context.filesDir, "fonts")),
+        debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
     )
 
     val progress: ProgressRepository = RoomProgressRepository(database.bookProgress())
 
     val settings: SettingsRepository = DataStoreSettingsRepository(settingsStore)
 
-    val launch: LaunchRepository = DataStoreLaunchRepository(launchStore)
+    val launch: LaunchRepository = DataStoreLaunchRepository(launchStore, debuggable)
 
     val credentials: CredentialStore = EncryptedCredentialStore(credentialDatabase.credentials(), cipher)
 

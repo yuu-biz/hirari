@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
             kind != StartKind.Recreated -> {
                 val restoring = kind == StartKind.Restored
                 val plan = app.appScope.async { app.library.await().planStart(restoring) }
-                app.start = AppStart(restoring, plan, app.mainScope) { app.appScope.launch { app.library.await().launch.completeStart() } }
+                app.start = AppStart(restoring, plan, app.mainScope) { app.appScope.launch { app.library.await().launch.completeStart(app.debuggable) } }
             }
         }
         setContent {

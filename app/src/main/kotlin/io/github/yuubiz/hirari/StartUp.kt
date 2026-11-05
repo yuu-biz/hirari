@@ -17,6 +17,7 @@ import io.github.yuubiz.hirari.core.data.LastFolder
 import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.OpeningBook
 import io.github.yuubiz.hirari.core.model.LocationId
+import io.github.yuubiz.hirari.core.model.logFailure
 import io.github.yuubiz.hirari.feature.library.Notice
 import io.github.yuubiz.hirari.feature.library.Reopen
 import io.github.yuubiz.hirari.feature.library.StartPlan
@@ -26,19 +27,18 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
 import java.io.IOException
-import java.util.logging.Level
 import java.util.logging.Logger
 
 /** A failed launch record must not stop navigation or completion of the start. */
-internal suspend fun LaunchRepository.recordLastFolder(folder: LastFolder?) = recordLaunch { setLastFolder(folder) }
+internal suspend fun LaunchRepository.recordLastFolder(folder: LastFolder?, debuggable: Boolean = false) = recordLaunch(debuggable) { setLastFolder(folder) }
 
-internal suspend fun LaunchRepository.completeStart() = recordLaunch { finishStart() }
+internal suspend fun LaunchRepository.completeStart(debuggable: Boolean = false) = recordLaunch(debuggable) { finishStart() }
 
-private suspend fun recordLaunch(write: suspend () -> Unit) {
+private suspend fun recordLaunch(debuggable: Boolean, write: suspend () -> Unit) {
     try {
         write()
     } catch (error: IOException) {
-        Logger.getLogger("AppStart").log(Level.WARNING, "Cannot write launch record", error)
+        Logger.getLogger("AppStart").logFailure("Cannot write launch record", error, debuggable)
     }
 }
 
@@ -103,7 +103,7 @@ internal fun StartUp(nav: NavController, app: HirariApp, start: AppStart?) {
             .onEach { start?.gate?.check(it.id) }
             .mapNotNull { it.lastFolder() }
             .distinctUntilChanged()
-            .collect { library.launch.recordLastFolder(it.folder) }
+            .collect { library.launch.recordLastFolder(it.folder, app.debuggable) }
     }
     val ended = start?.ended
     if (ended != null) {

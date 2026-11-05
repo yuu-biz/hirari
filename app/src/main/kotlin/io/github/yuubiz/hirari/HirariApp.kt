@@ -8,9 +8,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.StrictMode
-import android.util.Log
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.data.Storage
+import io.github.yuubiz.hirari.core.model.logFailure
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.thumbnail.Thumbnails
 import io.github.yuubiz.hirari.feature.library.LibraryServices
@@ -44,11 +44,15 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.logging.Logger
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "HirariApp"
 
 class HirariApp : Application() {
+    internal val debuggable: Boolean
+        get() = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
     /** Outlives every screen; the progress writer finishes its writes here after the reader is gone. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -70,7 +74,7 @@ class HirariApp : Application() {
     internal var start: AppStart? = null
 
     override fun onCreate() {
-        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) enableStrictMode()
+        if (debuggable) enableStrictMode()
         super.onCreate()
         val storage = appScope.async { Storage(this@HirariApp) }
         val smbPool = appScope.async {
@@ -150,7 +154,7 @@ class HirariApp : Application() {
             try {
                 startForegroundService(Intent(this, SaveService::class.java))
             } catch (e: RuntimeException) {
-                Log.w(TAG, "the save service could not start", e)
+                Logger.getLogger(TAG).logFailure("the save service could not start", e, debuggable)
             }
         }
     }
@@ -164,16 +168,16 @@ class HirariApp : Application() {
      * are synced by the start's plan, which needs them first.
      */
     private suspend fun reconcile(storage: Storage) {
-        attempt("reconciling the thumbnail cache") { storage.thumbnails.reconcile() }
+        attempt("start-up failed at reconciling the thumbnail cache") { storage.thumbnails.reconcile() }
     }
 
-    private suspend fun attempt(what: String, step: suspend () -> Unit) {
+    private suspend fun attempt(message: String, step: suspend () -> Unit) {
         try {
             step()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "start-up failed at $what", e)
+            Logger.getLogger(TAG).logFailure(message, e, debuggable)
         }
     }
 

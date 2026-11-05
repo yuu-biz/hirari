@@ -10,6 +10,7 @@ import androidx.datastore.dataStoreFile
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.model.logFailure
 import io.github.yuubiz.hirari.core.model.normalizePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicReference
-import java.util.logging.Level
 import java.util.logging.Logger
 
 /** The folder of a SAF place the file list showed last. [documentId] saves looking the path up again. */
@@ -162,7 +162,10 @@ internal data class StoredLaunch(
     )
 }
 
-internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaunch>) : LaunchRepository {
+internal class DataStoreLaunchRepository(
+    private val store: DataStore<StoredLaunch>,
+    private val debuggable: Boolean = false,
+) : LaunchRepository {
     private val mutex = Mutex()
     private var memory: StoredLaunch? = null
     private var memoryOnly = false
@@ -174,7 +177,7 @@ internal class DataStoreLaunchRepository(private val store: DataStore<StoredLaun
         memoryOnly = true
         if (error !is CorruptionException) {
             failure.compareAndSet(null, error)
-            Logger.getLogger("LaunchRepository").log(Level.WARNING, "Cannot persist launch record; using process-local state", error)
+            Logger.getLogger("LaunchRepository").logFailure("Cannot persist launch record; using process-local state", error, debuggable)
         }
     }
 

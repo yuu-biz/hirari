@@ -15,6 +15,42 @@ import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 
 class StartUpTest {
+    @Test
+    fun launchFailureLogsRespectDebuggability() = runTest {
+        val records = mutableListOf<java.util.logging.LogRecord>()
+        val logger = java.util.logging.Logger.getLogger("AppStart")
+        val handler = object : java.util.logging.Handler() {
+            override fun publish(record: java.util.logging.LogRecord) { records += record }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        val previousLevel = logger.level
+        logger.level = java.util.logging.Level.ALL
+        logger.addHandler(handler)
+        try {
+            val error = IOException("private-book.cbz", IOException("private-server/private-path"))
+            val launch = FailingLaunch(error)
+            launch.recordLastFolder(null)
+            launch.completeStart()
+            assertEquals(2, records.size)
+            records.forEach {
+                assertEquals("Cannot write launch record: java.io.IOException", it.message)
+                assertEquals(null, it.thrown)
+            }
+            records.clear()
+            launch.recordLastFolder(null, debuggable = true)
+            launch.completeStart(debuggable = true)
+            assertEquals(2, records.size)
+            records.forEach {
+                assertEquals("Cannot write launch record", it.message)
+                org.junit.Assert.assertSame(error, it.thrown)
+            }
+        } finally {
+            logger.removeHandler(handler)
+            logger.level = previousLevel
+        }
+    }
+
     private class FailingLaunch(val failure: Exception = IOException("disk full")) : LaunchRepository {
         var writes = 0
         override suspend fun beginStart() = LaunchRecord()
