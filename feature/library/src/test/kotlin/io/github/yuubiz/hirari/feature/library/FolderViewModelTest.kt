@@ -49,6 +49,38 @@ class FolderViewModelTest {
     private fun FolderViewModel.shown() = assertIs<FolderContent.Shown>(state.value.content)
 
     @Test
+    fun `reload after removing author link opens series with the current parent identity`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Author,
+            librarySubgrouping = LibraryGrouping.Series)
+        fixture.lister.folders["作品"] = listOf(file("[Z (B)] link.zip"), file("[Z] Story 1.zip"), file("[Z] Story 2.zip"))
+        fun model(key: FolderKey) = FolderViewModel(CompletableDeferred(fixture.services), key,
+            UnconfinedTestDispatcher(testScheduler)).also { watch(it.state) }
+        val real = viewModel()
+        val authorKey = assertIs<FileTarget.Folder>(real.open(real.shown().rows.single())).key
+        assertEquals("/group:Author:b", authorKey.pseudo!!.key)
+        val author = model(authorKey)
+        fixture.lister.folders["作品"] = fixture.lister.folders.getValue("作品").filterNot { "link.zip" in it.name }
+        author.refresh()
+        assertEquals(null, author.shown().returnTo)
+        val current = author.shown().pseudo!!
+        assertEquals("/group:Author:z", current.key)
+        assertEquals("Z", current.name)
+        assertEquals(listOf("作品/[Z] Story 1.zip", "作品/[Z] Story 2.zip"), current.memberKeys)
+        val seriesKey = assertIs<FileTarget.Folder>(author.open(author.shown().rows.single())).key
+        assertEquals(current, seriesKey.pseudo!!.parent)
+        assertTrue(seriesKey.pseudo!!.key.contains(current.key))
+        // Navigation carries conditions alone, as FolderRoute does for both levels.
+        val routeKey = seriesKey.copy(pseudo = seriesKey.pseudo!!.copy(memberKeys = emptyList(),
+            parent = seriesKey.pseudo!!.parent!!.copy(memberKeys = emptyList())))
+        val series = model(routeKey)
+        assertEquals(null, series.shown().returnTo)
+        assertEquals("Story", series.shown().pseudo!!.name)
+        assertEquals(listOf("[Z] Story 1.zip", "[Z] Story 2.zip"), series.shown().rows.map { it.item.entry.name })
+        assertTrue(series.shown().rows.all { it.pseudo == null })
+    }
+
+    @Test
     fun `nested group follows filters and settings return to the nearest surviving level`() = runTest {
         fixture.locations.rows.value = listOf(place)
         fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Author,

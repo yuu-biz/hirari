@@ -68,6 +68,8 @@ sealed interface FolderContent {
         val parentItem: Boolean = false,
         /** A group removed by the current settings returns here without an error. */
         val returnTo: FolderKey? = null,
+        /** The current matched group; remembered membership is only used to find it. */
+        val pseudo: PseudoFolder? = null,
     ) : FolderContent
 }
 
@@ -215,7 +217,8 @@ class FolderViewModel(
                 layout.look.mergeCircleAuthors, query, layout.ordering.sort, layout.ordering.foldersFirst, existing)
             val parentItem = layout.showParentItem && (pseudo != null || folderTrail("", folder.path).parent != null)
             FolderContent.Shown(visible, members.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem,
-                returnTo = if (existing?.key != pseudo?.key) folder.copy(pseudo = existing) else null)
+                returnTo = if (generateSequence(existing) { it.parent }.count() != generateSequence(pseudo) { it.parent }.count())
+                    folder.copy(pseudo = existing) else null, pseudo = existing)
         }.flowOn(compute)
     }
 

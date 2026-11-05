@@ -102,7 +102,8 @@ internal fun resolvePseudoFolder(rows: List<FileRow>, folder: PseudoFolder?, loo
         val match = groups.map { candidate -> candidate to candidate.rows.count { it.path in remembered } }
             .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
         if (match == null) break
-        parent = group
+        parent = group.copy(key = scopedGroupKey(parent, match.key), name = match.name,
+            merge = look.mergeCircleAuthors, parent = parent, memberKeys = match.rows.map { it.path })
         members = match.rows
     }
     return parent to members

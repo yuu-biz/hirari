@@ -140,7 +140,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     }
 
     val trail = remember(state.placeName, state.path) { folderTrail(state.placeName, state.path) }
-    val pseudo = model.folder.pseudo
+    val pseudo = (state.content as? FolderContent.Shown)?.pseudo ?: model.folder.pseudo
     val up: (() -> Unit)? = if (pseudo != null) actions.close else trail.parent?.let { parent -> { actions.openAncestor(parent) } }
     Scaffold(
         topBar = {
@@ -190,7 +190,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
                     is FolderContent.Shown -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = model::refresh, modifier = Modifier.fillMaxSize()) {
-                        FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem }, folderKey = model.folder)
+                        FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem }, folderKey = model.folder.copy(pseudo = content.pseudo))
                     }
                 }
             }

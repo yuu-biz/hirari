@@ -30,7 +30,7 @@ class FileGroupsTest {
         assertEquals(listOf("[B] Story 2.zip", "[B] Story 3.zip"), members.map { it.item.entry.name })
         assertEquals(members, resolvePseudoFolder(source, metadata, look).second)
         val withoutStory = source.filterNot { "Story" in it.item.entry.name }
-        assertEquals(authorMetadata, resolvePseudoFolder(withoutStory, metadata, look.copy(mergeCircleAuthors = true)).first)
+        assertEquals(group(withoutStory).first { it.pseudo!!.name != "C" }.pseudo, resolvePseudoFolder(withoutStory, metadata, look.copy(mergeCircleAuthors = true)).first)
         assertEquals(null, resolvePseudoFolder(source, metadata, look.copy(grouping = LibraryGrouping.None)).first)
     }
 
@@ -53,7 +53,7 @@ class FileGroupsTest {
         val snapshot = rememberPseudoFolder(original, metadata)!!
         val remaining = original.filterNot { "link" in it.item.entry.name }
         val look = ListLook(grouping = LibraryGrouping.Author)
-        assertEquals(metadata.key, resolvePseudoFolder(remaining, snapshot, look).first!!.key)
+        assertEquals(group(remaining).single().pseudo, resolvePseudoFolder(remaining, snapshot, look).first)
         assertEquals(remaining, resolvePseudoFolder(remaining, snapshot, look).second)
         assertEquals(null, resolvePseudoFolder(remaining, metadata, look).first)
     }
