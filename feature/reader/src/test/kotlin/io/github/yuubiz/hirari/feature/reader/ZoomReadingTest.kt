@@ -9,11 +9,14 @@ import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Rotation
+import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.feature.reader.ZoomEvent.FingersDown
 import io.github.yuubiz.hirari.feature.reader.ZoomEvent.FingersUp
 import io.github.yuubiz.hirari.feature.reader.ZoomEvent.SecondFingerTap
 import io.github.yuubiz.hirari.feature.reader.ZoomEvent.SpanChanged
+import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchChangedFrom
+import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchInput
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -136,6 +139,47 @@ class ZoomReadingTest {
         val window = zoomed.tileWindows().getValue(zoomed.current.pages.first())
         assertEquals(1080.0 * 1.953125 / 3000, window.scale, 1e-3)
         assertEquals(PixelSize(1080, 1620), zoomed.preparedSize(), "the strip keeps its pages at the width of the screen")
+    }
+
+    @Test
+    fun aPageShownAtItsOwnSizeIsSharpenedByTilesWhenItsPreparedPageWasDecodedShorter() {
+        val original = readerOf(listOf(SCAN), SINGLE.copy(scaleMode = ScaleMode.Original), PORTRAIT)
+        assertEquals(PixelSize(3000, 4500), original.preparedSize(), "laid out at its own size")
+        val zoomed = original.pinched(1.5625f)
+        assertEquals(ZoomRead.Tiles, zoomed.zoomRead, "the decode of 3000 × 4500 stops at 4096 on the long side")
+        assertEquals(setOf(0), zoomed.tileWindows().keys)
+    }
+
+    @Test
+    fun aPageThatHasAllItsPixelsAtTheScaleModeStaysAsItIsWhenZoomed() {
+        val shape = PageShape.Known(3000, 3500)
+        val zoomed = readerOf(listOf(shape), SINGLE.copy(scaleMode = ScaleMode.Original), PORTRAIT).pinched(1.5625f)
+        assertEquals(ZoomRead.None, zoomed.zoomRead, "its prepared page has every pixel of 3000 × 3500")
+    }
+
+    @Test
+    fun aPageThatCannotHaveTilesWithinTheirShareIsReadWholeAsLargeAsFits() {
+        val zoomed = readerOf(listOf(SCAN), SINGLE, PORTRAIT).pinched(2.25f)
+        assertEquals(ZoomRead.Tiles, zoomed.zoomRead)
+        val untiled = zoomed.copy(zoomReads = zoomed.zoomReads.copy(wholeOnly = setOf(0)))
+        val read = assertIs<ZoomRead.Whole>(untiled.zoomRead)
+        assertEquals(PixelSize(2731, 4096), read.sizes.single(), "as long as one bitmap holds")
+        assertEquals(emptyMap(), untiled.tileWindows())
+        assertEquals(PixelSize(2731, 4096), untiled.preparedSize())
+    }
+
+    @Test
+    fun aPinchInProgressWithdrawsTheZoomedTargetOfThePrefetchPlanUntilTheFingersLift() {
+        val state = readerOf(listOf(SCAN), SINGLE, PORTRAIT)
+        val settled = state.pinched(1.5625f)
+        assertTrue(!settled.prefetchInput().pinching)
+        val pinching = settled.pinched(1.2f, up = false)
+        assertTrue(pinching.prefetchInput().pinching)
+        assertTrue(pinching.prefetchChangedFrom(settled), "fingers moving the zoom stop the read for the last one")
+        assertTrue(!pinching.reduce(ReaderEvent.Zoom(SpanChanged(150f))).prefetchChangedFrom(pinching), "and nothing changes while they move")
+        val up = pinching.reduce(ReaderEvent.Zoom(FingersUp))
+        assertTrue(up.prefetchChangedFrom(pinching), "the read for the new zoom starts when they lift")
+        assertTrue(!up.prefetchInput().pinching)
     }
 
     @Test

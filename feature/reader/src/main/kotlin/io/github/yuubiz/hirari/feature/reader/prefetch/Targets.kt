@@ -17,7 +17,7 @@ fun ReaderState.prefetchTarget(view: PageView): ViewTarget? {
     val geometry = preparedGeometry(view) ?: return null
     val zoomed = (zoomRead as? ZoomRead.Whole)?.takeIf { view == current }
     val sizes = zoomed?.sizes ?: geometry.pages.map { PixelSize(it.width.roundToInt().coerceAtLeast(1), it.height.roundToInt().coerceAtLeast(1)) }
-    return ViewTarget(view, sizes, shownParts(view).map { PageSteps(it, config.rotation, config.adjust.sharpen) })
+    return ViewTarget(view, sizes, shownParts(view).map { PageSteps(it, config.rotation, config.adjust.sharpen) }, zoomed = zoomed != null)
 }
 
 /**
@@ -35,6 +35,17 @@ val ReaderState.shownViews: Set<PageView>
         pull?.neighbor?.let(::add)
     }
 
+/**
+ * Whether the prefetch plan changes from [before] to this state: another layout, view on screen, screen, config,
+ * margins, or zoom reads, or two fingers starting or ending a pinch, which stops the read for the last zoom and lets the
+ * next begin (docs/spec.md section 4.8, ピンチと拡大率).
+ */
+fun ReaderState.prefetchChangedFrom(before: ReaderState?): Boolean =
+    before == null || before.pagination !== pagination || before.shownViews != shownViews ||
+        before.viewport != viewport || before.config != config || before.margins !== margins ||
+        before.zoom.settledFactor != zoom.settledFactor || before.zoomReads != zoomReads ||
+        (before.zoom.pinch?.active == true) != (zoom.pinch?.active == true)
+
 fun ReaderState.prefetchInput(paused: Boolean = false): PrefetchInput {
     val trimmed = config.trim != TrimStrength.Off && !config.vertical
     val margins = margins
@@ -48,5 +59,6 @@ fun ReaderState.prefetchInput(paused: Boolean = false): PrefetchInput {
         paused = paused,
         readsMargins = { trimmed && it !in margins },
         visible = scroll?.visible(strip, stripScreen) ?: pagination.currentIndex..pagination.currentIndex,
+        pinching = zoom.pinch?.active == true,
     )
 }

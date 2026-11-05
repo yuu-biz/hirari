@@ -124,6 +124,20 @@ class TilesTest {
         assertEquals(1, tileLimit(1L shl 20))
     }
 
+    @Test
+    fun theBitmapTilesAreCutFromComesOutOfTheirQuarter() {
+        assertEquals(14, tileLimit(288L shl 20, reservedBytes = 16L shl 20))
+        assertEquals(1, tileLimit(288L shl 20, reservedBytes = 80L shl 20))
+    }
+
+    @Test
+    fun aWholeImageIsCutIntoTilesOnlyWhenItTakesAnEighthOfTheBudgetOrLess() {
+        val budget = 256L shl 20
+        assertTrue(slicedWholeFits(2896, 2896, budget))
+        assertFalse("6000 x 4000 takes 96 MB, three eighths of the budget", slicedWholeFits(6000, 4000, budget))
+        assertTrue(slicedWholeFits(6000, 4000, 768L shl 20))
+    }
+
     private val roomy = 512L shl 20
     private val full = PixelSize(1024 * 8, 1024 * 8)
 

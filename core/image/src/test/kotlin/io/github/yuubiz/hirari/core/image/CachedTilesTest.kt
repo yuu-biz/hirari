@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
 import android.graphics.Bitmap
+import io.github.yuubiz.hirari.core.model.PageResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -10,10 +11,10 @@ class CachedTilesTest {
     private val decoding = ImageDecoding(budgetBytes = 96L shl 20, parallelism = 1)
     private val key = TileKey(8, 0, 0)
 
-    private class Tiles(decoding: ImageDecoding, private val read: (reduction: Int) -> Bitmap?) : CachedTiles(PixelSize(8192, 32768), decoding) {
+    private class Tiles(decoding: ImageDecoding, private val read: (reduction: Int) -> PageResult<Bitmap>) : CachedTiles(PixelSize(8192, 32768), decoding) {
         val reductions = mutableListOf<Int>()
 
-        override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap? {
+        override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): PageResult<Bitmap> {
             reductions += reduction
             return read(reduction)
         }
@@ -23,7 +24,7 @@ class CachedTilesTest {
 
     @Test
     fun runningOutOfMemoryReadsTheTileOnceMoreAtTwiceTheReduction() = runBlocking {
-        val tiles = Tiles(decoding) { reduction -> if (reduction == 1) throw OutOfMemoryError() else null }
+        val tiles = Tiles(decoding) { reduction -> if (reduction == 1) throw OutOfMemoryError() else corrupt }
         val result = tiles.tile(key)
         assertEquals(listOf(1, 2), tiles.reductions)
         assertEquals("the second read's own result", corrupt, result)

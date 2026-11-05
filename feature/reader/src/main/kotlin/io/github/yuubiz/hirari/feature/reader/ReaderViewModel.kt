@@ -84,6 +84,7 @@ import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import io.github.yuubiz.hirari.core.ui.FirstPageTrace
 import io.github.yuubiz.hirari.feature.reader.prefetch.DiskPrefetch
 import io.github.yuubiz.hirari.feature.reader.prefetch.Prefetcher
+import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchChangedFrom
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchDepths
 import io.github.yuubiz.hirari.feature.reader.prefetch.prefetchInput
 import io.github.yuubiz.hirari.feature.reader.prefetch.shownViews
@@ -271,7 +272,19 @@ class ReaderViewModel internal constructor(
         open = ::openTiles,
         close = { source -> services.getCompleted().appScope.launch { source.close() } },
         changed = { tilesDrawn++ },
+        untiled = ::readWholeInstead,
     )
+
+    /**
+     * [page] has no tiles within their share of the budget (docs/spec.md section 3.7), so the zoom reads the pages of
+     * its view whole as large as fits (section 4.8, ピンチと拡大率).
+     */
+    private fun readWholeInstead(page: Int) {
+        val before = state ?: return
+        val after = before.copy(zoomReads = before.zoomReads.copy(wholeOnly = before.zoomReads.wholeOnly + page))
+        state = after
+        changed(before, after)
+    }
 
     /** The tiles of [page] read so far, which draw over its prepared page. */
     fun drawnTiles(page: Int): List<DrawnTile> = pageTiles.drawn(page)
@@ -285,6 +298,7 @@ class ReaderViewModel internal constructor(
             is PageResult.Ready -> when (val image = result.image) {
                 is PreparedImage.Tiled -> TileOpening.Tiled(image.source)
                 is PreparedImage.Whole -> TileOpening.Whole.also { image.bitmap.recycle() }
+                is PreparedImage.Untiled -> TileOpening.Untiled
             }
             is PageResult.Failed -> if (result.retryable) TileOpening.Failed else TileOpening.Whole
             is PageResult.Unsupported -> TileOpening.Whole
@@ -850,12 +864,7 @@ class ReaderViewModel internal constructor(
 
     private fun changed(before: ReaderState?, after: ReaderState) {
         val book = opened ?: return
-        if (before == null || before.pagination !== after.pagination || before.shownViews != after.shownViews ||
-            before.viewport != after.viewport || before.config != after.config || before.margins !== after.margins ||
-            before.zoom.settledFactor != after.zoom.settledFactor
-        ) {
-            book.prefetcher.update(after.prefetchInput(paused = stripShown || !onScreen))
-        }
+        if (after.prefetchChangedFrom(before)) book.prefetcher.update(after.prefetchInput(paused = stripShown || !onScreen))
         book.progress.next(after, Instant.now())?.let(book.services.progress::submit)
         orientation = after.config.orientation
         hideSystemBars = after.config.hideSystemBars
@@ -864,7 +873,7 @@ class ReaderViewModel internal constructor(
             book.overrides.update { it.changedBy(before.config, after.config, book.global) }
         }
         readForLoupe(book.loader, after.loupeSource())
-        if (after.zoom.pinch?.active != true) pageTiles.update(after.tileWindows())
+        if (after.zoom.pinch?.active == true) pageTiles.hold() else pageTiles.update(after.tileWindows())
         prefetchToDisk()
         if (reconnected(before?.connection, after.connection)) {
             book.prefetcher.retryLost()

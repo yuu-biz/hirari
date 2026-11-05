@@ -122,8 +122,8 @@ private suspend fun zoomTileProblems(book: OpenBook, index: Int, target: PixelSi
     val result = book.page(index, target, tiling = Tiling.Always)
     val image = (result as? PageResult.Ready)?.image ?: return listOf("with tiles always gave ${describe(result)}")
     if (image !is PreparedImage.Tiled) {
-        (image as PreparedImage.Whole).bitmap.recycle()
-        return if (type == ImageType.JpegXl) emptyList() else listOf("not tiled always")
+        (image as? PreparedImage.Whole)?.bitmap?.recycle()
+        return if (type == ImageType.JpegXl || image is PreparedImage.Untiled) emptyList() else listOf("not tiled always")
     }
     val tiles = ArrayList<Bitmap>()
     return image.source.use { source ->

@@ -51,8 +51,9 @@ internal abstract class CachedTiles(
     override val size: PixelSize,
     decoding: ImageDecoding,
     private val dispatcher: CoroutineDispatcher = decoding.dispatcher,
+    reservedBytes: Long = 0,
 ) : TileSource {
-    private val maxTiles = tileLimit(decoding.budgetBytes)
+    private val maxTiles = tileLimit(decoding.budgetBytes, reservedBytes = reservedBytes)
     private val cache = object : LinkedHashMap<Held, Bitmap>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Held, Bitmap>) = size > maxTiles
     }
@@ -68,7 +69,11 @@ internal abstract class CachedTiles(
         val result = try {
             decodeWithTimeout(scope, dispatcher) { _ ->
                 retryingOnce { reduction ->
-                    decodeTile(rect, key.sample, reduction)?.let { PageResult.Ready(if (sharpen) it.sharpenedTile() else it) } ?: corrupt
+                    when (val read = decodeTile(rect, key.sample, reduction)) {
+                        is PageResult.Ready -> PageResult.Ready(if (sharpen) read.image.sharpenedTile() else read.image)
+                        is PageResult.Failed -> read
+                        is PageResult.Unsupported -> read
+                    }
                 }
             }
         } catch (_: CancellationException) {
@@ -93,9 +98,10 @@ internal abstract class CachedTiles(
 
     /**
      * The bitmap of [rect], in shown pixels, at 1/[sample] of its size, on the calling thread. A [reduction] of 2
-     * reads it again after memory ran out, at twice the reduction (docs/spec.md section 6.1).
+     * reads it again after memory ran out, at twice the reduction (docs/spec.md section 6.1). Running out of memory
+     * is thrown, so that the read is repeated; any other failure comes back as the result, with its reason.
      */
-    protected abstract fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap?
+    protected abstract fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): PageResult<Bitmap>
 
     override fun close() {
         scope.cancel()
@@ -116,7 +122,7 @@ internal class RegionTiles private constructor(
 ) : CachedTiles(orientation.shown(stored), decoding) {
     private val budgetBytes = decoding.budgetBytes
 
-    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap? {
+    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): PageResult<Bitmap> {
         val source = orientation.toStored(rect, stored)
         val read = planTileRead(PixelSize(source.width, source.height), sample, averagingLimit, budgetBytes, reduction)
         val options = BitmapFactory.Options().apply {
@@ -125,13 +131,13 @@ internal class RegionTiles private constructor(
             inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
         }
         val region = synchronized(decoder) {
-            if (decoder.isRecycled) return null
+            if (decoder.isRecycled) return corrupt
             decoder.decodeRegion(Rect(source.left, source.top, source.right, source.bottom), options)
-        } ?: return null
+        } ?: return corrupt
         val scaled = scaledInSteps(region, null, shrinkToFit(read.output, PixelSize(region.width, region.height)), recycleSource = true, orientation)
-        val matrix = orientation.matrix() ?: return scaled
+        val matrix = orientation.matrix() ?: return PageResult.Ready(scaled)
         return try {
-            Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, matrix, true)
+            PageResult.Ready(Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, matrix, true))
         } finally {
             scaled.recycle()
         }
@@ -167,10 +173,12 @@ internal class RegionTiles private constructor(
 
 /**
  * Tiles cut from one bitmap of the whole image, for the formats `BitmapRegionDecoder` cannot read (docs/spec.md
- * section 3.7). [whole] is already turned and may be smaller than [size] when the budget made it so.
+ * section 3.7). [whole] is already turned and may be smaller than [size] when the budget made it so. It counts with
+ * the tiles against the quarter of the budget they share.
  */
-internal class SlicedTiles(private val whole: Bitmap, size: PixelSize, decoding: ImageDecoding) : CachedTiles(size, decoding) {
-    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap? {
+internal class SlicedTiles(private val whole: Bitmap, size: PixelSize, decoding: ImageDecoding) :
+    CachedTiles(size, decoding, reservedBytes = whole.allocationByteCount.toLong()) {
+    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): PageResult<Bitmap> {
         val across = whole.width / size.width.toDouble()
         val down = whole.height / size.height.toDouble()
         val left = (rect.left * across).toInt().coerceIn(0, whole.width - 1)
@@ -179,8 +187,8 @@ internal class SlicedTiles(private val whole: Bitmap, size: PixelSize, decoding:
         val bottom = (rect.bottom * down).toInt().coerceIn(top + 1, whole.height)
         val output = PixelSize(sampled(rect.width, sample * reduction), sampled(rect.height, sample * reduction))
         return synchronized(whole) {
-            if (whole.isRecycled) return null
-            scaledInSteps(whole, Rect(left, top, right, bottom), output, recycleSource = false)
+            if (whole.isRecycled) return corrupt
+            PageResult.Ready(scaledInSteps(whole, Rect(left, top, right, bottom), output, recycleSource = false))
         }
     }
 

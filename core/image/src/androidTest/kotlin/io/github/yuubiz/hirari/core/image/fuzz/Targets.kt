@@ -137,6 +137,7 @@ internal class Runner(private val decoding: ImageDecoding, private val scratch: 
         when (ready) {
             is PreparedImage.Whole -> ready.bitmap.recycle()
             is PreparedImage.Tiled -> ready.source.close()
+            is PreparedImage.Untiled -> Unit
         }
     }
 

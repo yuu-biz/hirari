@@ -1,7 +1,9 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.image.DecodeLimits
+import io.github.yuubiz.hirari.core.image.DecodePlan
 import io.github.yuubiz.hirari.core.image.PixelSize
+import io.github.yuubiz.hirari.core.image.planDecode
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Rotation
@@ -18,9 +20,10 @@ private const val SAME_PX = 0.5
 /**
  * What reading pages again for a zoom may take (docs/spec.md section 4.8, ピンチと拡大率). [budgetBytes] is the memory
  * budget of section 5.3. [drawn] pages are drawn from a document, as PDF pages are, so they have as many pixels as the
- * screen asks for, where an image has no more than its own.
+ * screen asks for, where an image has no more than its own. [wholeOnly] are the pages that turned out to have no tiles
+ * within the share they may take (section 3.7), so a zoom reads them whole as large as fits.
  */
-data class ZoomReads(val budgetBytes: Long = 256 * MB, val drawn: Boolean = false) {
+data class ZoomReads(val budgetBytes: Long = 256 * MB, val drawn: Boolean = false, val wholeOnly: Set<Int> = emptySet()) {
     /** What the zoomed pages of one view may take: a quarter of the budget, as the tiles of a page do (section 3.7). */
     val shareBytes: Long get() = budgetBytes / 4
 }
@@ -65,11 +68,12 @@ internal fun ReaderState.planZoomRead(): ZoomRead {
     val prepared = preparedGeometry(view) ?: return ZoomRead.None
     val parts = shownParts(view)
     val wanted = view.pages.indices.map { fullSize(view.pages[it], zoomed.pages[it], parts[it]) }
-    val have = view.pages.indices.map { fullSize(view.pages[it], prepared.pages[it], parts[it]) }
+    val have = view.pages.indices.map { decodedSize(view.pages[it], prepared.pages[it], parts[it]) }
     val longest = wanted.maxOf { it.longer }
     val bytes = wanted.sumOf { it.bytes }
     val fits = longest <= DecodeLimits.MAX_BITMAP_SIDE && bytes <= zoomReads.shareBytes
-    if (!fits && config.rotation == Rotation.None) {
+    val tileable = config.rotation == Rotation.None && view.pages.none { it in zoomReads.wholeOnly }
+    if (!fits && tileable) {
         return if (wanted.indices.any { wanted[it].sharperThan(have[it]) }) ZoomRead.Tiles else ZoomRead.None
     }
     val k = if (fits) 1.0 else min(DecodeLimits.MAX_BITMAP_SIDE / longest, sqrt(zoomReads.shareBytes / bytes))
@@ -82,9 +86,33 @@ internal fun ReaderState.planZoomRead(): ZoomRead {
 private fun ReaderState.fullSize(page: Int, rect: Rect, part: PagePart): FullSize {
     val width = rect.width.toDouble() / part.width
     val height = rect.height.toDouble() / part.height
-    val shape = pagination.shapes[page] as PageShape.Known
-    return if (zoomReads.drawn) FullSize(width, height) else FullSize(min(width, shape.width.toDouble()), min(height, shape.height.toDouble()))
+    if (zoomReads.drawn) return FullSize(width, height)
+    val shape = turned(page)
+    return FullSize(min(width, shape.width.toDouble()), min(height, shape.height.toDouble()))
 }
+
+/**
+ * The pixels the prepared page of [page] really has, where [fullSize] has the pixels it is laid out at: the image
+ * decoded for that size is no longer than one bitmap holds and, with the pages around it, fits the budget
+ * (docs/spec.md section 3.7), and a drawn page takes no more than half the budget (section 3.9).
+ */
+private fun ReaderState.decodedSize(page: Int, rect: Rect, part: PagePart): FullSize {
+    val laid = FullSize(rect.width.toDouble() / part.width, rect.height.toDouble() / part.height)
+    if (zoomReads.drawn) {
+        val half = zoomReads.budgetBytes / 2.0
+        return if (laid.bytes > half) laid * sqrt(half / laid.bytes) else laid
+    }
+    val shape = turned(page)
+    val target = PixelSize(laid.width.roundToInt().coerceAtLeast(1), laid.height.roundToInt().coerceAtLeast(1))
+    val plan = planDecode(shape.width, shape.height, target, averagingLimit = Int.MAX_VALUE, bytesPerPixel = 4, zoomReads.budgetBytes)
+    return when (plan) {
+        is DecodePlan.Decode -> FullSize(plan.output.width.toDouble(), plan.output.height.toDouble())
+        is DecodePlan.Refuse -> fullSize(page, rect, part)
+    }
+}
+
+/** The shape of [page] as shown, which the layout holds turned already when the rotation turns the page. */
+private fun ReaderState.turned(page: Int): PageShape.Known = pagination.shapes[page] as PageShape.Known
 
 /**
  * Whether a page of [shape] that fills [zoomedWidth] pixels across in 縦に連続 shows more of its pixels than its

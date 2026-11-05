@@ -70,16 +70,22 @@ internal class PdfDocument private constructor(
 
     /** The page at [index] as tiles drawn with a matrix (docs/spec.md section 3.9). Runs on [dispatcher]'s thread. */
     fun tiles(index: Int, decoding: ImageDecoding): PageResult<PreparedImage> = when (val shape = shape(index)) {
-        is PageResult.Ready -> PageResult.Ready(PreparedImage.Tiled(PdfTiles(this, index, shape.image, decoding), shape.image))
+        is PageResult.Ready -> PageResult.Ready(
+            PreparedImage.Tiled(
+                PdfTiles(shape.image, decoding, dispatcher) { rect, sample -> renderTile(index, rect, sample, PDF_TILE_PIXELS_PER_POINT) },
+                shape.image,
+            ),
+        )
         is PageResult.Failed -> shape
         is PageResult.Unsupported -> shape
     }
 
     /**
      * The part [rect] of the page at [index], planned as an image of [pixelsPerPoint] pixels a point, drawn on white
-     * at 1/[sample] of that. Runs on [dispatcher]'s thread.
+     * at 1/[sample] of that. Running out of memory is thrown, so that the caller reads the tile once more at a
+     * smaller size (docs/spec.md sections 3.9 and 6.1). Runs on [dispatcher]'s thread.
      */
-    fun renderTile(index: Int, rect: PixelRect, sample: Int, pixelsPerPoint: Int): PageResult<Bitmap> = input.pageOperation {
+    fun renderTile(index: Int, rect: PixelRect, sample: Int, pixelsPerPoint: Int): PageResult<Bitmap> = input.pageOperation(rethrowOutOfMemory = true) {
         renderer.openPage(index).use { page ->
             val scale = pixelsPerPoint.toFloat() / sample
             val matrix = Matrix().apply {
@@ -186,14 +192,16 @@ internal class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorC
     }
 
     /** A renderer may return normally after a proxy read failed, so check both return and exception paths. */
-    fun <T> pageOperation(operation: () -> PageResult<T>): PageResult<T> {
+    fun <T> pageOperation(rethrowOutOfMemory: Boolean = false, operation: () -> PageResult<T>): PageResult<T> {
         beginOperation()
         val result = try {
             operation()
         } catch (e: CancellationException) {
             throw e
-        } catch (_: OutOfMemoryError) {
-            return operationFailure() ?: readError
+        } catch (e: OutOfMemoryError) {
+            operationFailure()?.let { return it }
+            if (rethrowOutOfMemory) throw e
+            return readError
         } catch (e: Exception) {
             return pageFailure(e)
         }
@@ -242,13 +250,18 @@ internal class ProxyReads(private val source: ByteSource) : ProxyFileDescriptorC
 internal const val PDF_TILE_PIXELS_PER_POINT: Int = 64
 
 /**
- * The tiles of the page at [index] of [document], planned as an image of [PDF_TILE_PIXELS_PER_POINT] pixels a point
- * of [shape], each drawn for the part it covers on the document's thread. Closing them leaves the document open.
+ * The tiles of a PDF page of [shape], planned as an image of [PDF_TILE_PIXELS_PER_POINT] pixels a point, each drawn
+ * for the part it covers by [render] on [dispatcher], the document's thread. [render] throws when memory runs out and
+ * otherwise gives the failure it had, so that a lost connection stays retryable. Closing the tiles leaves the
+ * document open.
  */
-internal class PdfTiles(private val document: PdfDocument, private val index: Int, shape: PageShape.Known, decoding: ImageDecoding) :
-    CachedTiles(PixelSize(shape.width * PDF_TILE_PIXELS_PER_POINT, shape.height * PDF_TILE_PIXELS_PER_POINT), decoding, document.dispatcher) {
-    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap? =
-        (document.renderTile(index, rect, sample * reduction, PDF_TILE_PIXELS_PER_POINT) as? PageResult.Ready)?.image
+internal class PdfTiles(
+    shape: PageShape.Known,
+    decoding: ImageDecoding,
+    dispatcher: CoroutineDispatcher,
+    private val render: (rect: PixelRect, sample: Int) -> PageResult<Bitmap>,
+) : CachedTiles(PixelSize(shape.width * PDF_TILE_PIXELS_PER_POINT, shape.height * PDF_TILE_PIXELS_PER_POINT), decoding, dispatcher) {
+    override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): PageResult<Bitmap> = render(rect, sample * reduction)
 
     override fun release() = Unit
 }

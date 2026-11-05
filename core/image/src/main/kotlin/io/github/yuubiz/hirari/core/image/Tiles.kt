@@ -29,9 +29,20 @@ data class TilePlan(val sample: Int, val visible: List<TileKey>, val margin: Lis
 /** The side of a tile in output pixels (docs/spec.md section 3.7, 要検証). */
 const val TILE_SIDE: Int = 1024
 
-/** The tiles a tile source holds at most: a quarter of [budgetBytes], at 4 bytes a pixel. */
-fun tileLimit(budgetBytes: Long, tileSide: Int = TILE_SIDE): Int =
-    (budgetBytes / 4 / (tileSide.toLong() * tileSide * 4)).toInt().coerceAtLeast(1)
+/**
+ * The tiles a tile source holds at most: a quarter of [budgetBytes] less the [reservedBytes] the source keeps beside
+ * them, at 4 bytes a pixel.
+ */
+fun tileLimit(budgetBytes: Long, tileSide: Int = TILE_SIDE, reservedBytes: Long = 0): Int =
+    ((budgetBytes / 4 - reservedBytes) / (tileSide.toLong() * tileSide * 4)).toInt().coerceAtLeast(1)
+
+/**
+ * Whether an image of [width] x [height] pixels may be cut into tiles from one bitmap of the whole image, which the
+ * tiles are then drawn from for as long as they show (docs/spec.md section 3.7). That bitmap takes up to an eighth
+ * of [budgetBytes], half of the quarter that the tiles of a page share; the tiles it leaves room for take the rest.
+ */
+fun slicedWholeFits(width: Int, height: Int, budgetBytes: Long): Boolean =
+    width.toLong() * height * 4 <= budgetBytes / 8
 
 /** The sample size to read tiles at when the screen shows [scale] screen pixels per image pixel. */
 fun tileSample(scale: Double): Int {

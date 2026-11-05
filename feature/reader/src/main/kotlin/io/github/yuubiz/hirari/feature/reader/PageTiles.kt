@@ -98,6 +98,12 @@ internal sealed interface TileOpening {
     /** The page has no tiles, or cannot have them, so its prepared page alone shows. */
     data object Whole : TileOpening
 
+    /**
+     * The page would have tiles, but not within the share of the budget they may take (docs/spec.md section 3.7), so a
+     * zoom reads it whole as large as fits instead.
+     */
+    data object Untiled : TileOpening
+
     /** The read failed in a way that may pass, as a lost connection does. */
     data object Failed : TileOpening
 }
@@ -115,6 +121,7 @@ internal class PageTiles(
     private val open: suspend (page: Int) -> TileOpening,
     private val close: (TileSource) -> Unit,
     private val changed: () -> Unit,
+    private val untiled: (page: Int) -> Unit = {},
 ) {
     private class Held {
         var source: TileSource? = null
@@ -133,8 +140,28 @@ internal class PageTiles(
 
     private var windows: Map<Int, TileWindow> = emptyMap()
 
+    /** Two fingers are changing the zoom, so what was being read for the last one stopped. */
+    private var holding = false
+
+    /**
+     * Stops every read for the zoom that was settled, and uses none of their results, while a pinch changes the zoom;
+     * the tiles already read stay, stretched (docs/spec.md section 4.8, ピンチと拡大率). The next [update] reads for
+     * the zoom that settles.
+     */
+    fun hold() {
+        if (holding) return
+        holding = true
+        for (entry in held.values) {
+            entry.opening?.cancel()
+            entry.opening = null
+            entry.reading.values.forEach { it.cancel() }
+            entry.reading.clear()
+        }
+    }
+
     fun update(next: Map<Int, TileWindow>) {
-        if (next == windows) return
+        if (next == windows && !holding) return
+        holding = false
         windows = next
         for (page in held.keys - next.keys) drop(page)
         fill()
@@ -187,6 +214,11 @@ internal class PageTiles(
             TileOpening.Whole -> {
                 whole += page
                 held.remove(page)
+            }
+            TileOpening.Untiled -> {
+                whole += page
+                held.remove(page)
+                untiled(page)
             }
             TileOpening.Failed -> entry.failed = true
         }

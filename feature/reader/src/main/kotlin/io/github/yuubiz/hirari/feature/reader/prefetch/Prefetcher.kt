@@ -41,9 +41,16 @@ data class PageSteps(val part: PagePart = PagePart.Whole, val rotation: Rotation
 /**
  * The pixel size of each page of [view] in reading order, as shown, and the [steps] that make each. A view
  * prepared for other sizes or steps, before the screen turned or the scale mode, the rotation, or the trim
- * changed, is stale.
+ * changed, is stale. A [zoomed] target is the view read again at the resolution of a settled zoom (docs/spec.md
+ * section 4.8, ピンチと拡大率): an addition to a view that is prepared already, which never takes its place unless it
+ * succeeds.
  */
-data class ViewTarget(val view: PageView, val sizes: List<PixelSize>, val steps: List<PageSteps> = sizes.map { PageSteps() }) {
+data class ViewTarget(
+    val view: PageView,
+    val sizes: List<PixelSize>,
+    val steps: List<PageSteps> = sizes.map { PageSteps() },
+    val zoomed: Boolean = false,
+) {
     val bytes: Long get() = sizes.sumOf { it.width.toLong() * it.height * 4 }
 }
 
@@ -101,6 +108,8 @@ class PrefetchInput(
     val readsMargins: (Int) -> Boolean = { false },
     /** The views on screen; more than [current] only in 縦に連続. */
     val visible: IntRange = current..current,
+    /** Two fingers are changing the zoom: the view read again for the last zoom stops, and the next starts when they lift. */
+    val pinching: Boolean = false,
 )
 
 /**
@@ -133,6 +142,13 @@ class Prefetcher<R, T>(
     private val running = HashMap<Any, Job>()
     private val failures = HashMap<Int, PageResult<Nothing>>()
     private val failedShapes = HashSet<Int>()
+
+    /**
+     * The zoomed target a view failed to be read again at. It is not read again at that target until the connection
+     * comes back or a retry, so a lost connection does not make every update repeat a read that waits out its
+     * timeout. The view stays as it was prepared, and another zoom is another target.
+     */
+    private val failedZooms = HashMap<PageView, ViewTarget>()
 
     /**
      * Pages whose failed shape is read again. The reader lays them out by [FAILED_PAGE_SHAPE] until then, so the
@@ -199,7 +215,10 @@ class Prefetcher<R, T>(
         if (trimmedOn != input.views[input.current]) trimmedOn = null
         val resident = Resident(
             views = cache.filter { (view, prepared) ->
-                prepared.target == input.targets(view) && view.pages.none { it !in failures && input.readsMargins(it) }
+                val target = input.targets(view)
+                val kept = prepared.target == target ||
+                    target != null && target.zoomed && (input.pinching || failedZooms[view] == target)
+                kept && view.pages.none { it !in failures && input.readsMargins(it) }
             }.keys,
         )
         val plan = planPrefetch(
@@ -243,7 +262,7 @@ class Prefetcher<R, T>(
             if (!firstViewDrawn && pages.any { it !in early }) continue
             when (job) {
                 is PrefetchJob.ReadShape -> wanted[job] = { launchShape(job.page) }
-                is PrefetchJob.PrepareView -> input.targets(job.view)?.let { target ->
+                is PrefetchJob.PrepareView -> input.targets(job.view)?.takeUnless { it.zoomed && input.pinching }?.let { target ->
                     val preparation = Preparation(target, job.view.pages.map(input.readsMargins))
                     wanted[preparation] = { launchPrepare(preparation) }
                 }
@@ -296,14 +315,17 @@ class Prefetcher<R, T>(
 
     /** Reads [page] again: its shape if that failed, then the views that hold it. */
     fun retry(page: Int) {
-        if (page !in failures) return
+        if (page !in failures && failedZooms.keys.none { page in it.pages }) return
         scope.launch {
-            running.remove(PrefetchJob.ReadRaw(page))?.cancel()
-            recovering.remove(page)?.cancel()
-            raws.remove(page)
-            loader.invalidate(page)
-            forget(page)
-            listener.onChanged()
+            failedZooms.keys.removeAll { page in it.pages }
+            if (page in failures) {
+                running.remove(PrefetchJob.ReadRaw(page))?.cancel()
+                recovering.remove(page)?.cancel()
+                raws.remove(page)
+                loader.invalidate(page)
+                forget(page)
+                listener.onChanged()
+            }
             last?.let(::update)
         }
     }
@@ -314,7 +336,9 @@ class Prefetcher<R, T>(
      */
     fun retryLost() {
         val lost = failures.filterValues { it is PageResult.Failed && it.reason == FailureReason.ConnectionLost && it.retryable }.keys
-        if (lost.isEmpty()) return
+        val zooms = failedZooms.isNotEmpty()
+        failedZooms.clear()
+        if (lost.isEmpty() && !zooms) return
         lost.toList().forEach(::forget)
         listener.onChanged()
         last?.let(::update)
@@ -341,6 +365,7 @@ class Prefetcher<R, T>(
     }
 
     private fun evict(view: PageView) {
+        failedZooms.remove(view)
         cache.remove(view)?.pages?.forEach { if (it is PreparedPage.Image) release(it.image) }
     }
 
@@ -416,7 +441,7 @@ class Prefetcher<R, T>(
         try {
             coroutineScope {
                 target.view.pages.forEachIndexed { i, page ->
-                    launch { pages[i] = preparePage(page, target.sizes[i], target.steps[i], preparation.scans[i]) { margins[i] = it } }
+                    launch { pages[i] = preparePage(page, target.sizes[i], target.steps[i], preparation.scans[i], target.zoomed) { margins[i] = it } }
                 }
             }
         } catch (e: CancellationException) {
@@ -424,6 +449,12 @@ class Prefetcher<R, T>(
             throw e
         }
         running.remove(preparation)
+        if (target.zoomed && cache.containsKey(target.view) && pages.any { it is PreparedPage.Error }) {
+            pages.forEach { if (it is PreparedPage.Image) release(it.image) }
+            failedZooms[target.view] = target
+            listener.onChanged()
+            return@launch
+        }
         cache.put(target.view, PreparedView(target, pages.map { it!! }))?.let { old ->
             old.pages.forEach { if (it is PreparedPage.Image) release(it.image) }
         }
@@ -432,7 +463,14 @@ class Prefetcher<R, T>(
         margins.forEachIndexed { i, scan -> if (scan != null) listener.onMargins(target.view.pages[i], scan) }
     }
 
-    private suspend fun preparePage(page: Int, size: PixelSize, steps: PageSteps, readMargins: Boolean, read: (MarginScan) -> Unit): PreparedPage<T> {
+    private suspend fun preparePage(
+        page: Int,
+        size: PixelSize,
+        steps: PageSteps,
+        readMargins: Boolean,
+        zoomed: Boolean,
+        read: (MarginScan) -> Unit,
+    ): PreparedPage<T> {
         val made = steps.copy(part = PagePart.Whole)
         val raw = rawFor(page)
         failures[page]?.let { if (page in failedShapes || page in failedRaws || failedSteps[page] == made) return PreparedPage.Error(it) }
@@ -450,8 +488,8 @@ class Prefetcher<R, T>(
                 failures.remove(page)
                 failedSteps.remove(page)
             }
-            is PageResult.Failed -> failed(page, made, result)
-            is PageResult.Unsupported -> failed(page, made, result)
+            is PageResult.Failed -> if (zoomed) PreparedPage.Error(result) else failed(page, made, result)
+            is PageResult.Unsupported -> if (zoomed) PreparedPage.Error(result) else failed(page, made, result)
         }
     }
 

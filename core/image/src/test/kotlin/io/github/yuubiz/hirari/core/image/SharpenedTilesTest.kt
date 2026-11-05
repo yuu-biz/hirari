@@ -25,9 +25,9 @@ class SharpenedTilesTest {
     private class Tiles(decoding: ImageDecoding) : CachedTiles(PixelSize(8192, 32768), decoding) {
         var decodes = 0
 
-        override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): Bitmap {
+        override fun decodeTile(rect: PixelRect, sample: Int, reduction: Int): PageResult<Bitmap> {
             decodes++
-            return Bitmap.createBitmap(EDGE, SIDE, SIDE, Bitmap.Config.ARGB_8888)
+            return PageResult.Ready(Bitmap.createBitmap(EDGE, SIDE, SIDE, Bitmap.Config.ARGB_8888))
         }
 
         override fun release() = Unit

@@ -98,6 +98,9 @@ private class FakeLoader(
     val marginReads = mutableMapOf<Int, Int>()
     val prepares = mutableMapOf<Int, Int>()
 
+    /** Fails a page at the sizes this names, the way a lost connection fails a read for a zoom. */
+    var failWhen: (page: Int, size: PixelSize) -> PageResult<Nothing>? = { _, _ -> null }
+
     override suspend fun prepare(page: Int, size: PixelSize, steps: PageSteps, raw: String?, readMargins: Boolean): PageResult<MadePage<String>> {
         preparedFrom[page] = raw
         try {
@@ -110,6 +113,7 @@ private class FakeLoader(
         }
         prepares[page] = (prepares[page] ?: 0) + 1
         failing[page]?.let { return it }
+        failWhen(page, size)?.let { return it }
         if (readMargins) marginReads[page] = (marginReads[page] ?: 0) + 1
         return PageResult.Ready(MadePage("$page@${size.width}x${size.height}", margins[page]?.takeIf { readMargins }))
     }
@@ -144,21 +148,27 @@ private class Reader(
     fun apply(event: ReaderEvent) {
         val before = state
         state = state.reduce(event)
-        val same = before.pagination === state.pagination && before.shownViews == state.shownViews &&
-            before.viewport == state.viewport && before.config == state.config && before.margins === state.margins &&
-            before.zoom.settledFactor == state.zoom.settledFactor
-        if (same) return
+        if (!state.prefetchChangedFrom(before)) return
         val input = state.prefetchInput()
-        prefetcher.update(PrefetchInput(input.views, input.current, input.shapes, input.travel, input.targets, input.shown + alsoShown, readsMargins = input.readsMargins))
+        prefetcher.update(
+            PrefetchInput(input.views, input.current, input.shapes, input.travel, input.targets, input.shown + alsoShown, readsMargins = input.readsMargins, pinching = input.pinching),
+        )
     }
 
     /** A pinch that grows the span by [ratio] once it starts, and lets go. */
     fun pinch(ratio: Float) {
+        pinching(ratio)
+        lift()
+    }
+
+    /** Two fingers that have changed the zoom by [ratio] and are still down. */
+    fun pinching(ratio: Float) {
         apply(ReaderEvent.Zoom(ZoomEvent.FingersDown(100f)))
         apply(ReaderEvent.Zoom(ZoomEvent.SpanChanged(120f)))
         apply(ReaderEvent.Zoom(ZoomEvent.SpanChanged(120f * ratio)))
-        apply(ReaderEvent.Zoom(ZoomEvent.FingersUp))
     }
+
+    fun lift() = apply(ReaderEvent.Zoom(ZoomEvent.FingersUp))
 
     fun turn(turn: Turn) {
         apply(ReaderEvent.Act(ReaderAction.TurnView(turn), 0))
@@ -219,6 +229,73 @@ class PrefetcherTest {
         assertEquals(2, loader.prepares[0], "the first zoom was never made")
         assertEquals(listOf("0@1080x1620"), reader.released)
         assertEquals(PreparedPage.Image("1@1080x1620"), reader.prefetcher[PageView.One(1)]!!.pages.single(), "the next view stays at the scale mode")
+    }
+
+    @Test
+    fun aZoomThatFailsToReadLeavesThePreparedPageReadableAndTheScaleModeUntouched() = runTest {
+        val scan = PageShape.Known(3000, 4500)
+        val loader = FakeLoader(shapes = (0 until 3).associateWith { PageResult.Ready(scan) }.toMutableMap())
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        val first = PageView.One(0)
+        val before = reader.prefetcher[first]!!
+        loader.failWhen = { _, size -> if (size.width > 1080) PageResult.Failed(FailureReason.ConnectionLost, retryable = true) else null }
+        reader.pinch(1.5625f)
+        advanceUntilIdle()
+        assertTrue(reader.prefetcher[first] === before, "the page that was readable still is")
+        assertEquals(emptyList(), reader.released)
+        assertEquals(emptyMap(), reader.prefetcher.failedPages)
+        val reads = loader.prepares[0]
+        reader.prefetcher.update(reader.state.prefetchInput())
+        advanceUntilIdle()
+        assertEquals(reads, loader.prepares[0], "the failed zoom is not read again by every plan")
+        reader.pinch(0.4f)
+        advanceUntilIdle()
+        assertEquals(1f, reader.state.zoom.factor)
+        assertEquals(PreparedPage.Image("0@1080x1620"), reader.prefetcher[first]!!.pages.single(), "back at the scale mode the page is not an error")
+        assertEquals(reads, loader.prepares[0])
+    }
+
+    @Test
+    fun aZoomThatFailedIsReadAgainWhenTheConnectionComesBack() = runTest {
+        val scan = PageShape.Known(3000, 4500)
+        val loader = FakeLoader(shapes = (0 until 3).associateWith { PageResult.Ready(scan) }.toMutableMap())
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        loader.failWhen = { _, size -> if (size.width > 1080) PageResult.Failed(FailureReason.ConnectionLost, retryable = true) else null }
+        reader.pinch(1.5625f)
+        advanceUntilIdle()
+        assertEquals(PreparedPage.Image("0@1080x1620"), reader.prefetcher[PageView.One(0)]!!.pages.single())
+        loader.failWhen = { _, _ -> null }
+        reader.prefetcher.retryLost()
+        advanceUntilIdle()
+        assertEquals(PreparedPage.Image("0@2109x3164"), reader.prefetcher[PageView.One(0)]!!.pages.single())
+    }
+
+    @Test
+    fun aPinchStopsTheReadForTheLastZoomAndItsResultIsNotUsed() = runTest {
+        val scan = PageShape.Known(3000, 4500)
+        val loader = FakeLoader(shapes = (0 until 3).associateWith { PageResult.Ready(scan) }.toMutableMap())
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        val first = PageView.One(0)
+        val gate = CompletableDeferred<Unit>()
+        loader.pageGates[0] = gate
+        reader.pinch(1.5625f)
+        advanceUntilIdle()
+        assertEquals(emptyList(), loader.cancelled, "the read for the zoom is under way")
+        reader.pinching(0.9f)
+        advanceUntilIdle()
+        assertTrue(0 in loader.cancelled, "the second pinch stops it at once, with the fingers still down")
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(PreparedPage.Image("0@1080x1620"), reader.prefetcher[first]!!.pages.single(), "its result was not used")
+        assertEquals(1, loader.prepares[0] ?: 0, "and nothing new starts while the fingers are down")
+        loader.pageGates.clear()
+        reader.lift()
+        advanceUntilIdle()
+        assertEquals(reader.state.prefetchTarget(first), reader.prefetcher[first]!!.target)
+        assertTrue(reader.prefetcher[first]!!.target.zoomed)
     }
 
     @Test

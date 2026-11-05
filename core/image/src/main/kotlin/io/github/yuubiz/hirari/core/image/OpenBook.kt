@@ -280,6 +280,7 @@ internal fun releaseUnwanted(image: Any?) {
         is Bitmap -> image.recycle()
         is PreparedImage.Whole -> image.bitmap.recycle()
         is PreparedImage.Tiled -> image.source.close()
+        is PreparedImage.Untiled -> Unit
     }
 }
 

@@ -70,7 +70,8 @@ private fun header(bytes: ByteArray): PageShape.Known {
 
 /**
  * The image as tiles: read from [bytes] region by region when the platform can, and otherwise cut from one
- * bitmap of the whole image, scaled down only as far as the budget needs (docs/spec.md section 3.7).
+ * bitmap of the whole image when that fits [slicedWholeFits]. When it does not, the image is [PreparedImage.Untiled]
+ * (docs/spec.md section 3.7).
  */
 private fun tiled(
     bytes: ByteArray,
@@ -83,6 +84,7 @@ private fun tiled(
     if (codec.regions) {
         RegionTiles.open(bytes, codec.averagingLimit, decoding)?.let { return PageResult.Ready(PreparedImage.Tiled(it, PageShape.Known(it.size.width, it.size.height))) }
     }
+    if (!slicedWholeFits(shape.width, shape.height, decoding.budgetBytes)) return PageResult.Ready(PreparedImage.Untiled(shape))
     val full = PixelSize(shape.width, shape.height)
     return when (
         val whole = retryingOnce { extraSample ->

@@ -15,10 +15,12 @@ import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.PageShape
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rotation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,12 +40,14 @@ private class FakeTiles(override val size: PixelSize) : TileSource {
     val sharpened = mutableListOf<TileKey>()
     var closed = false
     var failing = false
+    var gate: CompletableDeferred<Unit>? = null
 
     override fun plan(viewport: PixelRect, scale: Double): TilePlan = planTiles(size, viewport, scale, maxTiles = 6)
 
     /** A sharpened tile is 5 wide, so a test can tell it from a plain one. */
     override suspend fun tile(key: TileKey, sharpen: Boolean): PageResult<Bitmap> {
         if (sharpen) sharpened += key else asked += key
+        gate?.await()
         if (failing) return PageResult.Failed(FailureReason.ConnectionLost, retryable = true)
         return PageResult.Ready(Bitmap.createBitmap(if (sharpen) 5 else 4, 4, Bitmap.Config.ARGB_8888))
     }
@@ -125,6 +129,66 @@ class PageTilesTest {
         assertEquals(plan.all.toSet(), fine.asked.toSet())
         assertEquals(plan.all.size, tiles.drawn(0).size)
         assertTrue(tiles.drawn(0).all { it.of == fine.size })
+    }
+
+    @Test
+    fun aPinchStopsTheReadsInFlightAndNoneOfTheirResultsIsUsedUntilTheZoomSettles() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val sources = HashMap<Int, FakeTiles>()
+        val tiles = PageTiles(
+            CoroutineScope(StandardTestDispatcher(testScheduler)),
+            open = { page -> TileOpening.Tiled(sources.getOrPut(page) { FakeTiles(LONG_SIZE).also { it.gate = gate } }) },
+            close = {},
+            changed = {},
+        )
+        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35, LONG_SIZE)
+        tiles.update(mapOf(0 to window))
+        runCurrent()
+        val source = sources.getValue(0)
+        assertTrue(source.asked.isNotEmpty(), "the tiles of the settled zoom are being read")
+
+        tiles.hold()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(emptyList(), tiles.drawn(0), "a tile that comes in during the pinch is not used")
+
+        tiles.update(mapOf(0 to window))
+        advanceUntilIdle()
+        assertEquals(source.plan(window.shown, window.scale).all.size, tiles.drawn(0).size, "the same window reads again once the zoom settles")
+    }
+
+    @Test
+    fun aPinchKeepsTheTilesAlreadyRead() = runTest {
+        val sources = HashMap<Int, FakeTiles>()
+        val tiles = tiles(sources)
+        val window = TileWindow(PixelRect(0, 0, 800, 1422), 1.35, LONG_SIZE)
+        tiles.update(mapOf(0 to window))
+        advanceUntilIdle()
+        val read = tiles.drawn(0).size
+        tiles.hold()
+        assertEquals(read, tiles.drawn(0).size)
+        tiles.update(emptyMap())
+        assertTrue(sources.getValue(0).closed, "a zoom back to the scale mode drops them even when the window was the same before")
+    }
+
+    @Test
+    fun aPageWithNoTilesWithinTheirShareIsReportedSoThatItIsReadWholeInstead() = runTest {
+        val reported = mutableListOf<Int>()
+        var opened = 0
+        val tiles = PageTiles(
+            CoroutineScope(StandardTestDispatcher(testScheduler)),
+            open = { opened++; TileOpening.Untiled },
+            close = {},
+            changed = {},
+            untiled = { reported += it },
+        )
+        val window = TileWindow(PixelRect(0, 0, 10, 10), 1.0, PixelSize(10, 20))
+        tiles.update(mapOf(0 to window))
+        advanceUntilIdle()
+        tiles.update(mapOf(0 to window.copy(shown = PixelRect(0, 5, 10, 15))))
+        advanceUntilIdle()
+        assertEquals(listOf(0), reported)
+        assertEquals(1, opened)
     }
 
     @Test

@@ -17,6 +17,13 @@ sealed interface PreparedImage {
 
     /** Whoever holds it closes [source]. */
     data class Tiled(val source: TileSource, override val shape: PageShape.Known) : PreparedImage
+
+    /**
+     * What a read for tiles gives when the page cannot have them within the share of the budget they may take
+     * (docs/spec.md section 3.7): its format cannot be read by region, and cutting the whole image would take too
+     * much. Holds nothing; the caller reads the page whole instead.
+     */
+    data class Untiled(override val shape: PageShape.Known) : PreparedImage
 }
 
 /** Whether a page may come as tiles. Callers that draw only whole bitmaps keep [Never]. */
