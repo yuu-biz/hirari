@@ -34,6 +34,7 @@ import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.PasswordUnreadableException
 import io.github.yuubiz.hirari.core.text.GlyphMetrics
 import io.github.yuubiz.hirari.core.text.PaintGlyphMetrics
+import io.github.yuubiz.hirari.core.text.resolvePicturePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -99,6 +100,7 @@ internal class TextSources(
     val locations: LocationRepository,
     val smb: SmbFiles,
     val copyDir: File,
+    val pictureBudget: Int = pictureBudgetBytes(),
     val charsets: suspend (archiveId: BookId) -> EntryCharsets,
 )
 
@@ -114,7 +116,7 @@ internal fun opener(ref: TextBookRef, sources: TextSources): TextOpener = TextOp
                 is TextBookRef.InLocation -> openInLocation(sources, ref)
                 is TextBookRef.ArchiveEntry -> {
                     val charsets = sources.charsets(ref.archiveId)
-                    openEntry(sources.archive(ref.archive), ref.archiveId, ref.entryIndex, charsets, ref.archive)
+                    openEntry(sources.archive(ref.archive), ref.archiveId, ref.entryIndex, charsets, ref.archive, sources.pictureBudget)
                 }
             }
         }
@@ -125,15 +127,33 @@ internal fun opener(ref: TextBookRef, sources: TextSources): TextOpener = TextOp
 private suspend fun openInLocation(sources: TextSources, ref: TextBookRef.InLocation): TextOpenResult {
     val path = normalizePath(ref.path)
     val source = BookSource.InLocation(ref.location, path)
+    val pictures = PictureReader { requested ->
+        val resolved = resolvePicturePath("", requested) ?: return@PictureReader null
+        withContext(Dispatchers.IO) {
+            when (val place = sources.locations.get(ref.location)) {
+                null -> null
+                is LibraryLocation.SafTree -> {
+                    if (!place.permissionHeld) return@withContext null
+                    val tree = Uri.parse(place.treeUri.value)
+                    val document = sources.resolver.locateDocument(tree, resolved) ?: return@withContext null
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, document)
+                    val size = sources.resolver.documentInfo(uri)?.size
+                    if (size != null && size > sources.pictureBudget) return@withContext null
+                    sources.resolver.openInputStream(uri)?.use { readCapped(it, sources.pictureBudget) }
+                }
+                is LibraryLocation.SmbShare -> sources.smb.open(place, resolved).use { readPicture(it, sources.pictureBudget) }
+            }
+        }
+    }
     return when (val place = sources.locations.get(ref.location)) {
         null -> TextOpenResult.Failed(TextFailure.NotFound)
         is LibraryLocation.SafTree -> {
             if (!place.permissionHeld) return TextOpenResult.Failed(TextFailure.NoPermission)
             val tree = Uri.parse(place.treeUri.value)
             val documentId = ref.documentId ?: sources.resolver.locateDocument(tree, path) ?: return TextOpenResult.Failed(TextFailure.NotFound)
-            openDocument(sources.resolver, DocumentsContract.buildDocumentUriUsingTree(tree, documentId), locationBookId(place, path), source)
+            openDocument(sources.resolver, DocumentsContract.buildDocumentUriUsingTree(tree, documentId), locationBookId(place, path), source, path, pictures)
         }
-        is LibraryLocation.SmbShare -> sources.smb.open(place, path).use { openServerFile(it, locationBookId(place, path), source) }
+        is LibraryLocation.SmbShare -> sources.smb.open(place, path).use { openServerFile(it, locationBookId(place, path), source, pictures) }
     }
 }
 
@@ -157,21 +177,21 @@ private suspend fun TextSources.archive(archive: EntryArchive): ByteSource = whe
  * A text of an SMB place: its bytes and its entry for the index. The server is asked for nothing but the file, so the
  * title is the last name of the path and the modification time stays unknown, as for the image reader's books.
  */
-private fun openServerFile(file: ByteSource, id: BookId, source: BookSource.InLocation): TextOpenResult {
+private fun openServerFile(file: ByteSource, id: BookId, source: BookSource.InLocation, pictures: PictureReader): TextOpenResult {
     if (file.size > MAX_TEXT_BYTES) return TextOpenResult.Failed(TextFailure.TooLarge)
     val buffer = ByteBuffer.allocate(file.size.toInt())
     while (buffer.hasRemaining() && file.read(buffer.position().toLong(), buffer) >= 0) Unit
     val bytes = buffer.array().copyOf(buffer.position())
     val title = source.path.substringAfterLast('/')
     val book = Book(id, source, BookFormat.Text(charset = null), title, byteSize = file.size, modified = Instant.EPOCH, pageCount = null)
-    return TextOpenResult.Opened(OpenedText(id, title, path = "", book, pictures = null) {}, bytes)
+    return TextOpenResult.Opened(OpenedText(id, title, source.path, book, pictures) {}, bytes)
 }
 
 /**
  * The document's bytes, its id, and its entry for the index. Without [id] the document is a single one, whose id
  * comes from its first bytes (docs/spec.md section 2.2).
  */
-private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId?, source: BookSource): TextOpenResult {
+private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId?, source: BookSource, path: String = "", pictures: PictureReader? = null): TextOpenResult {
     val info = try {
         resolver.documentInfo(uri)
     } catch (e: CancellationException) {
@@ -179,7 +199,7 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId
     } catch (_: Exception) {
         null
     }
-    val bytes = (resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())).use(::readCapped)
+    val bytes = (resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())).use { readCapped(it, MAX_TEXT_BYTES) }
         ?: return TextOpenResult.Failed(TextFailure.TooLarge)
     val bookId = id ?: documentBookId(bytes.copyOf(minOf(bytes.size, BOOK_ID_PREFIX_BYTES)), bytes.size.toLong())
     val title = info?.name ?: (source as? BookSource.InLocation)?.path?.substringAfterLast('/') ?: uri.lastPathSegment ?: uri.toString()
@@ -192,7 +212,7 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId
         modified = info?.lastModifiedMs?.let(Instant::ofEpochMilli) ?: Instant.EPOCH,
         pageCount = null,
     )
-    return TextOpenResult.Opened(OpenedText(bookId, title, path = "", book, pictures = null) {}, bytes)
+    return TextOpenResult.Opened(OpenedText(bookId, title, path, book, pictures) {}, bytes)
 }
 
 /**
@@ -200,7 +220,7 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId
  * 挿絵 from the same archive, which stays open with the text. The index keeps [archive] and the entry so home
  * bookmarks reopen the text (docs/spec.md section 4.6). The names are decoded in [charsets].
  */
-internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int, charsets: EntryCharsets, archive: EntryArchive): TextOpenResult = guarded {
+internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int, charsets: EntryCharsets, archive: EntryArchive, pictureBudget: Int = pictureBudgetBytes()): TextOpenResult = guarded {
     val session = when (val opened = ArchiveSession.open(source)) {
         is OpenResult.Failed -> return@guarded TextOpenResult.Failed(TextFailure.ReadError)
         OpenResult.Encrypted -> return@guarded TextOpenResult.Failed(TextFailure.Encrypted)
@@ -221,7 +241,9 @@ internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex
         val byPath = session.entries.filterNot { it.isDirectory }.associateBy { normalizePath(session.name(it, charset)) }
         val pictures = PictureReader { path ->
             val picture = byPath[normalizePath(path)] ?: return@PictureReader null
-            (session.read(picture.entryIndex) as? EntryResult.Data)?.bytes
+            withContext(Dispatchers.IO) {
+                (session.read(picture.entryIndex, pictureBudget) as? EntryResult.Data)?.bytes
+            }
         }
         val id: BookId = entryBookId(archiveId, entry.rawName)
         val bookSource = when (archive) {
@@ -258,16 +280,24 @@ private suspend fun guarded(open: suspend () -> TextOpenResult): TextOpenResult 
     )
 }
 
-/** The whole stream, or null when it is longer than [MAX_TEXT_BYTES]. */
-private fun readCapped(input: InputStream): ByteArray? {
+/** The whole stream, or null when it is longer than [limit], including streams without a declared size. */
+private fun readCapped(input: InputStream, limit: Int): ByteArray? {
     val out = java.io.ByteArrayOutputStream()
     val buffer = ByteArray(64 * 1024)
     while (true) {
         val read = input.read(buffer)
         if (read < 0) return out.toByteArray()
-        if (out.size() + read > MAX_TEXT_BYTES) return null
+        if (out.size() + read > limit) return null
         out.write(buffer, 0, read)
     }
+}
+
+/** Check the server's declared length before allocating or making the first read. */
+internal fun readPicture(file: ByteSource, budget: Int): ByteArray? {
+    if (file.size < 0 || file.size > budget) return null
+    val buffer = ByteBuffer.allocate(file.size.toInt())
+    while (buffer.hasRemaining() && file.read(buffer.position().toLong(), buffer) >= 0) Unit
+    return if (buffer.hasRemaining()) null else buffer.array()
 }
 
 /**

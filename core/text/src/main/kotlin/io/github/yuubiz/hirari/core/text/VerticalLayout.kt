@@ -220,7 +220,7 @@ class VerticalLayout(
                         if (prev != null) {
                             val gap = maxOf(params.lineGap * fontSize, prev.leftBand + line.rightBand)
                             right = prev.x - prev.bodyWidth / 2 - gap
-                            if (right - line.bodyWidth - line.leftBand < -EPSILON) {
+                            if (params.oneLinePerPage || right - line.bodyWidth - line.leftBand < -EPSILON) {
                                 pending = finish()
                                 right = params.width - line.rightBand
                             }

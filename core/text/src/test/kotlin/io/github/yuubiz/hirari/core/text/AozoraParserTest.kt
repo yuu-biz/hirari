@@ -6,6 +6,15 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AozoraParserTest {
+    @Test
+    fun `TX05 fullwidth digits stay in standalone and inline illustration names`() {
+        val figure = body("［＃挿絵（図１.png、横１００縦２００）入る］").single() as Figure
+        assertEquals("図１.png", figure.path)
+        val inline = paragraph("前［＃挿絵（図１.png）入る］後")
+        assertEquals("図１.png", inline.spans.filterIsInstance<Span.InlineImage>().single().path)
+        assertEquals(2, paragraph("［＃２字下げ］本文").indent)
+    }
+
     /** The paragraphs of [source] after a title line, which the parser marks as the title. */
     private fun body(source: String, gaiji: JisX0213Table = JisX0213Table.None): List<Block> =
         parseAozora("題\n$source", gaiji).blocks.drop(1)

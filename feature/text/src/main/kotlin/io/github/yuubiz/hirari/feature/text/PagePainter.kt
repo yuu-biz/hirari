@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.core.graphics.withRotation
+import androidx.core.graphics.withSave
 import androidx.core.graphics.withTranslation
 import io.github.yuubiz.hirari.core.model.Rgb
 import io.github.yuubiz.hirari.core.text.EmphasisRun
@@ -64,18 +65,21 @@ class PagePainter(typeface: Typeface, colors: PageColors) {
         drawInfo(canvas, decor.number, left + frame.pageWidth / 2, top + frame.pageHeight - frame.margin, frame, alignTop = false)
         val originX = left + frame.margin
         val originY = top + frame.margin + frame.band
-        when (val content = page?.content) {
-            null -> Unit
-            is PageContent.Picture -> picture(content.path)?.let { drawFitted(canvas, it, originX, originY, frame.params.width, frame.params.height) }
-            is PageContent.Lines -> canvas.withTranslation(originX, originY) {
-                decor.highlight?.let { range -> content.lines.forEach { drawHighlight(this, it, range) } }
-                content.lines.forEach { drawLine(this, it, frame.params.fontSize, picture) }
+        canvas.withSave {
+            clipRect(originX, originY, originX + frame.params.width, originY + frame.params.height)
+            when (val content = page?.content) {
+                null -> Unit
+                is PageContent.Picture -> drawPicture(canvas, picture(content.path), originX, originY, frame.params.width, frame.params.height)
+                is PageContent.Lines -> canvas.withTranslation(originX, originY) {
+                    decor.highlight?.let { range -> content.lines.forEach { drawHighlight(this, it, range) } }
+                    content.lines.forEach { drawLine(this, it, frame.params.fontSize, picture) }
+                }
             }
         }
     }
 
     private fun drawInfo(canvas: Canvas, text: String, centerX: Float, edge: Float, frame: PageFrame, alignTop: Boolean) {
-        if (text.isEmpty()) return
+        if (text.isEmpty() || frame.band == 0f) return
         info.textSize = frame.infoSize
         info.getFontMetrics(metrics)
         val width = info.measureText(text)
@@ -132,7 +136,7 @@ class PagePainter(typeface: Typeface, colors: PageColors) {
                 val pitch = glyph.advance / dots
                 repeat(dots) { canvas.drawCircle(x, glyph.y + pitch * (it + 0.5f), glyph.size * 0.06f, fill) }
             }
-            is GlyphContent.Image -> picture(content.path)?.let { drawFitted(canvas, it, x - glyph.size / 2, glyph.y, glyph.size, glyph.size) }
+            is GlyphContent.Image -> drawPicture(canvas, picture(content.path), x - glyph.size / 2, glyph.y, glyph.size, glyph.size)
         }
     }
 
@@ -205,6 +209,17 @@ class PagePainter(typeface: Typeface, colors: PageColors) {
                 }
                 canvas.drawPath(path, stroke)
             }
+        }
+    }
+
+    private fun drawPicture(canvas: Canvas, bitmap: Bitmap?, left: Float, top: Float, width: Float, height: Float) {
+        if (bitmap != null) {
+            drawFitted(canvas, bitmap, left, top, width, height)
+        } else {
+            stroke.strokeWidth = 1f
+            canvas.drawRect(left + 1, top + 1, left + width - 1, top + height - 1, stroke)
+            canvas.drawLine(left, top, left + width, top + height, stroke)
+            canvas.drawLine(left + width, top, left, top + height, stroke)
         }
     }
 

@@ -85,7 +85,8 @@ private fun number(s: String): Int? {
 }
 
 private fun parseCommand(rawNote: String): Command {
-    val note = normalizeDigits(rawNote)
+    val note = rawNote
+    val counts = normalizeDigits(rawNote)
     when (note) {
         "改ページ", "改丁", "改見開き" -> return Command.PageBreak
         "ページの左右中央" -> return Command.CenterPage
@@ -94,23 +95,23 @@ private fun parseCommand(rawNote: String): Command {
         "ここから地付き" -> return Command.BottomBlock(0)
         "ここで地付き終わり", "ここで字上げ終わり" -> return Command.BottomBlockEnd
     }
-    indent.matchEntire(note)?.let { return number(it.groupValues[1])?.let(Command::Indent) ?: Command.Ignored }
-    indentBlock.matchEntire(note)?.let {
+    indent.matchEntire(counts)?.let { return number(it.groupValues[1])?.let(Command::Indent) ?: Command.Ignored }
+    indentBlock.matchEntire(counts)?.let {
         val first = number(it.groupValues[1])
         val wrap = if (it.groupValues[2].isEmpty()) first else number(it.groupValues[2])
         return if (first == null || wrap == null) Command.Ignored else Command.IndentBlock(first, wrap)
     }
-    indentBlockFlush.matchEntire(note)?.let {
+    indentBlockFlush.matchEntire(counts)?.let {
         return number(it.groupValues[1])?.let { wrap -> Command.IndentBlock(0, wrap) } ?: Command.Ignored
     }
-    raise.matchEntire(note)?.let { return number(it.groupValues[1])?.let(Command::Bottom) ?: Command.Ignored }
-    raiseBlock.matchEntire(note)?.let { return number(it.groupValues[1])?.let(Command::BottomBlock) ?: Command.Ignored }
+    raise.matchEntire(counts)?.let { return number(it.groupValues[1])?.let(Command::Bottom) ?: Command.Ignored }
+    raiseBlock.matchEntire(counts)?.let { return number(it.groupValues[1])?.let(Command::BottomBlock) ?: Command.Ignored }
     reference.matchEntire(rawNote)?.let { match ->
         val (target, particle, word) = match.destructured
         val style = styleOf(word, if (particle == "の左に") MarkSide.Left else MarkSide.Right)
         return if (style == null) Command.Ignored else Command.Reference(target, style)
     }
-    picture.find(note)?.let { return Command.Picture(it.groupValues[1].substringBefore('、')) }
+    picture.find(rawNote)?.let { return Command.Picture(it.groupValues[1].substringBefore('、')) }
     val body = note.removePrefix("ここから").removePrefix("ここで")
     val isEnd = body.endsWith("終わり")
     val word = body.removeSuffix("終わり")

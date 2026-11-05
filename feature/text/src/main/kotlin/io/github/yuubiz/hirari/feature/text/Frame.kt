@@ -47,12 +47,21 @@ fun pageFrame(viewport: Viewport, settings: GlobalSettings): PageFrame {
     val gutter = if ((spread && settings.gutterStyle == GutterStyle.Gap) || continuous) GUTTER_DP * viewport.density else 0f
     val pageWidth = (viewport.width - gutter * (pages - 1)) / pages
     val pageHeight = viewport.height.toFloat()
-    val margin = settings.textMargin.dp * viewport.density
-    val band = fontSize * INFO_SCALE * 2
+    var band = fontSize * INFO_SCALE * 2
+    val minimum = fontSize * 2
+    val margin = minOf(
+        settings.textMargin.dp * viewport.density,
+        ((pageWidth - minimum) / 2).coerceAtLeast(0f),
+        ((pageHeight - 2 * band - minimum) / 2).coerceAtLeast(0f),
+    )
+    if (pageHeight - 2 * margin - 2 * band < minimum || pageWidth - 2 * margin < minimum) band = 0f
+    val width = (pageWidth - 2 * margin).coerceAtLeast(1f)
+    val height = (pageHeight - 2 * margin - 2 * band).coerceAtLeast(1f)
     val params = LayoutParams(
-        width = (pageWidth - 2 * margin).coerceAtLeast(fontSize * 2),
-        height = (pageHeight - 2 * margin - 2 * band).coerceAtLeast(fontSize * 2),
+        width = width,
+        height = height,
         fontSize = fontSize,
+        oneLinePerPage = width < minimum || height < minimum,
         lineGap = settings.textLineGap.toFloat(),
         letterGap = settings.textLetterGap.toFloat(),
         latinMode = when (settings.textLatinMode) {

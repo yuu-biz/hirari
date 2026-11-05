@@ -228,7 +228,8 @@ class TextReaderViewModel(
 
 private fun decodeFitting(bytes: ByteArray, maxWidth: Int, maxHeight: Int): Bitmap? = try {
     ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
-        val scale = minOf(1f, maxWidth.toFloat() / info.size.width, maxHeight.toFloat() / info.size.height)
+        val memoryScale = kotlin.math.sqrt(pictureBudgetBytes().toDouble() / 2 / (info.size.width.toDouble() * info.size.height * 4)).toFloat()
+        val scale = minOf(1f, maxWidth.toFloat() / info.size.width, maxHeight.toFloat() / info.size.height, memoryScale)
         decoder.setTargetSize(maxOf(1, (info.size.width * scale).toInt()), maxOf(1, (info.size.height * scale).toInt()))
     }
 } catch (e: CancellationException) {

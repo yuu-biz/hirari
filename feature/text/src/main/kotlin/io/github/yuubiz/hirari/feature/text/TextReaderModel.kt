@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.charset.Charset
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 
 sealed interface SearchState {
     data object Idle : SearchState
@@ -354,7 +355,15 @@ internal class TextReaderModel(
         val text = opened ?: return null
         val reader = text.pictures ?: return null
         val resolved = resolvePicturePath(text.path, path) ?: return null
-        return reader.read(resolved)
+        return try {
+            reader.read(resolved)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: OutOfMemoryError) {
+            null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**

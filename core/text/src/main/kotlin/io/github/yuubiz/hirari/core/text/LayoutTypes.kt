@@ -24,6 +24,8 @@ data class LayoutParams(
     val letterGap: Float = 0.1f,
     val latinMode: LatinMode = LatinMode.ShortTateChuYoko,
     val direction: WritingDirection = WritingDirection.Vertical,
+    /** Last resort for a viewport that cannot fit the chosen type size (section 4.9). */
+    val oneLinePerPage: Boolean = false,
 ) {
     init {
         require(width > 0 && height > 0 && fontSize > 0)

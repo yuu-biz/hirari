@@ -28,13 +28,16 @@ enum class TextFailure {
 /** The longest text the reader reads, whole, into memory (docs/spec.md section 3.11). */
 const val MAX_TEXT_BYTES = 64 shl 20
 
+/** The input and decode budget of one illustration (docs/spec.md section 4.9). */
+internal fun pictureBudgetBytes(): Int = minOf(32L shl 20, Runtime.getRuntime().maxMemory() / 8).toInt()
+
 /** Reads the 挿絵 at [path], resolved against the text, from the container the text came from. Null when it is not there. */
 fun interface PictureReader {
     suspend fun read(path: String): ByteArray?
 }
 
 /**
- * A text opened on its source. [path] is where the text sits in its archive, for the 挿絵, and [pictures] reads
+ * A text opened on its source. [path] is where the text sits in its place or archive, for the 挿絵, and [pictures] reads
  * them; a single document has no reachable neighbors, so it has none. [book] is the entry for the library index,
  * or null when the source has no form there. [close] releases the source.
  */

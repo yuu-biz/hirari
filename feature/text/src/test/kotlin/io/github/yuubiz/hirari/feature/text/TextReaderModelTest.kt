@@ -28,6 +28,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TextReaderModelTest {
@@ -50,8 +51,9 @@ class TextReaderModelTest {
         work: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
         onEdge: (BookEdge) -> Unit = {},
         onTurned: () -> Unit = {},
+        pictures: PictureReader? = null,
     ): TextReaderModel {
-        val opened = OpenedText(id, "file.txt", "dir/file.txt", book = null, pictures = null) { closed++ }
+        val opened = OpenedText(id, "file.txt", "dir/file.txt", book = null, pictures = pictures) { closed++ }
         return TextReaderModel(
             scope = backgroundScope,
             work = work,
@@ -81,6 +83,28 @@ class TextReaderModelTest {
     }
 
     private val TextReaderModel.reading: TextReaderUiState.Reading get() = assertIs<TextReaderUiState.Reading>(state.value)
+
+    @Test
+    fun `TX01 an illustration read OOM leaves the text readable and turnable`() = runTest {
+        val model = model(pictures = PictureReader { throw OutOfMemoryError("picture") })
+        settle()
+        val first = model.page
+        assertNull(model.picture("図１.png"))
+        assertEquals(first, model.page)
+        assertIs<TurnResult.Moved>(model.turn(1))
+        assertNotNull(model.page)
+    }
+
+    @Test
+    fun `TX03 a picture cannot climb above its place`() = runTest {
+        val requested = mutableListOf<String>()
+        val model = model(pictures = PictureReader { requested += it; byteArrayOf(1) })
+        settle()
+        assertNotNull(model.picture("../図１.png"))
+        assertEquals(listOf("図１.png"), requested)
+        assertNull(model.picture("../../outside.png"))
+        assertEquals(listOf("図１.png"), requested)
+    }
 
     private val TextReaderModel.page: TextPage get() = reading.let { assertNotNull(it.page(it.current), "page ${it.current} is laid out") }
 
