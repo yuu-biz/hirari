@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.model.LibraryGrouping
 import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
@@ -45,6 +46,41 @@ class FolderViewModelTest {
             .also { watch(it.state) }
 
     private fun FolderViewModel.shown() = assertIs<FolderContent.Shown>(state.value.content)
+
+    @Test
+    fun `nested group follows filters and settings return to the nearest surviving level`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Author,
+            librarySubgrouping = LibraryGrouping.Series)
+        fixture.lister.folders["作品"] = listOf(file("[A] Story 1.zip"), file("[A] Story 2.zip"),
+            file("[A] Story 3.zip"), file("[A] Tale 1.zip"), file("[A] Tale 2.zip"), file("[A] plain.zip"))
+        fun open(model: FolderViewModel, row: FileRow): FolderViewModel {
+            val key = assertIs<FileTarget.Folder>(model.open(row)).key
+            return FolderViewModel(CompletableDeferred(fixture.services), key, UnconfinedTestDispatcher(testScheduler)).also { watch(it.state) }
+        }
+        val real = viewModel()
+        val first = open(real, real.shown().rows.single())
+        first.setFilter("Story")
+        val second = open(first, first.shown().rows.single())
+        assertEquals(first.folder.pseudo, second.folder.pseudo!!.parent)
+        assertEquals(3, second.shown().rows.size)
+        assertTrue(second.shown().rows.all { it.pseudo == null })
+        second.setFilter("2")
+        assertEquals("[A] Story 2.zip", second.shown().rows.single().item.entry.name)
+        assertEquals(null, second.shown().returnTo)
+        fixture.settings.value.value = fixture.settings.value.value.copy(librarySubgrouping = LibraryGrouping.Event)
+        assertEquals(first.folder, second.shown().returnTo)
+        assertEquals(null, first.shown().returnTo)
+        fixture.settings.value.value = fixture.settings.value.value.copy(librarySubgrouping = LibraryGrouping.Series)
+        assertEquals(null, second.shown().returnTo)
+        fixture.settings.value.value = fixture.settings.value.value.copy(librarySubgrouping = LibraryGrouping.Author)
+        assertEquals(first.folder, second.shown().returnTo)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.None)
+        assertEquals(real.folder, second.shown().returnTo)
+        assertEquals(real.folder, first.shown().returnTo)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Series)
+        assertEquals(real.folder, second.shown().returnTo)
+    }
 
     @Test
     fun `pseudo child keeps matching members item addresses and parent filter without nesting`() = runTest {

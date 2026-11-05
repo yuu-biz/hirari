@@ -8,6 +8,25 @@ import org.junit.Test
 /** docs/spec.md section 4.3: 上へ, the parent item and the title's menu go up to the folder's real parent. */
 class GoUpTest {
     @Test
+    fun secondLevelRouteRoundTripsAndFallbackKeepsTheNearestParentsEntry() {
+        val real = FolderRoute(1, "manga", documentId = "doc:manga")
+        val author = io.github.yuubiz.hirari.feature.library.PseudoFolder("/group:Author:a", "A",
+            io.github.yuubiz.hirari.core.model.LibraryGrouping.Author, true, "author filter")
+        val series = io.github.yuubiz.hirari.feature.library.PseudoFolder("${author.key}/group:Series:story", "Story",
+            io.github.yuubiz.hirari.core.model.LibraryGrouping.Series, true, "series filter", author)
+        val first = real.toKey().copy(pseudo = author).toRoute()
+        val second = real.toKey().copy(pseudo = series)
+        assertEquals(second, second.toRoute().toKey())
+        stack += listOf(null, real, first, second.toRoute())
+        goUp(first.toKey(), "manga", top = { stack.lastOrNull() }, pop = { stack.removeAt(stack.lastIndex) }, open = { stack += it })
+        assertEquals(listOf(null, real, first), stack)
+        org.junit.Assert.assertSame(first, stack.last())
+        stack += second.toRoute()
+        up(to = "manga", from = "manga")
+        assertEquals(listOf(null, real), stack)
+        org.junit.Assert.assertSame(real, stack.last())
+    }
+    @Test
     fun pseudoFolderRouteRoundTripsAndUpReusesItsParentsBackStackEntry() {
         val parent = FolderRoute(1, "manga", documentId = "doc:manga")
         val group = io.github.yuubiz.hirari.feature.library.PseudoFolder("/group:Series:title", "Title",

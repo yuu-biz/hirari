@@ -130,12 +130,18 @@ private fun LookSettings(look: ListLook, landscape: Boolean, change: ((GlobalSet
         Choices(stringResource(R.string.look_group), LibraryGrouping.entries, look.grouping, { groupNames.getValue(it) }) { v ->
             change { it.copy(libraryGrouping = v) }
         }
+        if (look.grouping != LibraryGrouping.None) {
+            Choices(stringResource(R.string.look_subgroup), LibraryGrouping.entries.filter { it != look.grouping },
+                look.effectiveSubgrouping, { groupNames.getValue(it) }) { v ->
+                change { it.copy(librarySubgrouping = v) }
+            }
+        }
         val sectionNames = mapOf(LibrarySection.None to stringResource(R.string.look_group_none),
             LibrarySection.ReadState to stringResource(R.string.look_section_read_state), LibrarySection.AddedTime to stringResource(R.string.look_section_added_time))
         Choices(stringResource(R.string.look_section), LibrarySection.entries, look.section, { sectionNames.getValue(it) }) { v ->
             change { it.copy(librarySection = v) }
         }
-        val authorGrouping = look.grouping == LibraryGrouping.Author
+        val authorGrouping = look.grouping == LibraryGrouping.Author || look.effectiveSubgrouping == LibraryGrouping.Author
         Row(
             Modifier.fillMaxWidth().toggleable(look.mergeCircleAuthors, enabled = authorGrouping, role = Role.Switch) { v ->
                 change { it.copy(mergeCircleAuthors = v) }

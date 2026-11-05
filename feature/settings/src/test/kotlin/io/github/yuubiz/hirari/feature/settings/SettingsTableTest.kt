@@ -16,6 +16,18 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SettingsTableTest {
+    @Test
+    fun `subgroup row is hidden without grouping and excludes the first key including stored equal values`() {
+        val key = "librarySubgrouping"
+        assertTrue(settingsFor(Int.MAX_VALUE, GlobalSettings()).values.flatten().none { it.key == key })
+        for (group in io.github.yuubiz.hirari.core.model.LibraryGrouping.entries.filter { it != io.github.yuubiz.hirari.core.model.LibraryGrouping.None }) {
+            val settings = GlobalSettings(libraryGrouping = group, librarySubgrouping = group)
+            val row = settingsFor(Int.MAX_VALUE, settings).values.flatten().single { it.key == key } as ChoiceSetting<*>
+            assertEquals("その中のグループ", row.label)
+            assertTrue(row.options.none { it.value == group })
+            assertEquals(io.github.yuubiz.hirari.core.model.LibraryGrouping.None, row.read(settings))
+        }
+    }
     private val json = Json { encodeDefaults = true }
 
     private fun fields(settings: GlobalSettings): JsonObject =
@@ -58,7 +70,7 @@ class SettingsTableTest {
         val keys = SettingsTable.map { it.key }
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
         assertEquals(fields - "allowFileEdits", keys.toSet())
-        assertEquals(73, keys.size)
+        assertEquals(74, keys.size)
     }
 
     @Test

@@ -44,10 +44,10 @@ class DataStoreSettingsRepositoryTest {
         val file = File(folder.root, "settings.json")
         withRepository(file) { repository ->
             assertEquals(true, repository.settings.first().mergeCircleAuthors)
-            repository.update { it.copy(libraryGrouping = LibraryGrouping.Author, mergeCircleAuthors = false) }
+            repository.update { it.copy(libraryGrouping = LibraryGrouping.Author, librarySubgrouping = LibraryGrouping.Series, mergeCircleAuthors = false) }
         }
         val reopened = withRepository(file) { it.settings.first() }
-        assertEquals(GlobalSettings(libraryGrouping = LibraryGrouping.Author, mergeCircleAuthors = false), reopened)
+        assertEquals(GlobalSettings(libraryGrouping = LibraryGrouping.Author, librarySubgrouping = LibraryGrouping.Series, mergeCircleAuthors = false), reopened)
     }
 
     @Test

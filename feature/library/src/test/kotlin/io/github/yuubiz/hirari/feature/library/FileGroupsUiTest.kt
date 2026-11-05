@@ -85,33 +85,44 @@ class FileGroupsUiTest {
     }
 
     @Test
-    fun `opening a pseudo folder and returning restores parent and child scroll positions`() {
-        val source = rows((1..70).flatMap { author -> (1..40).map { "[Author$author] book$it.zip" } })
+    fun `two pseudo levels restore each scroll position and apply sections at every level`() {
+        val source = rows((1..70).flatMap { author ->
+            if (author == 40) (1..40).flatMap { series -> (1..40).map { "[Author$author] Series$series $it.zip" } }
+            else (1..2).map { "[Author$author] book$it.zip" }
+        })
         val parent = FolderKey(LocationId(1), "")
         var folder by mutableStateOf(parent)
-        val parentRows = pseudoFolders(source, LibraryGrouping.Author, true, "", LibrarySort.Name, true)
+        val look = ListLook(grouping = LibraryGrouping.Author, subgrouping = LibraryGrouping.Series)
         rule.setContent {
             val holder = rememberSaveableStateHolder()
             holder.SaveableStateProvider(folder.pseudo?.key ?: "parent") {
-                val shownRows = folder.pseudo?.let { group -> fileGroups(source, group.kind, group.merge).first { it.key == group.key }.rows } ?: parentRows
+                val (existing, members) = resolvePseudoFolder(source, folder.pseudo, look)
+                val shownRows = pseudoFolders(members, look.groupingInside(existing), true, "", LibrarySort.Name, true, existing)
                 MaterialTheme { Box(Modifier.size(400.dp, 600.dp)) {
                     FileList(content(shownRows, LibraryView.List), null,
                         onOpen = { row -> row.pseudo?.let { folder = parent.copy(pseudo = it) } }, onLongPress = {},
-                        onUp = if (folder.pseudo != null) ({ folder = parent }) else null, folderKey = folder)
+                        onUp = if (folder.pseudo != null) ({ folder = folder.copy(pseudo = folder.pseudo?.parent) }) else null, folderKey = folder)
                 } }
             }
         }
         // A folder section header occupies index 0.
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(39)
         rule.onNodeWithText("Author40").assertIsDisplayed().performClick()
+        rule.onNodeWithContentDescription("フォルダ、40 件、折りたたみ").assertIsDisplayed()
+        // Parent item and folder header precede the second-level groups. Series29 is kept below the top row,
+        // where the sticky section header covers the item and takes the tap.
+        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(28)
+        rule.onNodeWithText("Series29").assertIsDisplayed().performClick()
         rule.onNodeWithContentDescription("未読、40 件、折りたたみ").assertIsDisplayed()
-        // Parent item and unread header precede the books.
-        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(29)
-        rule.onNodeWithText("[Author40] book29.zip").assertIsDisplayed()
-        rule.runOnIdle { folder = parent }
-        rule.onNodeWithText("Author40").assertIsDisplayed().performClick()
-        rule.onNodeWithText("[Author40] book29.zip").assertIsDisplayed()
-        // The actual up cell follows the same return action when it is visible.
+        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(30)
+        rule.onNodeWithText("[Author40] Series29 29.zip").assertIsDisplayed()
+        rule.runOnIdle { folder = folder.copy(pseudo = folder.pseudo!!.parent) }
+        rule.onNodeWithText("Series29").assertIsDisplayed().performClick()
+        rule.onNodeWithText("[Author40] Series29 29.zip").assertIsDisplayed()
+        // Up from the second level returns to the first, then to the real folder.
+        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
+        rule.onNodeWithText("上のフォルダへ").performClick()
+        rule.onNodeWithText("Series29").assertIsDisplayed()
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         rule.onNodeWithText("上のフォルダへ").performClick()
         rule.onNodeWithText("Author40").assertIsDisplayed()

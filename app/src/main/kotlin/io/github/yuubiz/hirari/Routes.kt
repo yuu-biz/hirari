@@ -58,9 +58,12 @@ internal data class SmbServerRoute(val location: Long? = null)
 @Serializable
 internal data class FolderRoute(val location: Long, val path: String, val documentId: String? = null, val reveal: String? = null,
     val groupKey: String? = null, val groupName: String = "", val groupKind: LibraryGrouping = LibraryGrouping.None,
-    val groupMerge: Boolean = true, val groupFilter: String = "") {
+    val groupMerge: Boolean = true, val groupFilter: String = "",
+    val parentGroupKey: String? = null, val parentGroupName: String = "", val parentGroupKind: LibraryGrouping = LibraryGrouping.None,
+    val parentGroupMerge: Boolean = true, val parentGroupFilter: String = "") {
     fun toKey() = FolderKey(LocationId(location), path, documentId,
-        groupKey?.let { PseudoFolder(it, groupName, groupKind, groupMerge, groupFilter) })
+        groupKey?.let { PseudoFolder(it, groupName, groupKind, groupMerge, groupFilter,
+            parentGroupKey?.let { parent -> PseudoFolder(parent, parentGroupName, parentGroupKind, parentGroupMerge, parentGroupFilter) }) })
 }
 
 /** 書庫内一覧 of an archive book in a place (docs/spec.md section 4.7). */
@@ -80,7 +83,9 @@ internal data class CoverRangeRoute(val book: String, val entry: Int) {
 internal fun CoverRangeKey.toRoute() = CoverRangeRoute(book.value, entry)
 
 internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.value, path, documentId, reveal,
-    pseudo?.key, pseudo?.name.orEmpty(), pseudo?.kind ?: LibraryGrouping.None, pseudo?.merge ?: true, pseudo?.filter.orEmpty())
+    pseudo?.key, pseudo?.name.orEmpty(), pseudo?.kind ?: LibraryGrouping.None, pseudo?.merge ?: true, pseudo?.filter.orEmpty(),
+    pseudo?.parent?.key, pseudo?.parent?.name.orEmpty(), pseudo?.parent?.kind ?: LibraryGrouping.None,
+    pseudo?.parent?.merge ?: true, pseudo?.parent?.filter.orEmpty())
 
 /**
  * Goes up from the folder at [from] to the folder [to] of the same place (docs/spec.md section 4.3, 上部バー and
@@ -103,7 +108,7 @@ internal fun goUp(to: FolderKey, from: String, top: () -> FolderRoute?, pop: () 
         if (folder.location != to.location.value) break
         if (normalizePath(folder.path) == normalizePath(to.path)) {
             if (folder.groupKey == to.pseudo?.key) return
-            if (folder.groupKey != null && to.pseudo == null) { pop(); continue }
+            if (folder.groupKey != null && (to.pseudo == null || folder.parentGroupKey == to.pseudo?.key)) { pop(); continue }
             break
         }
         if (childToward(to.path, folder.path) == null) break

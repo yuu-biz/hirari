@@ -28,10 +28,13 @@ class SettingsSerializerTest {
         val old = read("""{"libraryGrouping":"Author"}""")
         assertEquals(io.github.yuubiz.hirari.core.model.LibraryGrouping.Author, old.libraryGrouping)
         assertEquals(io.github.yuubiz.hirari.core.model.LibrarySection.None, old.librarySection)
+        assertEquals(io.github.yuubiz.hirari.core.model.LibraryGrouping.None, old.librarySubgrouping)
         for (group in io.github.yuubiz.hirari.core.model.LibraryGrouping.entries) {
             for (section in io.github.yuubiz.hirari.core.model.LibrarySection.entries) {
-                val settings = GlobalSettings(libraryGrouping = group, librarySection = section)
-                assertEquals(settings, roundTrip(settings))
+                for (subgroup in io.github.yuubiz.hirari.core.model.LibraryGrouping.entries) {
+                    val settings = GlobalSettings(libraryGrouping = group, librarySection = section, librarySubgrouping = subgroup)
+                    assertEquals(settings, roundTrip(settings))
+                }
             }
         }
     }
@@ -153,10 +156,10 @@ class SettingsSerializerTest {
     }
 
     @Test
-    fun `the settings are the 74 of the spec and the fixture changes each of them`() {
+    fun `the settings are the 75 of the spec and the fixture changes each of them`() {
         val defaults = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), GlobalSettings()).jsonObject
         val changed = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), everything).jsonObject
-        assertEquals(74, defaults.size)
+        assertEquals(75, defaults.size)
         assertEquals(defaults.keys, defaults.keys.filter { defaults[it] != changed[it] }.toSet())
     }
 

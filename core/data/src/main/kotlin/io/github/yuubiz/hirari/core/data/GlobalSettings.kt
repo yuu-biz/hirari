@@ -117,6 +117,7 @@ data class GlobalSettings(
     val coverAspect: CoverAspect = CoverAspect.Book,
     val libraryTextSize: LibraryTextSize = LibraryTextSize.Medium,
     val libraryGrouping: LibraryGrouping = LibraryGrouping.None,
+    val librarySubgrouping: LibraryGrouping = LibraryGrouping.None,
     val librarySection: LibrarySection = LibrarySection.None,
     val mergeCircleAuthors: Boolean = true,
     val librarySort: LibrarySort = LibrarySort.Name,

@@ -70,7 +70,38 @@ private fun groupSpelling(items: List<CreatorRow>): String? {
 }
 
 /** Navigation metadata, separate from a storage path. */
-data class PseudoFolder(val key: String, val name: String, val kind: LibraryGrouping, val merge: Boolean, val filter: String)
+data class PseudoFolder(val key: String, val name: String, val kind: LibraryGrouping, val merge: Boolean, val filter: String,
+    val parent: PseudoFolder? = null)
+
+/** Resolve each level against today's settings; a vanished group returns its nearest surviving parent. */
+internal fun resolvePseudoFolder(rows: List<FileRow>, folder: PseudoFolder?, look: ListLook): Pair<PseudoFolder?, List<FileRow>> {
+    if (folder == null) return null to rows
+    val chain = generateSequence(folder) { it.parent }.toList().asReversed()
+    var parent: PseudoFolder? = null
+    var members = rows
+    for ((depth, group) in chain.withIndex()) {
+        val kind = when (depth) {
+            0 -> look.grouping
+            1 -> look.effectiveSubgrouping
+            else -> LibraryGrouping.None
+        }
+        if (kind == LibraryGrouping.None || kind != group.kind) break
+        val match = fileGroups(members.filtered(group.filter), kind, look.mergeCircleAuthors)
+            .firstOrNull { scopedGroupKey(parent, it.key) == group.key && it.rows.size >= 2 } ?: break
+        parent = group
+        members = match.rows
+    }
+    return parent to members
+}
+
+private fun scopedGroupKey(parent: PseudoFolder?, key: String): String =
+    if (parent == null) key else "/group-child:${parent.key.length}:${parent.key}$key"
+
+internal fun ListLook.groupingInside(parent: PseudoFolder?): LibraryGrouping = when {
+    parent == null -> grouping
+    parent.parent == null -> effectiveSubgrouping
+    else -> LibraryGrouping.None
+}
 
 internal data class FileGroup(val key: String, val name: String, val rows: List<FileRow>)
 
@@ -103,14 +134,15 @@ private fun FileItem.groupBase(): String = if (this is FileItem.Folder) entry.na
 
 /** Replace only multi-item groups. A synthetic folder reuses its first member's exact CoverSpec. */
 internal fun pseudoFolders(rows: List<FileRow>, kind: LibraryGrouping, merge: Boolean, filter: String,
-    sort: LibrarySort, foldersFirst: Boolean): List<FileRow> {
-    if (kind == LibraryGrouping.None) return rows
+    sort: LibrarySort, foldersFirst: Boolean, parent: PseudoFolder? = null): List<FileRow> {
+    if (kind == LibraryGrouping.None || parent?.parent != null) return rows
     val groups = fileGroups(rows, kind, merge).filter { it.rows.size >= 2 }
     val groupedPaths = groups.flatMap { it.rows }.mapTo(hashSetOf()) { it.path }
     val result = rows.filterNot { it.path in groupedPaths } + groups.map { group ->
-        FileRow(FileItem.Folder(FolderEntry(group.name, null, true, null, null)), group.key, normalizedName(group.name),
+        val key = scopedGroupKey(parent, group.key)
+        FileRow(FileItem.Folder(FolderEntry(group.name, null, true, null, null)), key, normalizedName(group.name),
             cover = group.rows.first().cover, gridName = GridName(group.name, "${group.rows.size} 件"),
-            sizeText = "${group.rows.size} 件", pseudo = PseudoFolder(group.key, group.name, kind, merge, filter))
+            sizeText = "${group.rows.size} 件", pseudo = PseudoFolder(key, group.name, kind, merge, filter, parent))
     }
     val byName = compareBy<FileRow, String>(NaturalOrder) { it.item.entry.name }
     val byFiles = when (sort) {

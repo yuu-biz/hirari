@@ -12,6 +12,48 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class FileGroupsTest {
+    @Test
+    fun `author then series leaves singles and missing keys and stops after two levels`() {
+        val place = io.github.yuubiz.hirari.core.model.LibraryLocation.SafTree(io.github.yuubiz.hirari.core.model.LocationId(1), "Books",
+            io.github.yuubiz.hirari.core.model.UriString("content://tree/books"))
+        val source = rows("[A] Story 1.zip", "[A] Story 2.zip", "[A] Tale 1.zip", "[A] Tale 2.zip",
+            "[A] Solo 1.zip", "[A].zip", "[B] Story 1.zip", "[B] Story 2.zip")
+            .withCovers(emptyList(), CoverContext(place, io.github.yuubiz.hirari.core.model.ReadingDirection.RightToLeft, emptyMap(), emptyMap()))
+        val look = ListLook(grouping = LibraryGrouping.Author, subgrouping = LibraryGrouping.Series)
+        val author = group(source).first { it.pseudo?.name == "A" }.pseudo!!
+        val (_, members) = resolvePseudoFolder(source, author, look)
+        val second = pseudoFolders(members, look.groupingInside(author), true, "", LibrarySort.Name, true, author)
+        assertEquals(listOf("Story", "Tale"), second.pseudoRows().map { it.pseudo!!.name })
+        assertEquals(setOf("[A].zip", "[A] Solo 1.zip"), second.filter { it.pseudo == null }.map { it.item.entry.name }.toSet())
+        val story = second.first().pseudo!!
+        assertEquals(author, story.parent)
+        assertTrue(story.key.contains(author.key))
+        val (resolved, books) = resolvePseudoFolder(source, story, look)
+        assertEquals(story, resolved)
+        assertEquals(listOf("[A] Story 1.zip", "[A] Story 2.zip"), books.map { it.item.entry.name })
+        assertSame(members.first { it.item.entry.name == "[A] Story 1.zip" }.cover, second.first().cover)
+        assertEquals(LibraryGrouping.None, look.groupingInside(story))
+        assertEquals(books, pseudoFolders(books, LibraryGrouping.Author, true, "", LibrarySort.Name, true, story))
+        val otherAuthor = group(source).first { it.pseudo?.name == "B" }.pseudo!!
+        val otherMembers = resolvePseudoFolder(source, otherAuthor, look).second
+        val otherStory = pseudoFolders(otherMembers, LibraryGrouping.Series, true, "", LibrarySort.Name, true, otherAuthor).single().pseudo!!
+        assertTrue(story.key != otherStory.key)
+        val filtered = pseudoFolders(members.filtered("Story 1"), LibraryGrouping.Series, true, "Story 1", LibrarySort.Name, true, author)
+        assertEquals(listOf("[A] Story 1.zip"), filtered.map { it.item.entry.name })
+        assertTrue(filtered.all { it.pseudo == null })
+    }
+
+    @Test
+    fun `equal second key and disabled first key both suppress nested grouping`() {
+        val source = rows("[A] Story 1.zip", "[A] Story 2.zip")
+        val author = group(source).single().pseudo!!
+        val equal = ListLook(grouping = LibraryGrouping.Author, subgrouping = LibraryGrouping.Author)
+        assertEquals(LibraryGrouping.None, equal.effectiveSubgrouping)
+        assertEquals(LibraryGrouping.None, equal.groupingInside(author))
+        assertEquals(source, pseudoFolders(source, equal.groupingInside(author), true, "", LibrarySort.Name, true, author))
+        assertEquals(LibraryGrouping.None, ListLook(subgrouping = LibraryGrouping.Series).effectiveSubgrouping)
+    }
+
     private fun entry(name: String, folder: Boolean = false, date: String? = null) =
         FolderEntry(name, name, folder, 1, date?.let(Instant::parse))
     private fun rows(vararg names: String) = names.map { entry(it) }.toRows("folder", Ordering(LibrarySort.Name, false, false))

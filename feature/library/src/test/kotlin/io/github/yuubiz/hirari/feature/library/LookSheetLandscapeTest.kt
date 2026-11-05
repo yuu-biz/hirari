@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibraryGrouping
+import io.github.yuubiz.hirari.core.model.LibrarySort
 import io.github.yuubiz.hirari.core.model.LibraryView
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
@@ -49,6 +51,54 @@ class LookSheetLandscapeTest {
     }
 
     private fun lefts(text: String) = rule.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().map { it.boundsInRoot }
+
+    @Test
+    fun `an open second level asks navigation to return to the nearest surviving parent`() {
+        fixture.locations.rows.value = listOf(place)
+        val entries = (1..2).map { FolderEntry("[A] Story $it.zip", "doc:$it", false, 1, null) }
+        fixture.lister.folders["a"] = entries
+        val settings = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Author, librarySubgrouping = LibraryGrouping.Series)
+        fixture.settings.value.value = settings
+        val rows = entries.toRows("a", Ordering(LibrarySort.Name, true, false))
+        val author = pseudoFolders(rows, LibraryGrouping.Author, true, "", LibrarySort.Name, true).single().pseudo!!
+        val series = pseudoFolders(rows, LibraryGrouping.Series, true, "", LibrarySort.Name, true, author).single().pseudo!!
+        val key = FolderKey(place.id, "a", pseudo = series)
+        val model = FolderViewModel(CompletableDeferred(fixture.services), key, Dispatchers.Unconfined)
+        val returned = mutableListOf<FolderKey>()
+        val actions = FolderActions(openBook = {}, openText = {}, openArchive = {}, openFolder = {}, pinShortcut = { true },
+            openAncestor = {}, close = {}, returnTo = { returned += it })
+        rule.setContent { MaterialTheme { FolderScreen(model, actions) } }
+        rule.waitUntil { model.state.value.content is FolderContent.Shown }
+        rule.onNodeWithText("Story").assertIsDisplayed()
+        rule.runOnIdle { fixture.settings.value.value = settings.copy(librarySubgrouping = LibraryGrouping.None) }
+        rule.waitUntil { returned.size == 1 }
+        assertEquals(key.copy(pseudo = author), returned.single())
+        rule.runOnIdle { fixture.settings.value.value = settings.copy(libraryGrouping = LibraryGrouping.None) }
+        rule.waitUntil { returned.size == 2 }
+        assertEquals(key.copy(pseudo = null), returned.last())
+    }
+
+    @Test
+    fun `second group is conditional excludes the first key and saves immediately`() {
+        show()
+        rule.onNodeWithText("その中のグループ").assertDoesNotExist()
+        rule.runOnIdle {
+            fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Author,
+                librarySubgrouping = LibraryGrouping.Author)
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("セクション").performScrollTo()
+        rule.onNodeWithText("その中のグループ").assertIsDisplayed()
+        assertEquals(1, rule.onAllNodes(hasText("作者")).fetchSemanticsNodes().size)
+        rule.onAllNodes(hasText("なし"))[1].assertIsSelected()
+        rule.onAllNodes(hasText("シリーズ"))[1].performClick()
+        rule.waitForIdle()
+        assertEquals(LibraryGrouping.Series, fixture.settings.value.value.librarySubgrouping)
+        rule.runOnIdle { fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.None) }
+        rule.waitForIdle()
+        rule.onNodeWithText("その中のグループ").assertDoesNotExist()
+        assertEquals(LibraryGrouping.Series, fixture.settings.value.value.librarySubgrouping)
+    }
 
     @Test
     fun `the sheet takes the end of the window and the list beside it keeps showing`() {

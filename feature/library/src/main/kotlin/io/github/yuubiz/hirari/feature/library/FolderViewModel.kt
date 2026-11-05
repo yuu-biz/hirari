@@ -66,6 +66,8 @@ sealed interface FolderContent {
         val folderCoverPath: String?,
         /** Whether the list starts with the item that goes up to the parent folder (docs/spec.md section 4.3, 親フォルダの項目). */
         val parentItem: Boolean = false,
+        /** A group removed by the current settings returns here without an error. */
+        val returnTo: FolderKey? = null,
     ) : FolderContent
 }
 
@@ -203,13 +205,13 @@ class FolderViewModel(
         return combine(starred, query, layout, chosenHere) { rows, query, layout, chosenHere ->
             val covers = CoverLayout(services.covers, services.covers.sizePx(layout.look.thumbSize))
             val pseudo = folder.pseudo
-            val members = if (pseudo == null) rows else fileGroups(rows.filtered(pseudo.filter), pseudo.kind, pseudo.merge)
-                .firstOrNull { it.key == pseudo.key }?.rows.orEmpty()
+            val (existing, members) = resolvePseudoFolder(rows, pseudo, layout.look)
             val filtered = members.filtered(query)
-            val visible = if (pseudo != null) filtered else pseudoFolders(filtered, layout.look.grouping,
-                layout.look.mergeCircleAuthors, query, layout.ordering.sort, layout.ordering.foldersFirst)
+            val visible = pseudoFolders(filtered, layout.look.groupingInside(existing),
+                layout.look.mergeCircleAuthors, query, layout.ordering.sort, layout.ordering.foldersFirst, existing)
             val parentItem = layout.showParentItem && (pseudo != null || folderTrail("", folder.path).parent != null)
-            FolderContent.Shown(visible, members.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem)
+            FolderContent.Shown(visible, members.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem,
+                returnTo = if (existing != pseudo) folder.copy(pseudo = existing) else null)
         }.flowOn(compute)
     }
 

@@ -272,10 +272,11 @@ val SettingsTable: List<Setting> = buildList {
     add(choice(GlobalSettings::libraryGrouping, library, "グループ", { s, v -> s.copy(libraryGrouping = v) },
         LibraryGrouping.None to "なし", LibraryGrouping.Author to "作者", LibraryGrouping.Series to "シリーズ",
         LibraryGrouping.Original to "元ネタ", LibraryGrouping.Event to "イベント"))
+    add(subgroupSetting())
     add(choice(GlobalSettings::librarySection, library, "セクション", { s, v -> s.copy(librarySection = v) },
         LibrarySection.None to "なし", LibrarySection.ReadState to "読書状態", LibrarySection.AddedTime to "追加時期"))
     add(toggle(GlobalSettings::mergeCircleAuthors, library, "サークルと作者をまとめる",
-        note = "グループが作者のとき、共通のサークル名や作者名を持つ本をまとめます。",
+        note = "どちらかの段が作者のとき、共通のサークル名や作者名を持つ本をまとめます。",
     ) { s, v -> s.copy(mergeCircleAuthors = v) })
     add(choice(GlobalSettings::librarySort, library, "並べ替え", { s, v -> s.copy(librarySort = v) },
         LibrarySort.Name to "名前", LibrarySort.Newest to "新しい順", LibrarySort.Oldest to "古い順"))
@@ -320,8 +321,26 @@ val SettingsTable: List<Setting> = buildList {
 }
 
 /** The rows to show on a device with API level [sdk], grouped in the order of [SettingGroup]. */
-fun settingsFor(sdk: Int): Map<SettingGroup, List<Setting>> =
-    SettingsTable.filter { it.minSdk <= sdk }.groupBy { it.group }
+fun settingsFor(sdk: Int, settings: GlobalSettings? = null): Map<SettingGroup, List<Setting>> =
+    SettingsTable.filter { it.minSdk <= sdk }.mapNotNull { if (settings == null) it else it.forSettings(settings) }.groupBy { it.group }
+
+/** The second key is available only beneath a different first key. */
+internal fun Setting.forSettings(settings: GlobalSettings): Setting? = when {
+    key != GlobalSettings::librarySubgrouping.name -> this
+    settings.libraryGrouping == LibraryGrouping.None -> null
+    else -> subgroupSetting(settings.libraryGrouping)
+}
+
+private fun subgroupSetting(exclude: LibraryGrouping? = null) = ChoiceSetting(
+    key = GlobalSettings::librarySubgrouping.name,
+    group = SettingGroup.Library,
+    label = "その中のグループ",
+    options = listOf(LibraryGrouping.None to "なし", LibraryGrouping.Author to "作者", LibraryGrouping.Series to "シリーズ",
+        LibraryGrouping.Original to "元ネタ", LibraryGrouping.Event to "イベント")
+        .filter { it.first != exclude }.map { Option(it.first, it.second) },
+    read = { settings -> settings.librarySubgrouping.takeUnless { it == exclude } ?: LibraryGrouping.None },
+    write = { settings, value -> settings.copy(librarySubgrouping = value) },
+)
 
 private val TapLayout.hasTwoBands get() = this == TapLayout.BothSideBands || this == TapLayout.TopAndBottomBands
 

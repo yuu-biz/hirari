@@ -24,7 +24,11 @@ data class ListLook(
     val grouping: LibraryGrouping = LibraryGrouping.None,
     val mergeCircleAuthors: Boolean = true,
     val section: LibrarySection = LibrarySection.None,
+    val subgrouping: LibraryGrouping = LibraryGrouping.None,
 ) {
+    val effectiveSubgrouping: LibraryGrouping
+        get() = subgrouping.takeUnless { grouping == LibraryGrouping.None || it == grouping } ?: LibraryGrouping.None
+
     private fun fixedColumns(landscape: Boolean): Int? = if (landscape) landscapeColumns else portraitColumns
 
     /** The columns of a grid [width] wide in a window of that orientation (グリッドの列数). */
@@ -46,5 +50,5 @@ data class ListLook(
 internal val CELL_PADDING = 6.dp
 
 fun GlobalSettings.listLook() = ListLook(
-    thumbSize, gridColumnsPortrait, gridColumnsLandscape, gridNameLines, gridNoteLine, coverAspect, libraryTextSize, libraryGrouping, mergeCircleAuthors, librarySection,
+    thumbSize, gridColumnsPortrait, gridColumnsLandscape, gridNameLines, gridNoteLine, coverAspect, libraryTextSize, libraryGrouping, mergeCircleAuthors, librarySection, librarySubgrouping,
 )

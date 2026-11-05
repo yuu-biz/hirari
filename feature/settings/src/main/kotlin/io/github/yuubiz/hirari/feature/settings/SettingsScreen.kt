@@ -95,7 +95,7 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
             }
             is SettingsLoad.Ready -> {
                 val settings = load.settings
-                val groups = remember { settingsFor(Build.VERSION.SDK_INT) }
+                val groups = remember(settings) { settingsFor(Build.VERSION.SDK_INT, settings) }
                 LazyColumn(Modifier.padding(padding).fillMaxSize()) {
                     for ((group, rows) in groups) {
                         item(key = "group-${group.name}") { GroupHeader(group.title) }
@@ -122,7 +122,7 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                     item(key = "about") { ActionRow(stringResource(R.string.settings_about), null) { aboutDialog = true } }
                 }
                 openedSetting?.let { key ->
-                    SettingsTable.firstOrNull { it.key == key }?.let {
+                    SettingsTable.firstOrNull { it.key == key }?.forSettings(settings)?.let {
                         SettingDialog(it, settings, ui.fonts, { openFont.launch(FONT_MIME_TYPES) }, viewModel::change) {
                             openedSetting = null
                             if (opening == SettingsOpening.CommandBar) onBack()

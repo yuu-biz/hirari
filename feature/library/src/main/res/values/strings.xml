@@ -196,6 +196,7 @@
     <string name="look_medium">中</string>
     <string name="look_large">大</string>
     <string name="look_group">グループ</string>
+    <string name="look_subgroup">その中のグループ</string>
     <string name="look_merge_circle_authors">サークルと作者をまとめる</string>
     <string name="look_group_none">なし</string>
     <string name="look_group_author">作者</string>

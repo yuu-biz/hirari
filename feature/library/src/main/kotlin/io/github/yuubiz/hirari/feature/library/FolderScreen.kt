@@ -92,6 +92,7 @@ class FolderActions(
     val pinShortcut: suspend (PlaceShortcut) -> Boolean,
     val openAncestor: (String) -> Unit,
     val close: () -> Unit,
+    val returnTo: (FolderKey) -> Unit = openFolder,
 )
 
 /** [reveal] is the path of a row to scroll to when the list first shows (docs/spec.md section 4.3, 戻ったとき). */
@@ -99,6 +100,8 @@ class FolderActions(
 @Composable
 fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String? = null) {
     val state by model.state.collectAsStateWithLifecycle()
+    val returnTo = (state.content as? FolderContent.Shown)?.returnTo
+    LaunchedEffect(returnTo) { returnTo?.let(actions.returnTo) }
     var filtering by rememberSaveable { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<FileRow?>(null) }
     var adjusting by rememberSaveable { mutableStateOf(false) }

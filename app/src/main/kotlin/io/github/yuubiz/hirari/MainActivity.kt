@@ -159,6 +159,7 @@ class MainActivity : ComponentActivity() {
                                     pinShortcut = { pinShortcut(it) },
                                     openAncestor = { nav.goUpTo(key.copy(path = it, documentId = null, pseudo = null), from = key.path) },
                                     close = { nav.popBackStack() },
+                                    returnTo = { nav.goUpTo(it, from = key.path) },
                                 ),
                                 reveal = route.reveal,
                             )
