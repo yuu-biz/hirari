@@ -7,6 +7,7 @@ import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 import android.net.Uri
+import android.system.Os
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,7 +26,7 @@ import java.io.InputStream
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Reads the first bytes of the picked or handed-over document off the main thread and opens it in the reader its
+ * Reads the head and, for possible text, the tail of the document off the main thread and opens it in the reader its
  * content calls for (docs/spec.md sections 4.2 and 4.11). It keeps the grant when the provider offers a lasting one;
  * otherwise the document opens on the grant of this start alone.
  */
@@ -45,7 +46,8 @@ internal fun IncomingDocument(route: IncomingRoute, nav: NavController, resolver
             } catch (_: Exception) {
                 null
             }
-            route.readerRoute(prefix)
+            val tail = if (prefix != null && incomingKind(prefix) == IncomingKind.Text) resolver.readTail(uri) else null
+            route.readerRoute(prefix, tail)
         }
         nav.navigate(target) { popUpTo<IncomingRoute> { inclusive = true } }
     }
@@ -85,6 +87,27 @@ private fun InputStream.readPrefix(): ByteArray {
         filled += read
     }
     return bytes.copyOf(filled)
+}
+
+/** A provider may supply a pipe or an unknown size; either leaves the head-only decision in place. */
+private fun ContentResolver.readTail(uri: Uri): ByteArray? = try {
+    openFileDescriptor(uri, "r")?.use { descriptor ->
+        val size = descriptor.statSize
+        if (size < 0) return@use null
+        val bytes = ByteArray(minOf(size, INCOMING_TAIL_BYTES.toLong()).toInt())
+        val start = size - bytes.size
+        var filled = 0
+        while (filled < bytes.size) {
+            val read = Os.pread(descriptor.fileDescriptor, bytes, filled, bytes.size - filled, start + filled)
+            if (read <= 0) return@use null
+            filled += read
+        }
+        bytes
+    }
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    null
 }
 
 /**

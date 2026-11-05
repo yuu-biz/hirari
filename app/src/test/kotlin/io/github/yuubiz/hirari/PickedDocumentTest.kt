@@ -55,6 +55,31 @@ class PickedDocumentTest {
     }
 
     @Test
+    fun textLookingPrefixWithZipEndRecordOpensTheImageRoute() {
+        val head = ByteArray(4096) { 'a'.code.toByte() }
+        // EOCD followed by the maximum 65,535-byte comment: its signature is at the tail window's start.
+        val tail = ByteArray(22 + 65535) { 'c'.code.toByte() }.also {
+            ByteArray(22).copyInto(it)
+            byteArrayOf(0x50, 0x4B, 0x05, 0x06).copyInto(it)
+            it[20] = 0xFF.toByte()
+            it[21] = 0xFF.toByte()
+        }
+        assertEquals(
+            OpenBookRequest(BookAddress.Document(UriString(uri))).toReaderRoute(),
+            IncomingRoute(uri).readerRoute(head, tail),
+        )
+    }
+
+    @Test
+    fun textWithoutZipEndRecordStillOpensTheTextRoute() {
+        val head = ByteArray(4096) { 'a'.code.toByte() }
+        val expected = TextAddress.Document(UriString(uri)).toRoute()
+        assertEquals(expected, IncomingRoute(uri).readerRoute(head))
+        assertEquals(expected, IncomingRoute(uri).readerRoute(head, "plain text tail".toByteArray()))
+        assertEquals(expected, IncomingRoute(uri).readerRoute(head, byteArrayOf(0x50, 0x4B, 0x05)))
+    }
+
+    @Test
     fun unknownOrUnreadablePickedDocumentsUseTheIncomingImageReaderErrorPath() {
         val expected = OpenBookRequest(BookAddress.Document(UriString(uri))).toReaderRoute()
         assertEquals(expected, IncomingRoute(uri).readerRoute(byteArrayOf(1, 0, 2)))

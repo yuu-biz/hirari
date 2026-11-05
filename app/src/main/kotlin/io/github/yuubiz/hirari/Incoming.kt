@@ -61,14 +61,22 @@ internal enum class IncomingKind { Images, Text }
 /** The bytes [incomingKind] looks at. */
 internal const val INCOMING_PREFIX_BYTES = 4096
 
+/** The EOCD record and the largest ZIP comment. */
+internal const val INCOMING_TAIL_BYTES = 22 + 65535
+
 /**
  * The text row of the table of docs/spec.md section 3.2: none of the other formats, and no NUL in the first 4 KB
  * unless a UTF-16 byte order mark starts it. Everything else goes to the image reader, which says why when it does
  * not open.
  */
-internal fun incomingKind(prefix: ByteArray): IncomingKind {
+internal fun incomingKind(prefix: ByteArray, tail: ByteArray? = null): IncomingKind {
     val head = prefix.copyOf(minOf(prefix.size, INCOMING_PREFIX_BYTES))
     if (sniffImage(head) != null || isPdf(head) || isArchive(head)) return IncomingKind.Images
+    if (tail != null) {
+        for (at in (tail.size - 4) downTo maxOf(0, tail.size - INCOMING_TAIL_BYTES)) {
+            if (tail.startsWith(0x50, 0x4B, 0x05, 0x06, at = at)) return IncomingKind.Images
+        }
+    }
     val utf16 = head.startsWith(0xFF, 0xFE) || head.startsWith(0xFE, 0xFF)
     return if (utf16 || head.none { it == 0.toByte() }) IncomingKind.Text else IncomingKind.Images
 }
@@ -87,7 +95,7 @@ private fun ByteArray.startsWith(vararg bytes: Int, at: Int = 0): Boolean =
 internal data class IncomingRoute(val uri: String)
 
 /** A missing prefix follows the image reader's error path, as an unreadable incoming document does. */
-internal fun IncomingRoute.readerRoute(prefix: ByteArray?): Any = when (prefix?.let(::incomingKind)) {
+internal fun IncomingRoute.readerRoute(prefix: ByteArray?, tail: ByteArray? = null): Any = when (prefix?.let { incomingKind(it, tail) }) {
     IncomingKind.Text -> TextAddress.Document(UriString(uri)).toRoute()
     IncomingKind.Images, null -> OpenBookRequest(BookAddress.Document(UriString(uri))).toReaderRoute()
 }
