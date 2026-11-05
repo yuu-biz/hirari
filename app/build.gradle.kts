@@ -1,9 +1,13 @@
+import hirari.loadReleaseSigning
+
 plugins {
     id("hirari.android.application")
     id("hirari.android.compose")
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.baselineprofile)
 }
+
+val releaseSigning = loadReleaseSigning(rootDir)
 
 android {
     defaultConfig {
@@ -16,8 +20,21 @@ android {
     lint {
         checkReleaseBuilds = true
     }
+    releaseSigning?.let { signing ->
+        signingConfigs.create("release") {
+            storeFile = signing.storeFile
+            storePassword = signing.storePassword
+            keyAlias = signing.keyAlias
+            keyPassword = signing.keyPassword
+            enableV1Signing = false
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = false
+        }
+    }
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -43,6 +60,22 @@ android {
             // The SMB fixture tests read the fixture's address from -Dhirari.smb.* (tools/smb-fixture) and skip
             // without it.
             test.systemProperties(providers.systemPropertiesPrefixedBy("hirari.smb.").get())
+        }
+    }
+}
+
+if (releaseSigning == null) {
+    // A separate dependency also runs when an unsigned package is already up to date or cached.
+    val requireReleaseSigning = tasks.register("requireReleaseSigning") {
+        doLast {
+            throw GradleException(
+                "Release signing is not set up: create keystore.properties in the repository root (see docs/releasing.md).",
+            )
+        }
+    }
+    tasks.configureEach {
+        if (name in setOf("assembleRelease", "packageRelease", "bundleRelease", "packageReleaseBundle", "signReleaseBundle")) {
+            dependsOn(requireReleaseSigning)
         }
     }
 }

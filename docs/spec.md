@@ -2492,6 +2492,10 @@ M6 の点検で確かめ、直したことを次に書く。ライブラリ、�
 | 配布の単位 | GitHub Releases で APK 1 個を配布する。3 つの ABI をすべて含める。端末に合うファイルを選ばずに入れられるようにする |
 | 縮小 | release は R8 でコードとリソースを縮める（`isMinifyEnabled`、`isShrinkResources`）。lint も release のビルドで掛ける。`benchmark` は release を写すので、縮めた APK をデバッグ鍵で入れて試せる。keep 規則は、ネイティブから名前で引くクラスと、実行時に反射で引く依存の持ち主のモジュールの `consumer-rules.pro` に置く（`:core:archive` の libarchive の呼び戻し、`:core:image` の JXL、`:core:source` の smbj と mbassador）。アプリだけに要る規則は `app/proguard-rules.pro` に置く（ナビゲーションの経路の enum の名前）。`:core:archive` の呼び戻しは、`KeepRulesTest` が JNI の記述と規則を Kotlin の署名と照らす。規則を足すときは、縮めた APK で該当の経路を動かして確かめる。`mapping.txt` は `app/build/outputs/mapping/<ビルドの種類>/` に出る。配った版ごとに保管する（落ちたときの読み解きに要る）。縮める前の `benchmark` は 41.6 MB、縮めたあとは 10.3 MB（3 つの ABI） |
 
+- release は release 鍵 1 本で v2 と v3 の署名を付ける。v1 と v4 は付けない。鍵と、署名に使う `keystore.properties` はリポジトリに入れない。秘密を配布物のソースから分けるためである。
+- 署名の設定はリポジトリ直下の `keystore.properties` の `storeFile`、`storePassword`、`keyAlias`、`keyPassword` から読む。`storeFile` は絶対パスか、リポジトリ直下からの相対パスにする。項目が欠けていれば、その項目名だけを知らせてビルドを止める。
+- ファイルがなければ release の作成だけを止める。検査、試験、debug と benchmark の作成は動かせる。benchmark はデバッグ鍵を使う。署名鍵がない環境でも開発と検証を続けるためである。設定の手順は `docs/releasing.md` に置く。
+
 ### 8.2 モジュール
 
 | モジュール | 責務 | 依存してよいもの |
