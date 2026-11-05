@@ -96,10 +96,10 @@ class FolderActions(
     val returnTo: (FolderKey) -> Unit = openFolder,
 )
 
-/** [reveal] is the row to reveal on first showing or when a reader returns another path (4.3, 戻ったとき). */
+/** [revealToken] distinguishes returns to the same [reveal] row (4.3, 戻ったとき). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String? = null) {
+fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String? = null, revealToken: Long = 0L) {
     val state by model.state.collectAsStateWithLifecycle()
     val returnTo = (state.content as? FolderContent.Shown)?.returnTo
     LaunchedEffect(returnTo) { returnTo?.let(actions.returnTo) }
@@ -190,7 +190,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     }
                     is FolderContent.Failed -> ListFailed(content.reason, onRetry = { if (content.reason == ListFailure.NoLocalNetwork) gate(model::load) else model.load() })
                     is FolderContent.Shown -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = model::refresh, modifier = Modifier.fillMaxSize()) {
-                        FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem }, folderKey = model.folder.copy(pseudo = content.pseudo))
+                        FileList(content, reveal, onOpen = ::open, onLongPress = { sheetFor = it }, onUp = up.takeIf { content.parentItem }, folderKey = model.folder.copy(pseudo = content.pseudo), revealToken = revealToken)
                     }
                 }
             }

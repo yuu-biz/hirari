@@ -89,25 +89,34 @@ import kotlin.math.roundToInt
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null, folderKey: FolderKey? = null) {
+internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null, folderKey: FolderKey? = null, revealToken: Long = 0L) {
     val scope = rememberCoroutineScope()
     var folded by rememberSaveable(folderKey) { mutableStateOf(arrayListOf<String>()) }
-    val prepared by produceState<FileCells?>(null, content.rows, content.look.section, onUp != null, folded) {
-        value = withContext(Dispatchers.Default) { prepareFileCells(content.rows, content.look.section, onUp != null, folded.toSet()) }
+    val preparationKey = listOf(content.rows, content.look.section, onUp != null, folded)
+    val prepared by produceState<Pair<List<Any>, FileCells>?>(null, preparationKey) {
+        value = preparationKey to withContext(Dispatchers.Default) { prepareFileCells(content.rows, content.look.section, onUp != null, folded.toSet()) }
     }
-    val presentation = prepared ?: return
+    val presentation = prepared?.second ?: return
     val cells = presentation.cells
     fun toggle(header: ListCell.Header) {
         folded = ArrayList(if (header.key in folded) folded - header.key else folded + header.key)
     }
     val empty = if (content.rows.isEmpty()) (if (content.total == 0) R.string.folder_empty else R.string.folder_no_match) else null
     var revealedPath by rememberSaveable(folderKey) { mutableStateOf<String?>(null) }
+    var revealedToken by rememberSaveable(folderKey) { mutableStateOf<Long?>(null) }
     suspend fun revealOnce(scrollTo: suspend (Int) -> Unit) {
-        if (reveal == null || revealedPath == reveal) return
+        if (reveal == null || (revealedPath == reveal && revealedToken == revealToken)) return
+        if (prepared?.first != preparationKey) return
+        val section = presentation.entrySections[reveal]
+        if (section != null && section in folded) {
+            folded = ArrayList(folded - section)
+            return
+        }
         val at = cells.indexOfFirst { it is ListCell.Entry && it.row.path == reveal }
         if (at >= 0) {
             scrollTo(at)
             revealedPath = reveal
+            revealedToken = revealToken
         }
     }
     val focus = remember { CoverFocus() }
@@ -122,7 +131,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             save = { presentation.saveAnchor(it.layoutInfo.visibleItemsInfo.map { cell -> cell.index to cell.offset.y }) },
                             restore = { saved -> presentation.restoreAnchor(saved).let { (index, offset) -> LazyGridState(index, offset) } },
                         )) { LazyGridState() }
-                        LaunchedEffect(reveal, cells) { revealOnce { grid.scrollToItem(it) } }
+                        LaunchedEffect(reveal, revealToken, prepared) { revealOnce { grid.scrollToItem(it) } }
                         val landscape = isLandscapeWindow()
                         val columns = content.look.columns(maxWidth, landscape)
                         val size = content.look.gridThumbSize(maxWidth / columns, landscape)
@@ -155,7 +164,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             save = { presentation.saveAnchor(it.layoutInfo.visibleItemsInfo.map { cell -> cell.index to cell.offset }) },
                             restore = { saved -> presentation.restoreAnchor(saved).let { (index, offset) -> LazyListState(index, offset) } },
                         )) { LazyListState() }
-                        LaunchedEffect(reveal, cells) { revealOnce { list.scrollToItem(it) } }
+                        LaunchedEffect(reveal, revealToken, prepared) { revealOnce { list.scrollToItem(it) } }
                         val covers = content.covers.takeIf { content.view == LibraryView.ThumbnailList }
                         LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
                             presentation.intervals.forEach { interval ->

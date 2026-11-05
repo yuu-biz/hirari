@@ -168,6 +168,7 @@ class MainActivity : ComponentActivity() {
                             val key = route.toKey()
                             val folder = viewModel { FolderViewModel(app.library, key) }
                             val lastBook by entry.savedStateHandle.getStateFlow<String?>(LAST_READER_BOOK, null).collectAsState()
+                            val returnToken by entry.savedStateHandle.getStateFlow(READER_RETURN_TOKEN, 0L).collectAsState()
                             ReportSettled(nav, entry, app) { folder.state.first { it.content is FolderContent.Shown || it.content is FolderContent.Failed } }
                             FolderScreen(
                                 folder,
@@ -182,6 +183,7 @@ class MainActivity : ComponentActivity() {
                                     returnTo = { nav.goUpTo(it, from = key.path) },
                                 ),
                                 reveal = lastBook ?: route.reveal,
+                                revealToken = returnToken,
                             )
                         }
                     }
@@ -244,13 +246,15 @@ class MainActivity : ComponentActivity() {
                     composable<ReaderRoute> { entry ->
                         Kept(app, entry, reader = true) {
                             val request = entry.toRoute<ReaderRoute>().toRequest()
-                            LaunchedEffect(entry.id) { nav.reportReaderBook(request.book) }
                             val reader = viewModel { ReaderViewModel(app, app.services, request) }
                             ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent }.first { it } }
                             ReaderScreen(
                                 reader,
                                 keys,
-                                onClose = { if (!nav.popBackStack()) finish() },
+                                onClose = {
+                                    nav.reportReaderBook(request.book)
+                                    if (!nav.popBackStack()) finish()
+                                },
                                 onOpenBook = { nav.navigate(it.toReaderRoute()) { popUpTo<ReaderRoute> { inclusive = true } } },
                                 onCoverRange = { book, entry -> nav.navigate(CoverRangeRoute(book.value, entry)) },
                                 onOpenSettings = { nav.navigate(it.toRoute()) },

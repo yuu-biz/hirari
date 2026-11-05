@@ -88,12 +88,14 @@ internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.va
     pseudo?.parent?.merge ?: true, pseudo?.parent?.filter.orEmpty())
 
 internal const val LAST_READER_BOOK = "lastReaderBook"
+internal const val READER_RETURN_TOKEN = "readerReturnToken"
 
-/** The last reader replaces this result even when 次の本 replaces the reader's own back stack entry (4.3). */
+/** Report each return, even to the same book or after 次の本 replaces the reader's own entry (4.3). */
 internal fun NavController.reportReaderBook(book: BookAddress) {
     val list = previousBackStackEntry?.takeIf { it.destination.hasRoute<FolderRoute>() } ?: return
     val path = list.toRoute<FolderRoute>().readerReveal(book) ?: return
     list.savedStateHandle[LAST_READER_BOOK] = path
+    list.savedStateHandle[READER_RETURN_TOKEN] = (list.savedStateHandle.get<Long>(READER_RETURN_TOKEN) ?: 0L) + 1L
 }
 
 /** Only return a path to the list of the same place; nested books reveal the child folder that holds them. */

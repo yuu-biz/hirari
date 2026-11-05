@@ -8,7 +8,7 @@ internal sealed interface CellInterval {
     data class Items(val cells: List<ListCell>) : CellInterval
 }
 
-internal data class FileCells(val cells: List<ListCell>, val intervals: List<CellInterval>, val entryKeys: List<String>)
+internal data class FileCells(val cells: List<ListCell>, val intervals: List<CellInterval>, val entryKeys: List<String>, val entrySections: Map<String, String> = emptyMap())
 
 /** Partition sections and intervals together, off main. Keep folded entries in the anchor's original order. */
 internal fun prepareFileCells(rows: List<FileRow>, section: LibrarySection, parent: Boolean, folded: Set<String>): FileCells {
@@ -16,6 +16,8 @@ internal fun prepareFileCells(rows: List<FileRow>, section: LibrarySection, pare
     val cells = ArrayList<ListCell>(all.size)
     val intervals = ArrayList<CellInterval>()
     val keys = ArrayList<String>(rows.size)
+    val sections = HashMap<String, String>()
+    var sectionKey: String? = null
     var run = ArrayList<ListCell>()
     var hidden = false
     fun flush() {
@@ -23,19 +25,23 @@ internal fun prepareFileCells(rows: List<FileRow>, section: LibrarySection, pare
         run = ArrayList()
     }
     for (cell in all) {
-        if (cell is ListCell.Entry) keys += cell.key
+        if (cell is ListCell.Entry) {
+            keys += cell.key
+            sectionKey?.let { sections[cell.row.path] = it }
+        }
         if (cell is ListCell.Header) {
             flush()
             cells += cell
             intervals += CellInterval.Header(cell)
             hidden = cell.key in folded
+            sectionKey = cell.key
         } else if (!hidden) {
             cells += cell
             run += cell
         }
     }
     flush()
-    return FileCells(cells, intervals, keys)
+    return FileCells(cells, intervals, keys, sections)
 }
 
 /** Visible cell indexes and their signed offsets from the viewport start, in lazy layout coordinates. */
