@@ -144,9 +144,10 @@ class Prefetcher<R, T>(
     private val failedShapes = HashSet<Int>()
 
     /**
-     * The zoomed target a view failed to be read again at. It is not read again at that target until the connection
-     * comes back or a retry, so a lost connection does not make every update repeat a read that waits out its
-     * timeout. The view stays as it was prepared, and another zoom is another target.
+     * The zoomed target a view failed to be read again at. It is not read again at that target until another pinch
+     * starts on the view, the zoom returns to the scale mode, the reader leaves the view, the connection comes back
+     * or a retry, so a lost connection does not make every update repeat a read that waits out its timeout. The
+     * view stays as it was prepared, and another zoom is another target.
      */
     private val failedZooms = HashMap<PageView, ViewTarget>()
 
@@ -167,6 +168,7 @@ class Prefetcher<R, T>(
     /** The steps, with the whole page as the part, a page failed to prepare with. Other steps read it again. */
     private val failedSteps = HashMap<Int, PageSteps>()
     private var last: PrefetchInput? = null
+    private var wasPinching = false
     private var firstViewDrawn = false
     private var visible = true
 
@@ -213,6 +215,9 @@ class Prefetcher<R, T>(
     fun update(input: PrefetchInput) {
         last = input
         if (trimmedOn != input.views[input.current]) trimmedOn = null
+        if (input.pinching && !wasPinching) failedZooms.remove(input.views[input.current])
+        wasPinching = input.pinching
+        failedZooms.keys.removeAll { input.targets(it)?.zoomed != true }
         val resident = Resident(
             views = cache.filter { (view, prepared) ->
                 val target = input.targets(view)
@@ -455,6 +460,7 @@ class Prefetcher<R, T>(
             listener.onChanged()
             return@launch
         }
+        failedZooms.remove(target.view)
         cache.put(target.view, PreparedView(target, pages.map { it!! }))?.let { old ->
             old.pages.forEach { if (it is PreparedPage.Image) release(it.image) }
         }

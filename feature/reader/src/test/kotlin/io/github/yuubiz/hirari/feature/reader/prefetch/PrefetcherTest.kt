@@ -273,6 +273,44 @@ class PrefetcherTest {
     }
 
     @Test
+    fun aZoomThatFailedLocallyIsReadAgainAtTheSameSizeAfterANewPinchAndAfterReturningToTheScaleMode() = runTest {
+        val scan = PageShape.Known(3000, 4500)
+        val loader = FakeLoader(shapes = (0 until 3).associateWith { PageResult.Ready(scan) }.toMutableMap())
+        val reader = reader(pages = 3, loader = loader)
+        advanceUntilIdle()
+        val first = PageView.One(0)
+        loader.failWhen = { _, size -> if (size.width > 1080) PageResult.Failed(FailureReason.ReadError, retryable = true) else null }
+        reader.pinch(1.5625f)
+        advanceUntilIdle()
+        val failedAt = reader.state.prefetchTarget(first)!!
+        assertTrue(failedAt.zoomed)
+        assertEquals(PreparedPage.Image("0@1080x1620"), reader.prefetcher[first]!!.pages.single())
+        val reads = loader.prepares[0]!!
+        loader.failWhen = { _, _ -> null }
+        reader.pinch(1f)
+        advanceUntilIdle()
+        assertEquals(failedAt, reader.state.prefetchTarget(first), "the same zoom again")
+        assertEquals(failedAt, reader.prefetcher[first]!!.target, "a new pinch tries the zoom again")
+        assertTrue(loader.prepares[0]!! > reads)
+
+        loader.failWhen = { _, size -> if (size.width > 1080) PageResult.Failed(FailureReason.ReadError, retryable = true) else null }
+        reader.pinch(0.4f)
+        advanceUntilIdle()
+        assertEquals(1f, reader.state.zoom.factor)
+        reader.pinch(1.5625f)
+        advanceUntilIdle()
+        assertEquals(PreparedPage.Image("0@1080x1620"), reader.prefetcher[first]!!.pages.single())
+        loader.failWhen = { _, _ -> null }
+        reader.pinch(0.4f)
+        advanceUntilIdle()
+        val again = loader.prepares[0]!!
+        reader.pinch(1.5625f)
+        advanceUntilIdle()
+        assertEquals(PreparedPage.Image("0@2109x3164"), reader.prefetcher[first]!!.pages.single())
+        assertTrue(loader.prepares[0]!! > again)
+    }
+
+    @Test
     fun aPinchStopsTheReadForTheLastZoomAndItsResultIsNotUsed() = runTest {
         val scan = PageShape.Known(3000, 4500)
         val loader = FakeLoader(shapes = (0 until 3).associateWith { PageResult.Ready(scan) }.toMutableMap())
