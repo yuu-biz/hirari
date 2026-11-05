@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.yuubiz.hirari.core.archive.ExtractionCache
 import io.github.yuubiz.hirari.core.data.FavoriteKind
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.OpeningBook
@@ -1047,7 +1048,8 @@ class ReaderViewModel internal constructor(
             return failed(e.openFailure())
         }
         val stash = opening.services.smbCache?.let { DiskStash(it, id, file.size, file.modified) }
-        val result = Books.openBook(meter.counted(file), opening.services.decoding, File(application.cacheDir, "extract/${id.value}"), naming, stash)
+        val extractDir = ExtractionCache.directory(application.cacheDir, id, file.size, file.lastModifiedMs)
+        val result = Books.openBook(meter.counted(file), opening.services.decoding, extractDir, naming, stash)
         return Located(id, source, Uri.EMPTY, folder = false, result, remote, overrides, fileSize = file.size)
     }
 
@@ -1075,7 +1077,8 @@ class ReaderViewModel internal constructor(
             bytes.close()
             throw e
         }
-        val result = Books.openBook(bytes, opening.services.decoding, File(application.cacheDir, "extract/${bookId.value}"), naming)
+        val extractDir = ExtractionCache.directory(application.cacheDir, bookId, bytes.size, bytes.lastModifiedMs)
+        val result = Books.openBook(bytes, opening.services.decoding, extractDir, naming)
         return Located(bookId, source, uri, folder = false, result, overrides = overrides)
     }
 

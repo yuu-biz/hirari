@@ -51,7 +51,7 @@ class ArchiveSession private constructor(
 
     private val reader: EntryReader = when {
         listing.records != null -> FromCentralDirectory(listing.records)
-        solid && extractDir != null -> Extraction(libarchive.value, dispatcher, entries, extractDir, source)
+        solid && extractDir != null -> Extraction(libarchive.value, dispatcher, entries, extractDir)
         // A solid entry needs the data of the entries before it, which a jump would skip.
         else -> Direct(if (indexError == null) Cursor.Before(entries.size) else Cursor.Closed, listing.positions.takeUnless { solid })
     }

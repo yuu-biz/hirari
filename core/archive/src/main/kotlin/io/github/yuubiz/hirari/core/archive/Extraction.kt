@@ -1,6 +1,5 @@
 package io.github.yuubiz.hirari.core.archive
 
-import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +37,6 @@ internal class Extraction(
     private val dispatcher: CoroutineDispatcher,
     private val entries: List<ArchiveEntry>,
     dir: File,
-    source: ByteSource,
     private val clock: () -> Long = System::currentTimeMillis,
     private val maxCacheBytes: Long = MAX_CACHE_BYTES,
     private val io: CoroutineDispatcher = Dispatchers.IO,
@@ -63,7 +61,6 @@ internal class Extraction(
     }
 
     private val dir = dir.absoluteFile.normalize()
-    private val generation = "1\n${source.size}\n${source.lastModifiedMs ?: "unknown"}\n"
     private val lock = Any()
     private val slots = Array<Slot>(entries.size) { Slot.Pending }
     private var anchor = 0
@@ -141,7 +138,6 @@ internal class Extraction(
     /** Takes in the files earlier sessions left, and deletes the caches of books closed long ago. */
     private fun prepare() {
         dir.mkdirs()
-        val reuse = prepareGeneration()
         touch()
         val now = clock()
         dir.parentFile?.listFiles()?.forEach { other ->
@@ -152,33 +148,9 @@ internal class Extraction(
         change {
             for (i in slots.indices) {
                 val file = fileOf(i)
-                if (reuse && slots[i] == Slot.Pending && file.isFile) cache(i, file)
+                if (slots[i] == Slot.Pending && file.isFile) cache(i, file)
             }
         }
-    }
-
-    /** Serializes the stamp check and write across the reader and cover sessions sharing a directory. */
-    private fun prepareGeneration(): Boolean = synchronized(generationLock) {
-        val stamp = File(dir, GENERATION)
-        val previous = try {
-            stamp.readText()
-        } catch (_: IOException) {
-            null
-        }
-        if (previous == generation) return@synchronized true
-        var cleared = true
-        for (file in dir.listFiles().orEmpty()) {
-            if (file.isFile && file.name.isNotEmpty() && file.name.all { it in '0'..'9' } && !file.delete()) cleared = false
-        }
-        // Never mark old entries as belonging to the new archive if deleting one failed.
-        if (cleared) {
-            try {
-                stamp.writeText(generation)
-            } catch (_: IOException) {
-                stamp.delete()
-            }
-        }
-        false
     }
 
     private fun pass() {
@@ -355,8 +327,6 @@ internal class Extraction(
         private const val IDLE_MILLIS = 24L * 60 * 60 * 1000
         const val PART_MILLIS = 60L * 60 * 1000
         const val PART = ".part"
-        const val GENERATION = ".generation"
-        private val generationLock = Any()
     }
 }
 

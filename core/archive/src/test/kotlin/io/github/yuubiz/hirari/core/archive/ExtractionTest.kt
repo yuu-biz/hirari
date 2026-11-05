@@ -46,13 +46,13 @@ class ExtractionTest {
         pages: List<Pair<String, ByteArray>> = this.pages,
         source: MemorySource = MemorySource(pages.flatMap { it.second.toList() }.toByteArray()),
         maxCacheBytes: Long = 1L shl 30,
-    ) = Extraction(FakeArchive(source, pages), dispatcher, entries(pages), dir, source, maxCacheBytes = maxCacheBytes)
+    ) = Extraction(FakeArchive(source, pages), dispatcher, entries(pages), dir, maxCacheBytes = maxCacheBytes)
 
     private fun Extraction.readNow(index: Int, pages: List<Pair<String, ByteArray>> = this@ExtractionTest.pages): EntryResult = runBlocking {
         withTimeout(5_000) { read(entries(pages)[index], ArchiveSession.MAX_ENTRY_BYTES) }
     }
 
-    private fun cachedBytes(dir: File) = dir.listFiles()!!.filter { it.name != Extraction.GENERATION }.sumOf { it.length() }
+    private fun cachedBytes(dir: File) = dir.listFiles()!!.sumOf { it.length() }
 
     private fun assertData(expected: ByteArray, result: EntryResult) {
         assertTrue("reads the data: $result", result is EntryResult.Data)
@@ -99,9 +99,8 @@ class ExtractionTest {
         val dir = temp.newFolder("book")
         val io = HeldDispatcher()
         val started = CountDownLatch(1)
-        val readerSource = MemorySource(pages.flatMap { it.second.toList() }.toByteArray()) { started.await() }
-        val readerArchive = FakeArchive(readerSource, pages)
-        val reader = Extraction(readerArchive, dispatcher, entries(pages), dir, readerSource, maxCacheBytes = 1000, io = io)
+        val readerArchive = FakeArchive(MemorySource(pages.flatMap { it.second.toList() }.toByteArray()) { started.await() }, pages)
+        val reader = Extraction(readerArchive, dispatcher, entries(pages), dir, maxCacheBytes = 1000, io = io)
         val read = CoroutineScope(Dispatchers.Default).async(start = CoroutineStart.UNDISPATCHED) {
             withTimeout(5_000) { reader.read(entries(pages)[0], ArchiveSession.MAX_ENTRY_BYTES) }
         }
@@ -110,13 +109,11 @@ class ExtractionTest {
         executor.submit {}.get(5, TimeUnit.SECONDS)
 
         val thumbnailExecutor = Executors.newSingleThreadExecutor()
-        val thumbnailSource = MemorySource(pages.flatMap { it.second.toList() }.toByteArray())
         val thumbnail = Extraction(
-            FakeArchive(thumbnailSource, pages),
+            FakeArchive(MemorySource(pages.flatMap { it.second.toList() }.toByteArray()), pages),
             thumbnailExecutor.asCoroutineDispatcher(),
             entries(pages),
             dir,
-            thumbnailSource,
             maxCacheBytes = 1000,
         )
         assertData(pages[2].second, thumbnail.readNow(2))
@@ -169,7 +166,7 @@ class ExtractionTest {
         executor.shutdown()
         assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
 
-        assertEquals(listOf(Extraction.GENERATION), dir.listFiles()!!.map { it.name })
+        assertEquals(emptyList<String>(), dir.listFiles()!!.map { it.name })
     }
 
     /** Holds each block dispatched to it until the test runs it. */

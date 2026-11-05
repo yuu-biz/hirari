@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
+import io.github.yuubiz.hirari.core.archive.ExtractionCache
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.Books
@@ -10,6 +11,7 @@ import io.github.yuubiz.hirari.core.image.FolderFile
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LibraryLocation
+import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
@@ -58,14 +60,27 @@ class DeviceCoverBooks(
 ) : CoverBooks {
     private val copyDir get() = File(cacheDir, "copy")
 
-    private suspend fun extractDir(spec: CoverSpec.Book) = withContext(Dispatchers.IO) { coverExtractDir(cacheDir, spec.id) }
+    private suspend fun openDocument(uri: Uri, spec: CoverSpec.Book, decoding: ImageDecoding): BookResult =
+        Books.openDocument(resolver, uri, copyDir, decoding, extractDirOf = { source ->
+            withContext(Dispatchers.IO) { coverExtractDir(cacheDir, spec.id, source.size, source.lastModifiedMs) }
+        })
+
+    private suspend fun openBook(source: ByteSource, spec: CoverSpec.Book, decoding: ImageDecoding): BookResult {
+        val dir = try {
+            withContext(Dispatchers.IO) { coverExtractDir(cacheDir, spec.id, source.size, source.lastModifiedMs) }
+        } catch (e: Throwable) {
+            source.close()
+            throw e
+        }
+        return Books.openBook(source, decoding, dir)
+    }
 
     override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = try {
         when (val origin = spec.origin) {
             is CoverOrigin.Archive -> when (val place = origin.place) {
                 is LibraryLocation.SafTree ->
-                    Books.openDocument(resolver, documentUri(place, origin.path, origin.documentId), copyDir, decoding, extractDir(spec))
-                is LibraryLocation.SmbShare -> Books.openBook(smb.open(place, origin.path, SmbPurpose.Background), decoding, extractDir(spec))
+                    openDocument(documentUri(place, origin.path, origin.documentId), spec, decoding)
+                is LibraryLocation.SmbShare -> openBook(smb.open(place, origin.path, SmbPurpose.Background), spec, decoding)
             }
             is CoverOrigin.Image -> {
                 val name = origin.path.substringAfterLast('/')
@@ -93,7 +108,7 @@ class DeviceCoverBooks(
                     Books.openFolder(files, decoding)
                 }
             }
-            is CoverOrigin.Document -> Books.openDocument(resolver, Uri.parse(origin.uri.value), copyDir, decoding, extractDir(spec))
+            is CoverOrigin.Document -> openDocument(Uri.parse(origin.uri.value), spec, decoding)
             is CoverOrigin.Tree -> Books.openTreeFolder(resolver, Uri.parse(origin.uri.value), null, copyDir, decoding)
         }
     } catch (e: CancellationException) {
@@ -134,7 +149,8 @@ class DeviceCoverBooks(
  * archive list extracts the book into, when it is there, and none otherwise, so that a cover reads up to its entry
  * and writes nothing. Blocks.
  */
-internal fun coverExtractDir(cacheDir: File, book: BookId): File? = File(cacheDir, "extract/${book.value}").takeIf { it.isDirectory }
+internal fun coverExtractDir(cacheDir: File, book: BookId, size: Long, lastModifiedMs: Long?): File? =
+    ExtractionCache.directory(cacheDir, book, size, lastModifiedMs).takeIf { it.isDirectory }
 
 private fun Exception.bookFailure(): BookFailure = when (this) {
     is FileNotFoundException, is IllegalArgumentException -> BookFailure.NotFound

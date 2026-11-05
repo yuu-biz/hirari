@@ -192,6 +192,7 @@ object Books {
         decoding: ImageDecoding,
         extractDir: File? = null,
         naming: EntryNaming = EntryNaming(),
+        extractDirOf: (suspend (ByteSource) -> File?)? = null,
     ): BookResult {
         val modified = withContext(Dispatchers.IO) { resolver.documentLastModifiedMs(uri) }
         val source = when (val opened = safely(release = ByteSource::close) {
@@ -200,7 +201,15 @@ object Books {
             is Safely.Done -> opened.value
             is Safely.Failed -> return BookResult.Failed(opened.reason)
         }
-        return openBook(source, decoding, extractDir, naming)
+        val dir = extractDir ?: extractDirOf?.let { of ->
+            try {
+                of(source)
+            } catch (e: Throwable) {
+                source.close()
+                throw e
+            }
+        }
+        return openBook(source, decoding, dir, naming)
     }
 
     /**

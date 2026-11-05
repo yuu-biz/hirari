@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ArchiveSession
 import io.github.yuubiz.hirari.core.archive.EntryNames
 import io.github.yuubiz.hirari.core.archive.EntryResult
+import io.github.yuubiz.hirari.core.archive.ExtractionCache
 import io.github.yuubiz.hirari.core.archive.OpenResult
 import io.github.yuubiz.hirari.core.image.PageCandidate
 import io.github.yuubiz.hirari.core.image.PageOrder
@@ -141,7 +142,7 @@ class DeviceArchives(private val resolver: ContentResolver, private val cacheDir
             return ArchiveOpenResult.Failed(e.archiveFailure())
         }
         // The reader extracts a solid archive into the same directory (docs/spec.md section 3.3), so both share it.
-        return when (val opened = ArchiveSession.open(source, File(cacheDir, "extract/${book.value}"))) {
+        return when (val opened = ArchiveSession.open(source, ExtractionCache.directory(cacheDir, book, source.size, source.lastModifiedMs))) {
             is OpenResult.Opened -> ArchiveOpenResult.Opened(SessionContents(opened.session, uri))
             OpenResult.Encrypted -> ArchiveOpenResult.Failed(ArchiveFailure.Encrypted)
             is OpenResult.Failed -> ArchiveOpenResult.Failed(ArchiveFailure.Unreadable)

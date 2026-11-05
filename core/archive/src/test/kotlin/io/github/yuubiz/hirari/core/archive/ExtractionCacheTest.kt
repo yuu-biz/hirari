@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.archive
 
+import io.github.yuubiz.hirari.core.model.BookId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +48,7 @@ class ExtractionCacheTest {
         val entries = pages.mapIndexed { i, (name, data) ->
             ArchiveEntry(i, name.toByteArray(), data.size.toLong(), isDirectory = false, encrypted = false, compression = null)
         }
-        return Extraction(FakeArchive(source, pages), dispatcher, entries, dir, source, maxCacheBytes = 1L shl 30)
+        return Extraction(FakeArchive(source, pages), dispatcher, entries, dir, maxCacheBytes = 1L shl 30)
     }
 
     private fun Extraction.readNow(index: Int): EntryResult = runBlocking {
@@ -89,6 +90,18 @@ class ExtractionCacheTest {
     }
 
     @Test
+    fun `clearing recognises every generation directory of a book`() {
+        val old = ExtractionCache.directory(temp.root, BookId("book"), 100, 1_000)
+        val current = ExtractionCache.directory(temp.root, BookId("book"), 100, 2_000)
+        old.fill("0", 10)
+        current.fill("0", 20)
+
+        assertEquals(30L, ExtractionCache.under(temp.root).clear())
+        assertFalse(old.exists())
+        assertFalse(current.exists())
+    }
+
+    @Test
     fun `the unfinished file of a running extraction stays and an abandoned one goes`() {
         val root = temp.newFolder("extract")
         val running = root.fill("book/entry-1-1.part", 70)
@@ -118,12 +131,11 @@ class ExtractionCacheTest {
         val dir = File(temp.newFolder("extract"), "book")
         val extraction = extraction(dir)
         assertData(2, extraction.readNow(2))
-        assertEquals(4, dir.listFiles()!!.size)
-        val stampBytes = dir.resolve(Extraction.GENERATION).length()
+        assertEquals(3, dir.listFiles()!!.size)
 
         val freed = cache(dir.parentFile!!).clear()
 
-        assertEquals(pages.sumOf { it.second.size }.toLong() + stampBytes, freed)
+        assertEquals(pages.sumOf { it.second.size }.toLong(), freed)
         assertFalse(dir.exists())
         assertData(2, extraction.readNow(2))
         assertData(0, extraction.readNow(0))
