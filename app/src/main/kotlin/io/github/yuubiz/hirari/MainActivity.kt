@@ -18,6 +18,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -166,6 +167,7 @@ class MainActivity : ComponentActivity() {
                             val route = entry.toRoute<FolderRoute>()
                             val key = route.toKey()
                             val folder = viewModel { FolderViewModel(app.library, key) }
+                            val lastBook by entry.savedStateHandle.getStateFlow<String?>(LAST_READER_BOOK, null).collectAsState()
                             ReportSettled(nav, entry, app) { folder.state.first { it.content is FolderContent.Shown || it.content is FolderContent.Failed } }
                             FolderScreen(
                                 folder,
@@ -179,7 +181,7 @@ class MainActivity : ComponentActivity() {
                                     close = { nav.popBackStack() },
                                     returnTo = { nav.goUpTo(it, from = key.path) },
                                 ),
-                                reveal = route.reveal,
+                                reveal = lastBook ?: route.reveal,
                             )
                         }
                     }
@@ -242,6 +244,7 @@ class MainActivity : ComponentActivity() {
                     composable<ReaderRoute> { entry ->
                         Kept(app, entry, reader = true) {
                             val request = entry.toRoute<ReaderRoute>().toRequest()
+                            LaunchedEffect(entry.id) { nav.reportReaderBook(request.book) }
                             val reader = viewModel { ReaderViewModel(app, app.services, request) }
                             ReportSettled(nav, entry, app) { snapshotFlow { reader.showsContent }.first { it } }
                             ReaderScreen(

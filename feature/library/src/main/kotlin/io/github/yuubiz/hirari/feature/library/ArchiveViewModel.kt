@@ -219,6 +219,7 @@ class ArchiveViewModel(
         write {
             charsetChanges.withLock {
                 val overrides = books.overrides(id).first()
+                if (overrides.nameCharset == charset) return@withLock
                 val global = settings.settings.first()
                 val fallback = Charset.forName(global.fallbackCharset.charsetName)
                 val order = PageOrder(global.entryOrder, overrides.reverseOrder == true)
@@ -227,9 +228,21 @@ class ArchiveViewModel(
                 }
                 withContext(NonCancellable) {
                     books.updateOverrides(id) { it.copy(nameCharset = charset) }
-                    val saved = progress.get(id) ?: return@withContext
-                    val moved = saved.movedTo(before, after)
-                    if (moved != saved) progress.save(listOf(moved))
+                    val saved = progress.get(id)
+                    if (saved != null) {
+                        val moved = saved.movedTo(before, after)
+                        if (moved != saved) progress.save(listOf(moved))
+                    }
+                    // The key stays the same, so both the stored cover and the decoded copy must be remade.
+                    if (books.get(id)?.coverEntry == null) opened.base?.let { base ->
+                        try {
+                            covers.regenerate(base.copy(direction = directionOf(id)), covers.sizesFrom(global.thumbSize))
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            // The choice is kept; サムネイルを作り直す can retry the cover.
+                        }
+                    }
                 }
             }
         }

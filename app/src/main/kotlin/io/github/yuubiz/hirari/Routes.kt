@@ -87,6 +87,22 @@ internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.va
     pseudo?.parent?.key, pseudo?.parent?.name.orEmpty(), pseudo?.parent?.kind ?: LibraryGrouping.None,
     pseudo?.parent?.merge ?: true, pseudo?.parent?.filter.orEmpty())
 
+internal const val LAST_READER_BOOK = "lastReaderBook"
+
+/** The last reader replaces this result even when 次の本 replaces the reader's own back stack entry (4.3). */
+internal fun NavController.reportReaderBook(book: BookAddress) {
+    val list = previousBackStackEntry?.takeIf { it.destination.hasRoute<FolderRoute>() } ?: return
+    val path = list.toRoute<FolderRoute>().readerReveal(book) ?: return
+    list.savedStateHandle[LAST_READER_BOOK] = path
+}
+
+/** Only return a path to the list of the same place; nested books reveal the child folder that holds them. */
+internal fun FolderRoute.readerReveal(book: BookAddress): String? {
+    val located = book as? BookAddress.InLocation ?: return null
+    if (located.location.value != location) return null
+    return childToward(path, located.path)
+}
+
 /**
  * Goes up from the folder at [from] to the folder [to] of the same place (docs/spec.md section 4.3, 上部バー and
  * 戻ったとき). The folders below [to] on top of the back stack are popped. When [to] is under them, it keeps its

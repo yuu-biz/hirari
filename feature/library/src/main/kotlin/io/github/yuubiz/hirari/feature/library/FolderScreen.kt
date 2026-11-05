@@ -96,7 +96,7 @@ class FolderActions(
     val returnTo: (FolderKey) -> Unit = openFolder,
 )
 
-/** [reveal] is the path of a row to scroll to when the list first shows (docs/spec.md section 4.3, 戻ったとき). */
+/** [reveal] is the row to reveal on first showing or when a reader returns another path (4.3, 戻ったとき). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String? = null) {

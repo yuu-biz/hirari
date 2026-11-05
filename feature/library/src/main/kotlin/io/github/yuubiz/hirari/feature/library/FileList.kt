@@ -101,12 +101,14 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
         folded = ArrayList(if (header.key in folded) folded - header.key else folded + header.key)
     }
     val empty = if (content.rows.isEmpty()) (if (content.total == 0) R.string.folder_empty else R.string.folder_no_match) else null
-    var revealed by rememberSaveable(folderKey, reveal) { mutableStateOf(reveal == null) }
+    var revealedPath by rememberSaveable(folderKey) { mutableStateOf<String?>(null) }
     suspend fun revealOnce(scrollTo: suspend (Int) -> Unit) {
-        if (revealed) return
-        revealed = true
+        if (reveal == null || revealedPath == reveal) return
         val at = cells.indexOfFirst { it is ListCell.Entry && it.row.path == reveal }
-        if (at >= 0) scrollTo(at)
+        if (at >= 0) {
+            scrollTo(at)
+            revealedPath = reveal
+        }
     }
     val focus = remember { CoverFocus() }
     val held by content.covers.covers.held.collectAsState(initial = false)
@@ -120,7 +122,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             save = { presentation.saveAnchor(it.layoutInfo.visibleItemsInfo.map { cell -> cell.index to cell.offset.y }) },
                             restore = { saved -> presentation.restoreAnchor(saved).let { (index, offset) -> LazyGridState(index, offset) } },
                         )) { LazyGridState() }
-                        LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
+                        LaunchedEffect(reveal, cells) { revealOnce { grid.scrollToItem(it) } }
                         val landscape = isLandscapeWindow()
                         val columns = content.look.columns(maxWidth, landscape)
                         val size = content.look.gridThumbSize(maxWidth / columns, landscape)
@@ -153,7 +155,7 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             save = { presentation.saveAnchor(it.layoutInfo.visibleItemsInfo.map { cell -> cell.index to cell.offset }) },
                             restore = { saved -> presentation.restoreAnchor(saved).let { (index, offset) -> LazyListState(index, offset) } },
                         )) { LazyListState() }
-                        LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
+                        LaunchedEffect(reveal, cells) { revealOnce { list.scrollToItem(it) } }
                         val covers = content.covers.takeIf { content.view == LibraryView.ThumbnailList }
                         LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
                             presentation.intervals.forEach { interval ->

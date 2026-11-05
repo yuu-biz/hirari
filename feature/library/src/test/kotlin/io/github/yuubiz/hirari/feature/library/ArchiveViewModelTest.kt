@@ -98,6 +98,36 @@ class ArchiveViewModelTest {
     }
 
     @Test
+    fun `changing the chosen charset remakes only this books automatic cover at every size even without progress`() = runTest {
+        fixture.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", false, 500, T0))
+        val list = viewModel()
+
+        list.chooseCharset(utf8)
+        assertEquals(3, fixture.thumbnails.regenerated.size)
+        val remade = fixture.thumbnails.regenerated.map {
+            assertIs<io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject.Book>(it.subject)
+        }
+        assertEquals(setOf(id), remade.map { it.id }.toSet())
+        assertTrue(remade.all { it.coverEntry == null })
+        // Re-selecting the same choice keeps the existing cover; returning to auto remakes it again.
+        list.chooseCharset(utf8)
+        assertEquals(3, fixture.thumbnails.regenerated.size)
+        list.chooseCharset(null)
+        assertEquals(6, fixture.thumbnails.regenerated.size)
+    }
+
+    @Test
+    fun `changing the chosen charset keeps an explicitly selected cover`() = runTest {
+        fixture.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", false, 500, T0))
+        fixture.books.put(book(place.id, "作品/book.zip").copy(id = id))
+        fixture.books.setCover(id, 1)
+        val list = viewModel()
+        list.chooseCharset(utf8)
+        assertEquals(utf8, fixture.books.overrides.value[id]?.nameCharset)
+        assertTrue(fixture.thumbnails.regenerated.isEmpty())
+    }
+
+    @Test
     fun `a book whose order the reader reversed lists its pages in that order`() = runTest {
         val list = viewModel()
         fixture.books.updateOverrides(id) { it.copy(reverseOrder = true) }
@@ -148,7 +178,8 @@ class ArchiveViewModelTest {
     }
 
     @Test
-    fun `leaving the screen once the new charset is stored still moves the stored position`() = runTest {
+    fun `leaving the screen once the new charset is stored still moves the position and remakes the automatic cover`() = runTest {
+        fixture.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", false, 500, T0))
         val reading = CompletableDeferred<Unit>()
         val stored = fixture.books.progressRepository
         val progress = object : ProgressRepository by stored {
@@ -172,6 +203,7 @@ class ArchiveViewModelTest {
         advanceUntilIdle()
         assertEquals(utf8, fixture.books.overrides.value[id]?.nameCharset)
         assertEquals(ReadingPosition.Image(1, 3), fixture.books.progress.value[id]?.position)
+        assertEquals(3, fixture.thumbnails.regenerated.size)
     }
 
     @Test
