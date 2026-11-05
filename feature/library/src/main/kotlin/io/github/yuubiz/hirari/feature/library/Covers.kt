@@ -156,12 +156,17 @@ class Covers(
      */
     suspend fun find(place: LibraryLocation, path: String): FolderEntry? {
         val name = path.substringAfterLast('/')
+        return entries(place, path.substringBeforeLast('/', "")).firstOrNull { normalizePath(it.name) == name }
+    }
+
+    /** A caller showing several items retains this snapshot for its own lifetime. */
+    internal suspend fun entries(place: LibraryLocation, parent: String): List<FolderEntry> {
         return try {
-            parentEntries(place, path.substringBeforeLast('/', "")).firstOrNull { normalizePath(it.name) == name }
+            parentEntries(place, parent)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            null
+            emptyList()
         }
     }
 

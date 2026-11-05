@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.library
 
+import androidx.lifecycle.ViewModelStore
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LibraryGrouping
@@ -109,6 +110,51 @@ class FolderViewModelTest {
         assertTrue(fixture.locations.favorites.value.isEmpty())
         assertEquals("keep", parent.shown().filter)
         assertEquals(cell.path, parent.shown().rows.single().path)
+        assertEquals(1, fixture.lister.calls)
+    }
+
+    @Test
+    fun `open SMB pseudo folder reuses parent and follows members when a new author changes its key`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas", 445, "books", "", null, null, null)
+        fixture.locations.rows.value = listOf(server)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Author)
+        fixture.smb.folders["series"] = listOf(file("[Z (B)] one.zip"), file("[B] two.zip"))
+        fun model(key: FolderKey) = FolderViewModel(CompletableDeferred(fixture.services), key, UnconfinedTestDispatcher(testScheduler)).also { watch(it.state) }
+        val parent = model(FolderKey(server.id, "series"))
+        val target = assertIs<FileTarget.Folder>(parent.open(parent.shown().rows.single())).key
+        assertEquals("/group:Author:b", target.pseudo!!.key)
+        assertEquals(setOf("series/[Z (B)] one.zip", "series/[B] two.zip"), target.pseudo!!.memberKeys.toSet())
+        val child = model(target)
+        assertEquals(2, child.shown().rows.size)
+        assertEquals(listOf(server to "series"), fixture.smb.listed)
+        fixture.smb.folders["series"] = fixture.smb.folders.getValue("series") + file("[A (B)] three.zip")
+        child.refresh()
+        assertEquals(listOf("[A (B)] three.zip", "[B] two.zip", "[Z (B)] one.zip"), child.shown().rows.map { it.item.entry.name })
+        assertEquals(null, child.shown().returnTo)
+        assertEquals(2, fixture.smb.listed.size)
+        // No in-memory parent after a process restart: the same navigation data lists storage once.
+        val fresh = Fixture()
+        fresh.locations.rows.value = listOf(server)
+        fresh.settings.value.value = fixture.settings.value.value
+        fresh.smb.folders["series"] = fixture.smb.folders.getValue("series")
+        val restored = FolderViewModel(CompletableDeferred(fresh.services), target, UnconfinedTestDispatcher(testScheduler)).also { watch(it.state) }
+        assertEquals(3, restored.shown().rows.size)
+        assertEquals(listOf(server to "series"), fresh.smb.listed)
+    }
+
+    @Test
+    fun `a cleared parent releases its listing so a later pseudo folder fetches storage`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryGrouping = LibraryGrouping.Author)
+        fixture.lister.folders["作品"] = listOf(file("[A] one.zip"), file("[A] two.zip"))
+        val store = ViewModelStore()
+        val parent = store.own { FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, "作品"), UnconfinedTestDispatcher(testScheduler)) }
+        watch(parent.state)
+        val target = assertIs<FileTarget.Folder>(parent.open(parent.shown().rows.single())).key
+        assertEquals(1, fixture.lister.calls)
+        store.clear()
+        val child = FolderViewModel(CompletableDeferred(fixture.services), target, UnconfinedTestDispatcher(testScheduler)).also { watch(it.state) }
+        assertEquals(2, child.shown().rows.size)
         assertEquals(2, fixture.lister.calls)
     }
 

@@ -84,6 +84,35 @@ class FileGroupsUiTest {
         rule.onNodeWithText("book40.zip").assertIsDisplayed()
     }
 
+    @Test fun `list restoration after removing the anchored section uses the next shown entry`() = removedSection(LibraryView.List)
+    @Test fun `grid restoration after removing the anchored section uses the next shown entry`() = removedSection(LibraryView.Grid)
+
+    private fun removedSection(view: LibraryView) {
+        val source = rows((1..90).map { "book$it.zip" }).mapIndexed { index, row -> row.copy(mark = when {
+            index < 30 -> ReadMark.Unread
+            index < 60 -> ReadMark.Reading(20)
+            else -> ReadMark.Read
+        }) }
+        var shown by mutableStateOf(content(source, view))
+        var showing by mutableStateOf(true)
+        rule.setContent {
+            val holder = rememberSaveableStateHolder()
+            if (showing) holder.SaveableStateProvider("folder") {
+                MaterialTheme { Box(Modifier.size(400.dp, 600.dp)) { FileList(shown, null, {}, {}) } }
+            }
+        }
+        // Put the reading section's header at the top. The saved anchor must be book31, below it.
+        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(31)
+        rule.onNodeWithText("book31.zip").assertIsDisplayed()
+        rule.runOnIdle { showing = false }
+        rule.runOnIdle {
+            shown = content(source.filter { it.mark !is ReadMark.Reading }, view)
+            showing = true
+        }
+        rule.onNodeWithText("book61.zip").assertIsDisplayed()
+        rule.onNodeWithText("book1.zip").assertDoesNotExist()
+    }
+
     @Test
     fun `two pseudo levels restore each scroll position and apply sections at every level`() {
         val source = rows((1..70).flatMap { author ->

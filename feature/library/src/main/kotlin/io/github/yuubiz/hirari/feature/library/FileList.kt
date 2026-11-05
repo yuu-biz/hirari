@@ -23,10 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +44,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -74,6 +77,8 @@ import io.github.yuubiz.hirari.core.ui.LocalLibraryColors
 import io.github.yuubiz.hirari.core.ui.decorative
 import io.github.yuubiz.hirari.core.ui.minTouchTarget
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -87,9 +92,11 @@ import kotlin.math.roundToInt
 internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (FileRow) -> Unit, onLongPress: (FileRow) -> Unit, onUp: (() -> Unit)? = null, folderKey: FolderKey? = null) {
     val scope = rememberCoroutineScope()
     var folded by rememberSaveable(folderKey) { mutableStateOf(arrayListOf<String>()) }
-    val cells = remember(content.rows, content.look.section, onUp != null, folded) {
-        fileCells(content.rows, content.look.section, onUp != null, folded.toSet())
+    val prepared by produceState<FileCells?>(null, content.rows, content.look.section, onUp != null, folded) {
+        value = withContext(Dispatchers.Default) { prepareFileCells(content.rows, content.look.section, onUp != null, folded.toSet()) }
     }
+    val presentation = prepared ?: return
+    val cells = presentation.cells
     fun toggle(header: ListCell.Header) {
         folded = ArrayList(if (header.key in folded) folded - header.key else folded + header.key)
     }
@@ -109,10 +116,9 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
             CompositionLocalProvider(LocalDensity provides rememberTextScaled(content.look.textSize)) {
                 when (content.view) {
                     LibraryView.Grid -> {
-                        // Save a cell key, not the header-dependent lazy index. Compose retains keys on live updates.
                         val grid = rememberSaveable(folderKey, saver = listSaver<LazyGridState, Any>(
-                            save = { listOf(cells.getOrNull(it.firstVisibleItemIndex)?.key.orEmpty(), it.firstVisibleItemScrollOffset) },
-                            restore = { saved -> LazyGridState(cells.indexOfFirst { it.key == saved[0] }.coerceAtLeast(0), saved[1] as Int) },
+                            save = { presentation.saveAnchor(it.layoutInfo.visibleItemsInfo.map { cell -> cell.index to cell.offset.y }) },
+                            restore = { saved -> presentation.restoreAnchor(saved).let { (index, offset) -> LazyGridState(index, offset) } },
                         )) { LazyGridState() }
                         LaunchedEffect(Unit) { revealOnce { grid.scrollToItem(it) } }
                         val landscape = isLandscapeWindow()
@@ -125,10 +131,11 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                             state = grid,
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            cells.forEach { cell ->
-                                if (cell is ListCell.Header) {
+                            presentation.intervals.forEach { interval ->
+                                if (interval is CellInterval.Header) {
+                                    val cell = interval.cell
                                     stickyHeader(key = cell.key) { GroupHeader(cell, cell.key in folded) { toggle(cell) } }
-                                } else item(key = cell.key) {
+                                } else if (interval is CellInterval.Items) items(interval.cells, key = { it.key }, contentType = { null }) { cell ->
                                     when (cell) {
                                         ListCell.Parent -> GridParentCell(fitter, content.look, onUp ?: {})
                                         is ListCell.Entry -> GridCell(cell.row, covers, focus, fitter, content.look, onOpen, onLongPress)
@@ -143,16 +150,17 @@ internal fun FileList(content: FolderContent.Shown, reveal: String?, onOpen: (Fi
                     }
                     LibraryView.ThumbnailList, LibraryView.List -> {
                         val list = rememberSaveable(folderKey, saver = listSaver<LazyListState, Any>(
-                            save = { listOf(cells.getOrNull(it.firstVisibleItemIndex)?.key.orEmpty(), it.firstVisibleItemScrollOffset) },
-                            restore = { saved -> LazyListState(cells.indexOfFirst { it.key == saved[0] }.coerceAtLeast(0), saved[1] as Int) },
+                            save = { presentation.saveAnchor(it.layoutInfo.visibleItemsInfo.map { cell -> cell.index to cell.offset }) },
+                            restore = { saved -> presentation.restoreAnchor(saved).let { (index, offset) -> LazyListState(index, offset) } },
                         )) { LazyListState() }
                         LaunchedEffect(Unit) { revealOnce { list.scrollToItem(it) } }
                         val covers = content.covers.takeIf { content.view == LibraryView.ThumbnailList }
                         LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
-                            cells.forEach { cell ->
-                                if (cell is ListCell.Header) {
+                            presentation.intervals.forEach { interval ->
+                                if (interval is CellInterval.Header) {
+                                    val cell = interval.cell
                                     stickyHeader(key = cell.key) { GroupHeader(cell, cell.key in folded) { toggle(cell) } }
-                                } else item(key = cell.key) {
+                                } else if (interval is CellInterval.Items) items(interval.cells, key = { it.key }, contentType = { null }) { cell ->
                                     when (cell) {
                                         ListCell.Parent -> ListParentRow(covers != null, content.look, onUp ?: {})
                                         is ListCell.Entry -> ListRow(cell.row, covers, focus, content.look, onOpen, onLongPress)

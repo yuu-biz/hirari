@@ -13,6 +13,16 @@ import kotlin.test.assertTrue
 
 class FileGroupsTest {
     @Test
+    fun `membership picks the largest surviving part after a merged group splits and falls back when all disappear`() {
+        val source = rows("[Z (B)] one.zip", "[B] two.zip", "[C (B)] four.zip", "[C] five.zip", "[C] six.zip", "[C] seven.zip")
+        val opened = group(source).single().pseudo!!
+        val split = source + rows("[B] new.zip")
+        val look = ListLook(grouping = LibraryGrouping.Author, mergeCircleAuthors = false)
+        assertEquals(listOf("[C] five.zip", "[C] seven.zip", "[C] six.zip"), resolvePseudoFolder(split, opened, look).second.map { it.item.entry.name })
+        assertEquals(null, resolvePseudoFolder(rows("[D] 1.zip", "[D] 2.zip"), opened, look).first)
+    }
+
+    @Test
     fun `author then series leaves singles and missing keys and stops after two levels`() {
         val place = io.github.yuubiz.hirari.core.model.LibraryLocation.SafTree(io.github.yuubiz.hirari.core.model.LocationId(1), "Books",
             io.github.yuubiz.hirari.core.model.UriString("content://tree/books"))

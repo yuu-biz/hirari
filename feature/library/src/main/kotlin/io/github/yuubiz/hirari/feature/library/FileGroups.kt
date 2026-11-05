@@ -71,7 +71,7 @@ private fun groupSpelling(items: List<CreatorRow>): String? {
 
 /** Navigation metadata, separate from a storage path. */
 data class PseudoFolder(val key: String, val name: String, val kind: LibraryGrouping, val merge: Boolean, val filter: String,
-    val parent: PseudoFolder? = null)
+    val parent: PseudoFolder? = null, val memberKeys: List<String> = emptyList())
 
 /** Resolve each level against today's settings; a vanished group returns its nearest surviving parent. */
 internal fun resolvePseudoFolder(rows: List<FileRow>, folder: PseudoFolder?, look: ListLook): Pair<PseudoFolder?, List<FileRow>> {
@@ -86,8 +86,12 @@ internal fun resolvePseudoFolder(rows: List<FileRow>, folder: PseudoFolder?, loo
             else -> LibraryGrouping.None
         }
         if (kind == LibraryGrouping.None || kind != group.kind) break
-        val match = fileGroups(members.filtered(group.filter), kind, look.mergeCircleAuthors)
-            .firstOrNull { scopedGroupKey(parent, it.key) == group.key && it.rows.size >= 2 } ?: break
+        val groups = fileGroups(members.filtered(group.filter), kind, look.mergeCircleAuthors).filter { it.rows.size >= 2 }
+        val remembered = group.memberKeys.toHashSet()
+        val match = if (remembered.isEmpty()) groups.firstOrNull { scopedGroupKey(parent, it.key) == group.key }
+            else groups.map { candidate -> candidate to candidate.rows.count { it.path in remembered } }
+                .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+        if (match == null) break
         parent = group
         members = match.rows
     }
@@ -142,7 +146,7 @@ internal fun pseudoFolders(rows: List<FileRow>, kind: LibraryGrouping, merge: Bo
         val key = scopedGroupKey(parent, group.key)
         FileRow(FileItem.Folder(FolderEntry(group.name, null, true, null, null)), key, normalizedName(group.name),
             cover = group.rows.first().cover, gridName = GridName(group.name, "${group.rows.size} 件"),
-            sizeText = "${group.rows.size} 件", pseudo = PseudoFolder(key, group.name, kind, merge, filter, parent))
+            sizeText = "${group.rows.size} 件", pseudo = PseudoFolder(key, group.name, kind, merge, filter, parent, group.rows.map { it.path }))
     }
     val byName = compareBy<FileRow, String>(NaturalOrder) { it.item.entry.name }
     val byFiles = when (sort) {

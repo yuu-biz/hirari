@@ -14,6 +14,7 @@ import io.github.yuubiz.hirari.core.model.ReadingDirection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import io.github.yuubiz.hirari.core.data.BookmarkGroup
 import io.github.yuubiz.hirari.core.data.BookmarkRepository
 import io.github.yuubiz.hirari.core.data.BookmarkScope
@@ -208,10 +209,18 @@ internal class FakeBooks : BookRepository {
     override suspend fun get(id: BookId): LibraryBook? =
         books.value[id]?.let { LibraryBook(it, chosenPages.value[id], progress.value[id], chosenCrops.value[id]) }
 
-    override fun inFolder(location: LocationId, folder: String): Flow<List<LibraryBook>> = joined.map { list ->
-        list.filter {
-            val source = it.book.source
-            source is BookSource.InLocation && source.location == location && source.path.substringBeforeLast('/', "") == folder
+    val folderObservations = mutableListOf<Pair<LocationId, String>>()
+    val folderStops = mutableListOf<Pair<LocationId, String>>()
+
+    override fun inFolder(location: LocationId, folder: String): Flow<List<LibraryBook>> = flow {
+        folderObservations += location to folder
+        try {
+            emitAll(joined.map { list -> list.filter {
+                val source = it.book.source
+                source is BookSource.InLocation && source.location == location && source.path.substringBeforeLast('/', "") == folder
+            } })
+        } finally {
+            folderStops += location to folder
         }
     }
 

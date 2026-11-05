@@ -30,6 +30,7 @@ import java.util.Locale
 
 @Composable
 internal fun FavoritesTabContent(tab: FavoritesTab, home: HomeViewModel, actions: HomeActions) {
+    val specs by remember(home, tab.items) { home.favoriteCovers(tab.items) }.collectAsState(initial = emptyMap())
     if (tab.items.isEmpty()) {
         EmptyNote(R.string.favorites_empty)
         return
@@ -42,7 +43,7 @@ internal fun FavoritesTabContent(tab: FavoritesTab, home: HomeViewModel, actions
                 favorite.path.substringAfterLast('.', "").lowercase(Locale.ROOT) in FileFormats.texts -> CoverBadge.Label("TXT")
                 else -> null
             }
-            val cover by remember(home, item) { home.favoriteCover(item) }.collectAsState(initial = null)
+            val cover = specs[favorite]
             var menu by remember { mutableStateOf(false) }
             val remove = stringResource(R.string.favorite_remove)
             Box {

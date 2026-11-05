@@ -60,10 +60,11 @@ internal data class FolderRoute(val location: Long, val path: String, val docume
     val groupKey: String? = null, val groupName: String = "", val groupKind: LibraryGrouping = LibraryGrouping.None,
     val groupMerge: Boolean = true, val groupFilter: String = "",
     val parentGroupKey: String? = null, val parentGroupName: String = "", val parentGroupKind: LibraryGrouping = LibraryGrouping.None,
-    val parentGroupMerge: Boolean = true, val parentGroupFilter: String = "") {
+    val parentGroupMerge: Boolean = true, val parentGroupFilter: String = "",
+    val groupMembers: List<String> = emptyList(), val parentGroupMembers: List<String> = emptyList()) {
     fun toKey() = FolderKey(LocationId(location), path, documentId,
         groupKey?.let { PseudoFolder(it, groupName, groupKind, groupMerge, groupFilter,
-            parentGroupKey?.let { parent -> PseudoFolder(parent, parentGroupName, parentGroupKind, parentGroupMerge, parentGroupFilter) }) })
+            parentGroupKey?.let { parent -> PseudoFolder(parent, parentGroupName, parentGroupKind, parentGroupMerge, parentGroupFilter, memberKeys = parentGroupMembers) }, groupMembers) })
 }
 
 /** 書庫内一覧 of an archive book in a place (docs/spec.md section 4.7). */
@@ -85,7 +86,7 @@ internal fun CoverRangeKey.toRoute() = CoverRangeRoute(book.value, entry)
 internal fun FolderKey.toRoute(reveal: String? = null) = FolderRoute(location.value, path, documentId, reveal,
     pseudo?.key, pseudo?.name.orEmpty(), pseudo?.kind ?: LibraryGrouping.None, pseudo?.merge ?: true, pseudo?.filter.orEmpty(),
     pseudo?.parent?.key, pseudo?.parent?.name.orEmpty(), pseudo?.parent?.kind ?: LibraryGrouping.None,
-    pseudo?.parent?.merge ?: true, pseudo?.parent?.filter.orEmpty())
+    pseudo?.parent?.merge ?: true, pseudo?.parent?.filter.orEmpty(), pseudo?.memberKeys.orEmpty(), pseudo?.parent?.memberKeys.orEmpty())
 
 /**
  * Goes up from the folder at [from] to the folder [to] of the same place (docs/spec.md section 4.3, 上部バー and

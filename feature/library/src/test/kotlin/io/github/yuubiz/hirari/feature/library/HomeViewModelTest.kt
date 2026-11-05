@@ -4,6 +4,8 @@ import io.github.yuubiz.hirari.core.data.BookmarkGroup
 import io.github.yuubiz.hirari.core.data.FavoriteKind
 import io.github.yuubiz.hirari.core.data.Favorite
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import io.github.yuubiz.hirari.core.model.BookId
@@ -25,6 +27,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
@@ -43,7 +46,7 @@ class HomeViewModelTest {
     @After
     fun reset() = Dispatchers.resetMain()
 
-    private fun viewModel() = HomeViewModel(CompletableDeferred(fixture.services))
+    private fun viewModel() = HomeViewModel(CompletableDeferred(fixture.services), UnconfinedTestDispatcher())
 
     @Test
     fun `favorites list newest first and open folders or unread books by their lasting address`() = runTest {
@@ -81,7 +84,7 @@ class HomeViewModelTest {
             home.dismissNotice()
             assertNull(home.request(item))
             assertEquals(Notice.PlaceUnavailable, home.state.value.notice)
-            assertNull(home.favoriteCover(item).first())
+            assertTrue(home.favoriteCovers(listOf(item)).first().isEmpty())
         }
         assertEquals(4, assertIs<Loadable.Ready<FavoritesTab>>(home.state.value.favorites).value.items.size)
         fixture.locations.rows.value = listOf(place)
@@ -97,7 +100,7 @@ class HomeViewModelTest {
             FolderEntry("extra", "doc:extra", true, null, T0),
         )
         fixture.coverBooks.folders["series"] = entries
-        val indexed = book(place.id, "series/1.cbz").copy(id = io.github.yuubiz.hirari.core.model.locationBookId(place, "series/1.cbz"))
+        val indexed = book(place.id, "series/1.cbz").copy(id = io.github.yuubiz.hirari.core.model.locationBookId(place, "series/1.cbz"), byteSize = 500)
         fixture.books.put(indexed)
         fixture.books.chosenPages.value = mapOf(indexed.id to 3)
         fixture.books.chosenCrops.value = mapOf(indexed.id to io.github.yuubiz.hirari.core.model.CoverCrop(0, 0, 5000, 5000))
@@ -111,12 +114,49 @@ class HomeViewModelTest {
             fixture.books.inFolder(place.id, "series").first(),
             CoverContext(place, fixture.settings.value.value.readingDirection, emptyMap(), fixture.coverIndex.folderCovers.value),
         )
-        for (item in tab.items) {
-            val actual = home.favoriteCover(item).first()!!
-            val expected = rows.single { it.path == item.favorite.path }.cover!!
-            assertEquals(expected.key(tab.covers.sizePx), actual.key(tab.covers.sizePx))
-            assertEquals(expected, actual)
-        }
+        val specs = home.favoriteCovers(tab.items).first()
+        val folder = tab.items.single { it.favorite.kind == FavoriteKind.Folder }
+        assertEquals(rows.single { it.path == folder.favorite.path }.cover, specs[folder.favorite])
+        val favorite = tab.items.single { it.favorite.kind == FavoriteKind.Book }.favorite
+        assertEquals(coverSpecOf(indexed, 3, place, fixture.settings.value.value.readingDirection, fixture.books.chosenCrops.value[indexed.id]), specs[favorite])
+        assertEquals(rows.single { it.path == favorite.path }.cover!!.key(tab.covers.sizePx), specs.getValue(favorite).key(tab.covers.sizePx))
+    }
+
+    @Test
+    fun `favorites share one retained parent lookup and observation and indexed books need no listing`() = runTest {
+        val names = listOf("known.cbz", "one.cbz", "two.cbz", "extra")
+        fixture.coverBooks.folders["series"] = names.map { FolderEntry(it, null, it == "extra", 500, T0) }
+        val known = book(place.id, "series/known.cbz").copy(id = io.github.yuubiz.hirari.core.model.locationBookId(place, "series/known.cbz"))
+        fixture.books.put(known)
+        fun item(name: String) = FavoriteItem(Favorite(place.id, "series/$name", if (name == "extra") FavoriteKind.Folder else FavoriteKind.Book, name, T0), place)
+        val home = viewModel()
+        val knownItem = item("known.cbz")
+        assertEquals(coverSpecOf(known, null, place, fixture.settings.value.value.readingDirection), home.favoriteCovers(listOf(knownItem)).first()[knownItem.favorite])
+        assertTrue(fixture.coverBooks.listCalls.isEmpty())
+        fixture.books.folderObservations.clear()
+        fixture.books.folderStops.clear()
+        val items = names.map(::item)
+        val emissions = mutableListOf<Map<Favorite, CoverSpec>>()
+        val collection = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { home.favoriteCovers(items).toList(emissions) }
+        runCurrent()
+        assertEquals(4, emissions.last().size)
+        assertEquals(listOf("series"), fixture.coverBooks.listCalls)
+        assertEquals(listOf(place.id to "series"), fixture.books.folderObservations)
+        // Cover changes keep the same folder work and update all items from that observation.
+        fixture.books.setCover(known.id, 4)
+        fixture.coverIndex.directions.value = mapOf(known.id to io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight)
+        fixture.coverIndex.folderCovers.value = mapOf("series/extra" to io.github.yuubiz.hirari.core.data.FolderCover("series/extra/new.jpg"))
+        runCurrent()
+        val updated = assertIs<CoverSpec.Book>(emissions.last()[knownItem.favorite])
+        assertEquals(4, updated.coverEntry)
+        assertEquals(io.github.yuubiz.hirari.core.model.ReadingDirection.LeftToRight, updated.direction)
+        assertEquals("series/extra/new.jpg", assertIs<CoverSpec.Folder>(emissions.last()[item("extra").favorite]).selection?.imagePath)
+        assertEquals(listOf("series"), fixture.coverBooks.listCalls)
+        assertEquals(1, fixture.books.folderObservations.size)
+        assertTrue(fixture.books.folderStops.isEmpty())
+        collection.cancel()
+        runCurrent()
+        assertEquals(listOf(place.id to "series"), fixture.books.folderStops)
     }
 
     @Test

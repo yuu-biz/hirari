@@ -153,6 +153,8 @@ class FolderViewModel(
     private val refreshing = MutableStateFlow(false)
     private var folderDocumentId: String? = folder.documentId
     private var loading: Job? = null
+    private val listingOwner = Any()
+    private var activeListings: ActiveFolderListings? = null
 
     val state: StateFlow<FolderUi> = flow { emit(services.await()) }
         .flatMapLatest { services ->
@@ -274,9 +276,11 @@ class FolderViewModel(
 
     private suspend fun fetch(reconnect: Boolean): Listing {
         val services = services.await()
+        activeListings = services.folderListings
         val location = services.locations.get(folder.location)
         if (location != null) place.value = location
-        val result = when (location) {
+        val cached = if (folder.pseudo != null && !reconnect && location != null) services.folderListings.find(location, folder.path) else null
+        val result = cached ?: when (location) {
             null -> Listing.Failed(ListFailure.NotFound)
             is LibraryLocation.SafTree ->
                 if (location.permissionHeld) services.folders.list(location.treeUri, folder.path, folder.documentId) else Listing.Failed(ListFailure.NoPermission)
@@ -285,8 +289,15 @@ class FolderViewModel(
                 services.smb.list(location, folder.path)
             }
         }
-        if (result is Listing.Listed) folderDocumentId = result.folderDocumentId
+        if (result is Listing.Listed) {
+            folderDocumentId = result.folderDocumentId
+            services.folderListings.put(listingOwner, checkNotNull(location), folder.path, result)
+        } else services.folderListings.remove(listingOwner)
         return result
+    }
+
+    override fun onCleared() {
+        activeListings?.remove(listingOwner)
     }
 
     /** 取り消し while the listing is slow. The screen closes next. */

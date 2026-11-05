@@ -27,6 +27,8 @@ import io.github.yuubiz.hirari.core.model.StartAt
 import io.github.yuubiz.hirari.core.model.UriString
 import io.github.yuubiz.hirari.core.model.address
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,11 +36,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
@@ -103,7 +106,7 @@ data class HomeUi(
 
 /** The tabs of the home screen (docs/spec.md sections 4.2 and 4.6). */
 @OptIn(ExperimentalCoroutinesApi::class)
-class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel() {
+class HomeViewModel(private val services: Deferred<LibraryServices>, private val compute: CoroutineDispatcher = Dispatchers.Default) : ViewModel() {
     private val notice = MutableStateFlow<Notice?>(null)
 
     val state: StateFlow<HomeUi> = flow { emit(services.await()) }
@@ -152,7 +155,7 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
         combine(locations.favorites, locations.locations, coverEnv()) { favorites, places, env ->
             val byId = places.associateBy { it.id }
             FavoritesTab(favorites.map { FavoriteItem(it, byId[it.location]) }, env.layout)
-        }.loadable()
+        }.flowOn(compute).loadable()
 
     fun removeFavorite(item: FavoriteItem) = write { locations.removeFavorite(item.favorite.location, item.favorite.path) }
 
@@ -165,27 +168,36 @@ class HomeViewModel(private val services: Deferred<LibraryServices>) : ViewModel
         else HomeTarget.Book(OpenBookRequest(BookAddress.InLocation(favorite.location, favorite.path, folder = false), StartAt.Saved))
     }
 
-    /** Resolves metadata only for a visible favorite, then builds precisely the file list's cover key. */
-    fun favoriteCover(item: FavoriteItem): Flow<CoverSpec?> = flow {
-        val services = services.await()
-        val place = item.place
-        if (!place.usable()) {
-            emit(null)
-            return@flow
-        }
-        val favorite = item.favorite
-        val parent = favorite.path.substringBeforeLast('/', "")
-        val available = checkNotNull(place)
-        val entry = services.covers.find(available, favorite.path)
-        if (entry == null) {
-            emit(null)
-            return@flow
-        }
-        val rows = listOf(entry).toRows(parent, Ordering(LibrarySort.Name, false, true))
-        emitAll(combine(services.books.inFolder(favorite.location, parent), services.coverIndex.directions(), services.settings.settings, services.coverIndex.folderCovers(favorite.location)) { indexed, directions, settings, chosen ->
-            rows.withCovers(indexed, CoverContext(available, settings.readingDirection, directions, chosen)).singleOrNull()?.cover
-        })
-    }.catch { emit(null) }
+    /** Collected once by the tab, so scrolling never restarts a parent's listing or observation. */
+    fun favoriteCovers(items: List<FavoriteItem>): Flow<Map<Favorite, CoverSpec>> = flow { emit(services.await()) }
+        .flatMapLatest { services ->
+            val parents = items.filter { it.place.usable() }.groupBy { it.place!! to it.favorite.path.substringBeforeLast('/', "") }
+            val flows = parents.map { (parent, favorites) -> services.favoriteCovers(parent.first, parent.second, favorites) }
+            if (flows.isEmpty()) flowOf(emptyMap()) else combine(flows) { maps -> maps.fold(emptyMap<Favorite, CoverSpec>()) { all, map -> all + map } }
+        }.flowOn(compute)
+
+    private fun LibraryServices.favoriteCovers(place: LibraryLocation, parent: String, items: List<FavoriteItem>): Flow<Map<Favorite, CoverSpec>> {
+        // Retain even a failed lookup until the tab is left; index and cover choices remain live.
+        var entries: List<FileRow>? = null
+        return combine(books.inFolder(place.id, parent), coverEnv(), coverIndex.folderCovers(place.id)) { indexed, env, chosen ->
+            val byPath = indexed.associateBy { (it.book.source as? BookSource.InLocation)?.path }
+            val specs = HashMap<Favorite, CoverSpec>()
+            val missing = items.filter { item ->
+                val favorite = item.favorite
+                val known = byPath[favorite.path].takeIf { favorite.kind == FavoriteKind.Book }
+                if (known != null) env.spec(known.book, known.coverEntry, known.coverCrop, place)?.let { specs[favorite] = it }
+                known == null && !(favorite.kind == FavoriteKind.Book && favorite.path.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT) in FileFormats.texts)
+            }
+            if (missing.isNotEmpty()) {
+                val paths = items.mapTo(hashSetOf()) { it.favorite.path }
+                val rows = entries ?: covers.entries(place, parent).toRows(parent, Ordering(LibrarySort.Name, false, true))
+                    .filter { it.path in paths }.also { entries = it }
+                val byRowPath = rows.withCovers(emptyList(), CoverContext(place, env.default, env.directions, chosen)).associateBy { it.path }
+                for (item in missing) byRowPath[item.favorite.path]?.cover?.let { specs[item.favorite] = it }
+            }
+            specs.toMap()
+        }.catch { emit(emptyMap()) }
+    }
 
     fun dismissNotice() {
         notice.value = null

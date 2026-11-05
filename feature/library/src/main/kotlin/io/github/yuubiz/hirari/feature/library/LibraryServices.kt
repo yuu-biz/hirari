@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.data.LaunchRepository
 import io.github.yuubiz.hirari.core.data.LocationRepository
 import io.github.yuubiz.hirari.core.data.ProgressRepository
 import io.github.yuubiz.hirari.core.data.SettingsRepository
+import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
 import kotlinx.coroutines.CoroutineScope
@@ -87,4 +88,22 @@ class LibraryServices(
 ) {
     /** The choices of folder covers under way, by place and folder path. */
     internal val folderCoverRuns = LatestRuns<Pair<LocationId, String>>(appScope)
+
+    internal val folderListings = ActiveFolderListings()
+}
+
+/** Snapshots owned by back-stack view models, forgotten when their owners are cleared. Main thread only. */
+internal class ActiveFolderListings {
+    private data class Snapshot(val place: LibraryLocation, val path: String, val listing: Listing.Listed)
+    private val snapshots = LinkedHashMap<Any, Snapshot>()
+
+    fun find(place: LibraryLocation, path: String): Listing.Listed? =
+        snapshots.values.lastOrNull { it.place == place && it.path == path }?.listing
+
+    fun put(owner: Any, place: LibraryLocation, path: String, listing: Listing.Listed) {
+        snapshots.remove(owner)
+        snapshots[owner] = Snapshot(place, path, listing)
+    }
+
+    fun remove(owner: Any) { snapshots.remove(owner) }
 }
