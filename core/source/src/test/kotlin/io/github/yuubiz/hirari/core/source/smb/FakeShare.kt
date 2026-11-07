@@ -17,6 +17,7 @@ internal class FakeShare(files: Map<String, ByteArray>, private val onRead: () -
         generateSequence(path.substringBeforeLast('/', "")) { it.substringBeforeLast('/', "").takeIf(String::isNotEmpty) }.filter(String::isNotEmpty).toList()
     }.toMutableSet()
     val deleted = mutableListOf<String>()
+    var refuseDelete: String? = null
     @Volatile
     var broken = false
         private set
@@ -66,6 +67,7 @@ internal class FakeShare(files: Map<String, ByteArray>, private val onRead: () -
 
     override fun delete(path: String, directory: Boolean) {
         ensureOpen()
+        if (path == refuseDelete) throw SmbRequestException("STATUS_ACCESS_DENIED")
         if (directory) {
             check(files.keys.none { it.startsWith("$path/") } && directories.none { it.startsWith("$path/") })
             if (!directories.remove(path)) throw FileNotFoundException()

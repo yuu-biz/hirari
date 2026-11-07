@@ -232,7 +232,7 @@ class HomeViewModel(private val services: Deferred<LibraryServices>, private val
         when (val removed = locations.delete(id)) {
             is LibraryLocation.SafTree -> {
                 val shared = locations.locations.first().any { it is LibraryLocation.SafTree && it.treeUri == removed.treeUri }
-                if (!shared) grants.release(removed.treeUri)
+                if (!shared && launch.lastSaveFolder() != removed.treeUri && saves.jobs.value.none { it.destination == removed.treeUri }) grants.release(removed.treeUri)
             }
             is LibraryLocation.SmbShare -> smb.forget(id)
             null -> Unit

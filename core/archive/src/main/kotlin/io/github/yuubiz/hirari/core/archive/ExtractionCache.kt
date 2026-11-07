@@ -9,11 +9,9 @@ import java.security.MessageDigest
  * it. Every call touches the disk, so none may run on the main thread.
  */
 class ExtractionCache(private val root: File, private val clock: () -> Long = System::currentTimeMillis) {
-    /** Discards all generations of the old ids after a rename or delete. Off the main thread. */
-    fun removeBooks(books: Set<BookId>) {
-        val prefixes = books.map { "${it.value}-" }
-        root.listFiles().orEmpty().filter { file -> prefixes.any(file.name::startsWith) }.forEach { it.deleteRecursively() }
-    }
+    /** No open-session registry exists; individual directories must stay until the next cache trim. */
+    @Suppress("UNUSED_PARAMETER")
+    fun removeBooks(books: Set<BookId>) = Unit
     /**
      * Deletes the entry files of every book and the book directories left empty, and returns the bytes freed. A
      * book open in a session extracts the entries it needs again ([Extraction]), so clearing needs no word with

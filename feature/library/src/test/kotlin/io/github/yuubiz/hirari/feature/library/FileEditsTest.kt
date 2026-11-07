@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.data.ChangedFolderCover
+import io.github.yuubiz.hirari.core.data.ItemRecordChanges
 import io.github.yuubiz.hirari.core.data.ItemRecords
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -19,29 +21,35 @@ class FileEditsTest {
     private val events = mutableListOf<String>()
     private var failure: Exception? = null
     private var recordFailure = false
+    private var actual: String? = null
+    private var skipped = 0
+    private var folderChanges = emptySet<ChangedFolderCover>()
     private val row = FileRow(FileItem.Archive(FolderEntry("old.CBZ", "old", false, 1, null, true, true), ArchiveKind.Zip), "a/old.CBZ", "old")
     private var siblings = listOf(row.item.entry)
     private val edits = FileEdits(object : FileEditStorage {
         override suspend fun list(place: LibraryLocation, path: String): List<FolderEntry> = siblings
-        override suspend fun rename(place: LibraryLocation, path: String, destination: String) {
+        override suspend fun rename(place: LibraryLocation, path: String, destination: String): String {
             events += "storage:$path:$destination"
             failure?.let { throw it }
+            return actual ?: destination
         }
         override suspend fun delete(place: LibraryLocation, path: String, directory: Boolean) {
             events += "delete:$path"
             failure?.let { throw it }
         }
     }, object : ItemRecords {
-        override suspend fun rename(place: LibraryLocation, oldPath: String, newPath: String, entryName: suspend (String, Int) -> ByteArray): Set<BookId> {
+        override suspend fun rename(place: LibraryLocation, oldPath: String, newPath: String, entryName: suspend (String, Int) -> ByteArray): ItemRecordChanges {
             events += "records:$oldPath:$newPath"
             if (recordFailure) throw IOException()
-            return setOf(BookId("old"))
+            return ItemRecordChanges(setOf(BookId("old")), skipped, folderChanges)
         }
-        override suspend fun delete(place: LibraryLocation, path: String): Set<BookId> {
+        override suspend fun delete(place: LibraryLocation, path: String): ItemRecordChanges {
             events += "records-delete:$path"
-            return setOf(BookId("old"))
+            return ItemRecordChanges(setOf(BookId("old")), folderCovers = folderChanges)
         }
-    }, ArchiveOpener { _, _, _, _ -> error("no archive text") }, { ids -> events += "cache:${ids.single().value}" })
+    }, ArchiveOpener { _, _, _, _ -> error("no archive text") }, { ids -> events += "cache:${ids.single().value}" }, { folders ->
+        folders.forEach { events += "folder:${it.path}" }
+    })
 
     @Test fun `failed storage rename and delete never move or remove records or caches`() = runTest {
         failure = SecurityException()
@@ -86,4 +94,38 @@ class FileEditsTest {
         assertEquals(FileEditFailure.Unreachable, io.github.yuubiz.hirari.core.source.smb.ConnectionLostException("lost").fileEditFailure())
         assertEquals(FileEditFailure.Other, IOException().fileEditFailure())
     }
+    @Test fun `provider actual name determines the record path and is reported`() = runTest {
+        actual = "a/provider.CBZ"
+        assertEquals(FileEditResult.Renamed("provider.CBZ"), edits.rename(place, row, "new"))
+        assertEquals("records:a/old.CBZ:a/provider.CBZ", events[1])
+    }
+
+    @Test fun `skipped entries are reported after moving the other records and clearing caches`() = runTest {
+        skipped = 2
+        assertEquals(FileEditResult.Renamed(null, 2), edits.rename(place, row, "new"))
+        assertEquals("cache:old", events.last())
+    }
+
+    @Test fun `partial SMB delete removes records only for the deleted share paths`() = runTest {
+        val smb = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas", 445, "books", "base", null, null, null)
+        failure = io.github.yuubiz.hirari.core.source.smb.SmbServer.PartialDeleteException(setOf("base/a/deleted.cbz"), IOException())
+        assertEquals(FileEditResult.PartialDelete, edits.delete(smb, row))
+        assertEquals(listOf("delete:a/old.CBZ", "records-delete:a/deleted.cbz", "cache:old"), events)
+    }
+
+    @Test fun `chosen parent covers are remade after caches are dropped on rename and delete`() = runTest {
+        folderChanges = setOf(ChangedFolderCover(place, "a"))
+        assertEquals(FileEditResult.Done, edits.rename(place, row, "new"))
+        assertEquals(listOf("cache:old", "folder:a"), events.takeLast(2))
+        events.clear()
+        assertEquals(FileEditResult.Done, edits.delete(place, row))
+        assertEquals(listOf("cache:old", "folder:a"), events.takeLast(2))
+    }
+
+    @Test fun `provider name correction is reported even when records could not move`() = runTest {
+        actual = "a/provider.CBZ"
+        recordFailure = true
+        assertEquals(FileEditResult.Renamed("provider.CBZ", recordsNotMoved = true), edits.rename(place, row, "new"))
+    }
+
 }

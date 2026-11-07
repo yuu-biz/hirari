@@ -454,7 +454,8 @@ class FolderViewModel(
             val before = launch.lastSaveFolder()
             grants.takeWrite(destination)
             launch.setLastSaveFolder(destination)
-            if (before != null && before != destination && saves.jobs.value.none { it.destination == before }) grants.releaseWrite(before)
+            if (before != null && before != destination && saves.jobs.value.none { it.destination == before } &&
+                locations.locations.first().none { it is LibraryLocation.SafTree && it.treeUri == before }) grants.releaseWrite(before)
             saves.start(SaveRequest(place, row.path, row.item.entry.name, row.item is FileItem.Folder, destination))
         }
         notice.value = Notice.SaveStarted

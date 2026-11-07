@@ -14,6 +14,7 @@ import android.provider.DocumentsContract.Document
 import android.system.ErrnoException
 import android.system.OsConstants
 import androidx.test.core.app.ApplicationProvider
+import io.github.yuubiz.hirari.core.source.renameInTree
 import io.github.yuubiz.hirari.core.source.smb.FakeConnector
 import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
@@ -50,6 +51,8 @@ class SaveProvider : ContentProvider() {
 
     val docs = linkedMapOf("root" to Doc("root", null, "root", Document.MIME_TYPE_DIR, null))
     var renames = true
+    var renameAs: String? = null
+    var replaceIdOnRename = false
     private var counter = 0
     private val dir = createTempDirectory("save-provider").toFile()
 
@@ -93,8 +96,17 @@ class SaveProvider : ContentProvider() {
                 Bundle().apply { putParcelable(EXTRA_URI, DocumentsContract.buildDocumentUri(SAVE_AUTHORITY, created)) }
             }
             "android:renameDocument" -> {
-                docs.getValue(id).name = extras.getString(Document.COLUMN_DISPLAY_NAME)!!
-                Bundle().apply { putParcelable(EXTRA_URI, uri) }
+                val name = renameAs ?: extras.getString(Document.COLUMN_DISPLAY_NAME)!!
+                val renamed = if (replaceIdOnRename) {
+                    val old = docs.remove(id)!!
+                    val next = "d${++counter}"
+                    docs[next] = Doc(next, old.parent, name, old.mime, old.file)
+                    DocumentsContract.buildDocumentUri(SAVE_AUTHORITY, next)
+                } else {
+                    docs.getValue(id).name = name
+                    uri
+                }
+                Bundle().apply { putParcelable(EXTRA_URI, renamed) }
             }
             "android:deleteDocument" -> {
                 fun drop(doc: String) {
@@ -130,6 +142,15 @@ class SafSaveFolderTest {
     @After
     fun tearDown() {
         scope.cancel()
+    }
+
+    @Test fun `tree rename queries the returned document URI for its actual display name`() = runBlocking {
+        SafSaveFolder(resolver, tree).create("old.cbz")
+        provider.renameAs = "provider.cbz"
+        provider.replaceIdOnRename = true
+        val actual = resolver.renameInTree(tree, "old.cbz", "requested.cbz")
+        assertEquals("provider.cbz", actual)
+        assertEquals("provider.cbz", provider.childrenOf("root").single().name)
     }
 
     @Test

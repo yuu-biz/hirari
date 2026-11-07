@@ -64,7 +64,7 @@ internal fun FileEditDialog(
                     OutlinedTextField(
                         value = stem,
                         onValueChange = { stem = it; result = null },
-                        enabled = !running && result != FileEditResult.RecordsNotMoved,
+                        enabled = !running && !result.finishedWithNotice(),
                         singleLine = true,
                         label = { Text(stringResource(R.string.edit_name)) },
                         suffix = { Text(name.extension) },
@@ -81,13 +81,19 @@ internal fun FileEditDialog(
                 if (counting || running) LinearProgressIndicator()
                 when (val shown = result) {
                     FileEditResult.RecordsNotMoved -> Text(stringResource(R.string.edit_records_not_moved))
+                    is FileEditResult.Renamed -> {
+                        shown.actualName?.let { Text(stringResource(R.string.edit_provider_name, it)) }
+                        if (shown.recordsNotMoved) Text(stringResource(R.string.edit_records_not_moved))
+                        if (shown.skipped > 0) Text(stringResource(R.string.edit_records_skipped, shown.skipped))
+                    }
+                    FileEditResult.PartialDelete -> Text(stringResource(R.string.edit_partial_delete))
                     is FileEditResult.Failed -> Text(shown.message())
                     else -> Unit
                 }
             }
         },
         confirmButton = {
-            if (!countFailed && result != FileEditResult.RecordsNotMoved) TextButton(
+            if (!countFailed && !result.finishedWithNotice()) TextButton(
                 enabled = !counting && !running && (!rename || validFileStem(stem)),
                 onClick = {
                     running = true
@@ -107,7 +113,7 @@ internal fun FileEditDialog(
             ) { Text(stringResource(if (rename) R.string.sheet_rename else R.string.sheet_delete)) }
         },
         dismissButton = { TextButton(enabled = !running, onClick = onDismiss) {
-            Text(stringResource(if (result == FileEditResult.RecordsNotMoved || countFailed) R.string.folder_close else R.string.save_cancel))
+            Text(stringResource(if (result.finishedWithNotice() || countFailed) R.string.folder_close else R.string.save_cancel))
         } },
     )
 }
@@ -121,3 +127,6 @@ private fun FileEditResult.Failed.message(): String = when (reason) {
     FileEditFailure.Unreachable -> stringResource(R.string.edit_unreachable)
     FileEditFailure.Other -> stringResource(R.string.edit_failed)
 }
+
+private fun FileEditResult?.finishedWithNotice(): Boolean =
+    this is FileEditResult.Renamed || this == FileEditResult.RecordsNotMoved || this == FileEditResult.PartialDelete

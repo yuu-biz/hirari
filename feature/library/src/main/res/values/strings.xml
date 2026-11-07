@@ -246,4 +246,7 @@
     <string name="edit_name_exists">「%1$s」と同じ名前があります。</string>
     <string name="edit_unreachable">サーバーに接続できません。</string>
     <string name="edit_failed">変更できませんでした。</string>
+    <string name="edit_provider_name">提供元が名前を「%1$s」にしました</string>
+    <string name="edit_records_skipped">読書の記録を移せませんでした（%1$d 件）</string>
+    <string name="edit_partial_delete">一部を消せませんでした</string>
 </resources>

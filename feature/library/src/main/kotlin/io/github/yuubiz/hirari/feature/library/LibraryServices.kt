@@ -16,7 +16,7 @@ import java.time.Instant
 
 /** The persisted grants of SAF trees (docs/spec.md sections 4.2, 4.5 and 7). Each call is a Binder call off the main thread. */
 interface TreeGrants {
-    /** Takes the persistable read grant of [tree]; false when the provider offers none. */
+    /** Takes the persistable read and, when offered, write grants of [tree]; false when the provider offers none. */
     suspend fun take(tree: UriString): Boolean
 
     suspend fun release(tree: UriString)
@@ -24,7 +24,7 @@ interface TreeGrants {
     /** Takes the persistable read and write grant of [tree], a destination of 端末に保存 (docs/spec.md section 4.5); false when the provider offers none. */
     suspend fun takeWrite(tree: UriString): Boolean
 
-    /** Gives back the write grant of [tree] and leaves its read grant, which a place may hold. */
+    /** Gives back both grants of an unused save tree. Call only when no place or save uses it. */
     suspend fun releaseWrite(tree: UriString)
 
     suspend fun held(): Set<UriString>

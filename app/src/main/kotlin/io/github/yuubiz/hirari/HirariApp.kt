@@ -43,6 +43,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
@@ -131,11 +132,22 @@ class HirariApp : Application() {
                     io.github.yuubiz.hirari.feature.library.DeviceFileEditStorage(contentResolver, folders, smb),
                     storage.itemRecords,
                     DeviceArchives(contentResolver, cacheDir, smb),
-                ) { ids ->
-                    storage.thumbnails.removeBooks(ids)
-                    io.github.yuubiz.hirari.feature.library.removeExtracted(cacheDir, ids)
-                    covers.trimMemory(ComponentCallbacks2.TRIM_MEMORY_BACKGROUND)
-                },
+                    discardCaches = { ids ->
+                        storage.thumbnails.removeBooks(ids)
+                        io.github.yuubiz.hirari.feature.library.removeExtracted(cacheDir, ids)
+                        covers.trimMemory(ComponentCallbacks2.TRIM_MEMORY_BACKGROUND)
+                    },
+                    remakeFolderCovers = { folders ->
+                        val sizes = covers.sizesFrom(storage.settings.settings.first().thumbSize)
+                        for (folder in folders) {
+                            val chosen = storage.locations.folderCover(folder.place.id, folder.path).first()
+                            val direction = storage.covers.directions().first()[io.github.yuubiz.hirari.core.model.locationBookId(folder.place, folder.path)]
+                                ?: storage.settings.settings.first().readingDirection
+                            val spec = covers.folderSpec(folder.place, folder.path, direction, chosen?.let { covers.chosen(folder.place, it) })
+                            if (spec != null) covers.regenerate(spec, sizes)
+                        }
+                    },
+                ),
             )
         }
         appScope.launch { runSaveService() }

@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import android.content.ContentResolver
 import android.net.Uri
+import io.github.yuubiz.hirari.core.data.ChangedFolderCover
 import io.github.yuubiz.hirari.core.data.ItemRecords
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.LibraryLocation
@@ -30,13 +31,16 @@ enum class FileEditFailure { InvalidName, NoPermission, NotFound, NameExists, Un
 
 sealed interface FileEditResult {
     data object Done : FileEditResult
+    data class Renamed(val actualName: String?, val skipped: Int = 0, val recordsNotMoved: Boolean = false) : FileEditResult
     data object RecordsNotMoved : FileEditResult
+    data object PartialDelete : FileEditResult
     data class Failed(val reason: FileEditFailure, val name: String = "") : FileEditResult
 }
 
 interface FileEditStorage {
     suspend fun list(place: LibraryLocation, path: String): List<FolderEntry>
-    suspend fun rename(place: LibraryLocation, path: String, destination: String)
+    /** Returns the actual path after the provider has chosen the display name. */
+    suspend fun rename(place: LibraryLocation, path: String, destination: String): String
     suspend fun delete(place: LibraryLocation, path: String, directory: Boolean)
 }
 
@@ -60,12 +64,17 @@ class DeviceFileEditStorage(private val resolver: ContentResolver, private val f
         }
     }
 
-    override suspend fun rename(place: LibraryLocation, path: String, destination: String) {
+    override suspend fun rename(place: LibraryLocation, path: String, destination: String): String =
         when (place) {
-            is LibraryLocation.SafTree -> resolver.renameInTree(Uri.parse(place.treeUri.value), path, destination.substringAfterLast('/'))
-            is LibraryLocation.SmbShare -> smb.rename(place, path, destination)
+            is LibraryLocation.SafTree -> {
+                val actualName = resolver.renameInTree(Uri.parse(place.treeUri.value), path, destination.substringAfterLast('/'))
+                normalizePath("${destination.substringBeforeLast('/', "")}/$actualName")
+            }
+            is LibraryLocation.SmbShare -> {
+                smb.rename(place, path, destination)
+                destination
+            }
         }
-    }
 
     override suspend fun delete(place: LibraryLocation, path: String, directory: Boolean) {
         when (place) {
@@ -81,6 +90,7 @@ class FileEdits(
     private val records: ItemRecords,
     private val archives: ArchiveOpener,
     private val discardCaches: suspend (Set<BookId>) -> Unit,
+    private val remakeFolderCovers: suspend (Set<ChangedFolderCover>) -> Unit = {},
 ) {
     suspend fun count(place: LibraryLocation, path: String, progress: (Int) -> Unit): Int = withContext(Dispatchers.IO) {
         countDescendants(path, { parent -> storage.list(place, parent).map { child ->
@@ -98,10 +108,11 @@ class FileEdits(
             requireEditable(place, row, rename = true)
             if (storage.list(place, parent).any { Normalizer.normalize(it.name, Normalizer.Form.NFC) == name }) throw NameExistsException(name)
             withContext(NonCancellable) mutation@ {
-                storage.rename(place, row.path, destination)
+                val actual = storage.rename(place, row.path, destination)
+                val actualName = actual.substringAfterLast('/').takeIf { it != name }
                 val names = HashMap<String, Map<Int, ByteArray>>()
                 val oldIds = try {
-                    records.rename(place, row.path, destination) { path, index ->
+                    records.rename(place, row.path, actual) { path, index ->
                         val entries = names[path] ?: when (val result = archives.open(place, path, null, locationBookId(place, path))) {
                             is ArchiveOpenResult.Failed -> throw IOException("cannot read moved archive")
                             is ArchiveOpenResult.Opened -> result.contents.use { contents -> contents.entries.associate { it.entryIndex to it.rawName } }.also { names[path] = it }
@@ -109,10 +120,11 @@ class FileEdits(
                         entries[index] ?: throw IOException("archive entry is missing")
                     }
                 } catch (_: Exception) {
-                    return@mutation FileEditResult.RecordsNotMoved
+                    return@mutation if (actualName == null) FileEditResult.RecordsNotMoved else FileEditResult.Renamed(actualName, recordsNotMoved = true)
                 }
-                discardCaches(oldIds)
-                FileEditResult.Done
+                discardCaches(oldIds.oldIds)
+                remakeFolderCovers(oldIds.folderCovers)
+                if (actualName != null || oldIds.skipped > 0) FileEditResult.Renamed(actualName, oldIds.skipped) else FileEditResult.Done
             }
         } catch (e: CancellationException) {
             throw e
@@ -125,9 +137,26 @@ class FileEdits(
         try {
             requireEditable(place, row, rename = false)
             withContext(NonCancellable) {
-                storage.delete(place, row.path, row.item is FileItem.Folder)
-                discardCaches(records.delete(place, row.path))
-                FileEditResult.Done
+                try {
+                    storage.delete(place, row.path, row.item is FileItem.Folder)
+                    val removed = records.delete(place, row.path)
+                    discardCaches(removed.oldIds)
+                    remakeFolderCovers(removed.folderCovers)
+                    FileEditResult.Done
+                } catch (e: io.github.yuubiz.hirari.core.source.smb.SmbServer.PartialDeleteException) {
+                    val base = normalizePath((place as LibraryLocation.SmbShare).basePath)
+                    val ids = linkedSetOf<BookId>()
+                    val folders = linkedSetOf<ChangedFolderCover>()
+                    for (deleted in e.deletedPaths) {
+                        val relative = if (base.isEmpty()) deleted else deleted.removePrefix("$base/")
+                        val removed = records.delete(place, relative)
+                        ids += removed.oldIds
+                        folders += removed.folderCovers
+                    }
+                    discardCaches(ids)
+                    remakeFolderCovers(folders)
+                    FileEditResult.PartialDelete
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -160,6 +189,6 @@ internal fun Exception.fileEditFailure(): FileEditFailure = when (this) {
     else -> FileEditFailure.Other
 }
 
-/** Drops what solid archives of [books] left in the extraction cache under [cacheDir], after a rename or a delete. */
-fun removeExtracted(cacheDir: java.io.File, books: Set<io.github.yuubiz.hirari.core.model.BookId>) =
+/** Leaves open extraction directories to the cache's next trim (docs/spec.md section 7). */
+fun removeExtracted(cacheDir: java.io.File, books: Set<BookId>) =
     io.github.yuubiz.hirari.core.archive.ExtractionCache.under(cacheDir).removeBooks(books)

@@ -51,8 +51,8 @@ suspend fun countDescendants(root: String, children: suspend (String) -> List<Pa
 suspend fun ContentResolver.renameInTree(tree: Uri, path: String, name: String) = withContext(Dispatchers.IO) {
     val id = locateDocument(tree, path) ?: throw FileNotFoundException()
     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-    DocumentsContract.renameDocument(this@renameInTree, uri, name) ?: throw IOException("rename failed")
-    Unit
+    val renamed = DocumentsContract.renameDocument(this@renameInTree, uri, name) ?: throw IOException("rename failed")
+    documentInfo(renamed)?.name?.takeIf { it.isNotBlank() } ?: throw IOException("renamed document has no display name")
 }
 
 suspend fun ContentResolver.deleteInTree(tree: Uri, path: String) = withContext(Dispatchers.IO) {

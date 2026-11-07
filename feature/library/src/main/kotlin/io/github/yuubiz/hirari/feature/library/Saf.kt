@@ -30,7 +30,7 @@ class SafTreeGrants(private val resolver: ContentResolver) : TreeGrants {
 
     override suspend fun release(tree: UriString) = withContext(Dispatchers.IO) {
         try {
-            resolver.releasePersistableUriPermission(Uri.parse(tree.value), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            resolver.releasePersistableUriPermission(Uri.parse(tree.value), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         } catch (_: SecurityException) {
         }
     }
@@ -46,7 +46,7 @@ class SafTreeGrants(private val resolver: ContentResolver) : TreeGrants {
 
     override suspend fun releaseWrite(tree: UriString) = withContext(Dispatchers.IO) {
         try {
-            resolver.releasePersistableUriPermission(Uri.parse(tree.value), Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            resolver.releasePersistableUriPermission(Uri.parse(tree.value), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         } catch (_: SecurityException) {
         }
     }

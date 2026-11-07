@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.data
 
 import android.content.Context
+import androidx.room3.AutoMigration
 import androidx.room3.ColumnInfo
 import androidx.room3.Dao
 import androidx.room3.Database
@@ -113,19 +114,23 @@ interface ThumbnailCache {
     suspend fun removeBooks(books: Set<BookId>)
 }
 
-@Entity(tableName = "thumbs", indices = [Index("last_used")])
+@Entity(tableName = "thumbs", indices = [Index("last_used"), Index("book_id")])
 internal data class ThumbRow(
     @PrimaryKey val digest: String,
     /** Nonnegative for stored bytes and decode failures; -1 identifies an interrupted failure. */
     val bytes: Long,
     @ColumnInfo(name = "last_used") val lastUsed: Long,
     val failed: Boolean,
+    @ColumnInfo(name = "book_id") val bookId: String? = null,
 )
 
 @Dao
 internal interface ThumbDao {
     @Query("SELECT * FROM thumbs")
     suspend fun all(): List<ThumbRow>
+
+    @Query("SELECT * FROM thumbs WHERE book_id IN (:books)")
+    suspend fun forBooks(books: List<String>): List<ThumbRow>
 
     @Query("SELECT * FROM thumbs WHERE digest = :digest")
     suspend fun get(digest: String): ThumbRow?
@@ -157,7 +162,7 @@ internal interface ThumbDao {
  * app runs, and an index that names missing files recovers per entry, where a database file deleted under an
  * open connection does not.
  */
-@Database(entities = [ThumbRow::class], version = 1, exportSchema = true)
+@Database(entities = [ThumbRow::class], version = 2, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2)])
 internal abstract class ThumbnailIndexDatabase : RoomDatabase() {
     abstract fun thumbs(): ThumbDao
 }
@@ -187,22 +192,26 @@ internal class DiskThumbnailCache(
 
     private fun fileOf(digest: String) = File(dir, "$digest.webp")
 
-    private val owners = File(dir.parentFile, "${dir.name}-owners")
-
-    private fun ownerOf(digest: String) = File(owners, digest)
-
-    private fun writeOwner(digest: String, book: BookId) {
-        owners.mkdirs()
-        ownerOf(digest).writeText(book.value)
-    }
-
     override suspend fun get(key: ThumbKey): ThumbLookup {
         val row = dao.get(key.digest) ?: return ThumbLookup.Miss
+        if (row.bookId == null && row.bytes != INTERRUPTED_BYTES) {
+            if (discardLegacy(row.digest)) return ThumbLookup.Miss
+            return get(key)
+        }
         if (row.failed) return row.failure()
         val file = fileOf(row.digest)
         if (!withContext(io) { file.isFile }) return forgetIfStillMissing(row.digest)
         dao.touch(row.digest, now().toEpochMilli())
         return ThumbLookup.Hit(file)
+    }
+
+    /** Version-one digests cannot reveal their owner. Rebuild only when that entry is requested. */
+    private suspend fun discardLegacy(digest: String): Boolean = writing.withLock {
+        val row = dao.get(digest) ?: return@withLock true
+        if (row.bookId != null || row.bytes == INTERRUPTED_BYTES) return@withLock false
+        dao.delete(digest)
+        withContext(io) { fileOf(digest).delete() }
+        true
     }
 
     /**
@@ -239,9 +248,8 @@ internal class DiskThumbnailCache(
             val partial = File(dir, "${key.digest}.part")
             partial.writeBytes(webp)
             Files.move(partial.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            writeOwner(key.digest, key.book)
         }
-        dao.upsert(ThumbRow(key.digest, webp.size.toLong(), now().toEpochMilli(), failed = false))
+        dao.upsert(ThumbRow(key.digest, webp.size.toLong(), now().toEpochMilli(), failed = false, bookId = key.book.value))
         evict()
         return file
     }
@@ -259,7 +267,7 @@ internal class DiskThumbnailCache(
                 dao.upsert(row)
                 continue
             }
-            withContext(io) { fileOf(row.digest).delete(); ownerOf(row.digest).delete() }
+            withContext(io) { fileOf(row.digest).delete() }
             total -= row.bytes
         }
     }
@@ -269,29 +277,20 @@ internal class DiskThumbnailCache(
     private suspend fun markFailed(digest: String, interrupted: Boolean = false, book: BookId? = null) = writing.withLock {
         withContext(io) {
             fileOf(digest).delete()
-            if (book != null) writeOwner(digest, book)
         }
-        dao.upsert(ThumbRow(digest, if (interrupted) INTERRUPTED_BYTES else 0, now().toEpochMilli(), failed = true))
+        dao.upsert(ThumbRow(digest, if (interrupted) INTERRUPTED_BYTES else 0, now().toEpochMilli(), failed = true, bookId = book?.value))
     }
 
     override suspend fun remove(key: ThumbKey) = writing.withLock {
-        withContext(io) { fileOf(key.digest).delete(); ownerOf(key.digest).delete() }
+        withContext(io) { fileOf(key.digest).delete() }
         dao.delete(key.digest)
     }
 
     override suspend fun removeBooks(books: Set<BookId>) = writing.withLock {
-        val ids = books.map { it.value }.toSet()
-        val rows = dao.all()
-        val digests = withContext(io) {
-            rows.map { it.digest }.filter { digest ->
-                val owner = ownerOf(digest)
-                // Old cache entries have no owner metadata; discard those disposable entries too.
-                !owner.isFile || owner.readText() in ids
-            }
-        }
+        val digests = books.map { it.value }.chunked(900).flatMap { ids -> dao.forBooks(ids) }.map { it.digest }
         for (digest in digests) {
             dao.delete(digest)
-            withContext(io) { fileOf(digest).delete(); ownerOf(digest).delete() }
+            withContext(io) { fileOf(digest).delete() }
         }
     }
 
@@ -307,7 +306,6 @@ internal class DiskThumbnailCache(
     override suspend fun clear() = writing.withLock {
         withContext(io) {
             dir.listFiles()?.forEach { it.delete() }
-            owners.listFiles()?.forEach { it.delete() }
         }
         dao.deleteAll()
     }
@@ -317,8 +315,7 @@ internal class DiskThumbnailCache(
         try {
             withContext(io) {
                 makingDir.mkdirs()
-                writeOwner(key.digest, key.book)
-                record.createNewFile()
+                record.writeText(key.book.value)
             }
             return block()
         } finally {
@@ -329,7 +326,7 @@ internal class DiskThumbnailCache(
     override suspend fun settleInterrupted(): Boolean {
         val left = withContext(io) { makingDir.listFiles()?.toList().orEmpty() }
         for (record in left) {
-            markFailed(record.name, interrupted = true)
+            markFailed(record.name, interrupted = true, book = withContext(io) { record.readText().takeIf { it.isNotEmpty() }?.let(::BookId) })
             withContext(io) { record.delete() }
         }
         return left.isNotEmpty()
@@ -344,7 +341,5 @@ internal class DiskThumbnailCache(
         (known - present).forEach { dao.delete(it) }
         val stray = files.filter { !it.name.endsWith(".webp") || it.name.removeSuffix(".webp") !in known }
         withContext(io) { stray.forEach { it.delete() } }
-        val remaining = dao.all().map { it.digest }.toSet()
-        withContext(io) { owners.listFiles().orEmpty().filter { it.name !in remaining }.forEach { it.delete() } }
     }
 }

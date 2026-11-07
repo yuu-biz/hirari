@@ -419,6 +419,23 @@ class FolderViewModelTest {
         fixture.saves.cancelAll()
     }
 
+    @Test fun `changing save destination keeps both grants of a registered place`() = runTest {
+        val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas", 445, "books", "", null, null, null)
+        fixture.locations.rows.value = listOf(server, place)
+        fixture.smb.folders[""] = listOf(FolderEntry("1.zip", null, false, 1, null))
+        fixture.smb.saving = { awaitCancellation() }
+        fixture.launch.setLastSaveFolder(place.treeUri)
+        fixture.grants.take(place.treeUri)
+        fixture.grants.takeWrite(place.treeUri)
+        val model = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(server.id, ""), UnconfinedTestDispatcher(testScheduler))
+            .also { watch(it.state) }
+        model.save(model.shown().rows.single(), UriString("content://tree/new"))
+        assertTrue(place.treeUri in fixture.grants.held)
+        assertTrue(place.treeUri in fixture.grants.writeHeld)
+        assertTrue(fixture.grants.writeReleased.isEmpty())
+        fixture.saves.cancelAll()
+    }
+
     @Test
     fun `a SAF place offers no save and saves nothing`() = runTest {
         fixture.locations.rows.value = listOf(place)

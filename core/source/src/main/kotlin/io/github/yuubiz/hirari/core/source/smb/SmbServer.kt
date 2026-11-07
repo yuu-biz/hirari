@@ -117,19 +117,32 @@ class SmbServer internal constructor(
         request(SmbPurpose.Foreground) { it.connection.rename(path, destination) }
     }
 
+    class PartialDeleteException(val deletedPaths: Set<String>, cause: Exception) : IOException("partial delete", cause)
+
     /** Postorder deletion through the shared connection and foreground request gate. */
     suspend fun delete(path: String, directory: Boolean) = withContext(io) {
         require(path.isNotBlank())
         val pending = ArrayDeque<Triple<String, Boolean, Boolean>>()
         pending.add(Triple(path, directory, false))
-        while (pending.isNotEmpty()) {
-            currentCoroutineContext().ensureActive()
-            val (next, folder, visited) = pending.removeLast()
-            if (folder && !visited) {
-                val children = list(next)
-                pending.add(Triple(next, true, true))
-                children.forEach { pending.add(Triple(it.path, it.isDirectory, false)) }
-            } else request(SmbPurpose.Foreground) { it.connection.delete(next, folder) }
+        val deleted = linkedSetOf<String>()
+        try {
+            while (pending.isNotEmpty()) {
+                currentCoroutineContext().ensureActive()
+                val (next, folder, visited) = pending.removeLast()
+                if (folder && !visited) {
+                    val children = list(next)
+                    pending.add(Triple(next, true, true))
+                    children.forEach { pending.add(Triple(it.path, it.isDirectory, false)) }
+                } else {
+                    request(SmbPurpose.Foreground) { it.connection.delete(next, folder) }
+                    deleted += next
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (deleted.isEmpty()) throw e
+            throw PartialDeleteException(deleted, e)
         }
     }
 

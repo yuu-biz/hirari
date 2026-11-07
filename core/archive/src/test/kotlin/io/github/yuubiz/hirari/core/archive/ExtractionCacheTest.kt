@@ -81,7 +81,7 @@ class ExtractionCacheTest {
     }
 
     @Test
-    fun `file edits discard all old generations and leave sibling books`() {
+    fun `file edits keep extraction generations because open sessions are not tracked`() {
         val old = ExtractionCache.directory(temp.root, BookId("old"), 100, 1_000)
         val newer = ExtractionCache.directory(temp.root, BookId("old"), 100, 2_000)
         val sibling = ExtractionCache.directory(temp.root, BookId("sibling"), 100, 1_000)
@@ -89,8 +89,8 @@ class ExtractionCacheTest {
         newer.fill("0", 20)
         sibling.fill("0", 30)
         ExtractionCache.under(temp.root).removeBooks(setOf(BookId("old")))
-        assertFalse(old.exists())
-        assertFalse(newer.exists())
+        assertTrue(old.resolve("0").isFile)
+        assertTrue(newer.resolve("0").isFile)
         assertTrue(sibling.resolve("0").isFile)
     }
 

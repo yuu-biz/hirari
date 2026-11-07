@@ -35,4 +35,28 @@ class SmbFileEditsTest {
             assertEquals(setOf("old.cbz", "taken.cbz"), server.list("").map { it.name }.toSet())
         } finally { server.close() }
     }
+    @Test fun `partial recursive deletion reports only paths successfully removed`() = runTest {
+        val connector = FakeConnector(linkedMapOf("a/blocked.cbz" to byteArrayOf(1), "a/deleted.cbz" to byteArrayOf(2)))
+        val server = SmbServer(connector, SmbLogin.Guest, backgroundScope, emptyFlow(), StandardTestDispatcher(testScheduler), 1.seconds)
+        try {
+            server.list("a")
+            connector.current.refuseDelete = "a/blocked.cbz"
+            val failure = assertFailsWith<SmbServer.PartialDeleteException> { server.delete("a", true) }
+            assertEquals(setOf("a/deleted.cbz"), failure.deletedPaths)
+            assertTrue(failure.cause is SmbRequestException)
+            assertEquals(listOf("blocked.cbz"), server.list("a").map { it.name })
+        } finally { server.close() }
+    }
+
+    @Test fun `delete failure before any removal preserves the original permission failure`() = runTest {
+        val connector = FakeConnector(mapOf("a/blocked.cbz" to byteArrayOf(1)))
+        val server = SmbServer(connector, SmbLogin.Guest, backgroundScope, emptyFlow(), StandardTestDispatcher(testScheduler), 1.seconds)
+        try {
+            server.list("a")
+            connector.current.refuseDelete = "a/blocked.cbz"
+            assertFailsWith<SmbRequestException> { server.delete("a", true) }
+            assertTrue(connector.current.deleted.isEmpty())
+        } finally { server.close() }
+    }
+
 }

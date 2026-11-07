@@ -48,6 +48,26 @@ class HomeViewModelTest {
 
     private fun viewModel() = HomeViewModel(CompletableDeferred(fixture.services), UnconfinedTestDispatcher())
 
+    @Test fun `removing a place keeps grants while it is the last save destination`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.grants.take(place.treeUri)
+        fixture.grants.takeWrite(place.treeUri)
+        fixture.launch.setLastSaveFolder(place.treeUri)
+        viewModel().removePlace(place.id)
+        assertTrue(place.treeUri in fixture.grants.held)
+        assertTrue(place.treeUri in fixture.grants.writeHeld)
+        assertTrue(fixture.locations.rows.value.isEmpty())
+    }
+
+    @Test fun `removing a place releases both grants when nothing else uses its tree`() = runTest {
+        fixture.locations.rows.value = listOf(place)
+        fixture.grants.take(place.treeUri)
+        fixture.grants.takeWrite(place.treeUri)
+        viewModel().removePlace(place.id)
+        assertTrue(place.treeUri !in fixture.grants.held)
+        assertTrue(place.treeUri !in fixture.grants.writeHeld)
+    }
+
     @Test
     fun `favorites list newest first and open folders or unread books by their lasting address`() = runTest {
         val server = LibraryLocation.SmbShare(LocationId(2), "NAS", "nas", 445, "books", "", null, null, null)

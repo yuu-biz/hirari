@@ -329,6 +329,7 @@ internal class FakeGrants : TreeGrants {
 
     override suspend fun release(tree: UriString) {
         held.remove(tree)
+        writeHeld.remove(tree)
     }
 
     var heldFails = false
@@ -340,6 +341,7 @@ internal class FakeGrants : TreeGrants {
     override suspend fun takeWrite(tree: UriString): Boolean = !refuseWrite && writeHeld.add(tree).let { true }
 
     override suspend fun releaseWrite(tree: UriString) {
+        held.remove(tree)
         writeHeld.remove(tree)
         writeReleased += tree
     }

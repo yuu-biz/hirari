@@ -60,6 +60,34 @@ class ThumbnailCacheTest {
         assertTrue(cache.isHit("sibling"))
     }
 
+    @Test fun `owner column removes only matching entries and creates no owner side directory`() = runTest {
+        cache.put(key("old"), bytes(10))
+        index.thumbs().upsert(ThumbRow("legacy", 0, 0, true))
+        assertEquals("old", index.thumbs().get(key("old").digest)?.bookId)
+        assertTrue(!File(folder.root, "thumbs-owners").exists())
+        cache.removeBooks(setOf(BookId("old")))
+        assertEquals(listOf("legacy"), index.thumbs().all().map { it.digest })
+    }
+
+    @Test fun `a legacy thumbnail without an owner is rebuilt only when requested`() = runTest {
+        dir.mkdirs()
+        File(dir, "${key("legacy").digest}.webp").writeBytes(bytes(10))
+        index.thumbs().upsert(ThumbRow(key("legacy").digest, 10, 0, false))
+        index.thumbs().upsert(ThumbRow("unrelated", 0, 0, true))
+        assertIs<ThumbLookup.Miss>(cache.get(key("legacy")))
+        assertEquals(listOf("unrelated"), index.thumbs().all().map { it.digest })
+    }
+
+    @Test fun `a cover finishing after deletion is disposable under the ordinary size cap`() = runTest {
+        cache.making(key("old")) {
+            cache.removeBooks(setOf(BookId("old")))
+            cache.put(key("old"), bytes(60))
+        }
+        cache.put(key("new"), bytes(60))
+        assertIs<ThumbLookup.Miss>(cache.get(key("old")))
+        assertTrue(cache.isHit("new"))
+    }
+
     @Test
     fun `resuming clears interrupted failures after reopening the cache and preserves decode failures`() = runTest {
         val making = folder.newFolder("interrupted")
@@ -212,7 +240,7 @@ class ThumbnailCacheTest {
             }
         }
         cache = DiskThumbnailCache(dir, index.thumbs(), limitBytes = 100, now = { Instant.ofEpochSecond(++clock) }, io = io)
-        index.thumbs().upsert(ThumbRow(key("a").digest, 10, 1, failed = false))
+        index.thumbs().upsert(ThumbRow(key("a").digest, 10, 1, failed = false, bookId = "a"))
         cache.get(key("a"))
         assertTrue(checked)
         assertTrue(File(dir, "${key("a").digest}.webp").isFile)
