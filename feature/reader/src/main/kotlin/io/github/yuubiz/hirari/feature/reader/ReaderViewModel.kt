@@ -383,6 +383,9 @@ class ReaderViewModel internal constructor(
     var bookPath: String by mutableStateOf(request.book.initialPath())
         private set
 
+    var bookTitle: String by mutableStateOf(request.book.initialPath().substringAfterLast('/'))
+        private set
+
     fun showStrip(shown: Boolean) {
         if (stripShown == shown) return
         stripShown = shown
@@ -779,6 +782,7 @@ class ReaderViewModel internal constructor(
         val writer = checkNotNull(located.overrides)
         val config = ReaderConfig.of(settings, writer.current)
         val indexed = withContext(Dispatchers.IO) { describe(located, book) }
+        bookTitle = indexed.title
         favoriteBook = indexed.takeIf { it.source is BookSource.InLocation }
         (indexed.source as? BookSource.InLocation)?.let { source ->
             viewModelScope.launch {

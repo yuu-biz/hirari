@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.EdgeHit
 import io.github.yuubiz.hirari.core.model.LayoutMode
@@ -25,7 +26,7 @@ internal val PORTRAIT = Viewport(1080f, 1920f, density = 3f)
 internal val LANDSCAPE = Viewport(1920f, 1080f, density = 3f)
 
 internal fun spreadConfig(direction: ReadingDirection = ReadingDirection.RightToLeft, coverAlone: Boolean = false) =
-    ReaderConfig(layout = LayoutSettings(LayoutMode.Spread, direction, coverAlone))
+    ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Spread, direction, coverAlone))
 
 /** A book whose shapes are all known, as after prefetch read them. */
 internal fun readerOf(
@@ -77,7 +78,7 @@ class ReaderStateTest {
 
     @Test
     fun stepsWalkTheStopsBeforeTheyTurn() {
-        val config = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, false), scaleMode = ScaleMode.FitWidth)
+        val config = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, false), scaleMode = ScaleMode.FitWidth)
         var state = readerOf(List(2) { TALL }, config, LANDSCAPE)
         val stops = state.geometry()!!.stops(config).stops.size
         assertTrue(stops > 1)
@@ -93,7 +94,7 @@ class ReaderStateTest {
 
     @Test
     fun aStepAnimatesAtTheStopSpeedAndAnInputLandsItAtOnce() {
-        val config = ReaderConfig(scaleMode = ScaleMode.FitWidth)
+        val config = ReaderConfig(barDisplay = BarDisplay.Hidden, scaleMode = ScaleMode.FitWidth)
         val state = readerOf(List(1) { TALL }, config, LANDSCAPE)
         val first = state.positionAt(0)!!
         val stepping = state.act(ReaderAction.StepStops(Turn.Forward), nowMs = 0)
@@ -108,7 +109,7 @@ class ReaderStateTest {
 
     @Test
     fun aForwardStepAfterAPanGoesToTheNearestStopPastTheScreen() {
-        val config = ReaderConfig(scaleMode = ScaleMode.FitWidth)
+        val config = ReaderConfig(barDisplay = BarDisplay.Hidden, scaleMode = ScaleMode.FitWidth)
         val state = readerOf(List(1) { TALL }, config, LANDSCAPE)
         val stops = state.geometry()!!.stops(config).stops
         val between = (stops[1].point.y + stops[2].point.y) / 2
@@ -172,7 +173,7 @@ class ReaderStateTest {
 
     @Test
     fun aPinchKeepsThePointUnderTheFingers() {
-        val state = readerOf(List(1) { TALL }, ReaderConfig(), PORTRAIT)
+        val state = readerOf(List(1) { TALL }, ReaderConfig(barDisplay = BarDisplay.Hidden), PORTRAIT)
         val focus = Point(300f, 500f)
         val before = state.geometry()!!
         val start = state.positionAt(0)!!
@@ -190,7 +191,7 @@ class ReaderStateTest {
 
     @Test
     fun theZoomStaysAcrossTurnsAndResetsWithTheScaleMode() {
-        val state = readerOf(List(4) { TALL }, ReaderConfig(), PORTRAIT)
+        val state = readerOf(List(4) { TALL }, ReaderConfig(barDisplay = BarDisplay.Hidden), PORTRAIT)
             .reduce(ReaderEvent.Zoom(ZoomEvent.FingersDown(100f)))
             .reduce(ReaderEvent.Zoom(ZoomEvent.SpanChanged(130f)))
             .reduce(ReaderEvent.Zoom(ZoomEvent.SpanChanged(200f)))
@@ -204,7 +205,7 @@ class ReaderStateTest {
 
     @Test
     fun turningTheScreenRelaysFromTheHeadOfTheView() {
-        val config = ReaderConfig(layout = LayoutSettings(LayoutMode.Auto, ReadingDirection.RightToLeft, coverAlone = false))
+        val config = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Auto, ReadingDirection.RightToLeft, coverAlone = false))
         val state = readerOf(listOf(TALL, TALL, TALL, WIDE), config, LANDSCAPE, start = 2)
         assertEquals(PageView.One(2), state.current)
         val portrait = state.reduce(ReaderEvent.ViewportChanged(PORTRAIT))

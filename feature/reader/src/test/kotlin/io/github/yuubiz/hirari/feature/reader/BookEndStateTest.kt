@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookEdge
@@ -29,7 +30,7 @@ private fun ReaderState.act(action: ReaderAction, nowMs: Long = 0) = reduce(Read
 private val NEXT = BookAddress.Document(UriString("content://next"))
 
 class BookEndStateTest {
-    private val single = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
+    private val single = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
 
     @Test
     fun turningPastTheLastViewRunsIntoTheEnd() {

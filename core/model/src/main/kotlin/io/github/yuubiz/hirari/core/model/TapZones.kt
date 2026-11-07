@@ -4,7 +4,9 @@ import kotlin.math.abs
 
 enum class Turn { Forward, Back }
 
-enum class ReaderRegion { CommandBar, TurnArea, PageBar }
+enum class ReaderRegion { CommandBar, CommandRow, TurnArea, PageBar }
+
+enum class BarLayout { Hidden, Shown }
 
 /** The system's swipes from the top and bottom edges start at least this close to them. */
 const val SYSTEM_EDGE_DP = 6f
@@ -57,13 +59,19 @@ data class SystemGestureEdges(val top: Float, val bottom: Float, val left: Float
     )
 }
 
-/** The three regions of the reader screen (docs/spec.md section 4.8). Every length is in dp. */
+/** The touch regions of the reader screen (docs/spec.md section 4.8). Every length is in screen dp. */
 data class ReaderRegions(
     val screen: Size,
     val barHeight: Float,
     val edges: SystemGestureEdges = SystemGestureEdges.Fixed,
+    val bars: BarLayout = BarLayout.Hidden,
 ) {
-    val turnArea: Rect get() = Rect(0f, barHeight, screen.width, screen.height - barHeight)
+    val commandBar: Rect get() = Rect(0f, 0f, screen.width, barHeight)
+    val pageBar: Rect get() = Rect(0f, screen.height - barHeight, screen.width, screen.height)
+    val commandRow: Rect? get() = if (bars == BarLayout.Shown) Rect(0f, screen.height - 2 * barHeight, screen.width, screen.height - barHeight) else null
+    val turnArea: Rect get() = Rect(0f, barHeight, screen.width, commandRow?.top ?: pageBar.top)
+    /** Hidden bars overlay the full page; shown bars reserve their own space. */
+    val pageArea: Rect get() = if (bars == BarLayout.Shown) turnArea else Rect(0f, 0f, screen.width, screen.height)
 
     /** The edges whose bands hold [point], so that a swipe from it into the screen is the system's. */
     fun systemEdgesAt(point: Point): Set<ScreenEdge> = buildSet {
@@ -77,6 +85,7 @@ data class ReaderRegions(
     fun regionAt(point: Point): ReaderRegion = when {
         point.y < barHeight -> ReaderRegion.CommandBar
         point.y >= screen.height - barHeight -> ReaderRegion.PageBar
+        commandRow != null && point.y >= screen.height - 2 * barHeight -> ReaderRegion.CommandRow
         else -> ReaderRegion.TurnArea
     }
 }

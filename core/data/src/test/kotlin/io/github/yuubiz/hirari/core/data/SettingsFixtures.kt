@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.data
 
 import io.github.yuubiz.hirari.core.model.AppTheme
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
@@ -71,6 +72,7 @@ val everything = GlobalSettings(
     barHeightDp = 80,
     commandBarItems = listOf(ReaderCommand.Settings, ReaderCommand.AddBookmark),
     autoPlaySeconds = 2.5,
+    barDisplay = BarDisplay.Always,
     pageNumberSpot = ScreenSpot.BottomCenter,
     statusSpot = ScreenSpot.TopRight,
     overlayTextSize = OverlayTextSize.Large,

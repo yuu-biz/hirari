@@ -75,6 +75,7 @@ internal fun runPanelItem(item: PanelItem, viewModel: ReaderViewModel, ui: Reade
     when (item) {
         PanelItem.Close -> onClose()
         PanelItem.Menu -> ui.toggleMenu()
+        PanelItem.More -> ui.commandBar = CommandBarState.Open
         is PanelItem.Command -> ui.follow(viewModel.command(item.command, SystemClock.uptimeMillis()))
     }
 }

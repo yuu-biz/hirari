@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.KeepAwake
@@ -54,6 +55,7 @@ class ReaderConfigTest {
         "volumeKeys" to { it.copy(volumeKeys = VolumeKeys.UpAdvances) },
         "turnHaptics" to { it.copy(turnHaptics = true) },
         "barHeightDp" to { it.copy(barHeightDp = 80) },
+        "barDisplay" to { it.copy(barDisplay = BarDisplay.Always) },
         "commandBarItems" to { it.copy(commandBarItems = listOf(ReaderCommand.Settings)) },
         "autoPlaySeconds" to { it.copy(autoPlaySeconds = 2.5) },
         "readerOrientation" to { it.copy(readerOrientation = ReaderOrientation.Landscape) },

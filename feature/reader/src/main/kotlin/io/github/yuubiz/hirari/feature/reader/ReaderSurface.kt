@@ -29,6 +29,7 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.model.BookEndOutcome
+import io.github.yuubiz.hirari.core.model.BarLayout
 import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.bookEndOutcome
@@ -124,7 +126,6 @@ private fun ReaderState.bounceAt(nowMs: Long): Float {
 /** Every reader input and drawing for an open book. */
 @Composable
 internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: ReaderUi, onClose: () -> Unit) {
-    val density = LocalDensity.current.density
     val haptics = LocalHapticFeedback.current
     var frameMs by remember { mutableLongStateOf(android.os.SystemClock.uptimeMillis()) }
     val latest by rememberUpdatedState(state)
@@ -160,100 +161,117 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
     val adjust = state.config.adjust
     val colorFilter = remember(adjust) { adjust.colorMatrix()?.let { ColorFilter.colorMatrix(ColorMatrix(it)) } }
     val control = { control: ReaderControl -> control.effectIn(latest).applyTo(viewModel, ui) }
-    Canvas(
-        Modifier
-            .fillMaxSize()
-            .pageAccessibility(state, control)
-            .pointerInput(input) { with(input) { handle() } },
-    ) {
-        viewModel.prepared
-        viewModel.thumbnailsChanged
-        viewModel.tilesDrawn
-        val now = if (state.animating) frameMs else Long.MAX_VALUE
-        if (state.scroll != null) drawStrip(viewModel, state, colorFilter) else for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
-        state.pull?.takeIf { it.neighbor != null }?.let { pull ->
-            val movement = turnMovement(pull.turn, state.config.direction)
-            drawPullHint(pullFrame(state.config.turnEffect, movement, pull.pulledDp * state.viewport.density / state.viewport.width), movement)
-        } ?: state.transition?.let { drawPullHint(it.animation.frameAt(now), it.animation.movement) }
-        viewModel.traces.drawn(state.current, viewModel.preparedView(state.current) != null)
-        viewModel.viewDrawn(state.current)
-        state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter, background) }
+    val shown = state.area.bars == BarLayout.Shown
+    LaunchedEffect(state.area) {
+        ui.commandBar = CommandBarState.Closed
+        ui.pageBar = PageBarState.Idle
     }
-
-    PageBarGestureExclusion(state.config.barHeightDp)
-
-    for ((page, rect) in state.stripPages()) {
-        val result = errorOf(viewModel, PageView.One(page), 0, page) ?: continue
-        key(page) {
-            ErrorCard(
-                result = result,
-                name = viewModel.pageNames.getOrNull(page).orEmpty(),
-                modifier = Modifier
-                    .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
-                    .requiredSize(with(LocalDensity.current) { rect.width.toDp() }, with(LocalDensity.current) { rect.height.toDp() }),
-                onRetry = { viewModel.retry(page) },
-            )
-        }
-    }
-
-    val rest = if (state.transition == null && state.pull == null) state.positionAt(Long.MAX_VALUE) else null
-    val geometry = state.geometry()
-    if (rest != null && geometry != null) {
-        state.current.pages.forEachIndexed { i, page ->
-            val result = errorOf(viewModel, state.current, i, page) ?: return@forEachIndexed
-            val rect = geometry.pages[i]
-            key(page) {
-                ErrorCard(
-                    result = result,
-                    name = viewModel.pageNames.getOrNull(page).orEmpty(),
-                    modifier = Modifier
-                        .offset { IntOffset((rect.left - rest.x).roundToInt(), (rect.top - rest.y).roundToInt()) }
-                        .requiredSize(with(LocalDensity.current) { rect.width.toDp() }, with(LocalDensity.current) { rect.height.toDp() }),
-                    onRetry = { viewModel.retry(page) },
-                )
-            }
-        }
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        BarAccessibility(state.config.barHeightDp, control)
-        val ready = viewModel.prepared.let { viewModel.preparedView(state.current) != null }
-        if (!ready) {
-            key(state.current) {
-                DelayedProgress(Modifier.align(Alignment.Center))
-                if (viewModel.fetchedBytes != null) FetchStatus(viewModel, state.current, Modifier.align(Alignment.Center).padding(top = 96.dp))
-            }
-        }
-        ReaderOverlays(state.config.overlays, pageNumberText(state.current, state.pagination.shapes.size))
-        if (state.connection.reconnecting) {
-            OutlinedText(stringResource(R.string.reader_reconnecting), Modifier.align(Alignment.TopCenter).padding(top = 24.dp), size = 16)
-        }
-        state.zoom.pinch?.takeIf { it.active }?.let {
-            OutlinedText("${state.zoom.percent}%", Modifier.align(Alignment.Center), size = 28)
-        }
-        (ui.pageBar as? PageBarState.Dragging)?.let { drag ->
-            val name = viewModel.pageNames.getOrNull(drag.preview).orEmpty()
-            val color = if (drag.cancelled) Color.Gray else Color.White
-            Column(
+    Box(Modifier.fillMaxSize().pointerInput(input, state.area) { with(input) { handle() } }) {
+        Box(
+            Modifier.fillMaxSize()
+                .padding(top = state.area.page.top.dp, bottom = (state.area.regions.screen.height - state.area.page.bottom).dp)
+                .clipToBounds(),
+        ) {
+            Canvas(
                 Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .background(Color(0xCC000000))
-                    .padding(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .fillMaxSize()
+                    .pageAccessibility(state, control),
             ) {
-                Text("${drag.preview + 1} / ${state.pagination.shapes.size}", color = color, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text(viewModel.bookPath, color = color, maxLines = 1, fontSize = 13.sp)
-                Text(name, color = color, maxLines = 1)
+                viewModel.prepared
+                viewModel.thumbnailsChanged
+                viewModel.tilesDrawn
+                val now = if (state.animating) frameMs else Long.MAX_VALUE
+                if (state.scroll != null) drawStrip(viewModel, state, colorFilter) else for (layer in state.layersAt(now)) drawLayer(viewModel, state, layer, colorFilter)
+                state.pull?.takeIf { it.neighbor != null }?.let { pull ->
+                    val movement = turnMovement(pull.turn, state.config.direction)
+                    drawPullHint(pullFrame(state.config.turnEffect, movement, pull.pulledDp * state.viewport.density / state.viewport.width), movement)
+                } ?: state.transition?.let { drawPullHint(it.animation.frameAt(now), it.animation.movement) }
+                viewModel.traces.drawn(state.current, viewModel.preparedView(state.current) != null)
+                viewModel.viewDrawn(state.current)
+                state.loupeView(now)?.let { drawLoupe(viewModel, state, it, now, colorFilter, background) }
             }
-            Thumbnail(
-                viewModel,
-                drag.preview,
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = (state.config.barHeightDp + 8f).dp)
-                    .alpha(if (drag.cancelled) 0.4f else 1f),
-            )
+
+            for ((page, rect) in state.stripPages()) {
+                val result = errorOf(viewModel, PageView.One(page), 0, page) ?: continue
+                key(page) {
+                    ErrorCard(
+                        result = result,
+                        name = viewModel.pageNames.getOrNull(page).orEmpty(),
+                        modifier = Modifier
+                            .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
+                            .requiredSize(with(LocalDensity.current) { rect.width.toDp() }, with(LocalDensity.current) { rect.height.toDp() }),
+                        onRetry = { viewModel.retry(page) },
+                    )
+                }
+            }
+
+            val rest = if (state.transition == null && state.pull == null) state.positionAt(Long.MAX_VALUE) else null
+            val geometry = state.geometry()
+            if (rest != null && geometry != null) {
+                state.current.pages.forEachIndexed { i, page ->
+                    val result = errorOf(viewModel, state.current, i, page) ?: return@forEachIndexed
+                    val rect = geometry.pages[i]
+                    key(page) {
+                        ErrorCard(
+                            result = result,
+                            name = viewModel.pageNames.getOrNull(page).orEmpty(),
+                            modifier = Modifier
+                                .offset { IntOffset((rect.left - rest.x).roundToInt(), (rect.top - rest.y).roundToInt()) }
+                                .requiredSize(with(LocalDensity.current) { rect.width.toDp() }, with(LocalDensity.current) { rect.height.toDp() }),
+                            onRetry = { viewModel.retry(page) },
+                        )
+                    }
+                }
+            }
+
+            Box(Modifier.fillMaxSize()) {
+                val ready = viewModel.prepared.let { viewModel.preparedView(state.current) != null }
+                if (!ready) {
+                    key(state.current) {
+                        DelayedProgress(Modifier.align(Alignment.Center))
+                        if (viewModel.fetchedBytes != null) FetchStatus(viewModel, state.current, Modifier.align(Alignment.Center).padding(top = 96.dp))
+                    }
+                }
+                if (!shown) ReaderOverlays(state.config.overlays, pageNumberText(state.current, state.pagination.shapes.size))
+                if (state.connection.reconnecting) {
+                    OutlinedText(stringResource(R.string.reader_reconnecting), Modifier.align(Alignment.TopCenter).padding(top = 24.dp), size = 16)
+                }
+                state.zoom.pinch?.takeIf { it.active }?.let {
+                    OutlinedText("${state.zoom.percent}%", Modifier.align(Alignment.Center), size = 28)
+                }
+                (ui.pageBar as? PageBarState.Dragging)?.let { drag ->
+                    val name = viewModel.pageNames.getOrNull(drag.preview).orEmpty()
+                    val color = if (drag.cancelled) Color.Gray else Color.White
+                    Column(
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .background(Color(0xCC000000))
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("${drag.preview + 1} / ${state.pagination.shapes.size}", color = color, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text(viewModel.bookPath, color = color, maxLines = 1, fontSize = 13.sp)
+                        Text(name, color = color, maxLines = 1)
+                    }
+                    Thumbnail(
+                        viewModel,
+                        drag.preview,
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = (if (shown) 8f else state.config.barHeightDp + 8f).dp)
+                            .alpha(if (drag.cancelled) 0.4f else 1f),
+                    )
+                }
+            }
+        }
+        PageBarGestureExclusion(state.config.barHeightDp)
+        if (shown) {
+            ReaderBars(viewModel.background, viewModel.bookTitle, state, control) { item ->
+                if (latest.autoPlay != null) viewModel.dispatch(ReaderEvent.AutoPlayStopped) else runPanelItem(item, viewModel, ui, close)
+            }
+        } else {
+            BarAccessibility(state.config.barHeightDp, control)
         }
         if (ui.commandBar.panelVisible) {
             CommandPanelView(state.commandPanel(), ui.commandBar) { item ->
@@ -551,34 +569,38 @@ private fun CommandPanelView(panel: CommandPanel, state: CommandBarState, onItem
         }
         for ((index, cell) in items.withIndex()) {
             val (row, column, item) = cell
-            Box(
+            CommandCell(
+                item,
+                Color.White,
                 Modifier
                     .offset((column * cellWidth).dp, (row * cellHeight).dp)
                     .size(cellWidth.dp, cellHeight.dp)
                     .background(if (item == highlight) Color(0x66FFFFFF) else Color.Transparent)
-                    .semantics(mergeDescendants = true) {
-                        role = Role.Button
-                        traversalIndex = index.toFloat()
-                        onClick {
-                            onItem(item)
-                            true
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                // A 4 dp margin keeps a long name inside the cell; at a large font it shrinks to fit instead of clipping.
-                Text(
-                    item.label(),
-                    Modifier.padding(horizontal = 4.dp),
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    fontSize = 13.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 13.sp),
-                )
-            }
+                    .semantics { traversalIndex = index.toFloat() },
+                onItem,
+            )
         }
+    }
+}
+
+/** The same text cell in the panel and the visible command row. Touches are routed by [ReaderInput]. */
+@Composable
+internal fun CommandCell(item: PanelItem, color: Color, modifier: Modifier, onItem: (PanelItem) -> Unit) {
+    Box(
+        modifier.semantics(mergeDescendants = true) {
+            role = Role.Button
+            onClick {
+                onItem(item)
+                true
+            }
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            item.label(), Modifier.padding(horizontal = 4.dp), color = color,
+            textAlign = TextAlign.Center, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis,
+            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 13.sp),
+        )
     }
 }
 
@@ -586,6 +608,7 @@ private fun CommandPanelView(panel: CommandPanel, state: CommandBarState, onItem
 private fun PanelItem.label(): String = when (this) {
     PanelItem.Close -> stringResource(R.string.panel_close)
     PanelItem.Menu -> stringResource(R.string.panel_menu)
+    PanelItem.More -> stringResource(R.string.panel_more)
     is PanelItem.Command -> stringResource(command.label)
 }
 

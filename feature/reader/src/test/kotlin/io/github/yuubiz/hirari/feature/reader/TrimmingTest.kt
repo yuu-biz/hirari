@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.image.LumaImage
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.PixelRect
@@ -44,7 +45,7 @@ internal val DEEP_BOTTOM = scanOf(PixelSize(300, 450), PixelRect(30, 45, 270, 36
 /** What the strongest trim keeps of [DEEP_BOTTOM]. */
 private val DEEP_BOTTOM_KEPT = PagePart(0.1f, 0.1f, 0.9f, 0.8f)
 
-private val SINGLE = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
+private val SINGLE = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
 
 private fun ReaderState.learned(vararg scans: Pair<Int, MarginScan>) =
     scans.fold(this) { state, (page, scan) -> state.reduce(ReaderEvent.MarginsLearned(page, scan)) }
@@ -96,7 +97,7 @@ class TrimmingTest {
     @Test
     fun theHalvesOfAWidePageSplitWhatTheWholePageKeepsAtTheFold() {
         val offCentre = scanOf(PixelSize(400, 300), PixelRect(20, 30, 360, 270))
-        val config = ReaderConfig(layout = LayoutSettings(LayoutMode.SplitWide, ReadingDirection.RightToLeft, coverAlone = false), trim = TrimStrength.Strongest)
+        val config = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.SplitWide, ReadingDirection.RightToLeft, coverAlone = false), trim = TrimStrength.Strongest)
         val state = readerOf(listOf(WIDE), config, PORTRAIT).learned(0 to offCentre)
         val first = assertIs<PageView.Half>(state.current)
         assertEquals(HalfPart.First, first.part)
@@ -111,7 +112,7 @@ class TrimmingTest {
     @Test
     fun learningTheMarginsNeverChangesHowTheViewsAreMadeUp() {
         val narrowed = scanOf(PixelSize(400, 300), PixelRect(60, 10, 340, 290))
-        val config = ReaderConfig(layout = LayoutSettings(LayoutMode.Auto, ReadingDirection.RightToLeft, coverAlone = false), trim = TrimStrength.Strongest)
+        val config = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Auto, ReadingDirection.RightToLeft, coverAlone = false), trim = TrimStrength.Strongest)
         val before = readerOf(listOf(TALL, WIDE, TALL, TALL), config)
         val after = before.learned(0 to DEEP_BOTTOM, 1 to narrowed, 2 to DEEP_BOTTOM, 3 to DEEP_BOTTOM)
         assertEquals(before.pagination.views, after.pagination.views)
@@ -175,7 +176,7 @@ class TrimmingTest {
 
     @Test
     fun theTrimCommandGoesThroughEveryStrengthAndBackToOff() {
-        val strengths = generateSequence(ReaderConfig()) { assertIs<CommandEffect.Configure>(it.effectOf(ReaderCommand.Trim)).config }
+        val strengths = generateSequence(ReaderConfig(barDisplay = BarDisplay.Hidden)) { assertIs<CommandEffect.Configure>(it.effectOf(ReaderCommand.Trim)).config }
             .take(6).map { it.trim }.toList()
         assertEquals(
             listOf(TrimStrength.Off, TrimStrength.Weak, TrimStrength.Medium, TrimStrength.Strong, TrimStrength.Strongest, TrimStrength.Off),
@@ -185,7 +186,7 @@ class TrimmingTest {
 
     @Test
     fun aStrengthChosenInTheReaderIsKeptForTheBookUntilItMatchesTheGlobalOneAgain() {
-        val global = ReaderConfig(trim = TrimStrength.Weak)
+        val global = ReaderConfig(barDisplay = BarDisplay.Hidden, trim = TrimStrength.Weak)
         val stronger = global.copy(trim = TrimStrength.Strong)
         val kept = BookOverrides(rotation = Rotation.Quarter).changedBy(global, stronger, global)
         assertEquals(BookOverrides(rotation = Rotation.Quarter, trim = TrimStrength.Strong), kept)

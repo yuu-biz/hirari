@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.data
 
 import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.TapLayout
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.TurnEffect
 import io.github.yuubiz.hirari.core.model.VolumeKeys
 import androidx.datastore.core.CorruptionException
@@ -47,6 +48,17 @@ class SettingsSerializerTest {
         for (invalid in listOf("unknown", "#12345", "#GGGGGG", "#+12345", "#-12345")) {
             assertEquals(ColorPalette.Wallpaper, read("""{"colorPalette":"$invalid","pureBlack":true}""").colorPalette)
             assertEquals(true, read("""{"colorPalette":"$invalid","pureBlack":true}""").pureBlack)
+        }
+    }
+
+    @Test
+    fun `bar display defaults to portrait in old and invalid files and all choices round trip`() = runTest {
+        for (text in listOf("{}", """{"barDisplay":"future"}""", """{"barDisplay":3}""")) {
+            assertEquals(BarDisplay.Portrait, read(text).barDisplay)
+        }
+        for (display in BarDisplay.entries) {
+            val settings = GlobalSettings(barDisplay = display)
+            assertEquals(settings, roundTrip(settings))
         }
     }
 
@@ -183,10 +195,10 @@ class SettingsSerializerTest {
     }
 
     @Test
-    fun `the settings are the 76 of the spec and the fixture changes each of them`() {
+    fun `the settings are the 77 of the spec and the fixture changes each of them`() {
         val defaults = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), GlobalSettings()).jsonObject
         val changed = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), everything).jsonObject
-        assertEquals(76, defaults.size)
+        assertEquals(77, defaults.size)
         assertEquals(defaults.keys, defaults.keys.filter { defaults[it] != changed[it] }.toSet())
     }
 

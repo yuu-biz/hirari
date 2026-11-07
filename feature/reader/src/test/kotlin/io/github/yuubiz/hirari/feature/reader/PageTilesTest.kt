@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import android.graphics.Bitmap
 import io.github.yuubiz.hirari.core.image.PixelRect
 import io.github.yuubiz.hirari.core.image.PixelSize
@@ -29,7 +30,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-private val STRIP = ReaderConfig(layout = LayoutSettings(LayoutMode.Vertical, ReadingDirection.RightToLeft, coverAlone = false))
+private val STRIP = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Vertical, ReadingDirection.RightToLeft, coverAlone = false))
 
 /** 800 × 6000: narrower than 1:3, so it shows as tiles, 8100 pixels tall on the portrait screen. */
 private val LONG = PageShape.Known(800, 6000)
@@ -75,7 +76,7 @@ class PageTilesTest {
         assertEquals(1080.0 / 800, window.scale, 1e-9)
         assertEquals(PixelRect(0, 740, 800, 2163), window.shown)
         assertEquals(emptyMap(), state.reduce(ReaderEvent.ConfigChanged(state.config.copy(rotation = Rotation.Half))).tileWindows())
-        assertEquals(emptyMap(), readerOf(listOf(LONG), ReaderConfig(), PORTRAIT).tileWindows())
+        assertEquals(emptyMap(), readerOf(listOf(LONG), ReaderConfig(barDisplay = BarDisplay.Hidden), PORTRAIT).tileWindows())
         assertFalse(window.sharpen)
         val sharp = state.reduce(ReaderEvent.ConfigChanged(state.config.copy(adjust = ImageAdjust(sharpen = true))))
         assertTrue(sharp.tileWindows().getValue(0).sharpen)

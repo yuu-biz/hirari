@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
@@ -44,7 +45,7 @@ import kotlin.test.assertTrue
 
 /** A webtoon segment: 800 wide, so 1080 / 800 × 1600 = 2160 pixels tall on the portrait screen. */
 private val SEGMENT = PageShape.Known(800, 1600)
-private val VERTICAL = ReaderConfig(layout = LayoutSettings(LayoutMode.Vertical, ReadingDirection.RightToLeft, coverAlone = true))
+private val VERTICAL = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Vertical, ReadingDirection.RightToLeft, coverAlone = true))
 private const val SEGMENT_PX = 1080.0 * 1600 / 800
 
 private fun strip(count: Int, config: ReaderConfig = VERTICAL, start: Int = 0) = readerOf(List(count) { SEGMENT }, config, PORTRAIT, start)

@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
@@ -172,6 +173,7 @@ class LoupeTest {
     @Test
     fun theReadForAHalfIsThatHalfOfTheTurnedPage() {
         val config = ReaderConfig(
+            barDisplay = BarDisplay.Hidden,
             layout = LayoutSettings(LayoutMode.SplitWide, ReadingDirection.RightToLeft, coverAlone = false),
             loupeZoom = LoupeZoom.Source100,
             rotation = Rotation.Quarter,

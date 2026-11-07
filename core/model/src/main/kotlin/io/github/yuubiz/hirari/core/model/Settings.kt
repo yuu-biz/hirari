@@ -9,6 +9,13 @@ enum class BookEndAction { Ask, NextBook, Close, Stop }
 
 enum class GutterStyle { None, Gap, Shadow }
 
+/** The image reader's `barDisplay` setting (docs/spec.md section 4.8, バーを出す表示). */
+enum class BarDisplay {
+    Hidden, Portrait, Always;
+
+    fun shown(screen: Size): Boolean = this == Always || this == Portrait && screen.width < screen.height
+}
+
 /** An opaque color, `0xRRGGBB` in the low 24 bits. */
 @JvmInline
 value class Rgb(val value: Int) {

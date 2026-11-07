@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.BookEndAction
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.ImageAdjust
@@ -42,6 +43,7 @@ data class ReaderConfig(
     val swipeToTurn: Boolean = true,
     val volumeKeys: VolumeKeys = VolumeKeys.DownAdvances,
     val barHeightDp: Float = 60f,
+    val barDisplay: BarDisplay = BarDisplay.Portrait,
     val gutter: GutterStyle = GutterStyle.Gap,
     val commandBarItems: List<ReaderCommand> = ReaderCommand.Defaults,
     /** The book's rotation (docs/spec.md section 2.9), which has no global setting. */
@@ -97,6 +99,7 @@ data class ReaderConfig(
             swipeToTurn = settings.swipeToTurn,
             volumeKeys = settings.volumeKeys,
             barHeightDp = settings.barHeightDp.toFloat(),
+            barDisplay = settings.barDisplay,
             gutter = settings.gutterStyle,
             commandBarItems = settings.commandBarItems,
             rotation = overrides.rotation ?: Rotation.None,
@@ -161,7 +164,7 @@ val GlobalSettings.adjust: ImageAdjust
 /** A value the command bar switches for this book's reading session only (docs/spec.md section 2.9), and never stores. */
 enum class SessionSwitch { Orientation, MirrorControls, Gutter, StopOrder }
 
-/** The reader's drawing area in pixels, and the pixels per dp. */
+/** An area's size in pixels, and the pixels per dp. [ReaderArea] separates the screen from the page viewport. */
 data class Viewport(val width: Float, val height: Float, val density: Float) {
     val size: Size get() = Size(width, height)
     val orientation: ScreenOrientation get() = if (width > height) ScreenOrientation.Landscape else ScreenOrientation.Portrait

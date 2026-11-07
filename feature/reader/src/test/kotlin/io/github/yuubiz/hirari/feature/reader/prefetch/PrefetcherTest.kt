@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader.prefetch
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.PixelRect
 import io.github.yuubiz.hirari.core.image.PixelSize
@@ -44,7 +45,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-private val SINGLE = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
+private val SINGLE = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
 
 private class FakeLoader(
     val shapes: MutableMap<Int, PageResult<PageShape.Known>> = mutableMapOf(),

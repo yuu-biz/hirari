@@ -72,7 +72,7 @@ data class StopTravel(val move: StopMove, val index: Int)
 data class ReaderState(
     val pagination: Pagination,
     val config: ReaderConfig,
-    val viewport: Viewport,
+    val screen: Viewport,
     val zoom: ZoomState = ZoomState(),
     val place: Place = Place.Entered(Turn.Forward),
     val stopTravel: StopTravel? = null,
@@ -95,6 +95,9 @@ data class ReaderState(
     /** What reading the pages again for a zoom may take (docs/spec.md section 4.8, ピンチと拡大率). */
     val zoomReads: ZoomReads = ZoomReads(),
 ) {
+    val area: ReaderArea = ReaderArea(screen, config)
+    /** Page pixels, with (0, 0) at the page area's top left. Bars never enter this viewport. */
+    val viewport: Viewport get() = area.viewport
     val current: PageView get() = pagination.current
 
     /** The pages one under another, as 縦に連続 lays them out. */
@@ -231,12 +234,12 @@ data class ReaderState(
         is ReaderEvent.ShapeLearned -> relaid(pagination.reduce(PaginationEvent.ShapeLearned(event.page, event.shape.rotated(config.rotation)))).following()
         is ReaderEvent.MarginsLearned -> copy(margins = margins.learned(event.page, event.scan, current.pages.first()))
         is ReaderEvent.ViewportChanged ->
-            if (event.viewport == viewport) {
+            if (event.viewport == screen) {
                 this
             } else {
                 copy(
                     pagination = pagination.reduce(PaginationEvent.OrientationChanged(event.viewport.orientation)),
-                    viewport = event.viewport,
+                    screen = event.viewport,
                     zoom = ZoomState(),
                     place = Place.Entered(Turn.Forward),
                     stopTravel = null,
@@ -394,7 +397,8 @@ data class ReaderState(
     private fun configured(next: ReaderConfig): ReaderState {
         if (next == config) return this
         val turned = next.rotation != config.rotation
-        val modeChanged = turned || next.scaleMode != config.scaleMode || next.capAtOriginal != config.capAtOriginal || next.vertical != config.vertical
+        val areaChanged = ReaderArea(screen, next).viewport != viewport
+        val modeChanged = areaChanged || turned || next.scaleMode != config.scaleMode || next.capAtOriginal != config.capAtOriginal || next.vertical != config.vertical
         val shapes = if (next.rotation.swapsSides == config.rotation.swapsSides) pagination else pagination.reduce(PaginationEvent.ShapesChanged(swapped(pagination.shapes)))
         val layout = shapes.reduce(PaginationEvent.SettingsChanged(next.layout))
         val viewChanged = layout.current != current
@@ -411,6 +415,7 @@ data class ReaderState(
             margins = if (turned) emptyMap() else margins,
             zoom = if (modeChanged) zoom.reduce(ZoomEvent.ModeChanged, ZoomLimits(Scale(1f, 1f), 1f, false)) else zoom,
             place = if (modeChanged || viewChanged || next.direction != config.direction) Place.Entered(Turn.Forward) else place,
+            loupe = if (areaChanged) null else settled.loupe,
             scroll = scroll,
         ).following()
     }

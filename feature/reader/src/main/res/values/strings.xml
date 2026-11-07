@@ -24,6 +24,11 @@
     <string name="page_error_details">詳細</string>
 
     <string name="panel_close">閉じる</string>
+    <string name="panel_more">その他</string>
+    <string name="guide_info_bar">情報の帯</string>
+    <string name="guide_info_bar_hint">押すとコマンドパネルを開く</string>
+    <string name="guide_command_row">コマンドの列</string>
+    <string name="guide_command_row_hint">項目をタップして実行</string>
     <string name="panel_menu">メニュー</string>
     <string name="command_layout">組み方</string>
     <string name="command_shift_pairing">組ずらし</string>

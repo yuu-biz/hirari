@@ -192,7 +192,7 @@ internal class TextInput(
             onTouch()
             touch.motion = null
             when (regions.regionAt(down.position.dp(density))) {
-                ReaderRegion.CommandBar -> if (current != null) commandBar(down, settings, slop)
+                ReaderRegion.CommandBar, ReaderRegion.CommandRow -> if (current != null) commandBar(down, settings, slop)
                 ReaderRegion.PageBar -> if (current != null) pageBar(down, current, regions, slop)
                 ReaderRegion.TurnArea -> turnArea(down, settings, current == null || current.frame?.continuous == true, regions, slop)
             }

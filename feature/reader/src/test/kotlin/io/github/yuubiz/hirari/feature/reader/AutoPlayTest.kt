@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
@@ -15,7 +16,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 
-private val SINGLE = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false), autoPlayMs = 1500)
+private val SINGLE = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false), autoPlayMs = 1500)
 
 /** The clock of 自動再生 at [nowMs], as the screen's timer sends it. */
 private fun ReaderState.at(nowMs: Long) = reduce(ReaderEvent.AutoPlayDue(nowMs))
@@ -78,6 +79,6 @@ class AutoPlayTest {
     @Test
     fun theIntervalComesFromTheSettingsAndTheCommandStartsIt() {
         assertEquals(2500, ReaderConfig.of(GlobalSettings(autoPlaySeconds = 2.5)).autoPlayMs)
-        assertEquals(CommandEffect.StartAutoPlay, ReaderConfig().effectOf(ReaderCommand.AutoPlay))
+        assertEquals(CommandEffect.StartAutoPlay, ReaderConfig(barDisplay = BarDisplay.Hidden).effectOf(ReaderCommand.AutoPlay))
     }
 }

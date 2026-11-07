@@ -111,7 +111,7 @@ internal fun ReaderOverlays(overlays: Overlays, pageNumber: String) {
 
 /** 時刻と電池, updated as the minute, the clock, or the battery changes. */
 @Composable
-private fun rememberStatusText(): String {
+internal fun rememberStatusText(): String {
     val context = LocalContext.current
     var text by remember { mutableStateOf("") }
     DisposableEffect(context) {

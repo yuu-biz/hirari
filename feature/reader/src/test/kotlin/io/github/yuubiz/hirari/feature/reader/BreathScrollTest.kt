@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.PageShape
@@ -16,7 +17,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class BreathScrollTest {
-    private val config = ReaderConfig(scaleMode = ScaleMode.FitWidth)
+    private val config = ReaderConfig(barDisplay = BarDisplay.Hidden, scaleMode = ScaleMode.FitWidth)
 
     /** One tall page across a landscape screen: its stops run down the page. */
     private val tall = readerOf(List(2) { TALL }, config.copy(layout = config.layout.copy(mode = LayoutMode.Single)), LANDSCAPE)

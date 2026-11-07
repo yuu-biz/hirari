@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.model.ReaderRegions
+import io.github.yuubiz.hirari.core.model.BarLayout
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.Side
 import io.github.yuubiz.hirari.core.model.Size
@@ -56,12 +57,17 @@ internal fun GuideOverlay(config: ReaderConfig, onDismiss: () -> Unit) {
             .background(GuideScrim)
             .clickable(onClickLabel = close, role = Role.Button, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
     ) {
-        val regions = ReaderRegions(Size(maxWidth.value, maxHeight.value), config.barHeightDp)
+        val screen = Size(maxWidth.value, maxHeight.value)
+        val shown = config.barDisplay.shown(screen)
+        val regions = ReaderRegions(screen, config.barHeightDp, bars = if (shown) BarLayout.Shown else BarLayout.Hidden)
         val content = guideContent(regions, config)
         for (zone in content.layout.zones) {
             Zone(zone.rect, tintOf(zone.turn), stringResource(zone.turn.label))
         }
-        Zone(content.layout.commandBar, BarTint, stringResource(R.string.guide_command_bar), stringResource(R.string.guide_command_bar_hint))
+        Zone(content.layout.commandBar, BarTint,
+            stringResource(if (shown) R.string.guide_info_bar else R.string.guide_command_bar),
+            stringResource(if (shown) R.string.guide_info_bar_hint else R.string.guide_command_bar_hint))
+        content.layout.commandRow?.let { Zone(it, BarTint, stringResource(R.string.guide_command_row), stringResource(R.string.guide_command_row_hint)) }
         Zone(content.layout.pageBar, BarTint, stringResource(R.string.guide_page_bar), stringResource(R.string.guide_page_bar_hint))
         Legend(content, Modifier.align(Alignment.Center).padding(horizontal = 16.dp).widthIn(max = 320.dp))
     }

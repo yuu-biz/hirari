@@ -15,12 +15,32 @@ private const val PANEL_ROW_DP = 64f
 
 /** The panel under the command bar, in dp, holding the chosen `commandBarItems` (docs/spec.md section 4.8, コマンドバー). */
 fun ReaderState.commandPanel(): CommandPanel {
-    val width = viewport.width / viewport.density
-    val columns = if (viewport.orientation == ScreenOrientation.Portrait) 4 else 8
+    val width = screen.width / screen.density
+    val columns = if (screen.orientation == ScreenOrientation.Portrait) 4 else 8
     val rows = 1 + ReaderCommand.MAX_ITEMS / columns
     val top = config.barHeightDp
-    return CommandPanel(config.commandBarItems, viewport.orientation, Rect(0f, top, width, top + rows * PANEL_ROW_DP))
+    return CommandPanel(config.commandBarItems, screen.orientation, Rect(0f, top, width, top + rows * PANEL_ROW_DP))
 }
+
+/** A visible row keeps the two end buttons and reserves its last middle cell for その他 when needed. */
+data class CommandRow(val commands: List<ReaderCommand>, val bounds: Rect) {
+    val cells: List<PanelItem> = run {
+        val middle = ((bounds.width / 56f).toInt() - 2).coerceAtLeast(1)
+        val items = if (commands.size > middle) commands.take(middle - 1).map { PanelItem.Command(it) } + PanelItem.More else commands.map { PanelItem.Command(it) }
+        listOf(PanelItem.Close) + items + PanelItem.Menu
+    }
+    val cellWidth: Float get() = bounds.width / cells.size
+
+    fun itemAt(point: Point): PanelItem? {
+        if (point.x < bounds.left || point.x >= bounds.right || point.y < bounds.top || point.y >= bounds.bottom) return null
+        return cells.getOrNull(((point.x - bounds.left) / cellWidth).toInt())
+    }
+
+    /** A slide cancels the press, including a slide that ends on another cell. */
+    fun tapped(origin: Point, released: Point, moved: Boolean): PanelItem? = itemAt(origin)?.takeIf { !moved && it == itemAt(released) }
+}
+
+fun ReaderState.commandRow(): CommandRow? = area.regions.commandRow?.let { CommandRow(config.commandBarItems, it) }
 
 /** What running a command does. */
 sealed interface CommandEffect {
@@ -110,6 +130,7 @@ sealed interface PanelItem : PanelTarget {
     /** Closes the reader. */
     data object Close : PanelItem
     data object Menu : PanelItem
+    data object More : PanelItem
     data class Command(val command: ReaderCommand) : PanelItem
 }
 

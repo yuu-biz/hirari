@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.ReaderRegions
 import io.github.yuubiz.hirari.core.model.ReadingDirection
@@ -93,7 +94,7 @@ class GuideTest {
 
     @Test
     fun `the guide puts the zones in the turn area between the two bars`() {
-        val content = guideContent(regions, ReaderConfig())
+        val content = guideContent(regions, ReaderConfig(barDisplay = BarDisplay.Hidden))
         assertEquals(Rect(0f, 0f, 400f, 50f), content.layout.commandBar)
         assertEquals(Rect(0f, 850f, 400f, 900f), content.layout.pageBar)
         assertEquals(50f, content.layout.zones.minOf { it.rect.top })
@@ -104,30 +105,30 @@ class GuideTest {
 
     @Test
     fun `swiping goes forward toward the side the reader pulls forward`() {
-        assertEquals(Side.Right, guideContent(regions, ReaderConfig()).swipeForward)
-        val leftToRight = ReaderConfig(layout = ReaderConfig().layout.copy(direction = ReadingDirection.LeftToRight))
+        assertEquals(Side.Right, guideContent(regions, ReaderConfig(barDisplay = BarDisplay.Hidden)).swipeForward)
+        val leftToRight = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = ReaderConfig(barDisplay = BarDisplay.Hidden).layout.copy(direction = ReadingDirection.LeftToRight))
         assertEquals(Side.Left, guideContent(regions, leftToRight).swipeForward)
-        val mirrored = ReaderConfig(tapZones = TapZones(mirrored = true))
+        val mirrored = ReaderConfig(barDisplay = BarDisplay.Hidden, tapZones = TapZones(mirrored = true))
         assertEquals(Side.Left, guideContent(regions, mirrored).swipeForward)
     }
 
     @Test
     fun `a drag only scrolls when swiping to turn is off`() {
-        assertNull(guideContent(regions, ReaderConfig(swipeToTurn = false)).swipeForward)
+        assertNull(guideContent(regions, ReaderConfig(barDisplay = BarDisplay.Hidden, swipeToTurn = false)).swipeForward)
     }
 
     @Test
     fun `the left key follows the binding direction and the mirroring`() {
-        assertEquals(Turn.Forward, guideContent(regions, ReaderConfig()).leftKeyTurn)
-        val leftToRight = ReaderConfig(layout = ReaderConfig().layout.copy(direction = ReadingDirection.LeftToRight))
+        assertEquals(Turn.Forward, guideContent(regions, ReaderConfig(barDisplay = BarDisplay.Hidden)).leftKeyTurn)
+        val leftToRight = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = ReaderConfig(barDisplay = BarDisplay.Hidden).layout.copy(direction = ReadingDirection.LeftToRight))
         assertEquals(Turn.Back, guideContent(regions, leftToRight).leftKeyTurn)
-        assertEquals(Turn.Back, guideContent(regions, ReaderConfig(tapZones = TapZones(mirrored = true))).leftKeyTurn)
+        assertEquals(Turn.Back, guideContent(regions, ReaderConfig(barDisplay = BarDisplay.Hidden, tapZones = TapZones(mirrored = true))).leftKeyTurn)
     }
 
     @Test
     fun `the volume keys are listed as the setting has them`() {
-        assertEquals(VolumeKeys.Off, guideContent(regions, ReaderConfig(volumeKeys = VolumeKeys.Off)).volumeKeys)
-        assertTrue(guideContent(regions, ReaderConfig()).volumeKeys != VolumeKeys.Off)
+        assertEquals(VolumeKeys.Off, guideContent(regions, ReaderConfig(barDisplay = BarDisplay.Hidden, volumeKeys = VolumeKeys.Off)).volumeKeys)
+        assertTrue(guideContent(regions, ReaderConfig(barDisplay = BarDisplay.Hidden)).volumeKeys != VolumeKeys.Off)
     }
 
     @Test

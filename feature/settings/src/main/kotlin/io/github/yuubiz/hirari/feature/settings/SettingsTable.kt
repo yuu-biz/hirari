@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.settings
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.AppTheme
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
 import io.github.yuubiz.hirari.core.model.BreathSensitivity
@@ -194,6 +195,8 @@ val SettingsTable: List<Setting> = buildList {
     add(slider(GlobalSettings::autoPlaySeconds, controls, "自動再生の間隔", { _ -> GlobalSettings.AUTO_PLAY_SECONDS.toValues() }, { "${decimalText(it)} 秒" }) { s, v -> s.copy(autoPlaySeconds = v) })
 
     val screen = SettingGroup.Screen
+    add(choice(GlobalSettings::barDisplay, screen, "バーの表示", { s, v -> s.copy(barDisplay = v) },
+        BarDisplay.Hidden to "隠す", BarDisplay.Portrait to "縦画面で出す", BarDisplay.Always to "常に出す"))
     add(choice(GlobalSettings::pageNumberSpot, screen, "ページ番号の位置", { s, v -> s.copy(pageNumberSpot = v) }, *spotOptions))
     add(choice(GlobalSettings::statusSpot, screen, "時刻と電池の位置", { s, v -> s.copy(statusSpot = v) }, *spotOptions))
     add(choice(GlobalSettings::overlayTextSize, screen, "重ねる文字の大きさ", { s, v -> s.copy(overlayTextSize = v) },

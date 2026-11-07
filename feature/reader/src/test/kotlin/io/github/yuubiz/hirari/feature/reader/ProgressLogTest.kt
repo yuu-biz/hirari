@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
 import io.github.yuubiz.hirari.core.model.HalfPart
@@ -18,8 +19,8 @@ import kotlin.test.assertNull
 
 private val BOOK = BookId("book")
 private val NOW = Instant.parse("2026-11-02T00:00:00Z")
-private val SPLIT = ReaderConfig(layout = LayoutSettings(LayoutMode.SplitWide, ReadingDirection.RightToLeft, coverAlone = false))
-private val SINGLE = ReaderConfig(layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
+private val SPLIT = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.SplitWide, ReadingDirection.RightToLeft, coverAlone = false))
+private val SINGLE = ReaderConfig(barDisplay = BarDisplay.Hidden, layout = LayoutSettings(LayoutMode.Single, ReadingDirection.RightToLeft, coverAlone = false))
 
 private fun stored(state: ReadState, viewStart: Int, pages: Int) =
     BookProgress(BOOK, state, ReadingPosition.Image(viewStart, pages), Instant.EPOCH)

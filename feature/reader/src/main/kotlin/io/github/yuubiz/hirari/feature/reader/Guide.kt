@@ -20,7 +20,7 @@ data class GuideZone(val rect: Rect, val turn: Turn?)
  * What the operation guide draws (docs/spec.md section 4.8, 操作ガイド), in the dp of the reader screen. The zones come
  * from asking [TapZones.turnAt], the function a tap is decided by, so they cannot differ from what the reader does.
  */
-data class GuideLayout(val commandBar: Rect, val turnArea: Rect, val pageBar: Rect, val zones: List<GuideZone>)
+data class GuideLayout(val commandBar: Rect, val turnArea: Rect, val pageBar: Rect, val zones: List<GuideZone>, val commandRow: Rect? = null)
 
 /** What the guide says besides the zones, worked out from the same bindings the reader reads. */
 data class GuideContent(
@@ -34,11 +34,11 @@ data class GuideContent(
 
 fun guideContent(regions: ReaderRegions, config: ReaderConfig): GuideContent {
     val turnArea = regions.turnArea
-    val bars = regions.barHeight
     val layout = GuideLayout(
-        commandBar = Rect(0f, 0f, regions.screen.width, bars),
+        commandBar = regions.commandBar,
         turnArea = turnArea,
-        pageBar = Rect(0f, regions.screen.height - bars, regions.screen.width, regions.screen.height),
+        pageBar = regions.pageBar,
+        commandRow = regions.commandRow,
         zones = tapZoneRects(config.tapZones, Size(turnArea.width, turnArea.height)).map {
             GuideZone(Rect(it.rect.left, it.rect.top + turnArea.top, it.rect.right, it.rect.bottom + turnArea.top), it.turn)
         },

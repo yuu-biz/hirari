@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.data
 
 import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.BookId
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookSource
@@ -48,6 +49,21 @@ import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 class SettingsTransferTest {
+    @Test
+    fun `bar display choices export and import and missing values use portrait`() = runBlocking {
+        withStorage { storage ->
+            for (display in BarDisplay.entries) {
+                storage.settings.update { it.copy(barDisplay = display) }
+                val text = storage.transfer.export(includeReading = false)
+                storage.settings.update { it.copy(barDisplay = BarDisplay.Hidden) }
+                storage.import(text)
+                assertEquals(display, storage.settings.settings.first().barDisplay)
+            }
+            storage.import("""{"format":2,"settings":{}}""")
+            assertEquals(BarDisplay.Portrait, storage.settings.settings.first().barDisplay)
+        }
+    }
+
     @get:Rule
     val folder = TemporaryFolder()
 
@@ -217,7 +233,7 @@ class SettingsTransferTest {
         val (book, exported) = withStorage { storage -> storage.fill() to storage.transfer.export(includeReading = true) }
         withStorage { storage ->
             val changes = storage.import(exported)
-            assertEquals(ImportChanges(settings = 76, bookOverrides = 1, servers = 1, progress = 1, bookmarks = 1, history = 1), changes)
+            assertEquals(ImportChanges(settings = 77, bookOverrides = 1, servers = 1, progress = 1, bookmarks = 1, history = 1), changes)
 
             assertEquals(everything, storage.settings.settings.first())
             val restored = assertIs<LibraryLocation.SmbShare>(storage.locations.locations.first().single())

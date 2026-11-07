@@ -4,6 +4,7 @@ import android.os.SystemClock
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
@@ -57,11 +58,11 @@ internal class ReaderInput(
 ) {
     suspend fun PointerInputScope.handle() {
         awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             val current = state()
             val density = current.viewport.density
             val point = down.position.dp(density)
-            val regions = ReaderRegions(Size(size.width / density, size.height / density), current.config.barHeightDp, edges())
+            val regions = current.area.regions.copy(edges = edges())
             val slop = viewConfiguration.touchSlop / density
             if (current.autoPlay != null) {
                 viewModel.dispatch(ReaderEvent.AutoPlayStopped)
@@ -72,8 +73,12 @@ internal class ReaderInput(
                 commandBar(down, current, slop)
                 return@awaitEachGesture
             }
+            // Error-card buttons get their own touches. An open panel or auto play takes them first above.
+            val main = awaitPointerEvent(PointerEventPass.Main)
+            if (main.changes.firstOrNull { it.id == down.id }?.isConsumed != false) return@awaitEachGesture
             when (regions.regionAt(point)) {
                 ReaderRegion.CommandBar -> commandBar(down, current, slop)
+                ReaderRegion.CommandRow -> commandRow(down, current, slop)
                 ReaderRegion.PageBar -> pageBar(down, current, regions, slop)
                 ReaderRegion.TurnArea -> turnArea(down, current, regions, slop)
             }
@@ -130,6 +135,26 @@ internal class ReaderInput(
     }
 
     private fun execute(item: PanelItem) = runPanelItem(item, viewModel, ui, onClose)
+
+    private suspend fun AwaitPointerEventScope.commandRow(down: PointerInputChange, current: ReaderState, slop: Float) {
+        val row = current.commandRow() ?: return
+        val density = current.viewport.density
+        val origin = down.position.dp(density)
+        var moved = false
+        down.consume()
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == down.id } ?: return
+            val taken = change.takenBySystem
+            val point = change.position.dp(density)
+            moved = moved || hypot(point.x - origin.x, point.y - origin.y) > slop || event.changes.any { it.id != down.id }
+            event.changes.forEach { it.consume() }
+            if (!change.pressed) {
+                if (!taken) row.tapped(origin, point, moved)?.let(::execute)
+                return
+            }
+        }
+    }
 
     private suspend fun AwaitPointerEventScope.pageBar(down: PointerInputChange, current: ReaderState, regions: ReaderRegions, slop: Float) {
         val density = current.viewport.density
@@ -205,7 +230,7 @@ internal class ReaderInput(
                     touchState = step.state
                     if (step.outcome is TouchOutcome.ShowLoupe) {
                         holdHaptic()
-                        viewModel.dispatch(ReaderEvent.LoupeShown(Point(down.position.x, down.position.y)))
+                        viewModel.dispatch(ReaderEvent.LoupeShown(current.area.toPage(down.position.pixels())))
                     }
                 }
                 event ?: continue
@@ -215,7 +240,7 @@ internal class ReaderInput(
                 when (val now = touchState) {
                     is TouchState.Pulling -> viewModel.dispatch(ReaderEvent.Pulling(now.turn, now.pulled))
                     TouchState.Scrolling -> viewModel.dispatch(ReaderEvent.Pan(change.position.x - last.x, change.position.y - last.y))
-                    is TouchState.Loupe -> viewModel.dispatch(ReaderEvent.LoupeMoved(Point(change.position.x, change.position.y), change.uptimeMillis))
+                    is TouchState.Loupe -> viewModel.dispatch(ReaderEvent.LoupeMoved(current.area.toPage(change.position.pixels()), change.uptimeMillis))
                     TouchState.Idle, TouchState.System, is TouchState.Pressed -> Unit
                 }
                 last = change.position
@@ -243,7 +268,7 @@ internal class ReaderInput(
     ): Boolean {
         if (state !is TouchState.Loupe && event.changes.count { it.pressed } >= 2) {
             if (state is TouchState.Pulling) viewModel.dispatch(ReaderEvent.PullEnded(commit = false, SystemClock.uptimeMillis()))
-            pinch(event, down.id, density, slop)
+            pinch(event, down.id, density, slop, this@ReaderInput.state().area)
             return true
         }
         val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
@@ -273,7 +298,7 @@ internal class ReaderInput(
     }
 
     /** Two fingers: the pinch of [ZoomState], and taps of the second finger that reset it. */
-    private suspend fun AwaitPointerEventScope.pinch(first: PointerEvent, firstId: PointerId, density: Float, slop: Float) {
+    private suspend fun AwaitPointerEventScope.pinch(first: PointerEvent, firstId: PointerId, density: Float, slop: Float, area: ReaderArea) {
         var event = first
         var fingersDown = false
         var second: PointerInputChange? = event.changes.firstOrNull { it.id != firstId && it.pressed }
@@ -298,7 +323,7 @@ internal class ReaderInput(
                 val a = pressed[0].position
                 val b = pressed[1].position
                 val span = hypot(a.x - b.x, a.y - b.y) / density
-                val focus = Point((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+                val focus = area.toPage(Point((a.x + b.x) / 2f, (a.y + b.y) / 2f))
                 val zoom = if (fingersDown) ZoomEvent.SpanChanged(span) else ZoomEvent.FingersDown(span)
                 viewModel.dispatch(ReaderEvent.Zoom(zoom, focus))
                 fingersDown = true
@@ -316,3 +341,4 @@ internal class ReaderInput(
 }
 
 private fun Offset.dp(density: Float) = Point(x / density, y / density)
+private fun Offset.pixels() = Point(x, y)

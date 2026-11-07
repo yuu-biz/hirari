@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.LayoutSettings
 import io.github.yuubiz.hirari.core.model.PageShape
@@ -45,6 +46,7 @@ class ReaderStatePropertyTest {
 
     private fun arbConfig(modes: List<LayoutMode>, coverAlone: Arb<Boolean>): Arb<ReaderConfig> = arbitrary {
         ReaderConfig(
+            barDisplay = BarDisplay.Hidden,
             layout = LayoutSettings(Arb.element(modes).bind(), Arb.enum<ReadingDirection>().bind(), coverAlone.bind()),
             scaleMode = Arb.enum<ScaleMode>().bind(),
             stopOrder = Arb.enum<StopOrder>().bind(),

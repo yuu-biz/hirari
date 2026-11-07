@@ -68,6 +68,7 @@ class SettingsTableTest {
     fun `every field of GlobalSettings except file edits has a row`() {
         val fields = GlobalSettings.serializer().descriptor.elementNames.toSet()
         val keys = SettingsTable.map { it.key }
+        assertEquals(76, keys.size)
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
         assertEquals(fields - "allowFileEdits", keys.toSet())
     }
