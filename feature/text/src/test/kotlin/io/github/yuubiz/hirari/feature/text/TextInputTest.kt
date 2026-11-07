@@ -1,5 +1,9 @@
 package io.github.yuubiz.hirari.feature.text
 
+import io.github.yuubiz.hirari.core.model.TapLayout
+import io.github.yuubiz.hirari.core.model.VolumeKeys
+import io.github.yuubiz.hirari.core.model.Size
+import io.github.yuubiz.hirari.core.model.ReaderRegions
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.KeyCodes
 import io.github.yuubiz.hirari.core.model.KeyResult
@@ -21,6 +25,34 @@ class TextInputTest {
 
     private fun views(code: Int, settings: GlobalSettings = defaults) =
         (settings.textKeys().onKey(code, pressed = true) as? KeyResult.Act)?.action?.textTurn()?.views
+
+    @Test
+    fun `opening input routes taps and keys with defaults and loaded settings`() {
+        val regions = ReaderRegions(Size(400f, 600f), 40f)
+        val turns = ArrayList<Turn>()
+        fun tap(settings: GlobalSettings?, point: Point) = textTap(settings, point, regions) { turns += it }
+        fun key(settings: GlobalSettings?, code: Int, pressed: Boolean = true, shift: Boolean = false) =
+            textKey(settings, code, pressed, shift) { it.textTurn()?.let(turns::add) }
+        tap(null, Point(20f, 300f))
+        key(null, KeyCodes.DPAD_LEFT)
+        key(null, KeyCodes.DPAD_LEFT, pressed = false)
+        tap(defaults.copy(mirrorControls = true), Point(20f, 300f))
+        key(defaults.copy(mirrorControls = true), KeyCodes.DPAD_LEFT)
+        tap(null, Point(20f, 20f))
+        tap(null, Point(20f, 580f))
+        key(defaults.copy(volumeKeys = VolumeKeys.Off), KeyCodes.VOLUME_DOWN)
+        key(null, KeyCodes.DPAD_UP)
+        assertEquals(listOf(Turn.Forward, Turn.Forward, Turn.Back, Turn.Back), turns)
+    }
+
+    @Test
+    fun `opening taps respect vertical zones and the inert middle`() {
+        val regions = ReaderRegions(Size(400f, 600f), 40f)
+        val settings = defaults.copy(tapLayout = TapLayout.TopAndBottomBands, tapBandPercent = 20)
+        val turns = ArrayList<Turn>()
+        for (y in listOf(50f, 300f, 550f)) textTap(settings, Point(200f, y), regions) { turns += it }
+        assertEquals(listOf(Turn.Back, Turn.Forward), turns)
+    }
 
     @Test
     fun `the left key and the volume keys turn a text bound on the right`() {

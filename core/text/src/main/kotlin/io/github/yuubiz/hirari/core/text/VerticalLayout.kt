@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.core.text
 
+import java.util.TreeMap
+
 /** 行頭禁則: characters that must not start a line. 〵 is the lower half of a くの字点. */
 private const val NO_LINE_START =
     "、。，．,.)）]］｝}〕〉》」』】〙〗〟’”｠»ヽヾゝゞ々〻ーァィゥェォッャュョヮヵヶぁぃぅぇぉっゃゅょゎゕゖ" +
@@ -49,12 +51,15 @@ private class Piece(
     val spread: Float = 0f,
     val lead: Float = 0f,
     val tail: Float = 0f,
+    val decorationTail: Float = 0f,
+    val rubyOffset: Float? = null,
+    val markOffsets: Map<Pair<Span.Emphasis, Int>, List<Float>> = emptyMap(),
 ) {
     val start: Int get() = atoms.first().start
     val end: Int get() = atoms.last().end
     val extent: Float = atoms.sumOf { it.pitch.toDouble() }.toFloat() - atoms.last().gap + spread
     val gap: Float get() = atoms.last().gap
-    val pitch: Float get() = extent + gap
+    val pitch: Float get() = extent + gap + decorationTail
     val noStart: Boolean get() = atoms.first().first in NO_LINE_START
     val noEnd: Boolean get() = atoms.last().last in NO_LINE_END
 }
@@ -321,11 +326,11 @@ class VerticalLayout(
             val indent = indentOf(number).coerceIn(0, maxIndent)
             val limit = params.height - indent * fontSize
             var j = 1
-            var length = buffer[0].lead + buffer[0].extent
+            var length = buffer[0].lead + buffer[0].extent + buffer[0].decorationTail
             var overflow = false
             while (true) {
                 if (j == buffer.size) buffer.add(pull() ?: break)
-                val next = length + buffer[j - 1].gap + buffer[j].extent
+                val next = length + buffer[j - 1].gap + buffer[j].extent + buffer[j].decorationTail
                 if (next + buffer[j].tail > limit + EPSILON) {
                     overflow = true
                     break
@@ -355,9 +360,11 @@ class VerticalLayout(
         val glyphs = ArrayList<Glyph>()
         val atoms = ArrayList<Atom>()
         val rubies = ArrayList<RubyRun>()
+        val shiftedMarks = HashMap<Pair<Span.Emphasis, Int>, List<Float>>()
         var y = offset + pieces.first().lead
         for ((i, unit) in pieces.withIndex()) {
             if (i == bottomFrom) y = bottomAt - lineLength(pieces.subList(i, pieces.size)) + unit.lead
+            for ((key, centers) in unit.markOffsets) shiftedMarks[key] = centers.map { it + y }
             val share = unit.spread / unit.atoms.size
             var atomY = y + share / 2
             for (atom in unit.atoms) {
@@ -367,7 +374,7 @@ class VerticalLayout(
             }
             unit.ruby?.let {
                 val reach = unit.lead + unit.extent + unit.tail
-                rubies += RubyRun(it, y - unit.lead + (reach - unit.rubyLength) / 2, unit.rubyLength, params.rubySize)
+                rubies += RubyRun(it, y + (unit.rubyOffset ?: (-unit.lead + (reach - unit.rubyLength) / 2)), unit.rubyLength, params.rubySize)
             }
             y += unit.pitch
         }
@@ -378,7 +385,7 @@ class VerticalLayout(
             if (covered.isEmpty()) continue
             when (span) {
                 is Span.Emphasis -> emphasis += EmphasisRun(
-                    span.mark, span.side, covered.flatMap { markCenters(glyphs[it]) }, params.rubySize,
+                    span.mark, span.side, covered.flatMap { shiftedMarks[span to atoms[it].from] ?: markCenters(glyphs[it]) }, params.rubySize,
                 )
                 is Span.SideLine -> sideLines += SideLineRun(
                     span.style, span.side, glyphs[covered.first()].y, glyphs[covered.last()].let { it.y + it.advance },
@@ -410,6 +417,7 @@ class VerticalLayout(
      */
     private inner class UnitCursor(private val styles: ParagraphStyles) {
         private val atoms = AtomCursor(styles)
+        private val annotations = SpanSweep(styles.paragraph.spans)
         private val queue = ArrayDeque<Piece>()
         private var previous: Atom? = null
 
@@ -437,26 +445,65 @@ class VerticalLayout(
             }
             val leadFree = previous?.let(styles::isFree) == true
             val tailFree = atoms.peek()?.let(styles::isFree) == true
-            rubyPieces(group, ruby.text, leadFree, tailFree).forEach(queue::addLast)
+            rubyPieces(group, ruby, leadFree, tailFree, annotations.overlapping(first.from, group.last().to)).forEach(queue::addLast)
             previous = group.last()
             return true
         }
+    }
+
+    /** Reserve displaced right-band annotations before deciding where to break the line. */
+    private fun decorate(piece: Piece, annotations: List<Span>, ruby: Span.Ruby): Piece {
+        val marks = annotations.filterIsInstance<Span.Emphasis>().filter {
+            it.side == MarkSide.Right && it.start < piece.atoms.last().to && it.end > piece.atoms.first().from
+        }
+        if (marks.isEmpty()) return piece
+        val occupied = TreeMap<Float, Float>()
+        fun place(top: Float, length: Float): Float {
+            if (length == 0f) return top
+            var at = top
+            occupied.floorEntry(at)?.let { if (at < it.value - EPSILON) at = it.value }
+            var next = occupied.ceilingEntry(at)
+            while (next != null && at + length > next.key + EPSILON) {
+                at = next.value
+                next = occupied.ceilingEntry(at)
+            }
+            occupied[at] = at + length
+            return at
+        }
+        val offsets = HashMap<Pair<Span.Emphasis, Int>, List<Float>>()
+        var rubyY = -piece.lead + (piece.lead + piece.extent + piece.tail - piece.rubyLength) / 2
+        for (span in annotations) {
+            if (span === ruby) rubyY = place(rubyY, piece.rubyLength)
+            if (span !is Span.Emphasis || span !in marks) continue
+            var y = piece.spread / piece.atoms.size / 2
+            for (atom in piece.atoms) {
+                if (atom.from in span.start until span.end) {
+                    val glyph = Glyph(atom.content, y, atom.extent, atom.size, atom.bold, atom.start, atom.end)
+                    offsets[span to atom.from] = markCenters(glyph).map {
+                        place(it - params.rubySize / 2, params.rubySize) + params.rubySize / 2
+                    }
+                }
+                y += atom.pitch + piece.spread / piece.atoms.size
+            }
+        }
+        val tail = (occupied.lastEntry().value - piece.extent - piece.tail).coerceAtLeast(0f)
+        return Piece(piece.atoms, piece.ruby, piece.rubyLength, piece.spread, piece.lead, piece.tail, tail, rubyY, offsets)
     }
 
     /**
      * One ruby group, or several when it is longer than a column: then the base splits into nearly equal runs and the
      * ruby splits in proportion, since a group that cannot fit a line cannot stay whole.
      */
-    private fun rubyPieces(atoms: List<Atom>, ruby: String, leadFree: Boolean, tailFree: Boolean): List<Piece> {
-        val whole = rubyPiece(atoms, ruby, leadFree, tailFree)
-        val length = whole.lead + whole.extent + whole.tail
+    private fun rubyPieces(atoms: List<Atom>, ruby: Span.Ruby, leadFree: Boolean, tailFree: Boolean, annotations: List<Span>): List<Piece> {
+        val whole = decorate(rubyPiece(atoms, ruby.text, leadFree, tailFree), annotations, ruby)
+        val length = whole.lead + whole.extent + whole.tail + whole.decorationTail
         if (length <= params.height + EPSILON || atoms.size == 1) return listOf(whole)
         val count = minOf(atoms.size, kotlin.math.ceil(length / params.height).toInt())
-        val rubyPoints = ruby.codePoints().toArray()
+        val rubyPoints = ruby.text.codePoints().toArray()
         fun share(size: Int, k: Int): Int = (size.toLong() * k / count).toInt()
         return (0 until count).map { k ->
             val text = String(rubyPoints, share(rubyPoints.size, k), share(rubyPoints.size, k + 1) - share(rubyPoints.size, k))
-            rubyPiece(atoms.subList(share(atoms.size, k), share(atoms.size, k + 1)), text, leadFree && k == 0, tailFree && k == count - 1)
+            decorate(rubyPiece(atoms.subList(share(atoms.size, k), share(atoms.size, k + 1)), text, leadFree && k == 0, tailFree && k == count - 1), annotations, ruby)
         }
     }
 

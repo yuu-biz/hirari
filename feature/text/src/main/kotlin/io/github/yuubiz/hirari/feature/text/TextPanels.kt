@@ -1,6 +1,8 @@
 package io.github.yuubiz.hirari.feature.text
 
 import android.widget.Toast
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -186,7 +188,7 @@ internal fun TextPanels(
                 }
             }
         }
-        TextPanel.Search -> Sheet(stringResource(R.string.text_command_search), onDismiss = { onPanel(null) }) {
+        TextPanel.Search -> Sheet(stringResource(R.string.text_command_search), onDismiss = { dismissTextPanel(TextPanel.Search, viewModel::clearSearch); onPanel(null) }) {
             SearchPanel(state.search, viewModel) { onPanel(null) }
         }
         TextPanel.Bookmarks -> Sheet(stringResource(R.string.text_command_bookmarks), onDismiss = { onPanel(null) }) {
@@ -318,26 +320,28 @@ internal fun TextBookEndSheet(
     val atEnd = edge == BookEdge.End
     val starts = if (atEnd) listOf(NeighborStart.Saved, NeighborStart.First) else listOf(NeighborStart.Saved, NeighborStart.Last)
     Sheet(stringResource(if (atEnd) R.string.text_book_end_title_end else R.string.text_book_end_title_start), onDismiss) {
-        when (val found = sibling) {
-            Sibling.Last -> Message(if (atEnd) R.string.text_book_end_last_in_folder else R.string.text_book_end_first_in_folder)
-            Sibling.NoFolder -> Unit
-            is Sibling.Found, null -> for (start in starts) {
-                TextButton(onClick = { (found as? Sibling.Found)?.let { onOpen(it.opening(start)) } }, enabled = found != null) {
-                    Text(stringResource(if (atEnd) R.string.text_book_end_next else R.string.text_book_end_previous, stringResource(start.label)))
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            when (val found = sibling) {
+                Sibling.Last -> Message(if (atEnd) R.string.text_book_end_last_in_folder else R.string.text_book_end_first_in_folder)
+                Sibling.NoFolder -> Unit
+                is Sibling.Found, null -> for (start in starts) {
+                    TextButton(onClick = { (found as? Sibling.Found)?.let { onOpen(it.opening(start)) } }, enabled = found != null) {
+                        Text(stringResource(if (atEnd) R.string.text_book_end_next else R.string.text_book_end_previous, stringResource(start.label)))
+                    }
                 }
             }
-        }
-        if (atEnd) {
+            if (atEnd) {
+                TextButton(onClick = {
+                    viewModel.first()
+                    onDismiss()
+                }) { Text(stringResource(R.string.text_book_end_from_first)) }
+            }
+            TextButton(onClick = onCloseReader) { Text(stringResource(R.string.text_close)) }
             TextButton(onClick = {
-                viewModel.first()
-                onDismiss()
-            }) { Text(stringResource(R.string.text_book_end_from_first)) }
+                viewModel.restorePosition()
+                onCloseReader()
+            }) { Text(stringResource(R.string.text_book_end_restore)) }
         }
-        TextButton(onClick = onCloseReader) { Text(stringResource(R.string.text_close)) }
-        TextButton(onClick = {
-            viewModel.restorePosition()
-            onCloseReader()
-        }) { Text(stringResource(R.string.text_book_end_restore)) }
     }
 }
 
@@ -486,3 +490,10 @@ private fun PageJumpPanel(state: TextReaderUiState.Reading, viewModel: TextReade
         TextButton(onClick = viewModel::first) { Text(stringResource(R.string.text_first)) }
     }
 }
+
+/** Dismissal ends a search; selecting a hit closes the panel without ending it. */
+internal fun dismissTextPanel(panel: TextPanel?, clearSearch: () -> Unit) {
+    if (panel == TextPanel.Search) clearSearch()
+}
+
+internal fun textContentAccessible(panel: TextPanel?, edge: BookEdge?): Boolean = panel == null && edge == null

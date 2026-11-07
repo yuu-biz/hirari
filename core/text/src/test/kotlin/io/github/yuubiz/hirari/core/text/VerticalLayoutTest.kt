@@ -15,6 +15,33 @@ class VerticalLayoutTest {
     private fun lines(page: TextPage) = (page.content as? PageContent.Lines)?.lines.orEmpty()
 
     @Test
+    fun `ruby and right emphasis do not overlap even at a page end`() {
+        val source = "題\n一二｜漢《かん》［＃「漢」に傍点］"
+        val params = LayoutParams(width = 16f, height = 36f, fontSize = 10f, letterGap = 0f)
+        val layout = VerticalLayout(parseAozora(source), params, FixedGlyphMetrics)
+        val pages = layout.markedPages().toList()
+        val marked = pages.single { lines(it.page).any { line -> line.emphasis.isNotEmpty() } }
+        val line = lines(marked.page).single { it.emphasis.isNotEmpty() }
+        val ruby = line.rubies.single()
+        val mark = line.emphasis.single()
+        assertTrue(mark.centers.single() - mark.size / 2 >= ruby.y + ruby.length - 0.01f)
+        assertTrue(mark.centers.single() + mark.size / 2 <= params.height + 0.01f)
+        // The decorated character would fit after 一二 without reserving its displaced mark.
+        assertEquals(1, line.glyphs.size)
+        assertEquals(marked.page, layout.resume(marked.mark).first().page)
+    }
+
+    @Test
+    fun `an emphasis annotation before ruby moves the ruby instead`() {
+        val source = "題\n｜漢［＃「漢」に傍点］《かん》"
+        val pageLines = VerticalLayout(parseAozora(source), LayoutParams(100f, 100f, 10f), FixedGlyphMetrics)
+            .pages().flatMap { lines(it) }.toList()
+        val line = pageLines.single { it.emphasis.isNotEmpty() }
+        val mark = line.emphasis.single()
+        assertTrue(line.rubies.single().y >= mark.centers.single() + mark.size / 2 - 0.01f)
+    }
+
+    @Test
     fun `pages cover the source in order with no gap`() {
         for (size in listOf(20f, 55f)) {
             val pages = layout(size).pages().toList()

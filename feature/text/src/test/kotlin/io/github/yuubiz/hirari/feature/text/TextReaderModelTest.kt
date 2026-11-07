@@ -1,5 +1,9 @@
 package io.github.yuubiz.hirari.feature.text
 
+import io.github.yuubiz.hirari.core.model.KeyCodes
+import io.github.yuubiz.hirari.core.model.Point
+import io.github.yuubiz.hirari.core.model.Size
+import io.github.yuubiz.hirari.core.model.ReaderRegions
 import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.data.ProgressWriter
 import io.github.yuubiz.hirari.core.model.BookEdge
@@ -83,6 +87,24 @@ class TextReaderModelTest {
     }
 
     private val TextReaderModel.reading: TextReaderUiState.Reading get() = assertIs<TextReaderUiState.Reading>(state.value)
+
+    @Test
+    fun `opening tap and key input hands only the last turn to the first layout`() = runTest {
+        val early = EarlyTurn()
+        val regions = ReaderRegions(Size(400f, 600f), 40f)
+        textTap(null, Point(20f, 300f), regions) { early.queue(it.views) }
+        textKey(null, KeyCodes.DPAD_LEFT, true, false) {
+            it.textTurn()?.let { turn -> early.queue(turn.views) }
+        }
+        textKey(null, KeyCodes.DPAD_LEFT, true, false) {
+            it.textTurn()?.let { turn -> early.queue(turn.views) }
+        }
+        val pump = HandPump()
+        val model = model(text = sampleText(chapters = 1, sentencesPerChapter = 60), work = pump)
+        early.handOver(model)
+        pump.until(this) { (model.state.value as? TextReaderUiState.Reading)?.run != null }
+        assertEquals(1, model.reading.current)
+    }
 
     @Test
     fun `TX01 an illustration read OOM leaves the text readable and turnable`() = runTest {

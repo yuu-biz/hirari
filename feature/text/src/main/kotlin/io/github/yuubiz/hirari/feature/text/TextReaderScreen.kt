@@ -69,7 +69,6 @@ import io.github.yuubiz.hirari.core.model.Claims
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.model.KeepAwake
 import io.github.yuubiz.hirari.core.model.KeyCodes
-import io.github.yuubiz.hirari.core.model.KeyResult
 import io.github.yuubiz.hirari.core.model.NeighborOpening
 import io.github.yuubiz.hirari.core.model.NeighborStart
 import io.github.yuubiz.hirari.core.model.PageBarState
@@ -156,6 +155,7 @@ fun TextReaderScreen(
     LaunchedEffect(viewModel, view) {
         for (tick in viewModel.turnHaptics) view.performTurnHaptic()
     }
+    val loadedSettings by viewModel.settings.collectAsStateWithLifecycle()
     val settings = (state as? TextReaderUiState.Reading)?.settings
     HoldReaderWindow(
         ReaderWindow(
@@ -167,16 +167,23 @@ fun TextReaderScreen(
         ),
     )
 
-    fun dismiss() = if (bookEndEdge != null) bookEndEdge = null else if (panel != null) panel = null else back()
+    fun dismiss() {
+        if (bookEndEdge != null) bookEndEdge = null
+        else if (panel != null) {
+            dismissTextPanel(panel, viewModel::clearSearch)
+            panel = null
+        } else back()
+    }
 
     fun turn(turn: Turn, pulled: Float?) {
-        val reading = viewModel.state.value as? TextReaderUiState.Reading ?: return
+        val reading = viewModel.state.value as? TextReaderUiState.Reading
         val now = SystemClock.uptimeMillis()
         val result = viewModel.turn(turn.views)
-        touch.motion = motionAfter(result, turn, pulled, reading.settings, reading.frame?.continuous == true, now)
+        if (reading != null) touch.motion = motionAfter(result, turn, pulled, reading.settings, reading.frame?.continuous == true, now)
     }
 
     fun act(action: ReaderAction) {
+        if (viewModel.state.value == TextReaderUiState.Opening && action.textTurn() == null && action != ReaderAction.Dismiss) return
         touched++
         val on = TextActions(
             turn = { turn(it, null) },
@@ -191,23 +198,26 @@ fun TextReaderScreen(
     BackHandler { dismiss() }
     DisposableEffect(keys) {
         val claim = keys.handlers.claim handler@{ event ->
-            val current = (viewModel.state.value as? TextReaderUiState.Reading)?.settings ?: return@handler false
+            if (viewModel.state.value is TextReaderUiState.Failed) return@handler false
+            val current = (viewModel.state.value as? TextReaderUiState.Reading)?.settings ?: viewModel.settings.value
             val covered = bookEndEdge != null || (panel != null && panel != TextPanel.Commands)
             if (covered && event.keyCode != KeyCodes.BACK) return@handler false
-            when (val outcome = current.textKeys().onKey(event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.isShiftPressed)) {
-                KeyResult.NotHandled -> false
-                KeyResult.Consumed -> true
-                is KeyResult.Act -> {
-                    act(outcome.action)
-                    true
-                }
-            }
+            textKey(current, event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.isShiftPressed, ::act)
         }
         onDispose { claim.release() }
     }
 
     when (val s = state) {
-        TextReaderUiState.Opening -> Box(Modifier.fillMaxSize().background(DefaultReaderBackground), contentAlignment = Alignment.Center) { DelayedProgress() }
+        TextReaderUiState.Opening -> {
+            val currentEdges by rememberUpdatedState(systemGestureEdges(loadedSettings.hideSystemBars))
+            val input = remember(viewModel) {
+                TextInput({ null }, viewModel, touch, { touched++ }, {}, TextPanelBounds(1f), {}, {}, ::turn,
+                    { currentEdges }, { viewModel.settings.value })
+            }
+            Box(Modifier.fillMaxSize().background(DefaultReaderBackground)
+                .windowInsetsPadding(readerInsets(loadedSettings.hideSystemBars))
+                .pointerInput(input) { with(input) { handle() } }, contentAlignment = Alignment.Center) { DelayedProgress() }
+        }
         is TextReaderUiState.Failed -> Failure(s.reason, onBack)
         is TextReaderUiState.Reading -> {
             val density = LocalDensity.current.density
@@ -236,7 +246,7 @@ fun TextReaderScreen(
                         }
                     },
                     turn = ::turn,
-                    accessible = panel == null,
+                    accessible = textContentAccessible(panel, bookEndEdge),
                     onControl = { control ->
                         when (control) {
                             TextControl.NextPage -> act(ReaderAction.TurnView(Turn.Forward))

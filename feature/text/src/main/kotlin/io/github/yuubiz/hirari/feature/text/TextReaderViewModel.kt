@@ -76,6 +76,9 @@ class TextReaderViewModel(
 
     val state: StateFlow<TextReaderUiState> = pending.asStateFlow()
 
+    private val inputSettings = MutableStateFlow(GlobalSettings())
+    val settings: StateFlow<GlobalSettings> = inputSettings.asStateFlow()
+
     /** A tick of 「めくりで振動」 for the screen to feel, one for each change of the view that a turn or a jump made. */
     val turnHaptics = Channel<Unit>(Channel.CONFLATED)
 
@@ -83,6 +86,7 @@ class TextReaderViewModel(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Trace.beginAsyncSection(OPEN_SECTION, 0)
         viewModelScope.launch {
             val services = services.await()
+            launch { services.storage.settings.settings.collect { inputSettings.value = it } }
             val copyDir = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") }
             val fonts = TypefaceCache(services.storage.fonts)
             typefaces = fonts

@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.feature.text
 
+import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.text.FixedGlyphMetrics
 import io.github.yuubiz.hirari.core.text.LayoutParams
 import io.github.yuubiz.hirari.core.text.VerticalLayout
@@ -11,6 +12,26 @@ import kotlin.test.assertTrue
 class TextAccessibilityTest {
     private fun pagesOf(source: String, height: Float) =
         VerticalLayout(parseAozora(source), LayoutParams(width = 336f, height = height, fontSize = 20f), FixedGlyphMetrics).pages().toList()
+
+    @Test
+    fun `a book end sheet hides the page and bars from accessibility`() {
+        assertTrue(textContentAccessible(null, null))
+        for (edge in BookEdge.entries) {
+            assertEquals(false, textContentAccessible(null, edge))
+            assertEquals(false, textContentAccessible(TextPanel.Commands, edge))
+        }
+        assertEquals(false, textContentAccessible(TextPanel.Search, null))
+    }
+
+    @Test
+    fun `dismissing search clears its highlight while other panels do not`() {
+        var clears = 0
+        dismissTextPanel(TextPanel.Search) { clears++ }
+        assertEquals(1, clears)
+        dismissTextPanel(TextPanel.Commands) { clears++ }
+        dismissTextPanel(null) { clears++ }
+        assertEquals(1, clears)
+    }
 
     @Test
     fun `a page reads its columns from the right edge to the left`() {

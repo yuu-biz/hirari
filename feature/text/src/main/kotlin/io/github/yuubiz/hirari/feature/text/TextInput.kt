@@ -15,6 +15,7 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.CommandBarEffect
 import io.github.yuubiz.hirari.core.model.CommandBarEvent
 import io.github.yuubiz.hirari.core.model.CommandBarState
+import io.github.yuubiz.hirari.core.model.KeyResult
 import io.github.yuubiz.hirari.core.model.KeyBindings
 import io.github.yuubiz.hirari.core.model.PageBar
 import io.github.yuubiz.hirari.core.model.PageBarEffect
@@ -49,6 +50,21 @@ internal fun GlobalSettings.textKeys() = KeyBindings(TEXT_DIRECTION, mirrorContr
 
 /** The tap zones of docs/spec.md section 4.8 (タップ領域). */
 internal fun GlobalSettings.textTapZones() = TapZones(tapLayout, tapBandPercent, mirrorControls)
+
+/** Shared input routing, including the interval before the first page is ready. */
+internal fun textKey(settings: GlobalSettings?, code: Int, pressed: Boolean, shift: Boolean, act: (ReaderAction) -> Unit): Boolean =
+    when (val result = (settings ?: GlobalSettings()).textKeys().onKey(code, pressed, shift)) {
+        KeyResult.NotHandled -> false
+        KeyResult.Consumed -> true
+        is KeyResult.Act -> { act(result.action); true }
+    }
+
+internal fun textTap(settings: GlobalSettings?, point: Point, regions: ReaderRegions, turn: (Turn) -> Unit) {
+    if (regions.regionAt(point) != ReaderRegion.TurnArea) return
+    val area = regions.turnArea
+    (settings ?: GlobalSettings()).textTapZones()
+        .turnAt(Point(point.x - area.left, point.y - area.top), Size(area.width, area.height))?.let(turn)
+}
 
 /**
  * The turn [this] makes in a text, or null for an action that does not turn. A text has no stops, so stepping
@@ -152,7 +168,7 @@ internal class TextTouch {
  * reader uses: the regions, the command bar, the page bar, and taps and swipes on the turn area.
  */
 internal class TextInput(
-    private val state: () -> TextReaderUiState.Reading,
+    private val state: () -> TextReaderUiState.Reading?,
     private val viewModel: TextReaderViewModel,
     private val touch: TextTouch,
     private val onTouch: () -> Unit,
@@ -164,20 +180,21 @@ internal class TextInput(
     private val turn: (Turn, Float?) -> Unit,
     /** Where system gestures start on this screen. */
     private val edges: () -> SystemGestureEdges,
+    private val openingSettings: () -> GlobalSettings = { GlobalSettings() },
 ) {
     suspend fun PointerInputScope.handle() {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             val current = state()
-            val settings = current.settings
+            val settings = current?.settings ?: openingSettings()
             val regions = ReaderRegions(Size(size.width / density, size.height / density), settings.barHeightDp.toFloat(), edges())
             val slop = viewConfiguration.touchSlop / density
             onTouch()
             touch.motion = null
             when (regions.regionAt(down.position.dp(density))) {
-                ReaderRegion.CommandBar -> commandBar(down, settings, slop)
-                ReaderRegion.PageBar -> pageBar(down, current, regions, slop)
-                ReaderRegion.TurnArea -> turnArea(down, current, regions, slop)
+                ReaderRegion.CommandBar -> if (current != null) commandBar(down, settings, slop)
+                ReaderRegion.PageBar -> if (current != null) pageBar(down, current, regions, slop)
+                ReaderRegion.TurnArea -> turnArea(down, settings, current == null || current.frame?.continuous == true, regions, slop)
             }
         }
     }
@@ -272,9 +289,7 @@ internal class TextInput(
      * A tap turns by the tap zones and a sideways drag pulls the neighboring view in. In the 連続 layout the row of
      * pages scrolls under a drag instead, so the drag is left to it.
      */
-    private suspend fun AwaitPointerEventScope.turnArea(down: PointerInputChange, current: TextReaderUiState.Reading, regions: ReaderRegions, slop: Float) {
-        val settings = current.settings
-        val continuous = current.frame?.continuous == true
+    private suspend fun AwaitPointerEventScope.turnArea(down: PointerInputChange, settings: GlobalSettings, continuous: Boolean, regions: ReaderRegions, slop: Float) {
         val rules = TurnAreaTouch(TEXT_DIRECTION, settings.mirrorControls, settings.swipeToTurn, slop, settings.loupeHoldMs.toLong())
         val pullable = if (continuous) emptySet() else setOf(Side.Left, Side.Right)
         val point = down.position.dp(density)
@@ -298,9 +313,7 @@ internal class TextInput(
                 touchState = TouchState.Idle
                 when (outcome) {
                     is TouchOutcome.Tap -> {
-                        val area = regions.turnArea
-                        val at = Point(outcome.point.x - area.left, outcome.point.y - area.top)
-                        settings.textTapZones().turnAt(at, Size(area.width, area.height))?.let { turn(it, null) }
+                        textTap(settings, outcome.point, regions) { turn(it, null) }
                     }
                     is TouchOutcome.Commit -> turn(outcome.turn, pulledShare(outcome.pulled, width, density))
                     is TouchOutcome.Return -> touch.motion = TextMotion.Returning(
