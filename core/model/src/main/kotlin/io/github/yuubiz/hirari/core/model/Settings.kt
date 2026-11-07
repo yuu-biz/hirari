@@ -13,7 +13,9 @@ enum class GutterStyle { None, Gap, Shadow }
 enum class BarDisplay {
     Hidden, Portrait, Always;
 
-    fun shown(screen: Size): Boolean = this == Always || this == Portrait && screen.width < screen.height
+    /** [barHeight] is in the unit of [screen]. Three strips that would leave the page less than half the height stay hidden. */
+    fun shown(screen: Size, barHeight: Float): Boolean =
+        (this == Always || this == Portrait && screen.width < screen.height) && screen.height - 3 * barHeight >= screen.height / 2
 }
 
 /** An opaque color, `0xRRGGBB` in the low 24 bits. */

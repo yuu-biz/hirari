@@ -58,7 +58,7 @@ internal fun GuideOverlay(config: ReaderConfig, onDismiss: () -> Unit) {
             .clickable(onClickLabel = close, role = Role.Button, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
     ) {
         val screen = Size(maxWidth.value, maxHeight.value)
-        val shown = config.barDisplay.shown(screen)
+        val shown = config.barDisplay.shown(screen, config.barHeightDp)
         val regions = ReaderRegions(screen, config.barHeightDp, bars = if (shown) BarLayout.Shown else BarLayout.Hidden)
         val content = guideContent(regions, config)
         for (zone in content.layout.zones) {

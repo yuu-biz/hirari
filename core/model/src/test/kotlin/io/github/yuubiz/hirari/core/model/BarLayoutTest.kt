@@ -46,9 +46,17 @@ class BarLayoutTest {
     @Test
     fun portraitMeansStrictlyNarrowerThanTallAndEveryChoiceIsExplicit() {
         for ((size, portrait) in listOf(Size(411f, 914f) to true, Size(914f, 411f) to false, Size(500f, 500f) to false)) {
-            assertEquals(false, BarDisplay.Hidden.shown(size))
-            assertEquals(portrait, BarDisplay.Portrait.shown(size))
-            assertEquals(true, BarDisplay.Always.shown(size))
+            assertEquals(false, BarDisplay.Hidden.shown(size, 60f))
+            assertEquals(portrait, BarDisplay.Portrait.shown(size, 60f))
+            assertEquals(true, BarDisplay.Always.shown(size, 60f))
         }
+    }
+
+    @Test
+    fun stripsThatWouldLeaveThePageLessThanHalfTheHeightStayHidden() {
+        assertEquals(true, BarDisplay.Always.shown(Size(914f, 411f), 60f))
+        assertEquals(false, BarDisplay.Always.shown(Size(640f, 320f), 120f))
+        assertEquals(false, BarDisplay.Portrait.shown(Size(300f, 400f), 80f))
+        assertEquals(true, BarDisplay.Portrait.shown(Size(300f, 480f), 80f))
     }
 }
