@@ -1,6 +1,8 @@
 package io.github.yuubiz.hirari.core.data
 
 import androidx.room3.withWriteTransaction
+import android.os.Build
+import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.BookProgress
@@ -124,7 +126,11 @@ class SettingsTransfer internal constructor(
         val format = (file?.get(FORMAT) as? JsonPrimitive)?.intOrNull
         if (file == null || format == null) return ImportPreparation.NotASettingsFile
         val plan = ImportPlan(
-            settings = (file[SETTINGS] as? JsonObject ?: JsonObject(emptyMap())).upgradedFrom(format).toGlobalSettings(),
+            settings = (file[SETTINGS] as? JsonObject ?: JsonObject(emptyMap())).upgradedFrom(format).toGlobalSettings().let { imported ->
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && imported.colorPalette == ColorPalette.Wallpaper) {
+                    imported.copy(colorPalette = ColorPalette.Standard)
+                } else imported
+            },
             bookOverrides = (file[BOOK_OVERRIDES] as? JsonObject).orEmpty()
                 .mapNotNull { (book, value) -> (value as? JsonObject)?.let { BookId(book) to it.toBookOverrides() } }
                 .toMap(),

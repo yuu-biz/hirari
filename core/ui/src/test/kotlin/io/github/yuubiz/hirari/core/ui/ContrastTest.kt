@@ -1,7 +1,8 @@
 package io.github.yuubiz.hirari.core.ui
 
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import com.materialkolor.hct.Hct
+import io.github.yuubiz.hirari.core.model.ColorPalette
+import io.github.yuubiz.hirari.core.model.Rgb
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import kotlin.test.Test
@@ -10,8 +11,7 @@ import kotlin.test.assertTrue
 
 /**
  * The contrast of the custom colors (docs/spec.md section 6.7), as WCAG 2.x measures it: (lighter + 0.05) / (darker +
- * 0.05). The file list draws on the theme's background, which the baseline schemes and the extremes of the dynamic
- * ones (pure black and white) bound.
+ * 0.05). Covers every preset, custom seeds around the hue circle, and pure black in both modes.
  */
 class ContrastTest {
     private fun ratio(a: Color, b: Color): Double {
@@ -21,10 +21,19 @@ class ContrastTest {
 
     private class Theme(val name: String, val colors: LibraryColors, val surfaces: List<Color>)
 
-    private val themes = listOf(
-        Theme("dark", LibraryColors.Dark, listOf(darkColorScheme().background, darkColorScheme().surface, Color.Black)),
-        Theme("light", LibraryColors.Light, listOf(lightColorScheme().background, lightColorScheme().surface, Color.White)),
-    )
+    private val palettes = ColorPalette.presets + (0 until 360 step 30).map { hue ->
+        ColorPalette.Custom(Rgb(Hct.from(hue.toDouble(), 80.0, 50.0).toInt() and 0xFFFFFF))
+    } + listOf(0x000000, 0xFFFFFF, 0x808080).map { ColorPalette.Custom(Rgb(it)) }
+
+    private val themes = listOf(false, true).flatMap { dark ->
+        palettes.flatMap { palette ->
+            listOf(false, true).map { black ->
+                val scheme = paletteColorScheme(palette, dark).withPureBlack(dark && black)
+                Theme("$palette dark=$dark black=$black", if (dark) LibraryColors.Dark else LibraryColors.Light,
+                    listOf(scheme.background, scheme.surface, if (dark) Color.Black else Color.White))
+            }
+        }
+    }
 
     private fun LibraryColors.names() = mapOf(
         "stateUnread" to stateUnread,
@@ -56,7 +65,7 @@ class ContrastTest {
 
     @Test
     fun `a pressed row keeps every name color at 3 to 1 but the known one`() {
-        val below = themes.flatMap { theme ->
+        val below = listOf(Theme("dark", LibraryColors.Dark, emptyList()), Theme("light", LibraryColors.Light, emptyList())).flatMap { theme ->
             theme.colors.names().mapNotNull { (name, color) ->
                 "${theme.name} $name".takeIf { ratio(color, theme.colors.itemPressed) < 3.0 }
             }

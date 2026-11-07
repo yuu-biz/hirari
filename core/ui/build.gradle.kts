@@ -14,6 +14,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(libs.material.color.utilities)
     implementation(libs.androidx.activity.compose)
     testImplementation(kotlin("test-junit"))
     testImplementation(libs.junit)

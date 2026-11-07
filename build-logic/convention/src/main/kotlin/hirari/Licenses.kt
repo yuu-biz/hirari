@@ -37,6 +37,7 @@ const val PUBLIC_DOMAIN = "LicenseRef-Public-Domain"
 val licenseUrlIds = mapOf(
     "https://www.bouncycastle.org/licence.html" to "MIT",
     "https://opensource.org/license/mit" to "MIT",
+    "https://github.com/jordond/materialkolor/blob/master/LICENSE" to "MIT",
 )
 
 /** Checks the Maven licenses and bundles the license screen's data as the asset `licenses.json`. */

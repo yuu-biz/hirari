@@ -21,7 +21,7 @@ class HirariThemeTest {
     @get:Rule
     val rule = createComposeRule()
 
-    private var choice by mutableStateOf(ThemeChoice(AppTheme.System, dynamicColor = false))
+    private var choice by mutableStateOf(ThemeChoice(AppTheme.System, colorPalette = io.github.yuubiz.hirari.core.model.ColorPalette.Standard))
     private var background = Color.Unspecified
     private var libraryColors = LibraryColors.Light
     private var dark = false
@@ -32,6 +32,26 @@ class HirariThemeTest {
             libraryColors = LocalLibraryColors.current
             dark = isDark
         }
+    }
+
+    @Test
+    fun palettesAndPureBlackChangeLiveAndBlackHasNoEffectInLight() {
+        show()
+        choice = choice.copy(colorPalette = io.github.yuubiz.hirari.core.model.ColorPalette.Sakura)
+        rule.runOnIdle {
+            assertEquals(paletteColorScheme(choice.colorPalette, false).background, background)
+            assertEquals(LibraryColors.Light, libraryColors)
+        }
+        val light = paletteColorScheme(choice.colorPalette, false).background
+        choice = choice.copy(pureBlack = true)
+        rule.runOnIdle { assertEquals(light, background) }
+        choice = choice.copy(appTheme = AppTheme.Dark)
+        rule.runOnIdle {
+            assertEquals(Color.Black, background)
+            assertEquals(LibraryColors.Dark, libraryColors)
+        }
+        choice = choice.copy(pureBlack = false)
+        rule.runOnIdle { assertEquals(paletteColorScheme(choice.colorPalette, true).background, background) }
     }
 
     @Test

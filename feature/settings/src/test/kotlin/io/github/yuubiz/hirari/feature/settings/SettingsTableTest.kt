@@ -177,10 +177,16 @@ class SettingsTableTest {
     }
 
     @Test
-    fun `the wallpaper color row is for Android 12 and later`() {
-        fun keys(sdk: Int) = settingsFor(sdk).values.flatten().map { it.key }
-        assertTrue("dynamicColor" !in keys(30))
-        assertTrue("dynamicColor" in keys(31))
+    fun `only the wallpaper choice needs Android 12 and older devices show standard`() {
+        for (sdk in listOf(28, 30, 31, 37)) {
+            val rows = settingsFor(sdk).values.flatten()
+            val palette = rows.single { it.key == "colorPalette" } as ColorSetting<*>
+            val wallpaper = io.github.yuubiz.hirari.core.model.ColorPalette.Wallpaper
+            assertEquals(sdk >= 31, palette.presets.any { it.value == wallpaper })
+            assertEquals(if (sdk >= 31) wallpaper else io.github.yuubiz.hirari.core.model.ColorPalette.Standard,
+                palette.read(GlobalSettings()))
+            assertTrue(rows.any { it.key == "pureBlack" })
+        }
     }
 
     @Test

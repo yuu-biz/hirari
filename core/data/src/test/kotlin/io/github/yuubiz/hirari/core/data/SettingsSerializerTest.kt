@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.data
 
+import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.TapLayout
 import io.github.yuubiz.hirari.core.model.TurnEffect
 import io.github.yuubiz.hirari.core.model.VolumeKeys
@@ -23,6 +24,32 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class SettingsSerializerTest {
+    @Test
+    fun `legacy dynamic color migrates while an explicit palette wins`() = runTest {
+        assertEquals(ColorPalette.Wallpaper, read("""{"dynamicColor":true}""").colorPalette)
+        assertEquals(ColorPalette.Standard, read("""{"dynamicColor":false}""").colorPalette)
+        assertEquals(ColorPalette.Sakura, read("""{"dynamicColor":true,"colorPalette":"Sakura"}""").colorPalette)
+        assertEquals(ColorPalette.Wallpaper, read("""{"dynamicColor":"false"}""").colorPalette)
+    }
+
+    @Test
+    fun `all palettes custom seeds and black round trip without legacy keys`() = runTest {
+        for (palette in ColorPalette.presets + ColorPalette.Custom(Rgb(0x123ABC))) {
+            for (black in listOf(false, true)) {
+                val settings = GlobalSettings(colorPalette = palette, pureBlack = black)
+                assertEquals(settings, roundTrip(settings))
+                val out = ByteArrayOutputStream()
+                SettingsSerializer.writeTo(settings, out)
+                kotlin.test.assertFalse("dynamicColor" in out.toString("UTF-8"))
+            }
+        }
+        assertEquals(ColorPalette.Custom(Rgb(0x123ABC)), read("""{"colorPalette":"#123abc"}""").colorPalette)
+        for (invalid in listOf("unknown", "#12345", "#GGGGGG", "#+12345", "#-12345")) {
+            assertEquals(ColorPalette.Wallpaper, read("""{"colorPalette":"$invalid","pureBlack":true}""").colorPalette)
+            assertEquals(true, read("""{"colorPalette":"$invalid","pureBlack":true}""").pureBlack)
+        }
+    }
+
     @Test
     fun `old author choice stays author and independent sections and group kinds round trip`() = runTest {
         val old = read("""{"libraryGrouping":"Author"}""")
@@ -156,10 +183,10 @@ class SettingsSerializerTest {
     }
 
     @Test
-    fun `the settings are the 75 of the spec and the fixture changes each of them`() {
+    fun `the settings are the 76 of the spec and the fixture changes each of them`() {
         val defaults = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), GlobalSettings()).jsonObject
         val changed = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), everything).jsonObject
-        assertEquals(75, defaults.size)
+        assertEquals(76, defaults.size)
         assertEquals(defaults.keys, defaults.keys.filter { defaults[it] != changed[it] }.toSet())
     }
 

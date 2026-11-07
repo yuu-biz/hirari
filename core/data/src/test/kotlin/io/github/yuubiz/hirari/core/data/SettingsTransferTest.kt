@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.data
 
+import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.Book
 import io.github.yuubiz.hirari.core.model.BookFormat
@@ -78,6 +79,34 @@ class SettingsTransferTest {
     }
 
     private fun at(seconds: Long) = Instant.ofEpochSecond(1_700_000_000 + seconds)
+
+    @Test
+    @org.robolectric.annotation.Config(sdk = [28, 30])
+    fun `wallpaper imports use standard before Android 12`() = runBlocking {
+        withStorage { storage ->
+            for (fields in listOf("\"colorPalette\":\"Wallpaper\"", "\"dynamicColor\":true", "\"dynamicColor\":false")) {
+                storage.import("""{"format":2,"settings":{$fields}}""")
+                assertEquals(ColorPalette.Standard, storage.settings.settings.first().colorPalette)
+            }
+        }
+    }
+
+    @Test
+    @org.robolectric.annotation.Config(sdk = [31])
+    fun `imports migrate the old toggle and preserve new palette and black choices`() = runBlocking {
+        withStorage { storage ->
+            for ((fields, expected) in listOf(
+                "\"dynamicColor\":true" to ColorPalette.Wallpaper,
+                "\"dynamicColor\":false" to ColorPalette.Standard,
+                "\"dynamicColor\":true,\"colorPalette\":\"Ink\"" to ColorPalette.Ink,
+                "\"colorPalette\":\"#123ABC\"" to ColorPalette.Custom(io.github.yuubiz.hirari.core.model.Rgb(0x123ABC)),
+            )) {
+                storage.import("""{"format":2,"settings":{$fields,"pureBlack":true}}""")
+                assertEquals(expected, storage.settings.settings.first().colorPalette)
+                assertTrue(storage.settings.settings.first().pureBlack)
+            }
+        }
+    }
 
     @Test
     fun `export fails on an IO read failure even after defaults were supplied and the notice was taken`() = runBlocking {
@@ -188,7 +217,7 @@ class SettingsTransferTest {
         val (book, exported) = withStorage { storage -> storage.fill() to storage.transfer.export(includeReading = true) }
         withStorage { storage ->
             val changes = storage.import(exported)
-            assertEquals(ImportChanges(settings = 75, bookOverrides = 1, servers = 1, progress = 1, bookmarks = 1, history = 1), changes)
+            assertEquals(ImportChanges(settings = 76, bookOverrides = 1, servers = 1, progress = 1, bookmarks = 1, history = 1), changes)
 
             assertEquals(everything, storage.settings.settings.first())
             val restored = assertIs<LibraryLocation.SmbShare>(storage.locations.locations.first().single())

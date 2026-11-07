@@ -106,6 +106,22 @@ enum class ReopenLastBook { Off, Ask, Immediately }
 
 enum class AppTheme { System, Light, Dark }
 
+/** A whole palette, or a seed color, rather than independently chosen roles. */
+sealed interface ColorPalette {
+    data object Wallpaper : ColorPalette
+    data object Standard : ColorPalette
+    data object Indigo : ColorPalette
+    data object Bamboo : ColorPalette
+    data object Sakura : ColorPalette
+    data object Orange : ColorPalette
+    data object Ink : ColorPalette
+    data class Custom(val color: Rgb) : ColorPalette
+
+    companion object {
+        val presets: List<ColorPalette> = listOf(Wallpaper, Standard, Indigo, Bamboo, Sakura, Orange, Ink)
+    }
+}
+
 /** [charsetName] is the Java name of the charset. */
 enum class FallbackCharset(val charsetName: String) {
     Cp932("windows-31j"),

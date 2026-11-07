@@ -16,11 +16,11 @@ import io.github.yuubiz.hirari.core.ui.ThemeChoice
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-/** The theme the settings `appTheme` and `dynamicColor` choose, from the system's until the settings are read. */
+/** The theme the settings `appTheme`, `colorPalette` and `pureBlack` choose, from the system's until the settings are read. */
 @Composable
 internal fun themeChoice(app: HirariApp): State<ThemeChoice> = produceState(ThemeChoice()) {
     app.services.await().storage.settings.settings
-        .map { ThemeChoice(it.appTheme, it.dynamicColor) }
+        .map { ThemeChoice(it.appTheme, it.colorPalette, it.pureBlack) }
         .distinctUntilChanged()
         .collect { value = it }
 }

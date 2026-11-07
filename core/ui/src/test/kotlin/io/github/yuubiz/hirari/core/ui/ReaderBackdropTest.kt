@@ -30,7 +30,7 @@ class ReaderBackdropTest {
     val rule = createComposeRule()
 
     private var background by mutableStateOf<ReaderBackground>(ReaderBackground.Theme)
-    private var theme by mutableStateOf(ThemeChoice(AppTheme.Light, dynamicColor = false))
+    private var theme by mutableStateOf(ThemeChoice(AppTheme.Light, colorPalette = io.github.yuubiz.hirari.core.model.ColorPalette.Standard))
 
     private fun show() = rule.setContent {
         HirariTheme(theme) { ReaderBackdrop(background, Modifier.fillMaxSize()) {} }

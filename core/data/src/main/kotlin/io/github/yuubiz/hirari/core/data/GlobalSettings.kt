@@ -1,7 +1,8 @@
-@file:UseSerializers(RgbSerializer::class, ReaderBackgroundSerializer::class, TextTypefaceSerializer::class)
+@file:UseSerializers(ColorPaletteSerializer::class, RgbSerializer::class, ReaderBackgroundSerializer::class, TextTypefaceSerializer::class)
 
 package io.github.yuubiz.hirari.core.data
 
+import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
@@ -133,7 +134,8 @@ data class GlobalSettings(
     val bookmarkSort: BookmarkSort = BookmarkSort.PathAscending,
 
     val appTheme: AppTheme = AppTheme.System,
-    val dynamicColor: Boolean = true,
+    val colorPalette: ColorPalette = ColorPalette.Wallpaper,
+    val pureBlack: Boolean = false,
     val fallbackCharset: FallbackCharset = FallbackCharset.Cp932,
 
     val breathControl: Boolean = false,

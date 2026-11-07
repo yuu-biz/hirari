@@ -85,8 +85,13 @@ internal object SettingsSerializer : Serializer<GlobalSettings> {
 
 internal const val SETTINGS_FORMAT_KEY = "format"
 
-internal fun JsonObject.toGlobalSettings(): GlobalSettings =
-    SettingsJson.decodeFields(GlobalSettings.serializer(), this).normalized()
+internal fun JsonObject.toGlobalSettings(): GlobalSettings {
+    val legacy = this["dynamicColor"]
+    val fields = if ("colorPalette" !in this && legacy in listOf(JsonPrimitive(true), JsonPrimitive(false))) {
+        JsonObject(this + ("colorPalette" to JsonPrimitive(if (legacy == JsonPrimitive(true)) "Wallpaper" else "Standard")))
+    } else this
+    return SettingsJson.decodeFields(GlobalSettings.serializer(), fields).normalized()
+}
 
 internal fun openSettings(
     scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),

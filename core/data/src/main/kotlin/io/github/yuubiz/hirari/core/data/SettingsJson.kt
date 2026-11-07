@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.data
 
+import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.ReaderBackground
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rgb
@@ -116,4 +117,16 @@ internal object CommandBarItemsSerializer : KSerializer<List<ReaderCommand>> {
         val array = decoder.decodeJsonElement() as? JsonArray ?: throw SerializationException("commandBarItems is not a list")
         return array.mapNotNull { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.contentOrNull?.let(byName::get) }
     }
+}
+
+/** The preset name, or a seed in #RRGGBB form. */
+internal object ColorPaletteSerializer : StringFormSerializer<ColorPalette>("io.github.yuubiz.hirari.ColorPalette") {
+    private val named = ColorPalette.presets.associateBy { it.toString() }
+    private val rgb = Regex("#[0-9A-Fa-f]{6}")
+    override fun format(value: ColorPalette): String = when (value) {
+        is ColorPalette.Custom -> RgbSerializer.format(value.color)
+        else -> value.toString()
+    }
+    override fun parse(text: String): ColorPalette? =
+        named[text] ?: text.takeIf(rgb::matches)?.let(RgbSerializer::parse)?.let(ColorPalette::Custom)
 }

@@ -83,7 +83,7 @@ class ReaderConfigTest {
         "libraryView", "thumbSize", "gridColumnsPortrait", "gridColumnsLandscape", "gridNameLines", "gridNoteLine", "coverAspect",
         "libraryTextSize", "libraryGrouping", "librarySubgrouping", "librarySection", "mergeCircleAuthors", "librarySort", "foldersFirst", "showParentItem", "allowFileEdits", "reopenLastFolder",
         "reopenLastBook", "historySort", "bookmarkSort",
-        "appTheme", "dynamicColor",
+        "appTheme", "colorPalette", "pureBlack",
     )
 
     @Test

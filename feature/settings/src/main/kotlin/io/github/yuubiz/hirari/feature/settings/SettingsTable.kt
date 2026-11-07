@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.settings
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.ColorPalette
 import io.github.yuubiz.hirari.core.model.AppTheme
 import io.github.yuubiz.hirari.core.model.BookEndAction
 import io.github.yuubiz.hirari.core.model.BookmarkSort
@@ -301,7 +302,8 @@ val SettingsTable: List<Setting> = buildList {
     val appearance = SettingGroup.Appearance
     add(choice(GlobalSettings::appTheme, appearance, "テーマ", { s, v -> s.copy(appTheme = v) },
         AppTheme.System to "端末に従う", AppTheme.Light to "ライト", AppTheme.Dark to "ダーク"))
-    add(toggle(GlobalSettings::dynamicColor, appearance, "壁紙の色を使う", minSdk = DYNAMIC_COLOR_SDK) { s, v -> s.copy(dynamicColor = v) })
+    add(paletteSetting(Int.MAX_VALUE))
+    add(toggle(GlobalSettings::pureBlack, appearance, "ダークで黒を使う") { s, v -> s.copy(pureBlack = v) })
     add(
         choice(
             GlobalSettings::fallbackCharset, appearance, "判定できないときの文字コード", { s, v -> s.copy(fallbackCharset = v) },
@@ -322,7 +324,7 @@ val SettingsTable: List<Setting> = buildList {
 
 /** The rows to show on a device with API level [sdk], grouped in the order of [SettingGroup]. */
 fun settingsFor(sdk: Int, settings: GlobalSettings? = null): Map<SettingGroup, List<Setting>> =
-    SettingsTable.filter { it.minSdk <= sdk }.mapNotNull { if (settings == null) it else it.forSettings(settings) }.groupBy { it.group }
+    SettingsTable.filter { it.minSdk <= sdk }.map { if (it.key == "colorPalette") paletteSetting(sdk) else it }.mapNotNull { if (settings == null) it else it.forSettings(settings) }.groupBy { it.group }
 
 /** The second key is available only beneath a different first key. */
 internal fun Setting.forSettings(settings: GlobalSettings): Setting? = when {
@@ -416,4 +418,25 @@ private fun optionalColor(
     write = write,
     customOf = { it },
     custom = { it },
+)
+
+private fun paletteSetting(sdk: Int) = ColorSetting<ColorPalette>(
+    key = GlobalSettings::colorPalette.name,
+    group = SettingGroup.Appearance,
+    label = "配色",
+    presets = listOf<Option<ColorPalette>>(
+        Option(ColorPalette.Wallpaper, "壁紙の色"),
+        Option(ColorPalette.Standard, "標準"),
+        Option(ColorPalette.Indigo, "藍"),
+        Option(ColorPalette.Bamboo, "若竹"),
+        Option(ColorPalette.Sakura, "桜"),
+        Option(ColorPalette.Orange, "柑子"),
+        Option(ColorPalette.Ink, "墨"),
+    ).filter { sdk >= DYNAMIC_COLOR_SDK || it.value != ColorPalette.Wallpaper },
+    read = { settings ->
+        settings.colorPalette.takeUnless { sdk < DYNAMIC_COLOR_SDK && it == ColorPalette.Wallpaper } ?: ColorPalette.Standard
+    },
+    write = { settings, value -> settings.copy(colorPalette = value) },
+    customOf = { (it as? ColorPalette.Custom)?.color },
+    custom = ColorPalette::Custom,
 )
