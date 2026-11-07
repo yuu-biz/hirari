@@ -85,10 +85,16 @@ private class MemoryFolder(
     var free: Long? = null
     var fullAfter: Long = Long.MAX_VALUE
     var onWrite: () -> Unit = {}
+    var onNames: () -> Unit = {}
+    var onDiscard: () -> Unit = {}
+    val commits = AtomicInteger()
     var failCreate: Throwable? = null
     var failCommit: Throwable? = null
 
-    override fun names(): Set<String> = synchronized(log) { files.keys + folders.keys }
+    override fun names(): Set<String> {
+        onNames()
+        return synchronized(log) { files.keys + folders.keys }
+    }
 
     override fun createFolder(name: String): SaveFolder = synchronized(log) {
         MemoryFolder(log = log)
@@ -119,6 +125,7 @@ private class MemoryFolder(
             }
 
             override fun commit(name: String) = synchronized(log) {
+                commits.incrementAndGet()
                 failCommit?.let { throw it }
                 done = true
                 files[name] = files.remove(part) ?: throw SaveDestinationException("the part is gone")
@@ -126,6 +133,7 @@ private class MemoryFolder(
 
             override fun discard() {
                 synchronized(log) { if (!done) files.remove(part) }
+                onDiscard()
             }
         }
     }
@@ -225,6 +233,121 @@ class SmbSaveTest {
         assertEquals("a (1)", freeName("a", setOf("A")))
         assertEquals(".hidden (1)", freeName(".hidden", setOf(".hidden")))
         assertEquals("archive.tar (1).gz", freeName("archive.tar.gz", setOf("archive.tar.gz")))
+    }
+
+    @Test
+    fun `cancelling a blocked read deletes the part before the server returns and drops its bytes`() {
+        // Exercise the first, middle and last read, including a part that already contains bytes.
+        for (blockedRead in 1..3) {
+            val reading = CountDownLatch(blockedRead)
+            val release = CountDownLatch(1)
+            val discarded = CountDownLatch(1)
+            val writes = AtomicInteger()
+            val into = MemoryFolder().apply {
+                onWrite = { writes.incrementAndGet() }
+                onDiscard = { discarded.countDown() }
+            }
+            val server = server(mapOf("vol1.cbz" to pattern), onRead = {
+                reading.countDown()
+                if (reading.count == 0L) check(release.await(10, TimeUnit.SECONDS))
+            })
+            runBlocking {
+                val job = async(Dispatchers.Default) { server.saveTo("vol1.cbz", false, into) }
+                try {
+                    assertTrue(reading.await(10, TimeUnit.SECONDS))
+                    assertEquals(setOf("vol1.cbz.part"), into.names())
+                    job.cancel()
+                    assertTrue("delete must not wait for the server", discarded.await(5, TimeUnit.SECONDS))
+                    assertTrue(into.names().isEmpty())
+                    assertEquals(1L, release.count)
+                } finally {
+                    job.cancel()
+                    release.countDown()
+                    job.join()
+                }
+                assertThrows(CancellationException::class.java) { runBlocking { job.await() } }
+            }
+            assertEquals(blockedRead - 1, writes.get())
+            assertEquals(0, into.commits.get())
+            assertEquals(listOf("vol1.cbz.part"), into.log)
+            assertTrue(into.names().isEmpty())
+        }
+    }
+
+    @Test
+    fun `a read returning while discard is still running cannot write or rename the deleted part`() {
+        val reading = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val returning = CountDownLatch(1)
+        val deleting = CountDownLatch(1)
+        val releaseDelete = CountDownLatch(1)
+        val writes = AtomicInteger()
+        val into = MemoryFolder().apply {
+            onWrite = { writes.incrementAndGet() }
+            onDiscard = {
+                deleting.countDown()
+                check(releaseDelete.await(10, TimeUnit.SECONDS))
+            }
+        }
+        val server = server(mapOf("vol1.cbz" to byteArrayOf(1)), onRead = {
+            reading.countDown()
+            check(releaseRead.await(10, TimeUnit.SECONDS))
+            returning.countDown()
+        })
+        runBlocking {
+            val job = async(Dispatchers.Default) { server.saveTo("vol1.cbz", false, into) }
+            try {
+                assertTrue(reading.await(10, TimeUnit.SECONDS))
+                job.cancel()
+                assertTrue(deleting.await(5, TimeUnit.SECONDS))
+                assertTrue(into.names().isEmpty())
+                releaseRead.countDown()
+                assertTrue(returning.await(5, TimeUnit.SECONDS))
+            } finally {
+                job.cancel()
+                releaseRead.countDown()
+                releaseDelete.countDown()
+                job.join()
+            }
+            assertThrows(CancellationException::class.java) { runBlocking { job.await() } }
+        }
+        assertEquals(0, writes.get())
+        assertEquals(0, into.commits.get())
+        assertEquals(listOf("vol1.cbz.part"), into.log)
+        assertTrue(into.names().isEmpty())
+    }
+
+    @Test
+    fun `cancelling during the final name lookup deletes the part and never calls commit`() {
+        val naming = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val discarded = CountDownLatch(1)
+        val lookups = AtomicInteger()
+        val into = MemoryFolder().apply {
+            onNames = {
+                if (lookups.incrementAndGet() == 3) {
+                    naming.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                }
+            }
+            onDiscard = { discarded.countDown() }
+        }
+        runBlocking {
+            val job = async(Dispatchers.Default) { server(mapOf("vol1.cbz" to pattern)).saveTo("vol1.cbz", false, into) }
+            try {
+                assertTrue(naming.await(10, TimeUnit.SECONDS))
+                job.cancel()
+                assertTrue(discarded.await(5, TimeUnit.SECONDS))
+                assertTrue(into.names().isEmpty())
+            } finally {
+                job.cancel()
+                release.countDown()
+                job.join()
+            }
+            assertThrows(CancellationException::class.java) { runBlocking { job.await() } }
+        }
+        assertEquals(0, into.commits.get())
+        assertTrue(into.names().isEmpty())
     }
 
     @Test

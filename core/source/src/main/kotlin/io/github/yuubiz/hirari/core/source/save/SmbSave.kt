@@ -9,11 +9,16 @@ import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import io.github.yuubiz.hirari.core.source.smb.SmbRequestException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.FileNotFoundException
@@ -37,7 +42,7 @@ const val SAVE_MAX_DEPTH = 64
  * Copies the file or folder at [path] of the share to [destination] (docs/spec.md section 4.5, 端末に保存). [path] is
  * counted from the share root. Reads through this server, so the copy shares the connection and the request permits
  * with the listings and the readers (section 8.3). Runs on the I/O dispatcher and, when the caller is cancelled, stops
- * at the next block or before renaming the last, after deleting the file it was writing.
+ * writing and renaming, and deletes the temporary file without waiting for a blocked server read.
  *
  * Each file is written under a unique `.part` name and renamed when whole. The item takes the first free name of `名前` and
  * `名前 (1)` to `名前 (9)` that no other save of this process holds ([HeldNames]). A folder is copied with everything
@@ -155,29 +160,46 @@ private class SmbSaveRun(
             val wanted = if (resolve) onDestination { HeldNames.hold(into, node.name) }.also(held::add) else node.name
             val part = onDestination { HeldNames.holdTemporary(into, wanted) }.also(held::add)
             val file = onDestination { into.create(part) }
-            try {
-                onDestination { file.freeBytes }?.let { if (it < source.size) throw NoRoomException() }
-                val buffer = ByteBuffer.allocate(SAVE_BLOCK)
-                var offset = 0L
-                while (offset < source.size) {
-                    currentCoroutineContext().ensureActive()
-                    buffer.clear()
-                    val count = readBlock(source, offset, buffer)
-                    onDestination { file.write(buffer.array(), count) }
-                    offset += count
-                    bytesDone += count
-                    written += count
-                    report()
+            return coroutineScope {
+                val context = currentCoroutineContext()
+                val lock = Any()
+                // This child can delete the destination while this coroutine is blocked in an SMB read.
+                val cleanup = launch(start = CoroutineStart.UNDISPATCHED) {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            synchronized(lock) { runCatching { file.discard() } }
+                        }
+                    }
                 }
-                currentCoroutineContext().ensureActive()
-                val final = if (resolve) onDestination { HeldNames.hold(into, node.name, own = wanted) }.also(held::add) else node.name
-                onDestination { file.commit(final) }
-                filesDone++
-                report()
-                return final
-            } catch (t: Throwable) {
-                withContext(NonCancellable) { runCatching { file.discard() } }
-                throw t
+                fun <T> useFile(block: () -> T): T = synchronized(lock) {
+                    context.ensureActive()
+                    onDestination(block)
+                }
+                try {
+                    useFile { file.freeBytes }?.let { if (it < source.size) throw NoRoomException() }
+                    val buffer = ByteBuffer.allocate(SAVE_BLOCK)
+                    var offset = 0L
+                    while (offset < source.size) {
+                        currentCoroutineContext().ensureActive()
+                        buffer.clear()
+                        val count = readBlock(source, offset, buffer)
+                        useFile { file.write(buffer.array(), count) }
+                        offset += count
+                        bytesDone += count
+                        written += count
+                        report()
+                    }
+                    currentCoroutineContext().ensureActive()
+                    val final = if (resolve) onDestination { HeldNames.hold(into, node.name, own = wanted) }.also(held::add) else node.name
+                    useFile { file.commit(final) }
+                    filesDone++
+                    report()
+                    final
+                } finally {
+                    withContext(NonCancellable) { cleanup.cancelAndJoin() }
+                }
             }
         } finally {
             held.forEach { HeldNames.release(into, it) }
