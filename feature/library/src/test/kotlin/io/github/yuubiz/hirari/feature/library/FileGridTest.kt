@@ -103,7 +103,8 @@ class FileGridTest {
         }
         return looks.map {
             look = it
-            rule.waitForIdle()
+            // The cells are prepared on Dispatchers.Default, which the test's idling does not wait for.
+            rule.waitUntil(5_000) { rule.onAllNodesWithClick().isNotEmpty() }
             rule.onAllNodesWithClick().first().boundsInRoot.height
         }
     }

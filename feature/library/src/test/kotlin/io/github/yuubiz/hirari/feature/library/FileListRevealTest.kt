@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -52,6 +53,12 @@ class FileListRevealTest {
     @Test fun thumbnailListUnfoldsTheReturnedBooksSection() = unfolds(LibraryView.ThumbnailList)
     @Test fun listUnfoldsTheReturnedBooksSection() = unfolds(LibraryView.List)
 
+    /** The cells are prepared on [kotlinx.coroutines.Dispatchers.Default], which the test's idling does not wait for. */
+    private fun shown(text: String) {
+        rule.waitUntil(5_000) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText(text).assertIsDisplayed()
+    }
+
     private fun sectioned(view: LibraryView) = FolderContent.Shown(
         rows.mapIndexed { index, row -> row.copy(mark = when {
             index < 30 -> ReadMark.Unread
@@ -68,7 +75,7 @@ class FileListRevealTest {
         rule.setContent { MaterialTheme { Box(Modifier.size(360.dp, 600.dp)) {
             FileList(shown, target.path, {}, {}, revealToken = token)
         } } }
-        rule.onNodeWithText(target.item.entry.name).assertIsDisplayed()
+        shown(target.item.entry.name)
         // The list can remain composed behind the reader. Its old viewport must not suppress a new return.
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         rule.onNodeWithText(target.item.entry.name).assertDoesNotExist()
@@ -76,7 +83,7 @@ class FileListRevealTest {
             shown = shown.copy(rows = shown.rows.map { if (it.path == target.path) it.copy(mark = ReadMark.Read) else it })
             token++
         }
-        rule.onNodeWithText(target.item.entry.name).assertIsDisplayed()
+        shown(target.item.entry.name)
     }
 
     private fun unfolds(view: LibraryView) {
@@ -94,7 +101,7 @@ class FileListRevealTest {
             reveal = target.path
             token++
         }
-        rule.onNodeWithText(target.item.entry.name).assertIsDisplayed()
+        shown(target.item.entry.name)
         // The reveal changes the fold state itself, so the header now offers to fold the section again.
         rule.onNode(hasScrollToIndexAction()).performScrollToIndex(31)
         rule.onNodeWithContentDescription("読みかけ、30 件、折りたたみ").assertIsDisplayed()
@@ -115,16 +122,16 @@ class FileListRevealTest {
                 }
             }
         }
-        rule.onNodeWithText(rows.first().item.entry.name).assertIsDisplayed()
+        shown(rows.first().item.entry.name)
         rule.runOnIdle { inFolder = false }
         rule.waitForIdle()
         rule.runOnIdle {
             reveal = rows.last().path
             inFolder = true
         }
-        rule.onNodeWithText(rows.last().item.entry.name).assertIsDisplayed()
+        shown(rows.last().item.entry.name)
         // Also handle a result while the list's composition remains alive during navigation.
         rule.runOnIdle { reveal = rows.first().path }
-        rule.onNodeWithText(rows.first().item.entry.name).assertIsDisplayed()
+        shown(rows.first().item.entry.name)
     }
 }
