@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.text
 
 import io.github.yuubiz.hirari.core.data.GlobalSettings
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.TextLayout
 import io.github.yuubiz.hirari.core.model.TextMargin
 import io.github.yuubiz.hirari.core.text.FixedGlyphMetrics
@@ -12,7 +13,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class FrameTest {
-    private val large = GlobalSettings(textSizeSp = 62, textMargin = TextMargin.Wide, textLayout = TextLayout.Single)
+    private val large = GlobalSettings(barDisplay = BarDisplay.Hidden, textSizeSp = 62, textMargin = TextMargin.Wide, textLayout = TextLayout.Single)
 
     private fun assertInside(frame: PageFrame) {
         assertTrue(frame.margin >= 0f)

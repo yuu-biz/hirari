@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.CommandTargets
+import io.github.yuubiz.hirari.core.model.CommandCells
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.PanelTarget
@@ -24,20 +25,13 @@ fun ReaderState.commandPanel(): CommandPanel {
 
 /** A visible row keeps the two end buttons and reserves its last middle cell for その他 when needed. */
 data class CommandRow(val commands: List<ReaderCommand>, val bounds: Rect) {
-    val cells: List<PanelItem> = run {
-        val middle = ((bounds.width / 56f).toInt() - 2).coerceAtLeast(1)
-        val items = if (commands.size > middle) commands.take(middle - 1).map { PanelItem.Command(it) } + PanelItem.More else commands.map { PanelItem.Command(it) }
-        listOf(PanelItem.Close) + items + PanelItem.Menu
-    }
-    val cellWidth: Float get() = bounds.width / cells.size
-
-    fun itemAt(point: Point): PanelItem? {
-        if (point.x < bounds.left || point.x >= bounds.right || point.y < bounds.top || point.y >= bounds.bottom) return null
-        return cells.getOrNull(((point.x - bounds.left) / cellWidth).toInt())
-    }
-
-    /** A slide cancels the press, including a slide that ends on another cell. */
-    fun tapped(origin: Point, released: Point, moved: Boolean): PanelItem? = itemAt(origin)?.takeIf { !moved && it == itemAt(released) }
+    val layout = CommandCells<PanelItem>(
+        commands.map { PanelItem.Command(it) }, PanelItem.Close, PanelItem.Menu, PanelItem.More, bounds,
+    )
+    val cells get() = layout.cells
+    val cellWidth get() = layout.cellWidth
+    fun itemAt(point: Point): PanelItem? = layout.itemAt(point)
+    fun tapped(origin: Point, released: Point, moved: Boolean): PanelItem? = layout.tapped(origin, released, moved)
 }
 
 fun ReaderState.commandRow(): CommandRow? = area.regions.commandRow?.let { CommandRow(config.commandBarItems, it) }

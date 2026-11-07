@@ -9,6 +9,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +42,7 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -75,6 +78,7 @@ import io.github.yuubiz.hirari.core.model.PageBarState
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.Sibling
+import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.TextLayout
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.text.GlyphContent
@@ -239,12 +243,7 @@ fun TextReaderScreen(
                     s, viewModel, touch, bounds,
                     onRegionTouch = { touched++ },
                     onPanel = { panel = it },
-                    onItem = { item ->
-                        when (item) {
-                            TextPanelItem.Close -> back()
-                            is TextPanelItem.Command -> run(item.command)
-                        }
-                    },
+                    onItem = { item -> runTextItem(item, back, { panel = it }, run) },
                     turn = ::turn,
                     accessible = textContentAccessible(panel, bookEndEdge),
                     onControl = { control ->
@@ -317,7 +316,7 @@ private fun Reading(
     val input = remember(viewModel, panelBounds) {
         TextInput({ current }, viewModel, touch, onRegionTouch, onPanel, panelBounds, onItem, { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }, turn, { edges })
     }
-    Box(
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(readerBackgroundColor(state.settings.readerBackground))
@@ -326,8 +325,11 @@ private fun Reading(
             .pointerInput(input) { with(input) { handle() } }
             .then(if (accessible) Modifier.textAccessibility(state, onControl) else Modifier.clearAndSetSemantics {}),
     ) {
+        val regions = textRegions(Size(constraints.maxWidth / density.density, constraints.maxHeight / density.density), state.settings)
         PageBarGestureExclusion(state.settings.barHeightDp.toFloat())
-        if (accessible) {
+        if (regions.commandRow != null) {
+            TextBars(state, regions, onControl, onItem)
+        } else if (accessible) {
             BarSemantics(
                 state.settings.barHeightDp.toFloat(),
                 commandBar = stringResource(R.string.a11y_command_bar),
@@ -338,14 +340,17 @@ private fun Reading(
                 onPages = { onControl(TextControl.OpenPages) },
             )
         }
-        val frame = state.frame
-        val run = state.run
-        if (frame != null && run != null) {
-            if (frame.continuous) ContinuousPages(state, viewModel, touch) else ShownPages(state, viewModel, touch)
-        } else {
-            Box(Modifier.fillMaxSize().background(Color(argb(state.colors.paper))), contentAlignment = Alignment.Center) { DelayedProgress() }
+        val pageArea = regions.pageArea
+        Box(Modifier.offset(pageArea.left.dp, pageArea.top.dp).size(pageArea.width.dp, pageArea.height.coerceAtLeast(0f).dp).clipToBounds()) {
+            val frame = state.frame
+            val run = state.run
+            if (frame != null && run != null) {
+                if (frame.continuous) ContinuousPages(state, viewModel, touch) else ShownPages(state, viewModel, touch)
+            } else {
+                Box(Modifier.fillMaxSize().background(Color(argb(state.colors.paper))), contentAlignment = Alignment.Center) { DelayedProgress() }
+            }
+            (touch.pageBar as? PageBarState.Dragging)?.let { PageBarPreview(state, it, touch.pageBarRun) }
         }
-        (touch.pageBar as? PageBarState.Dragging)?.let { PageBarPreview(state, it, touch.pageBarRun) }
     }
 }
 

@@ -41,6 +41,7 @@ import io.github.yuubiz.hirari.core.model.turnMovement
 import io.github.yuubiz.hirari.core.ui.HoldTimer
 import io.github.yuubiz.hirari.core.ui.awaitOrHold
 import io.github.yuubiz.hirari.core.ui.takenBySystem
+import kotlin.math.hypot
 
 /** A text always binds on the right (docs/spec.md section 4.9, 操作). */
 internal val TEXT_DIRECTION = ReadingDirection.RightToLeft
@@ -187,14 +188,34 @@ internal class TextInput(
             val down = awaitFirstDown(requireUnconsumed = false)
             val current = state()
             val settings = current?.settings ?: openingSettings()
-            val regions = ReaderRegions(Size(size.width / density, size.height / density), settings.barHeightDp.toFloat(), edges())
+            val regions = textRegions(Size(size.width / density, size.height / density), settings, edges())
             val slop = viewConfiguration.touchSlop / density
             onTouch()
             touch.motion = null
             when (regions.regionAt(down.position.dp(density))) {
-                ReaderRegion.CommandBar, ReaderRegion.CommandRow -> if (current != null) commandBar(down, settings, slop)
+                ReaderRegion.CommandBar -> if (current != null) commandBar(down, settings, slop)
+                ReaderRegion.CommandRow -> if (current != null) commandRow(down, regions, slop)
                 ReaderRegion.PageBar -> if (current != null) pageBar(down, current, regions, slop)
                 ReaderRegion.TurnArea -> turnArea(down, settings, current == null || current.frame?.continuous == true, regions, slop)
+            }
+        }
+    }
+
+    private suspend fun AwaitPointerEventScope.commandRow(down: PointerInputChange, regions: ReaderRegions, slop: Float) {
+        val row = textCommandRow(regions) ?: return
+        val origin = down.position.dp(density)
+        var moved = false
+        down.consume()
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == down.id } ?: return
+            val taken = change.takenBySystem
+            val point = change.position.dp(density)
+            moved = moved || hypot(point.x - origin.x, point.y - origin.y) > slop || event.changes.any { it.id != down.id }
+            event.changes.forEach { it.consume() }
+            if (!change.pressed) {
+                if (!taken) row.tapped(origin, point, moved)?.let(onItem)
+                return
             }
         }
     }

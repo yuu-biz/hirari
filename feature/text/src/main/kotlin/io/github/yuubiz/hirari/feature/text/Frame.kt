@@ -18,7 +18,7 @@ const val INFO_SCALE = 0.8f
 /**
  * Where one page goes, in pixels (docs/spec.md section 4.9). A page is [pageWidth] by [pageHeight]. Its text area,
  * the size the engine lays out in, sits [margin] in from each side, below a band of [band] for the title and above
- * one for the page number.
+ * one for the page number. Both bands are zero while the screen's strips show that information.
  */
 data class PageFrame(
     val pageWidth: Float,
@@ -36,6 +36,8 @@ data class PageFrame(
 
 /** The page frame for [viewport] under the text settings. 自動 is a spread on a screen wider than tall. */
 fun pageFrame(viewport: Viewport, settings: GlobalSettings): PageFrame {
+    val regions = viewport.textRegions(settings)
+    val pageArea = regions.pageArea
     val fontSize = settings.textSizeSp * viewport.density * viewport.fontScale
     val spread = when (settings.textLayout) {
         TextLayout.Spread -> true
@@ -45,9 +47,9 @@ fun pageFrame(viewport: Viewport, settings: GlobalSettings): PageFrame {
     val pages = if (spread) 2 else 1
     val continuous = settings.textLayout == TextLayout.Continuous
     val gutter = if ((spread && settings.gutterStyle == GutterStyle.Gap) || continuous) GUTTER_DP * viewport.density else 0f
-    val pageWidth = (viewport.width - gutter * (pages - 1)) / pages
-    val pageHeight = viewport.height.toFloat()
-    var band = fontSize * INFO_SCALE * 2
+    val pageWidth = (pageArea.width * viewport.density - gutter * (pages - 1)) / pages
+    val pageHeight = (pageArea.height * viewport.density).coerceAtLeast(1f)
+    var band = if (regions.commandRow != null) 0f else fontSize * INFO_SCALE * 2
     val minimum = fontSize * 2
     val margin = minOf(
         settings.textMargin.dp * viewport.density,

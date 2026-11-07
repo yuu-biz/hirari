@@ -1,5 +1,10 @@
 package io.github.yuubiz.hirari.feature.reader
 
+import io.github.yuubiz.hirari.core.ui.Battery
+import io.github.yuubiz.hirari.core.ui.PowerSource
+import io.github.yuubiz.hirari.core.ui.batteryOf
+import io.github.yuubiz.hirari.core.ui.statusText
+
 import android.content.Intent
 import android.os.BatteryManager
 import androidx.compose.foundation.layout.Box

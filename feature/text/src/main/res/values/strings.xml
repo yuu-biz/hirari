@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="text_command_more">その他</string>
     <string name="text_failed_not_found">テキストが見つかりません</string>
     <string name="text_failed_no_permission">テキストを読む許可がありません。もう一度選んでください</string>
     <string name="text_failed_no_room">複製する空き容量が足りないので開けません</string>

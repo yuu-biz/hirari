@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.feature.text
 
 import io.github.yuubiz.hirari.core.model.KeyCodes
+import io.github.yuubiz.hirari.core.model.BarDisplay
 import io.github.yuubiz.hirari.core.model.Point
 import io.github.yuubiz.hirari.core.model.Size
 import io.github.yuubiz.hirari.core.model.ReaderRegions
@@ -41,7 +42,7 @@ class TextReaderModelTest {
     private val progress = FakeProgress()
     private val bookmarks = FakeBookmarks()
     private val history = FakeHistory()
-    private val settings = MutableStateFlow(GlobalSettings(textSizeSp = 20, textLayout = TextLayout.Single))
+    private val settings = MutableStateFlow(GlobalSettings(barDisplay = BarDisplay.Hidden, textSizeSp = 20, textLayout = TextLayout.Single))
     private val screen = Viewport(width = 400, height = 600, density = 1f)
     private var closed = 0
 
@@ -129,6 +130,38 @@ class TextReaderModelTest {
     }
 
     private val TextReaderModel.page: TextPage get() = reading.let { assertNotNull(it.page(it.current), "page ${it.current} is laid out") }
+
+    @Test
+    fun `portrait bars reframe on rotation and keep the source position through repeated layouts`() = runTest {
+        settings.value = settings.value.copy(barDisplay = BarDisplay.Portrait)
+        val offset = source.indexOf("名前はまだ3章の10 番目")
+        assertTrue(offset > 0)
+        val model = model(startOffset = offset.toLong())
+        settle()
+        val portraitParams = model.reading.frame!!.params
+        assertEquals(screen.height - 3f * settings.value.barHeightDp, model.reading.frame!!.pageHeight)
+        assertEquals(0f, model.reading.frame!!.band)
+        repeat(3) {
+            model.onViewport(Viewport(600, 400, 1f))
+            settle()
+            assertTrue(model.reading.frame!!.band > 0f)
+            assertEquals(400f, model.reading.frame!!.pageHeight)
+            assertTrue(offset in model.page)
+            model.onViewport(screen)
+            settle()
+            assertEquals(portraitParams, model.reading.frame!!.params)
+            assertEquals(0f, model.reading.frame!!.band)
+            assertTrue(offset in model.page)
+        }
+        settings.value = settings.value.copy(barDisplay = BarDisplay.Hidden)
+        settle()
+        assertEquals(screen.height.toFloat(), model.reading.frame!!.pageHeight)
+        assertTrue(model.reading.frame!!.band > 0f)
+        assertTrue(offset in model.page)
+        model.onStop()
+        settle()
+        assertEquals(offset.toLong(), (progress.stored.value.getValue(id).position as ReadingPosition.Text).charOffset)
+    }
 
     /** The pages of [text] laid out whole from its start, as a reader that opens at the start lays them out. */
     private fun pagesOf(text: String = source): List<TextPage> =

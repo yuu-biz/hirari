@@ -94,7 +94,18 @@ internal enum class TextCommand(val label: Int) {
 internal sealed interface TextPanelItem : PanelTarget {
     data object Close : TextPanelItem
 
+    data object More : TextPanelItem
+
     data class Command(val command: TextCommand) : TextPanelItem
+}
+
+/** Both the panel and the visible row run the same text commands. */
+internal fun runTextItem(item: TextPanelItem, onClose: () -> Unit, onPanel: (TextPanel?) -> Unit, onCommand: (TextCommand) -> Unit) {
+    when (item) {
+        TextPanelItem.Close -> onClose()
+        TextPanelItem.More -> onPanel(TextPanel.Commands)
+        is TextPanelItem.Command -> onCommand(item.command)
+    }
 }
 
 /**

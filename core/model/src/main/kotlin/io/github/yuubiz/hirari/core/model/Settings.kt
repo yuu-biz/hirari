@@ -9,7 +9,7 @@ enum class BookEndAction { Ask, NextBook, Close, Stop }
 
 enum class GutterStyle { None, Gap, Shadow }
 
-/** The image reader's `barDisplay` setting (docs/spec.md section 4.8, バーを出す表示). */
+/** Both readers' `barDisplay` setting (docs/spec.md section 4.8, バーを出す表示). */
 enum class BarDisplay {
     Hidden, Portrait, Always;
 

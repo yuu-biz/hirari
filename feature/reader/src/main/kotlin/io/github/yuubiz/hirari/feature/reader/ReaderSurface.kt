@@ -46,19 +46,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.isTraversalGroup
-import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.paneTitle
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.text.TextAutoSize
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.ReaderCommandCell
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
@@ -586,26 +583,11 @@ private fun CommandPanelView(panel: CommandPanel, state: CommandBarState, onItem
 /** The same text cell in the panel and the visible command row. Touches are routed by [ReaderInput]. */
 @Composable
 internal fun CommandCell(item: PanelItem, color: Color, modifier: Modifier, onItem: (PanelItem) -> Unit) {
-    Box(
-        modifier.semantics(mergeDescendants = true) {
-            role = Role.Button
-            onClick {
-                onItem(item)
-                true
-            }
-        },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            item.label(), Modifier.padding(horizontal = 4.dp), color = color,
-            textAlign = TextAlign.Center, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis,
-            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 13.sp),
-        )
-    }
+    ReaderCommandCell(item.label(), color, modifier) { onItem(item) }
 }
 
 @Composable
-private fun PanelItem.label(): String = when (this) {
+internal fun PanelItem.label(): String = when (this) {
     PanelItem.Close -> stringResource(R.string.panel_close)
     PanelItem.Menu -> stringResource(R.string.panel_menu)
     PanelItem.More -> stringResource(R.string.panel_more)
