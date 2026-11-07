@@ -65,12 +65,13 @@ class SettingsTableTest {
     }
 
     @Test
-    fun `every field of GlobalSettings except file edits has a row`() {
+    fun `every field of GlobalSettings has a row`() {
         val fields = GlobalSettings.serializer().descriptor.elementNames.toSet()
         val keys = SettingsTable.map { it.key }
         assertEquals(76, keys.size)
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
-        assertEquals(fields - "allowFileEdits", keys.toSet())
+        assertEquals(fields, keys.toSet())
+        assertEquals(75, keys.size)
     }
 
     @Test
@@ -84,9 +85,9 @@ class SettingsTableTest {
     }
 
     @Test
-    fun `file edits stay hidden while their stored value remains compatible`() {
+    fun `file edits appear in the library with the compatible default off`() {
         for (sdk in listOf(28, 30, 31, Int.MAX_VALUE)) {
-            assertTrue(settingsFor(sdk).values.flatten().none { it.key == "allowFileEdits" })
+            assertTrue(settingsFor(sdk).getValue(SettingGroup.Library).any { it.key == "allowFileEdits" })
         }
         assertEquals(false, GlobalSettings().allowFileEdits)
         assertEquals(false, json.decodeFromString(GlobalSettings.serializer(), "{}").allowFileEdits)

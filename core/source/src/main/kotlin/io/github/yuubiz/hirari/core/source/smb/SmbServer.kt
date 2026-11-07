@@ -16,6 +16,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.io.Closeable
 import java.io.IOException
 import kotlin.concurrent.thread
@@ -109,6 +111,27 @@ class SmbServer internal constructor(
      */
     suspend fun list(path: String, purpose: SmbPurpose = SmbPurpose.Foreground): List<SmbEntry> =
         withContext(io) { request(purpose) { it.connection.list(path) } }
+
+    suspend fun rename(path: String, destination: String) = withContext(io) {
+        require(path.isNotBlank() && destination.isNotBlank())
+        request(SmbPurpose.Foreground) { it.connection.rename(path, destination) }
+    }
+
+    /** Postorder deletion through the shared connection and foreground request gate. */
+    suspend fun delete(path: String, directory: Boolean) = withContext(io) {
+        require(path.isNotBlank())
+        val pending = ArrayDeque<Triple<String, Boolean, Boolean>>()
+        pending.add(Triple(path, directory, false))
+        while (pending.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            val (next, folder, visited) = pending.removeLast()
+            if (folder && !visited) {
+                val children = list(next)
+                pending.add(Triple(next, true, true))
+                children.forEach { pending.add(Triple(it.path, it.isDirectory, false)) }
+            } else request(SmbPurpose.Foreground) { it.connection.delete(next, folder) }
+        }
+    }
 
     /**
      * Opens the file at [path] for random access. Blocks. Every read of the file is a request for [purpose].

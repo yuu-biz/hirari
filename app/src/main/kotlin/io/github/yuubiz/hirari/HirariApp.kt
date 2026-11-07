@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari
 
+import android.content.ComponentCallbacks2
+
 import android.app.Application
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -125,6 +127,15 @@ class HirariApp : Application() {
                 covers = covers,
                 saves = DeviceSaves(smb, SafSaveFolders(contentResolver), appScope) { result -> SaveNotifications(this@HirariApp).finished(result) },
                 appScope = appScope,
+                fileEdits = io.github.yuubiz.hirari.feature.library.FileEdits(
+                    io.github.yuubiz.hirari.feature.library.DeviceFileEditStorage(contentResolver, folders, smb),
+                    storage.itemRecords,
+                    DeviceArchives(contentResolver, cacheDir, smb),
+                ) { ids ->
+                    storage.thumbnails.removeBooks(ids)
+                    io.github.yuubiz.hirari.feature.library.removeExtracted(cacheDir, ids)
+                    covers.trimMemory(ComponentCallbacks2.TRIM_MEMORY_BACKGROUND)
+                },
             )
         }
         appScope.launch { runSaveService() }

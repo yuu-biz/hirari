@@ -48,6 +48,19 @@ class ThumbnailCacheTest {
     private suspend fun ThumbnailCache.isHit(name: String) = get(key(name)) is ThumbLookup.Hit
 
     @Test
+    fun `file edits discard every size and failure of old ids and keep sibling thumbnails`() = runTest {
+        cache.put(key("old"), bytes(10))
+        cache.put(key("old").copy(sizePx = 600), bytes(10))
+        cache.markFailed(key("old").copy(sizePx = 100))
+        cache.put(key("sibling"), bytes(10))
+        cache.removeBooks(setOf(BookId("old")))
+        assertIs<ThumbLookup.Miss>(cache.get(key("old")))
+        assertIs<ThumbLookup.Miss>(cache.get(key("old").copy(sizePx = 600)))
+        assertIs<ThumbLookup.Miss>(cache.get(key("old").copy(sizePx = 100)))
+        assertTrue(cache.isHit("sibling"))
+    }
+
+    @Test
     fun `resuming clears interrupted failures after reopening the cache and preserves decode failures`() = runTest {
         val making = folder.newFolder("interrupted")
         cache.markFailed(key("corrupt"))

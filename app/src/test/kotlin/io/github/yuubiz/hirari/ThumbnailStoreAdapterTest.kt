@@ -56,6 +56,8 @@ class ThumbnailStoreAdapterTest {
         var clearedInterrupted = 0
 
         override suspend fun clearInterrupted() { clearedInterrupted++ }
+
+        override suspend fun removeBooks(books: Set<BookId>) = Unit
     }
 
     private val book = ThumbnailKey(BookId("book"), Instant.ofEpochMilli(1234), 99, coverEntry = 3, sizePx = 320, direction = ReadingDirection.LeftToRight)

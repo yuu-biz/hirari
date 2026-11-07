@@ -113,6 +113,10 @@ interface SmbPlaces {
 
     /** Drops the connection of the place [id], so the next request logs on with what is stored now. */
     suspend fun forget(id: LocationId)
+
+    suspend fun rename(place: LibraryLocation.SmbShare, path: String, destination: String) { throw UnsupportedOperationException() }
+
+    suspend fun delete(place: LibraryLocation.SmbShare, path: String, directory: Boolean) { throw UnsupportedOperationException() }
 }
 
 /** One value each time these states go from reconnecting or lost to connected (docs/spec.md section 6.5). */
@@ -181,7 +185,7 @@ class SmbjPlaces(
         return try {
             val server = shares.server(place)
             val entries = server.list(normalizePath("${place.basePath}/$path"), purpose).map {
-                FolderEntry(it.name, documentId = null, directory = it.isDirectory, size = it.size, modified = it.modified)
+                FolderEntry(it.name, documentId = null, directory = it.isDirectory, size = it.size, modified = it.modified, canRename = true, canDelete = true)
             }
             Listing.Listed(folderDocumentId = null, entries)
         } catch (e: CancellationException) {
@@ -278,6 +282,16 @@ class SmbjPlaces(
     }
 
     override suspend fun forget(id: LocationId) = shares.forget(id)
+
+    override suspend fun rename(place: LibraryLocation.SmbShare, path: String, destination: String) {
+        if (!localNetwork.granted()) throw SecurityException()
+        shares.server(place).rename(normalizePath("${place.basePath}/$path"), normalizePath("${place.basePath}/$destination"))
+    }
+
+    override suspend fun delete(place: LibraryLocation.SmbShare, path: String, directory: Boolean) {
+        if (!localNetwork.granted()) throw SecurityException()
+        shares.server(place).delete(normalizePath("${place.basePath}/$path"), directory)
+    }
 
     private suspend fun SmbServer.connectTo(folder: String): SmbTestResult = when (val connected = check()) {
         is SmbConnectResult.Failed -> SmbTestResult.Failed(

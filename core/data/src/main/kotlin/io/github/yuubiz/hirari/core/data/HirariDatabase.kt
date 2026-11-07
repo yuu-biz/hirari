@@ -34,6 +34,7 @@ internal abstract class HirariDatabase : RoomDatabase() {
     abstract fun bookmarks(): BookmarkDao
     abstract fun bookOverrides(): BookOverridesDao
     abstract fun folders(): FolderDao
+    abstract fun itemRecords(): ItemRecordsDao
 }
 
 internal fun <T : RoomDatabase> RoomDatabase.Builder<T>.configure(): T =

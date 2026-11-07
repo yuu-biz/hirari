@@ -11,7 +11,12 @@ internal const val FAR_OFFSET = 128 * 1024
  * An in-memory share. [breakConnection] makes every later request on it fail as a dropped connection does; [end] also
  * makes it report itself closed, as a transport that saw its socket reset does.
  */
-internal class FakeShare(private val files: Map<String, ByteArray>, private val onRead: () -> Unit = {}) : ShareConnection {
+internal class FakeShare(files: Map<String, ByteArray>, private val onRead: () -> Unit = {}) : ShareConnection {
+    private val files = files.toMutableMap()
+    private val directories = files.keys.flatMap { path ->
+        generateSequence(path.substringBeforeLast('/', "")) { it.substringBeforeLast('/', "").takeIf(String::isNotEmpty) }.filter(String::isNotEmpty).toList()
+    }.toMutableSet()
+    val deleted = mutableListOf<String>()
     @Volatile
     var broken = false
         private set
@@ -43,7 +48,29 @@ internal class FakeShare(private val files: Map<String, ByteArray>, private val 
         ensureOpen()
         return files.keys.filter { it.substringBeforeLast('/', "") == path }.map {
             SmbEntry(it.substringAfterLast('/'), it, false, files.getValue(it).size.toLong(), Instant.EPOCH)
-        }
+        } + directories.filter { it.substringBeforeLast('/', "") == path }.map { SmbEntry(it.substringAfterLast('/'), it, true, 0, Instant.EPOCH) }
+    }
+
+    override fun rename(path: String, destination: String) {
+        ensureOpen()
+        if (destination in files || destination in directories) throw SmbRequestException("STATUS_OBJECT_NAME_COLLISION")
+        if (path !in files && path !in directories) throw FileNotFoundException()
+        fun within(value: String) = value == path || value.startsWith("$path/")
+        val movedFiles = files.filterKeys(::within)
+        movedFiles.keys.forEach(files::remove)
+        movedFiles.forEach { (key, value) -> files[destination + key.removePrefix(path)] = value }
+        val movedDirectories = directories.filter(::within)
+        directories.removeAll(movedDirectories.toSet())
+        directories.addAll(movedDirectories.map { destination + it.removePrefix(path) })
+    }
+
+    override fun delete(path: String, directory: Boolean) {
+        ensureOpen()
+        if (directory) {
+            check(files.keys.none { it.startsWith("$path/") } && directories.none { it.startsWith("$path/") })
+            if (!directories.remove(path)) throw FileNotFoundException()
+        } else if (files.remove(path) == null) throw FileNotFoundException()
+        deleted += path
     }
 
     override fun open(path: String): RemoteFile {

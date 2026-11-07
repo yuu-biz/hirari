@@ -39,8 +39,8 @@ class TreeProvider : ContentProvider() {
     val queryCancelled = CountDownLatch(1)
 
     private val children = mapOf(
-        "root" to listOf(arrayOf<Any?>("dir", "漫画", Document.MIME_TYPE_DIR, null, 1_000L)),
-        "dir" to listOf(arrayOf<Any?>("zip", "1巻.zip", "application/zip", 1234L, 2_000L)),
+        "root" to listOf(arrayOf<Any?>("dir", "漫画", Document.MIME_TYPE_DIR, null, 1_000L, Document.FLAG_SUPPORTS_RENAME)),
+        "dir" to listOf(arrayOf<Any?>("zip", "1巻.zip", "application/zip", 1234L, 2_000L, Document.FLAG_SUPPORTS_DELETE)),
     )
 
     override fun onCreate() = true
@@ -57,7 +57,7 @@ class TreeProvider : ContentProvider() {
             check(queryCancelled.await(10, TimeUnit.SECONDS)) { "the provider was never told to stop" }
             signal.throwIfCanceled()
         }
-        val columns = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED)
+        val columns = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED, Document.COLUMN_FLAGS)
         return MatrixCursor(columns).apply { children[parent].orEmpty().forEach(::addRow) }
     }
 
@@ -132,6 +132,8 @@ class ListFolderTest {
         assertEquals("dir", folder.documentId)
         assertEquals(listOf("1巻.zip"), folder.children.map { it.name })
         assertEquals(1234L, folder.children.single().size)
+        assertEquals(Document.FLAG_SUPPORTS_DELETE, folder.children.single().flags)
+        assertEquals(Document.FLAG_SUPPORTS_RENAME, resolver.listChildren(tree).single().flags)
         assertNull(resolver.listFolder(tree, "小説"))
     }
 

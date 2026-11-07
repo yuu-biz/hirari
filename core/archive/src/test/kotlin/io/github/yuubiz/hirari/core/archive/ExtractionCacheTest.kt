@@ -81,6 +81,20 @@ class ExtractionCacheTest {
     }
 
     @Test
+    fun `file edits discard all old generations and leave sibling books`() {
+        val old = ExtractionCache.directory(temp.root, BookId("old"), 100, 1_000)
+        val newer = ExtractionCache.directory(temp.root, BookId("old"), 100, 2_000)
+        val sibling = ExtractionCache.directory(temp.root, BookId("sibling"), 100, 1_000)
+        old.fill("0", 10)
+        newer.fill("0", 20)
+        sibling.fill("0", 30)
+        ExtractionCache.under(temp.root).removeBooks(setOf(BookId("old")))
+        assertFalse(old.exists())
+        assertFalse(newer.exists())
+        assertTrue(sibling.resolve("0").isFile)
+    }
+
+    @Test
     fun `clearing twice frees nothing the second time`() {
         val root = temp.newFolder("extract")
         root.fill("book/0", 10)

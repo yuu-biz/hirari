@@ -43,6 +43,8 @@ data class FolderEntry(
     val directory: Boolean,
     val size: Long?,
     val modified: Instant?,
+    val canRename: Boolean = false,
+    val canDelete: Boolean = false,
 )
 
 /**
@@ -85,6 +87,7 @@ class LibraryServices(
     val saves: DeviceSaves,
     val appScope: CoroutineScope,
     val clock: () -> Instant = Instant::now,
+    val fileEdits: FileEdits? = null,
 ) {
     /** The choices of folder covers under way, by place and folder path. */
     internal val folderCoverRuns = LatestRuns<Pair<LocationId, String>>(appScope)

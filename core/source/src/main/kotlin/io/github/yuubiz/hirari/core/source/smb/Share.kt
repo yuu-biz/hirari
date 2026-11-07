@@ -23,6 +23,10 @@ internal interface ShareConnection {
 
     fun open(path: String): RemoteFile
 
+    fun rename(path: String, destination: String) { throw UnsupportedOperationException() }
+
+    fun delete(path: String, directory: Boolean) { throw UnsupportedOperationException() }
+
     /** Drops the connection without waiting on the server, which may have stopped answering. */
     fun closeNow()
 }

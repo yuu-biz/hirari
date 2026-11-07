@@ -80,6 +80,7 @@ class DocumentChild(
     val mimeType: String?,
     val size: Long?,
     val lastModifiedMs: Long? = null,
+    val flags: Int = 0,
 ) {
     val isDirectory: Boolean get() = mimeType == Document.MIME_TYPE_DIR
 }
@@ -112,6 +113,7 @@ fun ContentResolver.listChildren(
                 mimeType = it.getString(2),
                 size = if (it.isNull(3)) null else it.getLong(3),
                 lastModifiedMs = if (it.isNull(4)) null else it.getLong(4).takeIf { ms -> ms > 0 },
+                flags = if (it.columnCount <= 5 || it.isNull(5)) 0 else it.getInt(5),
             )
         }
         children
@@ -196,6 +198,7 @@ private val CHILD_COLUMNS = arrayOf(
     Document.COLUMN_MIME_TYPE,
     Document.COLUMN_SIZE,
     Document.COLUMN_LAST_MODIFIED,
+    Document.COLUMN_FLAGS,
 )
 
 /**

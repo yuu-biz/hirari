@@ -17,7 +17,11 @@ import kotlin.coroutines.cancellation.CancellationException
 class SafTreeGrants(private val resolver: ContentResolver) : TreeGrants {
     override suspend fun take(tree: UriString): Boolean = withContext(Dispatchers.IO) {
         try {
-            resolver.takePersistableUriPermission(Uri.parse(tree.value), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            try {
+                resolver.takePersistableUriPermission(Uri.parse(tree.value), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } catch (_: SecurityException) {
+                resolver.takePersistableUriPermission(Uri.parse(tree.value), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             true
         } catch (_: SecurityException) {
             false
@@ -70,7 +74,9 @@ class SafFolderLister(private val resolver: ContentResolver) : FolderLister {
         try {
             val folder = resolver.listFolder(uri, path, documentId) ?: return@withContext Listing.Failed(ListFailure.NotFound)
             val entries = folder.children.map { child ->
-                FolderEntry(child.name, child.documentId, child.isDirectory, child.size, child.lastModifiedMs?.let(Instant::ofEpochMilli))
+                FolderEntry(child.name, child.documentId, child.isDirectory, child.size, child.lastModifiedMs?.let(Instant::ofEpochMilli),
+                    canRename = child.flags and DocumentsContract.Document.FLAG_SUPPORTS_RENAME != 0,
+                    canDelete = child.flags and DocumentsContract.Document.FLAG_SUPPORTS_DELETE != 0)
             }
             Listing.Listed(folder.documentId, entries)
         } catch (e: CancellationException) {

@@ -219,7 +219,7 @@ class SafSaveFolderTest {
         val server = SmbServer(FakeConnector(files), SmbLogin.Guest, scope, emptyFlow(), Dispatchers.IO, 15.seconds)
         val root = SafSaveFolder(resolver, tree)
         val outcome = runBlocking { server.saveTo("shelf", true, root) }
-        assertEquals(SaveOutcome.Saved("shelf", 1, bytes.size.toLong()), outcome)
+        assertEquals(SaveOutcome.Saved("shelf", 2, bytes.size + 2L), outcome)
         val shelf = provider.named("shelf")!!
         assertContentEquals(bytes, provider.childrenOf(shelf.id).single { it.name == "vol1.cbz" }.file!!.readBytes())
         assertTrue(provider.docs.values.none { it.name.endsWith(SAVE_PART_SUFFIX) })

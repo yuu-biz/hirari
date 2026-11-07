@@ -26,6 +26,8 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,6 +92,7 @@ data class FolderUi(
     val pinnedId: Long? = null,
     val refreshing: Boolean = false,
     val favorite: Boolean = false,
+    val allowFileEdits: Boolean = false,
 )
 
 /** What a tap on a row opens. */
@@ -181,6 +184,8 @@ class FolderViewModel(
                 FolderUi(place?.displayName.orEmpty(), folder.path, content, notice, canSave = place is LibraryLocation.SmbShare, pinnedId, refreshing)
             }.combine(services.locations.favorites) { ui, favorites ->
                 ui.copy(favorite = favorites.any { it.location == folder.location && it.path == normalizePath(folder.path) })
+            }.combine(services.settings.settings) { ui, settings ->
+                ui.copy(allowFileEdits = settings.allowFileEdits)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), FolderUi("", folder.path, FolderContent.Loading))
@@ -325,6 +330,31 @@ class FolderViewModel(
 
     fun dismissNotice() {
         notice.value = null
+    }
+
+    private suspend fun editContext(): Pair<LibraryServices, LibraryLocation> {
+        val services = services.await()
+        check(services.settings.settings.first().allowFileEdits)
+        return services to checkNotNull(place.value)
+    }
+
+    suspend fun countForDelete(row: FileRow, progress: (Int) -> Unit): Int {
+        val (services, place) = editContext()
+        return checkNotNull(services.fileEdits).count(place, row.path, progress)
+    }
+
+    suspend fun rename(row: FileRow, stem: String): FileEditResult = withContext(NonCancellable) {
+        val (services, place) = editContext()
+        val result = checkNotNull(services.fileEdits).rename(place, row, stem)
+        refresh()
+        result
+    }
+
+    suspend fun delete(row: FileRow): FileEditResult = withContext(NonCancellable) {
+        val (services, place) = editContext()
+        val result = checkNotNull(services.fileEdits).delete(place, row)
+        refresh()
+        result
     }
 
     fun show(message: Notice) {

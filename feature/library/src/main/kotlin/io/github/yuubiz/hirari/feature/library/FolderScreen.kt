@@ -105,6 +105,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
     LaunchedEffect(returnTo) { returnTo?.let(actions.returnTo) }
     var filtering by rememberSaveable { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<FileRow?>(null) }
+    var editFor by remember { mutableStateOf<Pair<FileRow, Boolean>?>(null) }
     var adjusting by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalResources.current
@@ -202,7 +203,7 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
         var folderBook by remember(model, row) { mutableStateOf<OpenBookRequest?>(null) }
         LaunchedEffect(model, row) { folderBook = model.folderBook(row) }
         ModalBottomSheet(onDismissRequest = { sheetFor = null }) {
-            RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty(), canSave = state.canSave, canReadFolder = folderBook != null) { action ->
+            RowSheet(row, hasShortcut = model.shortcut(row) != null, folderCoverChosen = (state.content as? FolderContent.Shown)?.folderCoverPath == row.path, canChooseCover = state.path.isNotEmpty(), canSave = state.canSave, canReadFolder = folderBook != null, allowFileEdits = state.allowFileEdits) { action ->
                 sheetFor = null
                 when (action) {
                     SheetAction.Open -> open(row)
@@ -223,6 +224,8 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                     SheetAction.Pin -> model.pin(row)
                     SheetAction.Favorite -> model.toggleFavorite(row)
                     SheetAction.Remake -> model.remake(row)
+                    SheetAction.Rename -> editFor = row to true
+                    SheetAction.Delete -> editFor = row to false
                     SheetAction.Save -> scope.launch {
                         savePath = row.path
                         pickDestination.launch(model.lastSaveFolder()?.let { Uri.parse(it.value) })
@@ -234,6 +237,11 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
                 }
             }
         }
+    }
+    editFor?.let { (row, rename) ->
+        FileEditDialog(row, rename, model::countForDelete,
+            onConfirm = { stem -> if (rename) model.rename(row, stem) else model.delete(row) },
+            onDismiss = { editFor = null })
     }
 }
 
@@ -458,12 +466,12 @@ private fun ListFailed(reason: ListFailure, onRetry: () -> Unit) {
     }
 }
 
-internal enum class SheetAction { Open, ReadFolder, Contents, FromStart, MarkRead, MarkUnread, Pin, Favorite, Shortcut, Remake, FolderCover, Save }
+internal enum class SheetAction { Open, ReadFolder, Contents, FromStart, MarkRead, MarkUnread, Pin, Favorite, Shortcut, Remake, FolderCover, Save, Rename, Delete }
 
 /** The long-press sheet; an action that does not fit the row is left out (docs/spec.md section 4.3). */
 @Composable
-internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, canSave: Boolean = false, canReadFolder: Boolean = false, onAction: (SheetAction) -> Unit) {
-    val actions = rowSheetActions(row, hasShortcut, folderCoverChosen, canChooseCover, canSave, canReadFolder)
+internal fun RowSheet(row: FileRow, hasShortcut: Boolean, folderCoverChosen: Boolean, canChooseCover: Boolean, canSave: Boolean = false, canReadFolder: Boolean = false, allowFileEdits: Boolean = false, onAction: (SheetAction) -> Unit) {
+    val actions = rowSheetActions(row, hasShortcut, folderCoverChosen, canChooseCover, canSave, canReadFolder, allowFileEdits)
     SheetActions(row.item.entry.name) {
         actions.forEach { (action, label) ->
             ListItem(
@@ -512,7 +520,7 @@ internal fun Modifier.rowPress(onClick: () -> Unit, onLongClick: (() -> Unit)?):
         )
 }
 
-internal fun rowSheetActions(row: FileRow, hasShortcut: Boolean = false, folderCoverChosen: Boolean = false, canChooseCover: Boolean = false, canSave: Boolean = false, canReadFolder: Boolean = false): List<Pair<SheetAction, Int>> {
+internal fun rowSheetActions(row: FileRow, hasShortcut: Boolean = false, folderCoverChosen: Boolean = false, canChooseCover: Boolean = false, canSave: Boolean = false, canReadFolder: Boolean = false, allowFileEdits: Boolean = false): List<Pair<SheetAction, Int>> {
     return buildList {
         add(SheetAction.Open to R.string.sheet_open)
         if (row.item is FileItem.Folder && canReadFolder) add(SheetAction.ReadFolder to R.string.sheet_read_folder)
@@ -530,5 +538,9 @@ internal fun rowSheetActions(row: FileRow, hasShortcut: Boolean = false, folderC
         if (row.cover != null) add(SheetAction.Remake to R.string.sheet_remake)
         if (hasShortcut) add(SheetAction.Shortcut to R.string.sheet_shortcut)
         if (canSave) add(SheetAction.Save to R.string.sheet_save)
+        if (allowFileEdits && row.pseudo == null && row.path.isNotEmpty() && row.item.entry.name !in listOf(".", "..")) {
+            if (canSave || row.item.entry.canRename) add(SheetAction.Rename to R.string.sheet_rename)
+            if (canSave || row.item.entry.canDelete) add(SheetAction.Delete to R.string.sheet_delete)
+        }
     }
 }

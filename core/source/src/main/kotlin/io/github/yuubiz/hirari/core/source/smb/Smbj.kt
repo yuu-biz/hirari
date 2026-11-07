@@ -226,6 +226,15 @@ private class SmbjShare(
         runCatching { connection.close(true) }
         client.close()
     }
+
+    override fun rename(path: String, destination: String) = request {
+        share.open(path.smbPath(), EnumSet.of(AccessMask.DELETE), null, SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN, null).use { it.rename(destination.smbPath(), false) }
+    }
+
+    override fun delete(path: String, directory: Boolean) = request {
+        if (directory) share.rmdir(path.smbPath(), false) else share.rm(path.smbPath())
+    }
 }
 
 private class SmbjFile(private val file: File, override val size: Long, override val modified: Instant) : RemoteFile {
