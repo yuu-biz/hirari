@@ -10,7 +10,7 @@ import io.github.yuubiz.hirari.core.model.SystemGestureEdges
 /** Screen dp for input and strips; the page frame uses the reserved area's pixel dimensions. */
 internal fun textRegions(screen: Size, settings: GlobalSettings, edges: SystemGestureEdges = SystemGestureEdges.Fixed) =
     ReaderRegions(screen, settings.barHeightDp.toFloat(), edges,
-        if (settings.barDisplay.shown(screen)) BarLayout.Shown else BarLayout.Hidden)
+        if (settings.barDisplay.shown(screen, settings.barHeightDp.toFloat())) BarLayout.Shown else BarLayout.Hidden)
 
 internal fun Viewport.textRegions(settings: GlobalSettings) =
     textRegions(Size(width / density, height / density), settings)
