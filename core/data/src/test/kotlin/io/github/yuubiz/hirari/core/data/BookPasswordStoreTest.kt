@@ -42,7 +42,7 @@ class BookPasswordStoreTest {
             assertEquals(ThumbLookup.Miss, reopened.get(failed))
             assertEquals(ThumbLookup.Miss, reopened.get(page))
             assertIs<ThumbLookup.Hit>(reopened.get(ready))
-            assertEquals(ThumbLookup.Failed, reopened.get(other))
+            assertEquals(ThumbLookup.Miss, reopened.get(other)) // legacy rows without an owner are rebuilt when requested
             reopened.markFailed(failed)
             assertEquals(ThumbLookup.Failed, reopened.get(failed))
             passwords.delete(failed.book)
