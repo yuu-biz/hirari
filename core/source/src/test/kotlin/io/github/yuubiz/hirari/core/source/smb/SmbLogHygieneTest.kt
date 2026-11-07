@@ -83,4 +83,20 @@ class SmbLogHygieneTest {
             .filter { it != CapturingProvider::class.java.name }
         assertTrue("providers: $providers", providers.isEmpty())
     }
+
+    @Test
+    fun `share discovery keeps passwords out of logs and results`() = runBlocking {
+        SmbFixture.require()
+        CapturedLogs.lines.clear()
+        val lister = SrvsvcShareLister()
+        val address = SmbAddress(SmbFixture.host!!, "", SmbFixture.port)
+        val login = SmbLogin.Password(SmbFixture.USER, SmbFixture.PASSWORD.toCharArray())
+        val listed = lister.list(address, login)
+        assertTrue("shares returned", listed is ShareDiscoveryResult.Listed)
+        assertTrue("login wiped", login.password.all { it == '\u0000' })
+        val failed = lister.list(address, SmbLogin.Password(SmbFixture.USER, wrongPassword.toCharArray()))
+        org.junit.Assert.assertEquals(ShareDiscoveryResult.Failed(ShareDiscoveryFailure.AuthenticationFailed), failed)
+        val output = CapturedLogs.lines.joinToString("\n") + listed + failed
+        assertFalse("password in discovery output", SmbFixture.PASSWORD in output || wrongPassword in output)
+    }
 }

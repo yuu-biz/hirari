@@ -21,6 +21,7 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(libs.smbj)
+    implementation(libs.dcerpc)
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(kotlin("test-junit"))

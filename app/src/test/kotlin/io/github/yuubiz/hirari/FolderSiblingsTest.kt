@@ -54,6 +54,8 @@ internal class Shares(private val listings: Map<String, List<FolderEntry>>) : Sm
 
     override suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult = error("not used")
 
+    override suspend fun discover(server: ServerForm, password: CharArray?, stored: CredentialRef?): io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult = error("not used")
+
     override suspend fun open(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): ByteSource = error("not used")
 
     override suspend fun save(place: LibraryLocation.SmbShare, path: String, directory: Boolean, destination: SaveFolder, onProgress: (SaveProgress) -> Unit): SaveOutcome =

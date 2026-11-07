@@ -5,6 +5,10 @@ import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.locationBookId
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryFailure
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -35,6 +39,81 @@ class SmbServerViewModelTest {
     private fun form(id: LocationId? = null) = SmbServerViewModel(CompletableDeferred(fixture.services), id)
 
     private fun SmbServerViewModel.editing() = assertIs<SmbFormUi.Editing>(state.value)
+
+    @Test
+    fun `discovery needs a host but no share and choosing only fills the share`() = runTest {
+        val model = form()
+        assertFalse(model.editing().canDiscover)
+        model.edit(nas.copy(share = "", port = "14455", domain = "WORKGROUP"))
+        assertTrue(model.editing().canDiscover)
+        val offered = DiscoveredShare("books2", 0, "漫画")
+        fixture.smb.discovering = { ShareDiscoveryResult.Listed(listOf(offered)) }
+        val typed = "secret".toCharArray()
+        model.discover(typed)
+        assertTrue(typed.all { it == '\u0000' })
+        val sent = fixture.smb.discoveries.single().first
+        assertEquals("nas.local", sent.host)
+        assertEquals(14455, sent.port)
+        assertEquals("WORKGROUP", sent.domain)
+        assertEquals("reader", sent.user)
+        assertEquals("secret", fixture.smb.discoveries.single().second)
+        assertEquals("", model.editing().fields.share)
+        model.chooseShare(offered)
+        assertEquals(nas.copy(share = "books2", port = "14455", domain = "WORKGROUP"), model.editing().fields)
+        assertEquals(null, model.editing().discovery)
+        assertTrue(fixture.locations.rows.value.isEmpty())
+    }
+
+    @Test
+    fun `every discovery failure preserves the entire form`() = runTest {
+        val model = form()
+        model.edit(nas)
+        for (failure in ShareDiscoveryFailure.entries) {
+            fixture.smb.discovering = { ShareDiscoveryResult.Failed(failure) }
+            model.discover(null)
+            assertEquals(ShareDiscoveryResult.Failed(failure), model.editing().discovery)
+            assertEquals(nas, model.editing().fields)
+            model.cancelDiscovery()
+            assertEquals(null, model.editing().discovery)
+        }
+        assertTrue(fixture.locations.rows.value.isEmpty())
+    }
+
+    @Test
+    fun `cancel stops discovery and wipes the password without changing the form`() = runTest {
+        val model = form()
+        model.edit(nas)
+        var cancelled = false
+        fixture.smb.discovering = { try { awaitCancellation() } finally { cancelled = true } }
+        val typed = "secret".toCharArray()
+        model.discover(typed)
+        assertTrue(model.editing().discovering)
+        assertFalse(model.editing().canDiscover)
+        model.cancelDiscovery()
+        assertTrue(cancelled)
+        assertFalse(model.editing().discovering)
+        assertTrue(model.editing().canDiscover)
+        assertEquals(null, model.editing().discovery)
+        assertEquals(nas, model.editing().fields)
+        assertTrue(typed.all { it == '\u0000' })
+    }
+
+    @Test
+    fun `an edit cancels a pending discovery and ignores its late result`() = runTest {
+        val model = form()
+        model.edit(nas)
+        fixture.smb.discovering = {
+            try { awaitCancellation() } catch (_: kotlinx.coroutines.CancellationException) {
+                ShareDiscoveryResult.Listed(listOf(DiscoveredShare("late", 0)))
+            }
+        }
+        model.discover(null)
+        model.edit(nas.copy(host = "other"))
+        assertEquals(null, model.editing().discovery)
+        assertFalse(model.editing().discovering)
+        assertEquals("other", model.editing().fields.host)
+        assertEquals(nas.share, model.editing().fields.share)
+    }
 
     @Test
     fun `a form checks each field and fills what may be left blank`() {

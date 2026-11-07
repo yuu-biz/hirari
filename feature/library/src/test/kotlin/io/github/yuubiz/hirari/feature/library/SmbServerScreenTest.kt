@@ -8,6 +8,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -29,6 +30,8 @@ import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
 
 /** The password field of the SMB server form never lets its text out to the accessibility tree (docs/spec.md section 4.5). */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -43,6 +46,24 @@ class SmbServerScreenTest {
 
     @After
     fun reset() = Dispatchers.resetMain()
+
+    @Test
+    @Config(sdk = [36])
+    fun `find shares is disabled without a host and a selected row fills the form without saving`() {
+        val fixture = Fixture()
+        val model = SmbServerViewModel(CompletableDeferred(fixture.services), null)
+        fixture.smb.discovering = { ShareDiscoveryResult.Listed(listOf(DiscoveredShare("books2", 0, "漫画"))) }
+        rule.setContent { MaterialTheme { SmbServerScreen(model, onClose = {}) } }
+        rule.onNodeWithText("共有を探す").assertIsNotEnabled()
+        rule.runOnIdle { model.edit(SmbFields(host = "nas")) }
+        rule.onNodeWithText("共有を探す").performClick()
+        rule.onNodeWithText("漫画").assertIsDisplayed()
+        rule.onNodeWithText("books2").performClick()
+        rule.runOnIdle {
+            assertEquals("books2", (model.state.value as SmbFormUi.Editing).fields.share)
+            assertTrue(fixture.locations.rows.value.isEmpty())
+        }
+    }
 
     @Test
     fun `the password field is a password to a screen reader and exposes none of what was typed`() {

@@ -14,3 +14,7 @@
 # filters are never used, and the places sign in with a password or as a guest, which is not Kerberos.
 -dontwarn javax.el.**
 -dontwarn org.ietf.jgss.**
+
+# dcerpc throws java.rmi.UnmarshalException for a malformed RPC reply; Android has no java.rmi, so that path
+# raises NoClassDefFoundError, which SrvsvcShareLister maps to an unsupported server.
+-dontwarn java.rmi.UnmarshalException

@@ -1037,12 +1037,16 @@ SMB サーバーの入力項目は次のとおり。
 | 表示名 | 一覧に出す名前 |
 | ホスト | ホスト名か IP アドレス |
 | ポート | 既定で 445 |
-| 共有名 | v1 では入力が必要。共有の一覧取得は Q17 |
+| 共有名 | 入力するか、**共有を探す** の一覧から選ぶ |
 | フォルダ | 共有の中の起点。空なら共有の最上位 |
 | ドメイン | 任意 |
 | ユーザー名とパスワード | 両方空ならゲストとして接続する |
 
 - **接続を試す** で接続と認証を確かめ、結果を「接続できました」か、失敗の理由（名前解決、到達不能、認証、共有がない、応答の異常）で出す。接続を拒まれたときと、接続のタイムアウト（6.5 節）は到達不能とする。共有への接続を `STATUS_ACCESS_DENIED` で拒まれたときは認証とする。対応する方言で話せないなど、それ以外の失敗は応答の異常とする。
+- 共有名の横に **共有を探す** を置く。ホストが空でなければ押せる。現在のホスト、ポート、ドメイン、ユーザー名、パスワードで接続し、SRVSVC の `NetrShareEnum` で一覧を取る。ユーザー名が空ならゲストとする。ローカルネットワークの許可は **接続を試す** と同じ手順で求める（7 章、Q14）。
+- 一覧には `STYPE_DISKTREE` のうち `STYPE_SPECIAL` のビットがない共有だけを出す。管理用の共有、`IPC$`、プリンターを選ばせないためである。3.5 節の自然順で並べ、名前と、あれば説明を出す。選ぶと共有名の欄に入れて一覧を閉じる。**保存** までは何も保存しない。
+- 取得中は進行表示と取り消しを出す。接続は 5 s、要求は 15 s で打ち切る（6.5 節）。場所の共有接続は使わず、一覧専用の接続を使い、一覧を閉じると閉じる。取り消しや画面を離れたあとに届いた結果は使わない。
+- 失敗は「接続できない」「ユーザー名かパスワードが違う」「ローカルネットワークの許可がない」で知らせ、共有名の欄は変えない。RPC が拒まれたか未対応なら「このサーバーは共有の一覧を出さない。共有名を入力してください」と出す。選べる共有がなければ「共有が 1 つもない」と出す。パスワードはログにも例外にも出さない（6.6 節）。
 - 対応する方言は SMB 2.0.2 から 3.1.1 までとする。署名と暗号化はサーバーとの交渉に従う。
 - 暗号化は、共有が求めるときだけ行う。まず暗号化せずに接続し、パスワードで接続した共有が暗号化しない接続を `STATUS_ACCESS_DENIED` で拒んだときだけ、SMB 3 の暗号化を使って接続し直す。smbj は暗号化を求めないと、暗号化が必須の共有に接続できない。一方で、すべての接続を暗号化すると、暗号化が要らない共有でも読み込みのたびに暗号処理の費用がかかる。Samba の `smb encrypt = required` の共有で確かめた。
 - ユーザー名とパスワードが空のときは、匿名ではなくゲストのアカウントでログオンする。smbj 0.15.0 の匿名ログオンは、SMB 3.1.1 の Samba 4.19 に対して鍵の導出で失敗する。ゲストのログオンは同じ環境で `guest ok` の共有を読める。どちらも `tools/smb-fixture` の Samba で確かめた。
@@ -2493,6 +2497,7 @@ M6 の点検で確かめ、直したことを次に書く。ライブラリ、�
 - targetSdk 37 では、ローカルネットワークへの TCP の接続は `ACCESS_LOCAL_NETWORK` がないと遮られ、多くはタイムアウトになる（[Local network permission](https://developer.android.com/privacy-and-security/local-network-permission)）。この権限は `NEARBY_DEVICES` の権限グループに属し、同じグループの権限を許可済みなら確認なしで許可される。遮られた接続は「接続を試す」で到達不能に見えるので、権限がないときはそのことを理由として出す。
 - 利用状況の収集、クラッシュの送信、広告、更新の確認、書体のダウンロードなど、SMB 以外の通信をしない。
 - 依存の審査で、通信を行う依存が smbj だけであることを確かめる。
+- 共有の一覧は dcerpc が SRVSVC の要求を作り、smbj の接続で送る（4.5 節）。別の通信先は使わない。
 
 ## 8. 技術構成
 
@@ -2597,8 +2602,9 @@ M1 の最初に 2 つの試作を作り、計測で決める。
 | libjxl | JPEG XL | BSD-3-Clause | ソースからビルド。highway（Apache-2.0）、brotli（MIT）を伴う |
 | libavif | API 28〜30 の AVIF | BSD-2-Clause | Q6 で同梱を決めたときだけ |
 | dav1d | libavif の AV1 デコード | BSD-2-Clause | 同上 |
-| smbj 0.15.0 | SMB 2 と SMB 3 | Apache-2.0。実行時に slf4j-api 2.0.18（MIT）、bcprov-jdk18on 1.85.2（Bouncy Castle License）、mbassador 1.3.2（MIT）、asn-one 0.6.0（Apache-2.0）を伴う。mbassador の juel は任意の依存で、持ち込まれない。0.15.0 の POM と Gradle のモジュールのメタデータ、各依存の POM で確かめ、`:app` の Licensee で確かめた。Bouncy Castle License の条項は MIT と同じ文面なので MIT として扱う。bcprov と slf4j-api の POM にあるライセンスの URL は Licensee が SPDX 識別子に直せないので、`build-logic` の `licenseUrlIds` で MIT に対応付ける | Maven。通信を行う唯一の依存。SLF4J の provider は同梱しない（6.6 節） |
 | com.materialkolor:material-color-utilities 6.0.0 | 種から Material 3 の配色を作る | MIT。上流は Apache-2.0。推移的に dev.drewhamilton.poko:poko-annotations（Apache-2.0）と kotlin-stdlib（Apache-2.0）を伴う。6.0.0 の POM と配布ソースのライセンス本文で確かめた。POM の MIT の URL は `build-logic` の `licenseUrlIds` で MIT に対応付ける | Maven。Compose の成果物は使わない |
+| smbj 0.15.0 | SMB 2 と SMB 3 | Apache-2.0。実行時に slf4j-api 2.0.18（MIT）、bcprov-jdk18on 1.85.2（Bouncy Castle License）、mbassador 1.3.2（MIT）、asn-one 0.6.0（Apache-2.0）を伴う。mbassador の juel は任意の依存で、持ち込まれない。0.15.0 の POM と Gradle のモジュールのメタデータ、各依存の POM で確かめ、`:app` の Licensee で確かめた。Bouncy Castle License の条項は MIT と同じ文面なので MIT として扱う。bcprov と slf4j-api の POM にあるライセンスの URL は Licensee が SPDX 識別子に直せないので、`build-logic` の `licenseUrlIds` で MIT に対応付ける | Maven。SMB と SRVSVC の通信を行う。SLF4J の provider は同梱しない（6.6 節） |
+| com.rapid7.client:dcerpc 0.12.13 | SRVSVC の共有一覧 | BSD-3-Clause。guava 33.4.0（Apache-2.0）、commons-io 2.7（Apache-2.0）、commons-lang3 3.4（Apache-2.0）を伴う。guava は failureaccess 1.0.2、listenablefuture 9999.0-empty-to-avoid-conflict-with-guava、jsr305 3.0.2、error_prone_annotations 2.36.0、j2objc-annotations 3.0.0（以上 Apache-2.0）、checker-qual 3.43.0（MIT）を伴う。jspecify はこの版にはない。[公開タグの POM](https://github.com/rapid7/smbj-rpc/blob/dcerpc-0.12.13/pom.xml) と [guava の POM](https://github.com/google/guava/blob/v33.4.0/guava/pom.xml)、各提供元のライセンスで確かめた | Maven。smbj と bcprov-jdk18on は既存の新しい版に解決する。新しい除外は加えない。Gradle の解決結果と Licensee、R8 の検査は実行環境での確認が残る |
 | Jetpack（Compose、Navigation、Lifecycle、Activity、Core） | UI と画面の基盤 | Apache-2.0 | Maven。リーダーは Lifecycle の lifecycle-viewmodel-compose 2.11.0 を直接使う。navigation-compose がすでに推移的に持ち込んでいたもので、新しい推移的依存はない。`:core:ui` は、マイクの許可を求めるために activity-compose 1.13.0 を直接使う。各 `feature` がすでに使っているもので、新しい推移的依存はない |
 | Room 3.0.3（`androidx.room3`） | DB | Apache-2.0。androidx.sqlite（sqlite、sqlite-async、sqlite-framework）2.7.1、androidx.annotation、androidx.collection、kotlinx-coroutines（core、android）、JetBrains の annotations、jspecify を伴い、すべて Apache-2.0 である。`:app` に `:core:data` を足して Licensee で確かめた | Maven。SQLite は同梱せず、端末の `android.database.sqlite` を `AndroidSQLiteDriver` で使う |
 | KSP 2.3.13、room3-compiler、room3 の Gradle プラグイン | Room のコード生成とスキーマの書き出し | Apache-2.0。room3-compiler は room3-external-antlr（BSD-3-Clause）、checker-qual（MIT）、guava、auto-common、auto-value-annotations、javapoet、kotlinpoet、kotlin-metadata-jvm、kotlin-reflect、kotlinx-serialization、jsr305、sqlite-jdbc（Apache-2.0）を伴う。3.0.3 の推移的依存の POM で確かめた | ビルド時だけ。配布物に入らない |
@@ -2931,7 +2937,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 | Q14 | LAN 内の SMB への接続に新しい権限が要るか | 要らない、targetSdk によって要る | 決定。要る。targetSdk 37 では、ローカルネットワークへの接続に実行時の権限 `ACCESS_LOCAL_NETWORK`（`NEARBY_DEVICES` グループ）が要り、ないと TCP の接続が遮られる。targetSdk 36 以下では `INTERNET` で暗黙に許される。根拠は [Local network permission](https://developer.android.com/privacy-and-security/local-network-permission)。SMB の入力画面で接続を試すか保存するときに求める（7 章） |
 | Q15 | 縦長の連続スクロール（ウェブトゥーン向け）を入れるか | 入れない、ページの組み方に「縦に連続」を加える | 決定。M6 でページの組み方に「縦に連続」を加えた。ページを画面の幅で縦に隙間なく並べ（2.5 節）、停止点の代わりに指と慣性と 9 割の送りで続けて読む（4.8 節）。位置はページとその中の割合で保存する（2.7 節）。先読みは同じ層を使い、画面に入るページをすべて現在のビューとして扱う（5.3 節）。ほかの組み方と同じく、全体の設定の「ページの組み方」、本ごとの上書き（2.9 節）、コマンドの「組み方」で選ぶ |
 | Q16 | 読書位置としおりを自動バックアップに含めるか | 含める、含めない、設定で選ぶ | 含める。機種変更で読書の記録が消えるのは困る。SMB の資格情報は常に含めない |
-| Q17 | SMB の共有の一覧を取るか | 共有名を入力させる、SRVSVC で一覧を取る | v1 は入力させる。smbj は SRVSVC を持たず、一覧には DCE/RPC の別の依存が要る。候補の com.rapid7.client:dcerpc 0.12.13 は POM で BSD-3-Clause であり、guava、commons-io、commons-lang3 を伴う。それらのライセンスは、採用するときに確かめる |
+| Q17 | SMB の共有の一覧を取るか | 共有名を入力させる、SRVSVC で一覧を取る | 決定。一覧を取る。com.rapid7.client:dcerpc 0.12.13 の SRVSVC を使う（8.5 節）。共有名を知らなくても登録できるようにする。拒むサーバーでは手で入力する（4.5 節） |
 | Q18 | solid 書庫のサムネイルをどのページから作るか | 自然順で先頭のページ、格納順で先頭の画像 | M2 は自然順で先頭のページを使う。本を開く層（3.3 節の `Books.openArchive`）が一覧を作るために全エントリを読み、その並べ替えで自然順の先頭が決まるので、サムネイルのために別の経路を足していない。`OpenBook` は solid かどうかを出していない。solid 書庫で 5.2 節の P8 を満たせないと分かったら、格納順で先頭の画像に替え、本を一度開いたら自然順に作り直す。solid 書庫で自然順の先頭を探すと、全体の展開が要ることがある (要検証。solid 書庫のサムネイルの時間) |
 | Q19 | public domain のソース（libarchive の PPMd）を組み込むか | 組み込まない（ZIP と 7z の PPMd は `Unsupported(Compression)`）、許可リストに public domain を加える | 決定。出所が明らかな public domain のコードは組み込んでよいとし、許可リストに加えた（利用者が 2026-11-03 に決めた。8.5 節）。前例として、AOSP は LZMA SDK を `external/lzma` に置き（METADATA の license_type は UNENCUMBERED）、Chromium は `third_party/lzma_sdk` に置いている（README.chromium の License は Public Domain）。libarchive の `archive_ppmd7.c` と `archive_ppmd8.c` を組み込み、ZIP、7z、RAR 4 の PPMd を読む。`archive_read_support_format_7zip.c` の x86（BCJ）、BCJ2、ARM、ARM64 の変換もそのまま組み込む。ZIP と 7z の PPMd はコーパスの `zip/ppmd.zip` と `7z/ppmd.7z` で確かめる。RAR 4 の PPMd はコーパスに作れず、実データで確かめる (要検証) |
 | Q20 | デコーダが返した、途中で切れた画像をどう出すか | そのまま出す、出したうえで切れていることを重ねて知らせる、`Failed(Truncated)` にする | M1 はデコーダの結果に従う（API 28 では失敗、API 37 では表示になる）。自前で判定して端末によらず揃えるには、JPEG の EOI を探すなど形式ごとの処理が要り、誤判定すると読めるページを隠す。実データで切れた画像がどれだけあるかを見て、M6 で決める |

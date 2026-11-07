@@ -370,6 +370,15 @@ internal class FakeLister : FolderLister {
  * fails every listing as unreachable until a [reconnect] finds it back.
  */
 internal class FakeSmb : SmbPlaces {
+    var discovering: suspend () -> io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult = {
+        io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult.Failed(io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryFailure.Empty)
+    }
+    val discoveries = mutableListOf<Triple<SmbServer, String?, CredentialRef?>>()
+
+    override suspend fun discover(server: SmbServer, password: CharArray?, stored: CredentialRef?): io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult {
+        discoveries += Triple(server, password?.let(::String), stored)
+        return try { discovering() } finally { password?.fill('\u0000') }
+    }
     val folders = mutableMapOf<String, List<FolderEntry>>()
     var failure: ListFailure? = null
     var lost = false

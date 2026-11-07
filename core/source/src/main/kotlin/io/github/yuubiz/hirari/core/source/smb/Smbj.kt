@@ -160,7 +160,7 @@ private fun classifyConnect(e: Exception): SmbConnectFailure {
 }
 
 /** smbj creates its socket with [createSocket] (host, port), which would connect without a timeout. */
-private class ConnectTimeoutSocketFactory(private val timeoutMillis: Int) : SocketFactory() {
+internal class ConnectTimeoutSocketFactory(private val timeoutMillis: Int) : SocketFactory() {
     override fun createSocket(): Socket = Socket()
 
     override fun createSocket(host: String, port: Int): Socket =

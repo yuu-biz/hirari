@@ -28,6 +28,10 @@ import io.github.yuubiz.hirari.core.source.smb.SmbRequestException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
+import io.github.yuubiz.hirari.core.source.smb.SmbShareLister
+import io.github.yuubiz.hirari.core.source.smb.SrvsvcShareLister
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryFailure
 import io.github.yuubiz.hirari.core.source.ByteSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -88,6 +92,9 @@ interface SmbPlaces {
      * wipes; without one, [stored] is the password kept for the server, if any.
      */
     suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult
+
+    /** Lists shares on a separate, temporary connection, without registering a place. */
+    suspend fun discover(server: ServerForm, password: CharArray?, stored: CredentialRef?): ShareDiscoveryResult
 
     /**
      * Opens the file at [path], counted from the place's folder, for random access. Every read of it is a request for
@@ -167,6 +174,7 @@ class SmbjPlaces(
     private val localNetwork: LocalNetwork,
     private val scope: CoroutineScope,
     private val timeouts: SmbTimeouts = SmbTimeouts(),
+    private val shareLister: SmbShareLister = SrvsvcShareLister(timeouts),
 ) : SmbPlaces {
     override suspend fun list(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): Listing {
         if (!localNetwork.granted()) return Listing.Failed(ListFailure.NoLocalNetwork)
@@ -233,6 +241,21 @@ class SmbjPlaces(
             }
             val address = SmbAddress(server.host, server.share, server.port, server.domain)
             return SmbServer(address, login, scope, timeouts = timeouts).use { probe -> probe.connectTo(normalizePath(server.basePath)) }
+        } finally {
+            password?.fill('\u0000')
+        }
+    }
+
+    override suspend fun discover(server: ServerForm, password: CharArray?, stored: CredentialRef?): ShareDiscoveryResult {
+        try {
+            if (!localNetwork.granted()) return ShareDiscoveryResult.Failed(ShareDiscoveryFailure.NoLocalNetwork)
+            val login = try {
+                server.user.let { user -> if (password != null && user != null) SmbLogin.Password(user, password) else null }
+                    ?: credentials.smbLogin(server.user, stored)
+            } catch (_: PasswordUnreadableException) {
+                return ShareDiscoveryResult.Failed(ShareDiscoveryFailure.PasswordUnreadable)
+            }
+            return shareLister.list(SmbAddress(server.host, "", server.port, server.domain), login)
         } finally {
             password?.fill('\u0000')
         }

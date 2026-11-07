@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +58,9 @@ import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.announced
 import io.github.yuubiz.hirari.core.ui.decorative
 import io.github.yuubiz.hirari.core.ui.minTouchTarget
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryFailure
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
 
 /**
  * Runs an action once the app may open connections in the local network, asking for `ACCESS_LOCAL_NETWORK` first
@@ -88,6 +95,9 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
     // Kept out of saved state, so the password never reaches a bundle (docs/spec.md section 7).
     val password = remember { TextFieldState() }
     val gate = rememberLocalNetworkGate()
+    DisposableEffect(model) {
+        onDispose { model.cancelDiscovery() }
+    }
     // A save the form rejects keeps the typed password for the next try; only a saved one is cleared.
     LaunchedEffect(state) {
         if (state == SmbFormUi.Saved) {
@@ -117,8 +127,12 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
                 onRemovePassword = model::setRemovePassword,
                 onTest = { gate { model.test(typed()) } },
                 onSave = { gate { model.save(typed()) } },
+                onDiscover = { gate { model.discover(typed()) } },
             )
         }
+    }
+    (state as? SmbFormUi.Editing)?.let { form ->
+        ShareDiscoveryDialog(form, model::cancelDiscovery, model::chooseShare)
     }
 }
 
@@ -132,6 +146,7 @@ private fun SmbForm(
     onRemovePassword: (Boolean) -> Unit,
     onTest: () -> Unit,
     onSave: () -> Unit,
+    onDiscover: () -> Unit,
 ) {
     val fields = form.fields
     Column(
@@ -141,7 +156,12 @@ private fun SmbForm(
         Field(R.string.smb_display_name, fields.displayName, hint = R.string.smb_display_name_hint) { onEdit(fields.copy(displayName = it)) }
         Field(R.string.smb_host, fields.host, error = form.errors[SmbField.Host], type = KeyboardType.Uri) { onEdit(fields.copy(host = it)) }
         Field(R.string.smb_port, fields.port, error = form.errors[SmbField.Port], type = KeyboardType.Number) { onEdit(fields.copy(port = it)) }
-        Field(R.string.smb_share, fields.share, error = form.errors[SmbField.Share]) { onEdit(fields.copy(share = it)) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Field(R.string.smb_share, fields.share, error = form.errors[SmbField.Share]) { onEdit(fields.copy(share = it)) }
+            }
+            OutlinedButton(onClick = onDiscover, enabled = form.canDiscover) { Text(stringResource(R.string.smb_discover)) }
+        }
         Field(R.string.smb_folder, fields.folder, hint = R.string.smb_folder_hint) { onEdit(fields.copy(folder = it)) }
         Field(R.string.smb_domain, fields.domain) { onEdit(fields.copy(domain = it)) }
         Field(R.string.smb_user, fields.user, error = form.errors[SmbField.User], hint = R.string.smb_user_hint) { onEdit(fields.copy(user = it)) }
@@ -166,6 +186,45 @@ private fun SmbForm(
             Button(onClick = onSave, enabled = !form.saving) { Text(stringResource(R.string.smb_save)) }
         }
     }
+}
+
+@Composable
+private fun ShareDiscoveryDialog(form: SmbFormUi.Editing, onClose: () -> Unit, onChoose: (DiscoveredShare) -> Unit) {
+    if (!form.discovering && form.discovery == null) return
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.smb_discover)) },
+        text = {
+            when (val result = form.discovery) {
+                null -> Column(Modifier.announced(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(Modifier.decorative())
+                    Text(stringResource(R.string.smb_discovering))
+                }
+                is ShareDiscoveryResult.Failed -> Text(stringResource(result.reason.discoveryMessage()), Modifier.announced())
+                is ShareDiscoveryResult.Listed -> LazyColumn {
+                    items(result.shares, key = { it.name }) { share ->
+                        TextButton(onClick = { onChoose(share) }, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(share.name)
+                                share.remark?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+@StringRes
+internal fun ShareDiscoveryFailure.discoveryMessage(): Int = when (this) {
+    ShareDiscoveryFailure.Unreachable -> R.string.smb_discovery_unreachable
+    ShareDiscoveryFailure.AuthenticationFailed -> R.string.smb_discovery_auth
+    ShareDiscoveryFailure.NoLocalNetwork -> R.string.smb_discovery_permission
+    ShareDiscoveryFailure.Unsupported -> R.string.smb_discovery_unsupported
+    ShareDiscoveryFailure.Empty -> R.string.smb_discovery_empty
+    ShareDiscoveryFailure.PasswordUnreadable -> R.string.smb_failed_password_unreadable
 }
 
 /**

@@ -13,6 +13,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
 import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
 
 /** The text fields of the SMB form (docs/spec.md section 4.5), as typed. The password is never among them. */
@@ -99,7 +103,11 @@ sealed interface SmbFormUi {
         val errors: Map<SmbField, SmbFieldError> = emptyMap(),
         val test: ConnectionTest = ConnectionTest.Idle,
         val saving: Boolean = false,
-    ) : SmbFormUi
+        val discovery: ShareDiscoveryResult? = null,
+        val discovering: Boolean = false,
+    ) : SmbFormUi {
+        val canDiscover: Boolean get() = fields.host.isNotBlank() && !saving && !discovering
+    }
 
     /** Saved; the screen closes. */
     data object Saved : SmbFormUi
@@ -115,6 +123,7 @@ class SmbServerViewModel(private val services: Deferred<LibraryServices>, privat
 
     private var stored: LibraryLocation.SmbShare? = null
     private var testing: Job? = null
+    private var discoveryJob: Job? = null
 
     init {
         if (id != null) {
@@ -126,9 +135,52 @@ class SmbServerViewModel(private val services: Deferred<LibraryServices>, privat
         }
     }
 
-    fun edit(fields: SmbFields) = editing { it.copy(fields = fields, test = ConnectionTest.Idle) }
+    fun edit(fields: SmbFields) {
+        cancelDiscovery()
+        editing { it.copy(fields = fields, test = ConnectionTest.Idle) }
+    }
 
-    fun setRemovePassword(remove: Boolean) = editing { it.copy(removePassword = remove, test = ConnectionTest.Idle) }
+    fun setRemovePassword(remove: Boolean) {
+        cancelDiscovery()
+        editing { it.copy(removePassword = remove, test = ConnectionTest.Idle) }
+    }
+
+    fun discover(password: CharArray?) {
+        val form = mutableState.value as? SmbFormUi.Editing ?: return password.wipe()
+        if (!form.canDiscover) return password.wipe()
+        // Share and folder are not used by SRVSVC. An empty user always means guest.
+        val checked = form.fields.copy(share = "discovery", folder = "").check(passwordTyped = false)
+        if (checked is FormCheck.Invalid) {
+            editing { it.copy(errors = checked.errors) }
+            return password.wipe()
+        }
+        val server = (checked as FormCheck.Valid).server
+        val kept = stored?.credential?.takeUnless { form.removePassword }
+        editing { it.copy(errors = emptyMap(), discovery = null, discovering = true) }
+        discoveryJob = viewModelScope.launch {
+            try {
+                val result = services.await().smb.discover(server, password?.takeIf { it.isNotEmpty() }, kept)
+                currentCoroutineContext().ensureActive()
+                editing { it.copy(discovering = false, discovery = result) }
+            } finally {
+                password.wipe()
+            }
+        }.also { job -> job.invokeOnCompletion { password.wipe() } }
+    }
+
+    fun cancelDiscovery() {
+        discoveryJob?.cancel()
+        discoveryJob = null
+        editing { it.copy(discovering = false, discovery = null) }
+    }
+
+    fun chooseShare(share: DiscoveredShare) {
+        val form = mutableState.value as? SmbFormUi.Editing ?: return
+        val listed = form.discovery as? ShareDiscoveryResult.Listed ?: return
+        if (share !in listed.shares) return
+        cancelDiscovery()
+        editing { it.copy(fields = it.fields.copy(share = share.name), errors = it.errors - SmbField.Share, test = ConnectionTest.Idle) }
+    }
 
     /** 接続を試す with what the form holds. [password] is null or empty to keep the stored one. */
     fun test(password: CharArray?) {
@@ -158,6 +210,7 @@ class SmbServerViewModel(private val services: Deferred<LibraryServices>, privat
     fun save(password: CharArray?) {
         val form = mutableState.value as? SmbFormUi.Editing ?: return password.wipe()
         if (form.saving) return password.wipe()
+        cancelDiscovery()
         val typed = password?.takeIf { it.isNotEmpty() }
         val server = when (val checked = form.fields.check(typed != null)) {
             is FormCheck.Invalid -> return editing { it.copy(errors = checked.errors) }.also { password.wipe() }
