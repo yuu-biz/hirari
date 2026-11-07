@@ -122,7 +122,7 @@ class HirariApp : Application() {
                 grants = SafTreeGrants(contentResolver),
                 folders = folders,
                 smb = smb,
-                archives = DeviceArchives(contentResolver, cacheDir, smb),
+                archives = DeviceArchives(contentResolver, cacheDir, smb, storage.bookPasswords),
                 launch = storage.launch,
                 coverIndex = storage.covers,
                 covers = covers,

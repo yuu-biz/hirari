@@ -82,6 +82,18 @@ class BookPasswordPromptTest {
         assertEquals(1, store.deleted)
     }
 
+    @Test fun `asking without a failed stored attempt does not delete the stored password`() = runTest {
+        val store = Store().also { it.put(id, "right".toCharArray()) }
+        val prompt = BookPasswordPrompt()
+        val book = prompt.forBook(id, store)
+        book.initial()!!.fill('\u0000')
+        val next = async(start = CoroutineStart.UNDISPATCHED) { book.retry(false) }
+        assertEquals(0, store.deleted)
+        assertEquals("right", store.read(id)!!.concatToString())
+        prompt.cancel()
+        assertNull(next.await())
+    }
+
     @Test fun `a cancelled read drops its answer and can ask again`() = runTest {
         val store = Store()
         val prompt = BookPasswordPrompt()

@@ -112,6 +112,12 @@ interface ThumbnailCache {
 
     /** Drops every stored size, generation and failure of these old book ids after a file edit. */
     suspend fun removeBooks(books: Set<BookId>)
+
+    /**
+     * Forgets the failures recorded for [book], as when its password is saved. Failures recorded before the index
+     * knew its owners are discarded when they are next requested.
+     */
+    suspend fun clearFailures(book: BookId) = Unit
 }
 
 @Entity(tableName = "thumbs", indices = [Index("last_used"), Index("book_id")])
@@ -143,6 +149,9 @@ internal interface ThumbDao {
 
     @Query("DELETE FROM thumbs WHERE digest = :digest")
     suspend fun delete(digest: String)
+
+    @Query("DELETE FROM thumbs WHERE failed AND book_id = :book")
+    suspend fun deleteFailures(book: String)
 
     @Query("DELETE FROM thumbs WHERE failed AND bytes = -1")
     suspend fun deleteInterrupted()
@@ -285,6 +294,8 @@ internal class DiskThumbnailCache(
         withContext(io) { fileOf(key.digest).delete() }
         dao.delete(key.digest)
     }
+
+    override suspend fun clearFailures(book: BookId) = writing.withLock { dao.deleteFailures(book.value) }
 
     override suspend fun removeBooks(books: Set<BookId>) = writing.withLock {
         val digests = books.map { it.value }.chunked(900).flatMap { ids -> dao.forBooks(ids) }.map { it.digest }

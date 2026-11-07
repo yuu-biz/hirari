@@ -51,6 +51,7 @@ internal fun interface DataSink {
  * and the calls return libarchive's [Status] codes.
  */
 internal interface ArchiveHandle : AutoCloseable {
+    /** Installs the passphrase for the next [open]; the session must invalidate its cursor. */
     fun setPassword(password: CharArray?) = Unit
     /** The header of the last [nextHeader] that succeeded. */
     val header: Header?

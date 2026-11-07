@@ -12,17 +12,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.res.stringResource
 
-/** Deliberately uses remember, never rememberSaveable: input must not reach saved instance state. */
+/** Only the checkbox is saved; password input must not reach saved instance state. */
 @Composable
 fun BookPasswordDialog(wrong: Boolean, busy: Boolean, submit: (CharArray, Boolean) -> Unit, cancel: () -> Unit) {
     var password by remember { mutableStateOf("") }
-    var rememberPassword by remember { mutableStateOf(true) }
+    var rememberPassword by rememberSaveable { mutableStateOf(true) }
     LaunchedEffect(busy) { if (!busy) password = "" }
     AlertDialog(
         onDismissRequest = cancel,

@@ -8,6 +8,8 @@ import io.github.yuubiz.hirari.core.archive.EntryNames
 import io.github.yuubiz.hirari.core.archive.EntryResult
 import io.github.yuubiz.hirari.core.archive.ExtractionCache
 import io.github.yuubiz.hirari.core.archive.OpenResult
+import io.github.yuubiz.hirari.core.data.BookPasswordStore
+import io.github.yuubiz.hirari.core.data.silent
 import io.github.yuubiz.hirari.core.image.PageCandidate
 import io.github.yuubiz.hirari.core.image.PageOrder
 import io.github.yuubiz.hirari.core.image.pageCandidate
@@ -45,7 +47,7 @@ class ArchiveItem(
     val rawName: ByteArray,
     val size: Long?,
     val isDirectory: Boolean,
-    /** Encrypted, or declared too large, so the reader shows it as an error (section 2.4). */
+    /** Unsupported encryption, or declared too large (section 2.4). */
     val unreadable: Boolean,
 )
 
@@ -120,7 +122,7 @@ private suspend fun ArchiveContents.pagesIn(charset: Charset, order: PageOrder):
 )
 
 /** The archives of SAF places through [resolver], and of SMB places through [smb]. */
-class DeviceArchives(private val resolver: ContentResolver, private val cacheDir: File, private val smb: SmbPlaces) : ArchiveOpener {
+class DeviceArchives(private val resolver: ContentResolver, private val cacheDir: File, private val smb: SmbPlaces, private val passwords: BookPasswordStore? = null) : ArchiveOpener {
     override suspend fun open(place: LibraryLocation, path: String, documentId: String?, book: BookId): ArchiveOpenResult {
         val (source, uri) = try {
             when (place) {
@@ -142,7 +144,7 @@ class DeviceArchives(private val resolver: ContentResolver, private val cacheDir
             return ArchiveOpenResult.Failed(e.archiveFailure())
         }
         // The reader extracts a solid archive into the same directory (docs/spec.md section 3.3), so both share it.
-        return when (val opened = ArchiveSession.open(source, ExtractionCache.directory(cacheDir, book, source.size, source.lastModifiedMs))) {
+        return when (val opened = ArchiveSession.open(source, ExtractionCache.directory(cacheDir, book, source.size, source.lastModifiedMs), passwords?.silent(book))) {
             is OpenResult.Opened -> ArchiveOpenResult.Opened(SessionContents(opened.session, uri))
             OpenResult.Encrypted -> ArchiveOpenResult.Failed(ArchiveFailure.Encrypted)
             is OpenResult.Failed -> ArchiveOpenResult.Failed(ArchiveFailure.Unreadable)
@@ -161,7 +163,7 @@ private class SessionContents(private val session: ArchiveSession, override val 
     private val sniffed = ConcurrentHashMap<Int, Boolean>()
 
     override val entries: List<ArchiveItem> = session.entries.map {
-        ArchiveItem(it.entryIndex, it.rawName, it.declaredSize, it.isDirectory, it.encrypted || (it.declaredSize ?: 0) > ArchiveSession.MAX_ENTRY_BYTES)
+        ArchiveItem(it.entryIndex, it.rawName, it.declaredSize, it.isDirectory, (it.encrypted && !it.traditionalEncryption) || (it.declaredSize ?: 0) > ArchiveSession.MAX_ENTRY_BYTES)
     }
 
     override fun charset(override: Charset?, fallback: Charset): Charset = session.nameCharset(override, fallback)
@@ -169,8 +171,13 @@ private class SessionContents(private val session: ArchiveSession, override val 
     override fun name(item: ArchiveItem, charset: Charset): String = session.name(session.entries[item.entryIndex], charset)
 
     override suspend fun isImage(item: ArchiveItem): Boolean = sniffed[item.entryIndex] ?: run {
-        val bytes = (session.read(item.entryIndex) as? EntryResult.Data)?.bytes
-        (bytes != null && sniffImage(bytes) != null).also { sniffed[item.entryIndex] = it }
+        val result = session.read(item.entryIndex)
+        if (result == EntryResult.Failed(io.github.yuubiz.hirari.core.archive.ArchiveFailure.PasswordRequired) || result == EntryResult.Encrypted) {
+            true // Keep an entry whose bytes are unavailable for sniffing (3.5).
+        } else {
+            val bytes = (result as? EntryResult.Data)?.bytes
+            (bytes != null && sniffImage(bytes) != null).also { sniffed[item.entryIndex] = it }
+        }
     }
 
     override fun close() = session.close()

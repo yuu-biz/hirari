@@ -39,4 +39,9 @@ class ZipPasswordTest {
     @Test fun aesRemainsUnsupportedEvenWithThePassword() = runBlocking {
         open("zip/aes.zip", "hirari").use { assertEquals(EntryResult.Encrypted, it.read(1)) }
     }
+    @Test fun aPasswordPassingTheHeaderStillNeedsAMatchingCrc() = runBlocking {
+        open("zip/zipcrypto.zip", "wrong-131").use {
+            assertEquals(EntryResult.Failed(ArchiveFailure.PasswordRequired), it.read(2))
+        }
+    }
 }

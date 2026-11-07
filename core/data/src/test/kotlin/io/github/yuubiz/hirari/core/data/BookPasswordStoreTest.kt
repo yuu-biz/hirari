@@ -13,10 +13,47 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import io.github.yuubiz.hirari.core.model.ReadingDirection
+import java.io.File
+import java.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
 class BookPasswordStoreTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    @Test fun `saving a password invalidates only that books old failures and clearing passwords leaves covers alone`() = runTest {
+        val credentials = inMemoryCredentialDatabase()
+        val index = inMemoryThumbnailIndex()
+        val dir = File(context.cacheDir, "password-thumbs")
+        fun cache() = DiskThumbnailCache(dir, index.thumbs(), now = { Instant.EPOCH })
+        fun key(id: String) = ThumbKey(BookId(id), Instant.EPOCH, 100, null, 300, ReadingDirection.RightToLeft)
+        val failed = key("locked")
+        val page = failed.copy(coverEntry = 2, sizePx = 600)
+        val ready = failed.copy(coverEntry = 0)
+        val other = key("other")
+        try {
+            val thumbs = cache()
+            // Rows written before passwords were supported have only the digest, not a book id.
+            for (key in listOf(failed, page, other)) index.thumbs().upsert(ThumbRow(key.digest, 0, 0, true))
+            thumbs.put(ready, byteArrayOf(1))
+            val passwords = EncryptedBookPasswords(credentials.bookPasswords(), softwareCipher(), thumbs::clearFailures)
+            passwords.put(failed.book, "right".toCharArray())
+            val reopened = cache()
+            assertEquals(ThumbLookup.Miss, reopened.get(failed))
+            assertEquals(ThumbLookup.Miss, reopened.get(page))
+            assertIs<ThumbLookup.Hit>(reopened.get(ready))
+            assertEquals(ThumbLookup.Failed, reopened.get(other))
+            reopened.markFailed(failed)
+            assertEquals(ThumbLookup.Failed, reopened.get(failed))
+            passwords.delete(failed.book)
+            passwords.put(other.book, "other".toCharArray())
+            reopened.markFailed(other)
+            passwords.clear()
+            assertEquals(ThumbLookup.Failed, reopened.get(other))
+            assertEquals(ThumbLookup.Failed, reopened.get(failed))
+            assertIs<ThumbLookup.Hit>(reopened.get(ready))
+        } finally { credentials.close(); index.close(); dir.deleteRecursively() }
+    }
 
     @Test fun `version 1 upgrades without losing SMB secrets and clearing books leaves SMB intact`() = runTest {
         val cipher = softwareCipher()

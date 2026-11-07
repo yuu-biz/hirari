@@ -60,6 +60,16 @@ class ThumbnailCacheTest {
         assertTrue(cache.isHit("sibling"))
     }
 
+    @Test fun `clearing a book's failures keeps its thumbnails and other books' failures`() = runTest {
+        cache.put(key("locked"), bytes(10))
+        cache.markFailed(key("locked").copy(sizePx = 100))
+        cache.markFailed(key("other"))
+        cache.clearFailures(BookId("locked"))
+        assertTrue(cache.isHit("locked"))
+        assertIs<ThumbLookup.Miss>(cache.get(key("locked").copy(sizePx = 100)))
+        assertIs<ThumbLookup.Failed>(cache.get(key("other")))
+    }
+
     @Test fun `owner column removes only matching entries and creates no owner side directory`() = runTest {
         cache.put(key("old"), bytes(10))
         index.thumbs().upsert(ThumbRow("legacy", 0, 0, true))

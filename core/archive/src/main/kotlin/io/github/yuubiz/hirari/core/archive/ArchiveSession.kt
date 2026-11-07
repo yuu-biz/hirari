@@ -55,6 +55,7 @@ class ArchiveSession private constructor(
     private val passwordLock = Mutex()
     private var passwordLoaded = false
     private var hasPassword = false
+    private var passwordVerified = false
 
     private suspend fun unlock(entry: ArchiveEntry, read: suspend () -> EntryResult): EntryResult {
         if (!entry.traditionalEncryption) return read()
@@ -65,6 +66,8 @@ class ArchiveSession private constructor(
                         withContext(dispatcher) {
                             if (closed.get()) throw CancellationException("the session is closed")
                             libarchive.value.setPassword(secret)
+                            reader.passwordChanged()
+                            passwordVerified = false
                         }
                         hasPassword = secret != null
                     } finally {
@@ -75,16 +78,24 @@ class ArchiveSession private constructor(
                     use(password?.initial())
                     passwordLoaded = true
                 }
-                var result = read()
+                suspend fun attempt(): EntryResult {
+                    val result = read()
+                    return if (!passwordVerified && result is EntryResult.Failed) {
+                        EntryResult.Failed(ArchiveFailure.PasswordRequired)
+                    } else result
+                }
+                var result = attempt()
                 while (result == EntryResult.Failed(ArchiveFailure.PasswordRequired)) {
                     val next = password?.retry(hasPassword) ?: run {
                         password?.discard()
                         return@withLock result
                     }
                     use(next)
-                    result = read()
+                    result = attempt()
                 }
-                if (result is EntryResult.Data) password?.accepted() else password?.discard()
+                if (result is EntryResult.Data) {
+                    if (passwordVerified) password?.accepted()
+                } else password?.discard()
                 result
             } catch (e: Throwable) {
                 password?.discard()
@@ -156,6 +167,7 @@ class ArchiveSession private constructor(
     }
 
     internal interface EntryReader {
+        fun passwordChanged() = Unit
         suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult
 
         fun close()
@@ -167,6 +179,8 @@ class ArchiveSession private constructor(
      */
     private inner class FromCentralDirectory(private val records: List<ZipRecord>) : EntryReader {
         private val others = Direct(Cursor.Closed, positions = null)
+
+        override fun passwordChanged() = others.passwordChanged()
 
         override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult = read(entry, maxBytes, prefix = false)
 
@@ -191,6 +205,8 @@ class ArchiveSession private constructor(
     private inner class Direct(private var cursor: Cursor, private var positions: LongArray?) : EntryReader {
         // Touched only on the session thread.
         private val archive: ArchiveHandle get() = libarchive.value
+
+        override fun passwordChanged() { cursor = Cursor.Closed }
 
         override suspend fun read(entry: ArchiveEntry, maxBytes: Int): EntryResult = read(entry, maxBytes, prefix = false)
 
@@ -258,6 +274,7 @@ class ArchiveSession private constructor(
             val bytes = EntryBytes(maxBytes, prefix)
             cursor = Cursor.Closed
             val status = archive.readData(bytes)
+            if (entry.traditionalEncryption && status == Status.OK) passwordVerified = true
             if (status == Status.OK || status == Status.STOPPED || status == Status.FAILED) {
                 cursor = Cursor.Before(entry.entryIndex + 1)
             }

@@ -38,7 +38,11 @@ interface BookPasswordStore {
     suspend fun clear(): Int
 }
 
-internal class EncryptedBookPasswords(private val dao: BookPasswordDao, private val cipher: SecretCipher) : BookPasswordStore {
+internal class EncryptedBookPasswords(
+    private val dao: BookPasswordDao,
+    private val cipher: SecretCipher,
+    private val saved: suspend (BookId) -> Unit = {},
+) : BookPasswordStore {
     private fun aad(id: BookId) = "book:${id.value}".encodeToByteArray()
     override suspend fun read(id: BookId): CharArray? {
         val row = dao.get(id.value) ?: return null
@@ -65,6 +69,7 @@ internal class EncryptedBookPasswords(private val dao: BookPasswordDao, private 
         try {
             val sealed = withContext(Dispatchers.IO) { cipher.seal(bytes, aad(id)) }
             dao.put(BookPasswordRow(id.value, sealed.iv, sealed.ciphertext))
+            saved(id)
         } finally { bytes.fill(0) }
     }
     override suspend fun delete(id: BookId) = dao.delete(id.value)
@@ -108,7 +113,8 @@ class BookPasswordPrompt {
             pending?.password?.let { secrets.remove(it); it.fill('\u0000') }
             pending = null
             if (cancelled) return@withLock null
-            if (fromStore) { store.delete(id); fromStore = false }
+            if (fromStore && wrong) store.delete(id)
+            fromStore = false
             val waiting = CompletableDeferred<Answer?>()
             answer = waiting
             mutable.value = PasswordQuestion(wrong)
