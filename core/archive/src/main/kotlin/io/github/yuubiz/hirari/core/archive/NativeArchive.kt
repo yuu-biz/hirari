@@ -12,6 +12,8 @@ internal object Status {
     const val EOF = 1
     const val STOPPED = 2
     const val ENCRYPTED_HEADERS = 3
+    const val PASSWORD_REQUIRED = 4
+    const val ENCRYPTED_ENTRY = 5
     const val WARN = -20
     const val FAILED = -25
 
@@ -49,6 +51,7 @@ internal fun interface DataSink {
  * and the calls return libarchive's [Status] codes.
  */
 internal interface ArchiveHandle : AutoCloseable {
+    fun setPassword(password: CharArray?) = Unit
     /** The header of the last [nextHeader] that succeeded. */
     val header: Header?
 
@@ -127,6 +130,14 @@ internal class NativeArchive(source: ByteSource) : ArchiveHandle {
     private val reads = SourceReads(source)
 
     private var sink: DataSink? = null
+    private var password: ByteArray? = null
+    private var passwordRequired = false
+
+    override fun setPassword(password: CharArray?) {
+        this.password?.fill(0)
+        val encoded = password?.let { Charsets.UTF_8.newEncoder().encode(java.nio.CharBuffer.wrap(it)) }
+        this.password = encoded?.let { bytes -> ByteArray(bytes.remaining()).also { bytes.get(it); bytes.array().fill(0) } }
+    }
 
     override var header: Header? = null
         private set
@@ -138,9 +149,10 @@ internal class NativeArchive(source: ByteSource) : ArchiveHandle {
     override fun begin(job: Job) {
         check(handle != 0L) { "the archive is closed" }
         reads.begin(job)
+        passwordRequired = false
     }
 
-    override fun open(jump: Jump?): Int = nativeOpen(handle, jump?.at ?: 0, jump?.to ?: 0)
+    override fun open(jump: Jump?): Int = nativeOpen(handle, jump?.at ?: 0, jump?.to ?: 0, password)
 
     override fun nextHeader(): Int {
         header = null
@@ -150,17 +162,19 @@ internal class NativeArchive(source: ByteSource) : ArchiveHandle {
     override fun readData(sink: DataSink): Int {
         this.sink = sink
         try {
-            return nativeReadData(handle)
+            return nativeReadData(handle).also { passwordRequired = it == Status.PASSWORD_REQUIRED }
         } finally {
             this.sink = null
         }
     }
 
-    override fun failure(): ArchiveFailure = reads.failure()
+    override fun failure(): ArchiveFailure = if (passwordRequired) ArchiveFailure.PasswordRequired else reads.failure()
 
     override fun close() {
         if (handle == 0L) return
         nativeFree(handle)
+        password?.fill(0)
+        password = null
         handle = 0L
     }
 
@@ -189,7 +203,7 @@ internal class NativeArchive(source: ByteSource) : ArchiveHandle {
 
     private external fun nativeCreate(size: Long, buffer: ByteBuffer): Long
 
-    private external fun nativeOpen(handle: Long, jumpAt: Long, jumpTo: Long): Int
+    private external fun nativeOpen(handle: Long, jumpAt: Long, jumpTo: Long, password: ByteArray?): Int
 
     private external fun nativeNextHeader(handle: Long): Int
 

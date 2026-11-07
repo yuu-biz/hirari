@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.core.image
 
 import android.content.ContentResolver
 import android.net.Uri
+import io.github.yuubiz.hirari.core.model.BookPassword
 import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ArchiveFailure
 import io.github.yuubiz.hirari.core.archive.ArchiveFormat
@@ -46,8 +47,10 @@ enum class BookFailure {
     /** The provider cannot seek and the copy does not fit (docs/spec.md section 3.1). */
     NoRoomForCopy,
 
-    /** A password protects the whole book: a PDF with a user password or an archive with encrypted headers (3.8). */
+    /** Unsupported encryption: archive headers, or a password PDF on API 28–34 (3.8). */
     Encrypted,
+    /** Supported encryption that needs a password, including a rejected password. */
+    PasswordRequired,
     Corrupt,
     Truncated,
     ReadError,
@@ -77,8 +80,9 @@ object Books {
         extractDir: File? = null,
         naming: EntryNaming = EntryNaming(),
         stash: DiskStash? = null,
+        password: BookPassword? = null,
     ): BookResult {
-        val session = when (val opened = ArchiveSession.open(source, extractDir)) {
+        val session = when (val opened = ArchiveSession.open(source, extractDir, password)) {
             is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
             OpenResult.Encrypted -> return BookResult.Failed(BookFailure.Encrypted)
             is OpenResult.Opened -> opened.session
@@ -146,6 +150,7 @@ object Books {
         extractDir: File? = null,
         naming: EntryNaming = EntryNaming(),
         stash: DiskStash? = null,
+        password: BookPassword? = null,
     ): BookResult {
         val read = try {
             safely { readPrefix(source, PDF_SNIFF_BYTES) }
@@ -161,16 +166,16 @@ object Books {
             }
         }
         sniffImage(prefix)?.let { return openImage(source, it, decoding) }
-        return if (isPdf(prefix)) openPdf(source, decoding) else openArchive(source, decoding, extractDir, naming, stash)
+        return if (isPdf(prefix)) openPdf(source, decoding, password) else openArchive(source, decoding, extractDir, naming, stash, password)
     }
 
     /** Opens the PDF in [source], which the book owns from here on (docs/spec.md section 3.9). */
-    suspend fun openPdf(source: ByteSource, decoding: ImageDecoding): BookResult {
+    suspend fun openPdf(source: ByteSource, decoding: ImageDecoding, password: BookPassword? = null): BookResult {
         val storage = decoding.storage ?: run {
             source.close()
             return BookResult.Failed(BookFailure.ReadError)
         }
-        val document = when (val opened = PdfDocument.open(source, storage)) {
+        val document = when (val opened = openPasswordPdf(source, storage, password)) {
             is PdfDocument.Opened.Document -> opened.document
             is PdfDocument.Opened.Failed -> return BookResult.Failed(opened.reason)
         }
@@ -193,6 +198,7 @@ object Books {
         extractDir: File? = null,
         naming: EntryNaming = EntryNaming(),
         extractDirOf: (suspend (ByteSource) -> File?)? = null,
+        password: BookPassword? = null,
     ): BookResult {
         val modified = withContext(Dispatchers.IO) { resolver.documentLastModifiedMs(uri) }
         val source = when (val opened = safely(release = ByteSource::close) {
@@ -209,7 +215,7 @@ object Books {
                 throw e
             }
         }
-        return openBook(source, decoding, dir, naming)
+        return openBook(source, decoding, dir, naming, password = password)
     }
 
     /**
@@ -322,6 +328,7 @@ private fun ArchiveFormat?.container(): Container = when (this) {
 }
 
 internal fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
+    ArchiveFailure.PasswordRequired -> BookFailure.PasswordRequired
     ArchiveFailure.Corrupt -> BookFailure.Corrupt
     ArchiveFailure.Truncated -> BookFailure.Truncated
     ArchiveFailure.ReadError, ArchiveFailure.ConnectionLost -> BookFailure.ReadError

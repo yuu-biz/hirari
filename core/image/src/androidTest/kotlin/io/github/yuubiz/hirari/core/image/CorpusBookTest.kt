@@ -23,7 +23,9 @@ class CorpusBookTest {
         val book = when (opened) {
             is BookResult.Failed -> {
                 val actual = listOf("fails", opened.reason.name.lowercase())
-                return if (actual == expected.open) emptyList() else listOf("open: expected ${expected.open}, got $actual")
+                val wanted = if (expected.path == "pdf/password.pdf" && android.os.Build.VERSION.SDK_INT >= 35)
+                    listOf("fails", "passwordrequired") else expected.open
+                return if (actual == wanted) emptyList() else listOf("open: expected $wanted, got $actual")
             }
             is BookResult.Opened -> opened.book
         }

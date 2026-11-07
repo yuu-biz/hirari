@@ -17,13 +17,14 @@ class ArchiveEntry(
     val isDirectory: Boolean,
     val encrypted: Boolean,
     val compression: String?,
+    val traditionalEncryption: Boolean = false,
 )
 
 /**
  * Why reading failed, in the terms of docs/spec.md section 2.4. [ReadError] and [ConnectionLost] come from the
  * source, so reading again may succeed (section 6.5).
  */
-enum class ArchiveFailure { Corrupt, Truncated, ReadError, ConnectionLost }
+enum class ArchiveFailure { Corrupt, Truncated, ReadError, ConnectionLost, PasswordRequired }
 
 sealed interface OpenResult {
     class Opened(val session: ArchiveSession) : OpenResult

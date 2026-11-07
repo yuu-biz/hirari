@@ -17,6 +17,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -97,6 +98,17 @@ fun ReaderScreen(
     val ui = remember { ReaderUi() }
     val stoppingKey = remember { StoppingKey() }
     val close by rememberUpdatedState(onClose)
+    val passwordQuestion by viewModel.passwordPrompt.question.collectAsStateWithLifecycle()
+    passwordQuestion?.let { question ->
+        val context = LocalContext.current
+        io.github.yuubiz.hirari.core.ui.BookPasswordDialog(question.wrong, question.busy,
+            submit = viewModel.passwordPrompt::submit,
+            cancel = {
+                viewModel.passwordPrompt.cancel()
+                android.widget.Toast.makeText(context, io.github.yuubiz.hirari.core.ui.R.string.book_password_required, android.widget.Toast.LENGTH_SHORT).show()
+                close()
+            })
+    }
     ReaderWindowHold(viewModel, ui)
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onStart() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
@@ -355,6 +367,7 @@ private val BookFailure.message: Int
         BookFailure.NotFound -> R.string.reader_failed_not_found
         BookFailure.NoPermission -> R.string.reader_failed_no_permission
         BookFailure.NoRoomForCopy -> R.string.reader_failed_no_room
+        BookFailure.PasswordRequired -> io.github.yuubiz.hirari.core.ui.R.string.book_password_required
         BookFailure.Encrypted -> R.string.reader_failed_encrypted
         BookFailure.Corrupt -> R.string.reader_failed_corrupt
         BookFailure.Truncated -> R.string.reader_failed_truncated

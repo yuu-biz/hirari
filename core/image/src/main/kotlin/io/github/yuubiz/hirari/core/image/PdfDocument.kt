@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
+import android.graphics.pdf.LoadParams
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.ParcelFileDescriptor
@@ -130,7 +132,7 @@ internal class PdfDocument private constructor(
          * descriptor, and a [ByteSource] hides its own, so the renderer reads through a proxy descriptor that
          * [storage] serves from [source] (docs/spec.md section 3.9).
          */
-        suspend fun open(source: ByteSource, storage: StorageManager): Opened {
+        suspend fun open(source: ByteSource, storage: StorageManager, password: CharArray? = null): Opened {
             val executor = Executors.newSingleThreadExecutor { Thread(it, "pdf") }
             val dispatcher: ExecutorCoroutineDispatcher = executor.asCoroutineDispatcher()
             var renderer: PdfRenderer? = null
@@ -148,7 +150,12 @@ internal class PdfDocument private constructor(
                     }
                     proxied = true
                     renderer = try {
-                        PdfRenderer(descriptor)
+                        if (Build.VERSION.SDK_INT >= 35) {
+                            val params = LoadParams.Builder().apply {
+                                if (password != null) setPassword(password.concatToString())
+                            }.build()
+                            PdfRenderer(descriptor, params)
+                        } else PdfRenderer(descriptor)
                     } catch (e: Throwable) {
                         descriptor.close()
                         throw e
@@ -167,7 +174,7 @@ internal class PdfDocument private constructor(
                 executor.shutdown()
                 return when (e) {
                     is OutOfMemoryError -> Opened.Failed(BookFailure.ReadError)
-                    is Exception -> Opened.Failed(input.openFailure(e))
+                    is Exception -> Opened.Failed(input.openFailure(e).let { if (it == BookFailure.Encrypted && Build.VERSION.SDK_INT >= 35) BookFailure.PasswordRequired else it })
                     else -> throw e
                 }
             }

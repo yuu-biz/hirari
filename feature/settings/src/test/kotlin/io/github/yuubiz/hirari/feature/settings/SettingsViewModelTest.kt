@@ -372,6 +372,26 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `clearing book passwords reports the deleted count and ignores repeated requests`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var clears = 0
+        val vm = SettingsViewModel(
+            SettingsServices(settings, transfer, documents, clearThumbnails = {}, clearExtraction = { 0L },
+                about = NO_ABOUT, fonts = FakeFonts(), clearBookPasswords = { clears++; gate.await(); 3 }),
+            StandardTestDispatcher(testScheduler),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
+        vm.clearBookPasswords()
+        vm.clearBookPasswords()
+        advanceUntilIdle()
+        assertEquals(ActionState.Working(Step.ClearingBookPasswords), vm.state.value.action)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, clears)
+        assertEquals(ActionState.Done(ActionResult.BookPasswordsCleared(3)), vm.state.value.action)
+    }
+
+    @Test
     fun `the imported fonts are listed for the typeface dialog`() = runTest {
         val vm = viewModel(this)
         assertEquals(listOf("a.ttf"), vm.state.value.fonts)

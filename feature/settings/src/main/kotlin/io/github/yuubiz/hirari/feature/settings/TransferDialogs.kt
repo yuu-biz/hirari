@@ -116,6 +116,7 @@ private fun ActionResult.message(): String = when (this) {
     is ActionResult.Exported -> stringResource(if (includedReading) R.string.export_done_with_reading else R.string.export_done)
     is ActionResult.Imported -> stringResource(R.string.import_done)
     ActionResult.ThumbnailsCleared -> stringResource(R.string.clear_thumbnails_done)
+    is ActionResult.BookPasswordsCleared -> stringResource(R.string.clear_book_passwords_done, count)
     is ActionResult.ExtractionCleared ->
         if (freedBytes == 0L) {
             stringResource(R.string.clear_extraction_nothing)

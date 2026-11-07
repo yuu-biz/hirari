@@ -24,7 +24,7 @@ class CorpusTest {
     @Test
     fun `two runs write the same files byte for byte`() {
         val first = contents(generate())
-        assertEquals(corpusCases().keys + pdfCases().keys + MANIFEST + PAGES_MANIFEST, first.keys)
+        assertEquals(corpusCases().keys + pdfCases().keys + MANIFEST + PAGES_MANIFEST + PASSWORDS_MANIFEST, first.keys)
         assertEquals(first, contents(generate()))
     }
 
@@ -82,5 +82,22 @@ class CorpusTest {
         val sample = letters(100_000, 1)
         assertTrue(sample.none { it == 'P'.code.toByte() })
         assertContentEquals(sample, letters(100_000, 1))
+    }
+
+    @Test
+    fun `password fixtures document passwords and distinguish traditional from AES encryption`() {
+        val dir = generate()
+        val passwords = dir.resolve(PASSWORDS_MANIFEST).readText()
+        assertTrue("zip/zipcrypto.zip\thirari" in passwords)
+        assertTrue("zip/aes.zip\thirari" in passwords)
+        val cases = corpusCases()
+        val traditional = cases.getValue("zip/zipcrypto.zip").expected as Expected.Opens
+        val aes = cases.getValue("zip/aes.zip").expected as Expected.Opens
+        assertEquals(ExpectedRead.Fails(Failure.PasswordRequired), traditional.entries[1].read)
+        assertEquals(ExpectedRead.Unsupported("encrypted"), aes.entries[1].read)
+        val pages = dir.resolve(PAGES_MANIFEST).readText()
+        assertTrue("book\tzip/zipcrypto.zip\topens\t-" in pages)
+        assertTrue("book\tzip/aes.zip\topens\t-" in pages)
+        assertTrue("page\t002.jpg\tfails\tpasswordrequired" in pages)
     }
 }

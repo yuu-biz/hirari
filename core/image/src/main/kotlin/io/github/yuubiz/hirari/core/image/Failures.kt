@@ -17,6 +17,7 @@ internal fun EntryResult.pageFailure(): PageResult<Nothing>? = when (this) {
 }
 
 internal fun ArchiveFailure.pageFailure(): PageResult.Failed = when (this) {
+    ArchiveFailure.PasswordRequired -> PageResult.Failed(FailureReason.PasswordRequired, retryable = false)
     ArchiveFailure.Corrupt -> PageResult.Failed(FailureReason.Corrupt, retryable = false)
     ArchiveFailure.Truncated -> PageResult.Failed(FailureReason.Truncated, retryable = false)
     ArchiveFailure.ReadError -> readError

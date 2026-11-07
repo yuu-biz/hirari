@@ -61,6 +61,7 @@ class TextReaderViewModel(
     private val startAt: NeighborStart = NeighborStart.Saved,
     private val startOffset: Long? = null,
 ) : ViewModel() {
+    val passwordPrompt = io.github.yuubiz.hirari.core.data.BookPasswordPrompt()
     private val pending = MutableStateFlow<TextReaderUiState>(TextReaderUiState.Opening)
     private var model: TextReaderModel? = null
     private var typefaces: TypefaceCache? = null
@@ -96,7 +97,7 @@ class TextReaderViewModel(
                 work = Dispatchers.Default.limitedParallelism(1),
                 opener = opener(
                     ref,
-                    TextSources(application.contentResolver, services.storage.locations, services.smb, copyDir) { entryCharsets(it, services.storage.books, services.storage.settings) },
+                    TextSources(application.contentResolver, services.storage.locations, services.smb, copyDir, password = { passwordPrompt.forBook(it, services.storage.bookPasswords) }) { entryCharsets(it, services.storage.books, services.storage.settings) },
                 ),
                 settings = services.storage.settings.settings,
                 progress = services.storage.progress,
@@ -221,6 +222,7 @@ class TextReaderViewModel(
     }
 
     override fun onCleared() {
+        passwordPrompt.cancel()
         model?.close()
         pictures.evictAll()
     }

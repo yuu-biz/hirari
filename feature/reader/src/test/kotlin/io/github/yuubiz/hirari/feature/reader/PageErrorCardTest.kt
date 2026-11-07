@@ -10,6 +10,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class PageErrorCardTest {
+    @Test
+    fun passwordRequestsDoNotBecomePageErrorCards() {
+        assertNull(pageErrorCard(PageResult.Failed(FailureReason.PasswordRequired, retryable = false)))
+    }
+
     private fun failed(reason: FailureReason, retryable: Boolean) = pageErrorCard(PageResult.Failed(reason, retryable))
 
     private fun unsupported(kind: UnsupportedKind) = pageErrorCard(PageResult.Unsupported(kind))

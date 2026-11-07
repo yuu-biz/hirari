@@ -207,6 +207,8 @@ class ReaderViewModel internal constructor(
         microphone: Microphone = DeviceMicrophone,
     ) : this(application, services, request, microphone, locateBook = null)
 
+    val passwordPrompt = io.github.yuubiz.hirari.core.data.BookPasswordPrompt()
+
     var phase: ReaderPhase by mutableStateOf(ReaderPhase.Opening)
         private set
 
@@ -722,6 +724,7 @@ class ReaderViewModel internal constructor(
     }
 
     override fun onCleared() {
+        passwordPrompt.cancel()
         openingRecord?.left()
         traces.close()
         application.unregisterComponentCallbacks(trimCallbacks)
@@ -1079,7 +1082,7 @@ class ReaderViewModel internal constructor(
         }
         val stash = opening.services.smbCache?.let { DiskStash(it, id, file.size, file.modified) }
         val extractDir = ExtractionCache.directory(application.cacheDir, id, file.size, file.lastModifiedMs)
-        val result = Books.openBook(meter.counted(file), opening.services.decoding, extractDir, naming, stash)
+        val result = Books.openBook(meter.counted(file), opening.services.decoding, extractDir, naming, stash, passwordPrompt.forBook(id, opening.services.storage.bookPasswords))
         return Located(id, source, Uri.EMPTY, folder = false, result, remote, overrides, fileSize = file.size)
     }
 
@@ -1108,7 +1111,7 @@ class ReaderViewModel internal constructor(
             throw e
         }
         val extractDir = ExtractionCache.directory(application.cacheDir, bookId, bytes.size, bytes.lastModifiedMs)
-        val result = Books.openBook(bytes, opening.services.decoding, extractDir, naming)
+        val result = Books.openBook(bytes, opening.services.decoding, extractDir, naming, password = passwordPrompt.forBook(bookId, opening.services.storage.bookPasswords))
         return Located(bookId, source, uri, folder = false, result, overrides = overrides)
     }
 

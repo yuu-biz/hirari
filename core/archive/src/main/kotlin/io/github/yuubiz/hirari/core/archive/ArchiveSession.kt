@@ -1,6 +1,9 @@
 package io.github.yuubiz.hirari.core.archive
 
 import io.github.yuubiz.hirari.core.source.ByteSource
+import io.github.yuubiz.hirari.core.model.BookPassword
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -40,6 +43,7 @@ class ArchiveSession private constructor(
     /** Reaching an entry means decoding every entry before it (docs/spec.md section 3.3). */
     val solid: Boolean,
     extractDir: File?,
+    private val password: BookPassword?,
 ) : Closeable {
     /** The entries in archive order, as far as the archive could be listed. */
     val entries: List<ArchiveEntry> = listing.entries
@@ -48,6 +52,46 @@ class ArchiveSession private constructor(
     val indexError: ArchiveFailure? = listing.error
 
     private val closed = AtomicBoolean(false)
+    private val passwordLock = Mutex()
+    private var passwordLoaded = false
+    private var hasPassword = false
+
+    private suspend fun unlock(entry: ArchiveEntry, read: suspend () -> EntryResult): EntryResult {
+        if (!entry.traditionalEncryption) return read()
+        return passwordLock.withLock {
+            try {
+                suspend fun use(secret: CharArray?) {
+                    try {
+                        withContext(dispatcher) {
+                            if (closed.get()) throw CancellationException("the session is closed")
+                            libarchive.value.setPassword(secret)
+                        }
+                        hasPassword = secret != null
+                    } finally {
+                        secret?.fill('\u0000')
+                    }
+                }
+                if (!passwordLoaded) {
+                    use(password?.initial())
+                    passwordLoaded = true
+                }
+                var result = read()
+                while (result == EntryResult.Failed(ArchiveFailure.PasswordRequired)) {
+                    val next = password?.retry(hasPassword) ?: run {
+                        password?.discard()
+                        return@withLock result
+                    }
+                    use(next)
+                    result = read()
+                }
+                if (result is EntryResult.Data) password?.accepted() else password?.discard()
+                result
+            } catch (e: Throwable) {
+                password?.discard()
+                throw e
+            }
+        }
+    }
 
     private val reader: EntryReader = when {
         listing.records != null -> FromCentralDirectory(listing.records)
@@ -81,7 +125,7 @@ class ArchiveSession private constructor(
         // libarchive's RAR 5 reader fails to read the data of a directory instead of giving none.
         if (entry.isDirectory) return EntryResult.Data(ByteArray(0))
         refusal(entry, maxBytes)?.let { return it }
-        return reader.read(entry, maxBytes)
+        return unlock(entry) { reader.read(entry, maxBytes) }
     }
 
     /**
@@ -95,10 +139,12 @@ class ArchiveSession private constructor(
         val entry = entries[entryIndex]
         if (entry.isDirectory) return EntryResult.Data(ByteArray(0))
         refusal(entry, MAX_ENTRY_BYTES)?.let { return it }
-        return when (val current = reader) {
-            is FromCentralDirectory -> current.read(entry, count, prefix = true)
-            is Direct -> current.read(entry, count, prefix = true)
-            else -> error("only a solid archive is extracted")
+        return unlock(entry) {
+            when (val current = reader) {
+                is FromCentralDirectory -> current.read(entry, count, prefix = true)
+                is Direct -> current.read(entry, count, prefix = true)
+                else -> error("only a solid archive is extracted")
+            }
         }
     }
 
@@ -217,6 +263,7 @@ class ArchiveSession private constructor(
             }
             val reached = bytes.exceeded
             return when {
+                status == Status.ENCRYPTED_ENTRY -> EntryResult.Encrypted
                 status == Status.OK || (status == Status.STOPPED && bytes.prefixComplete) -> EntryResult.Data(bytes.toByteArray())
                 reached != null -> EntryResult.TooLarge(reached)
                 else -> EntryResult.Failed(archive.failure())
@@ -273,10 +320,14 @@ class ArchiveSession private constructor(
          * it with itself, or right away when opening fails. A solid archive is extracted into [extractDir], the
          * directory of this book under `cacheDir/extract/` (docs/spec.md section 7), when it is given.
          */
-        suspend fun open(source: ByteSource, extractDir: File? = null): OpenResult = open(source, extractDir, ::NativeArchive)
+        suspend fun open(source: ByteSource, extractDir: File? = null, password: BookPassword? = null): OpenResult =
+            open(source, extractDir, ::NativeArchive, password)
 
         /** [open] with [handle] in place of libarchive. [handle] is called on the session thread, if at all. */
-        internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle): OpenResult {
+        internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle): OpenResult =
+            open(source, extractDir, handle, null)
+
+        internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle, password: BookPassword?): OpenResult {
             val libarchive = lazy(LazyThreadSafetyMode.NONE) { handle(source) }
             val executor = Executors.newSingleThreadExecutor { Thread(it, "archive-session").apply { isDaemon = true } }
             val dispatcher = executor.asCoroutineDispatcher()
@@ -300,7 +351,7 @@ class ArchiveSession private constructor(
                     Listing.Encrypted -> OpenResult.Encrypted
                     is Listing.Listed -> {
                         val solid = isSolid(listing.format, listing.filter, opened.second)
-                        OpenResult.Opened(ArchiveSession(source, libarchive, executor, dispatcher, listing, listing.format, solid, extractDir))
+                        OpenResult.Opened(ArchiveSession(source, libarchive, executor, dispatcher, listing, listing.format, solid, extractDir, password))
                     }
                 }
                 return result
@@ -359,6 +410,7 @@ class ArchiveSession private constructor(
                     isDirectory = header.isDirectory,
                     encrypted = header.encrypted,
                     compression = if (format == ArchiveFormat.Zip) compressionOf(header.formatName) else null,
+                    traditionalEncryption = format == ArchiveFormat.Zip && header.encrypted && compressionOf(header.formatName) != "aes",
                 )
             }
         }
@@ -387,7 +439,7 @@ class ArchiveSession private constructor(
             val compression = entry.compression
             val declared = entry.declaredSize
             return when {
-                entry.encrypted -> EntryResult.Encrypted
+                entry.encrypted && !entry.traditionalEncryption -> EntryResult.Encrypted
                 compression != null && compression !in READABLE_COMPRESSION -> EntryResult.UnsupportedCompression(compression)
                 declared != null && declared > maxBytes -> EntryResult.TooLarge(declared)
                 else -> null

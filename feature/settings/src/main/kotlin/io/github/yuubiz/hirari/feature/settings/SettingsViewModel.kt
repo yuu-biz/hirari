@@ -66,6 +66,7 @@ class SettingsServices(
     val about: suspend () -> AboutInfo,
 
     val fonts: FontLibrary,
+    val clearBookPasswords: suspend () -> Int = { 0 },
 )
 
 sealed interface SettingsLoad {
@@ -77,7 +78,7 @@ sealed interface SettingsLoad {
     data class Ready(val settings: GlobalSettings) : SettingsLoad
 }
 
-enum class Step { Exporting, Reading, Applying, ClearingThumbnails, ClearingExtraction, ImportingFont }
+enum class Step { Exporting, Reading, Applying, ClearingThumbnails, ClearingExtraction, ClearingBookPasswords, ImportingFont }
 
 enum class Problem { CannotWrite, CannotReadSettings, CannotRead, TooLarge, NotASettingsFile, ApplyFailed, CannotClear, CannotSave, NotAFont, NoRoomForFont, CannotReadFont }
 
@@ -89,6 +90,7 @@ sealed interface ActionResult {
     data object ThumbnailsCleared : ActionResult
 
     data class ExtractionCleared(val freedBytes: Long) : ActionResult
+    data class BookPasswordsCleared(val count: Int) : ActionResult
 
     /** The font is stored as [fileName] and is now the text typeface. */
     data class FontImported(val fileName: String) : ActionResult
@@ -279,6 +281,15 @@ class SettingsViewModel(
                     ActionResult.ExtractionCleared(withContext(io) { services.clearExtraction() })
                 },
             )
+        }
+    }
+
+    fun clearBookPasswords() {
+        if (!begin(Step.ClearingBookPasswords)) return
+        viewModelScope.launch {
+            finish(attempt(Problem.CannotClear) {
+                ActionResult.BookPasswordsCleared(withContext(io) { services.clearBookPasswords() })
+            })
         }
     }
 

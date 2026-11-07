@@ -27,6 +27,8 @@ class ZipEntry(
     val encrypted: Boolean = false,
     val declaredSize: Long = data.size.toLong(),
     val crc: Int = crc32(data),
+    val password: String? = null,
+    val aes: Boolean = false,
 )
 
 /** Where an entry landed, as offsets into [ZipFile.bytes]. */
@@ -77,7 +79,7 @@ fun writeZip(entries: List<ZipEntry>, comment: ByteArray = ByteArray(0), prefix:
         out.u32(0x04034b50)
         out.u16(versionNeeded(entry))
         out.u16(flags(entry))
-        out.u16(entry.method.code)
+        out.u16(if (entry.aes) 99 else entry.method.code)
         out.u16(DOS_TIME)
         out.u16(DOS_DATE)
         if (entry.dataDescriptor) {
@@ -85,11 +87,11 @@ fun writeZip(entries: List<ZipEntry>, comment: ByteArray = ByteArray(0), prefix:
             out.u32(0)
             out.u32(0)
         } else {
-            out.u32(entry.crc)
+            out.u32(if (entry.aes) 0 else entry.crc)
             out.sizes(entry, payload.size)
         }
         out.u16(entry.name.size)
-        out.u16(if (entry.zip64) 4 + 16 else 0)
+        out.u16((if (entry.zip64) 4 + 16 else 0) + if (entry.aes) 11 else 0)
         out.write(entry.name)
         if (entry.zip64) {
             out.u16(ZIP64_EXTRA)
@@ -97,6 +99,7 @@ fun writeZip(entries: List<ZipEntry>, comment: ByteArray = ByteArray(0), prefix:
             out.u64(entry.declaredSize)
             out.u64(payload.size.toLong())
         }
+        if (entry.aes) out.aesExtra(entry)
         val dataStart = out.size()
         out.write(payload)
         val dataEnd = out.size()
@@ -116,13 +119,13 @@ fun writeZip(entries: List<ZipEntry>, comment: ByteArray = ByteArray(0), prefix:
         out.u16(VERSION_MADE_BY)
         out.u16(versionNeeded(entry))
         out.u16(flags(entry))
-        out.u16(entry.method.code)
+        out.u16(if (entry.aes) 99 else entry.method.code)
         out.u16(DOS_TIME)
         out.u16(DOS_DATE)
-        out.u32(entry.crc)
+        out.u32(if (entry.aes) 0 else entry.crc)
         out.sizes(entry, record.payloadSize)
         out.u16(entry.name.size)
-        out.u16(if (entry.zip64) 4 + 24 else 0)
+        out.u16((if (entry.zip64) 4 + 24 else 0) + if (entry.aes) 11 else 0)
         out.u16(0) // comment length
         out.u16(0) // disk number
         out.u16(0) // internal attributes
@@ -136,6 +139,7 @@ fun writeZip(entries: List<ZipEntry>, comment: ByteArray = ByteArray(0), prefix:
             out.u64(record.payloadSize.toLong())
             out.u64(offset.toLong())
         }
+        if (entry.aes) out.aesExtra(entry)
     }
     val centralSize = out.size() - centralStart
     val centralOffset = centralStart - prefix.size
@@ -169,18 +173,25 @@ private fun payload(entry: ZipEntry): ByteArray {
         Method.Deflated -> deflate(entry.data)
         Method.Stored, is Method.Raw -> entry.data
     }
-    // The bytes after the traditional encryption header are never decrypted, so they need not be real ciphertext.
+    entry.password?.let { password ->
+        return if (entry.aes) winZipAes(data, password) else zipCrypto(
+            ByteArray(12) { it.toByte() }.also { it[11] = (if (entry.dataDescriptor) DOS_TIME ushr 8 else entry.crc ushr 24).toByte() } + data,
+            password,
+        )
+    }
+    // This older case intentionally has no valid passphrase.
     return if (entry.encrypted) ByteArray(ENCRYPTION_HEADER_SIZE) { (0xa5 xor it).toByte() } + data else data
 }
 
 private fun versionNeeded(entry: ZipEntry): Int = when {
+    entry.aes -> 51
     entry.zip64 -> VERSION_ZIP64
     entry.method == Method.Stored -> 10
     else -> 20
 }
 
 private fun flags(entry: ZipEntry): Int =
-    (if (entry.encrypted) FLAG_ENCRYPTED else 0) or
+    (if (entry.encrypted || entry.password != null) FLAG_ENCRYPTED else 0) or
         (if (entry.dataDescriptor) FLAG_DATA_DESCRIPTOR else 0) or
         (if (entry.utf8Flag) FLAG_UTF8 else 0)
 
@@ -192,6 +203,12 @@ private fun LittleEndianBytes.sizes(entry: ZipEntry, payloadSize: Int) {
         u32(payloadSize)
         u32(entry.declaredSize.toInt())
     }
+}
+
+private fun LittleEndianBytes.aesExtra(entry: ZipEntry) {
+    u16(0x9901); u16(7); u16(2) // AE-2
+    u8('A'.code); u8('E'.code); u8(3) // AES-256
+    u16(entry.method.code)
 }
 
 private fun LittleEndianBytes.endRecord(count: Int, centralSize: Int, centralOffset: Int, comment: ByteArray) {

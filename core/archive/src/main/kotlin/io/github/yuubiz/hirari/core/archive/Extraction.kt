@@ -240,7 +240,7 @@ internal class Extraction(
     }
 
     private fun failed(failure: ArchiveFailure): Slot = when (failure) {
-        ArchiveFailure.Corrupt, ArchiveFailure.Truncated -> Slot.Settled(EntryResult.Failed(failure))
+        ArchiveFailure.PasswordRequired, ArchiveFailure.Corrupt, ArchiveFailure.Truncated -> Slot.Settled(EntryResult.Failed(failure))
         ArchiveFailure.ReadError, ArchiveFailure.ConnectionLost -> Slot.Retry(EntryResult.Failed(failure))
     }
 

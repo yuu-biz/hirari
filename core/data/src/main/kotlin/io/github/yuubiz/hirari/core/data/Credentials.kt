@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.room3.ColumnInfo
+import androidx.room3.AutoMigration
 import androidx.room3.Dao
 import androidx.room3.Database
 import androidx.room3.Entity
@@ -144,9 +145,15 @@ internal interface CredentialDao {
 }
 
 /** A database file of its own, so the backup rules can leave it out (docs/spec.md section 7). */
-@Database(entities = [CredentialRow::class], version = 1, exportSchema = true)
+@Database(
+    entities = [CredentialRow::class, BookPasswordRow::class],
+    version = 2,
+    exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
+)
 internal abstract class CredentialDatabase : RoomDatabase() {
     abstract fun credentials(): CredentialDao
+    abstract fun bookPasswords(): BookPasswordDao
 }
 
 internal const val CREDENTIAL_DATABASE = "credentials.db"
@@ -196,7 +203,7 @@ internal class EncryptedCredentialStore(
 }
 
 /** UTF-8 without a [String] in between, so no copy of the secret waits for the garbage collector. */
-private fun CharArray.toUtf8(): ByteArray {
+internal fun CharArray.toUtf8(): ByteArray {
     val buffer = Charsets.UTF_8.newEncoder().encode(CharBuffer.wrap(this))
     val bytes = ByteArray(buffer.remaining())
     buffer.get(bytes)
@@ -204,7 +211,7 @@ private fun CharArray.toUtf8(): ByteArray {
     return bytes
 }
 
-private fun ByteArray.toChars(): CharArray {
+internal fun ByteArray.toChars(): CharArray {
     val buffer = Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(this))
     val chars = CharArray(buffer.remaining())
     buffer.get(chars)

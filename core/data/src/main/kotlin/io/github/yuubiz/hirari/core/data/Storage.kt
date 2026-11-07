@@ -40,6 +40,7 @@ class Storage internal constructor(
     val launch: LaunchRepository = DataStoreLaunchRepository(launchStore, debuggable)
 
     val credentials: CredentialStore = EncryptedCredentialStore(credentialDatabase.credentials(), cipher)
+    val bookPasswords: BookPasswordStore = EncryptedBookPasswords(credentialDatabase.bookPasswords(), cipher)
 
     val locations: LocationRepository = RoomLocationRepository(database, credentials)
 

@@ -11,7 +11,7 @@ sealed interface Expected {
 }
 
 /** [Encrypted] is only for opening: the headers are encrypted (docs/spec.md section 3.8). */
-enum class Failure { Corrupt, Truncated, Encrypted }
+enum class Failure { Corrupt, Truncated, Encrypted, PasswordRequired }
 
 /**
  * [name] is the name after decoding by the rules of docs/spec.md section 3.4. [page] is what the book opener

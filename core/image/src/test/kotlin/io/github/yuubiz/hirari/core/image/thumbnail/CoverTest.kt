@@ -144,6 +144,7 @@ class CoverTest {
 
     @Test
     fun aBookThatIsEncryptedOrBrokenIsRecordedAndOneThatCouldBeReadLaterIsNot() {
+        assertEquals(Made.Unavailable, BookFailure.PasswordRequired.made())
         assertEquals(Made.Unreadable, BookFailure.Encrypted.made())
         assertEquals(Made.Unreadable, BookFailure.Corrupt.made())
         assertEquals(Made.Unreadable, BookFailure.Truncated.made())
@@ -154,6 +155,7 @@ class CoverTest {
 
     @Test
     fun aPageFailureIsRecordedUnlessItMayBeRetried() {
+        assertEquals(Made.Unavailable, PageResult.Failed(FailureReason.PasswordRequired, retryable = false).made())
         assertEquals(Made.Unreadable, PageResult.Failed(FailureReason.Corrupt, retryable = false).made())
         assertEquals(Made.Unreadable, PageResult.Failed(FailureReason.Truncated, retryable = false).made())
         assertEquals(Made.Unavailable, PageResult.Failed(FailureReason.Timeout, retryable = true).made())

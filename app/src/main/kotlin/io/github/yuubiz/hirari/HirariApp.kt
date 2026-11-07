@@ -108,7 +108,7 @@ class HirariApp : Application() {
             val thumbnails = Thumbnails.forDevice(this@HirariApp, ThumbnailStoreAdapter(storage.thumbnails))
             val covers = Covers(
                 source = ThumbnailsSource(thumbnails),
-                books = DeviceCoverBooks(contentResolver, cacheDir, folders, smb, storage.books, storage.settings),
+                books = DeviceCoverBooks(contentResolver, cacheDir, folders, smb, storage.books, storage.settings, storage.bookPasswords),
                 memoryBytes = CoverMemoryBudget.forDevice(this@HirariApp),
                 density = { resources.displayMetrics.density },
             )

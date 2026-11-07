@@ -28,6 +28,7 @@ fun settingsServices(storage: Storage, context: Context): SettingsServices {
         clearExtraction = { ExtractionCache.under(application.cacheDir).clear() },
         about = { BundledAbout(application).load() },
         fonts = StorageFonts(storage.fonts, application.contentResolver),
+        clearBookPasswords = storage.bookPasswords::clear,
     )
 }
 

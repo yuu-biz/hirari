@@ -94,7 +94,7 @@ class CentralZipCorpusTest {
                 val backward = session.entries.reversed().map { describe(session, it) }.reversed()
                 if (forward != backward) problems += "reading backward gave $backward, forward $forward"
                 forward.zip(expected.entries).forEachIndexed { i, (actual, wanted) ->
-                    val libarchiveReads = session.entries[i].compression == "ppmd-1"
+                    val libarchiveReads = session.entries[i].compression == "ppmd-1" || session.entries[i].traditionalEncryption
                     if (libarchiveReads && actual != listOf("libarchive")) problems += "entry $i: expected libarchive to read it, got $actual"
                     if (!libarchiveReads && actual != wanted.drop(1)) problems += "entry $i ${wanted[0]}: expected ${wanted.drop(1)}, got $actual"
                 }

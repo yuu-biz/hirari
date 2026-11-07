@@ -7,7 +7,7 @@ sealed interface PageResult<out T> {
     data class Unsupported(val kind: UnsupportedKind) : PageResult<Nothing>
 }
 
-enum class FailureReason { Corrupt, Truncated, ReadError, ConnectionLost, Timeout }
+enum class FailureReason { Corrupt, Truncated, ReadError, ConnectionLost, Timeout, PasswordRequired }
 
 sealed interface UnsupportedKind {
     data object Encrypted : UnsupportedKind

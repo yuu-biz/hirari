@@ -108,6 +108,7 @@ internal class TextSources(
     val smb: SmbFiles,
     val copyDir: File,
     val pictureBudget: Int = pictureBudgetBytes(),
+    val password: (BookId) -> io.github.yuubiz.hirari.core.model.BookPassword? = { null },
     val charsets: suspend (archiveId: BookId) -> EntryCharsets,
 )
 
@@ -123,7 +124,7 @@ internal fun opener(ref: TextBookRef, sources: TextSources): TextOpener = TextOp
                 is TextBookRef.InLocation -> openInLocation(sources, ref)
                 is TextBookRef.ArchiveEntry -> {
                     val charsets = sources.charsets(ref.archiveId)
-                    openEntry(sources.archive(ref.archive), ref.archiveId, ref.entryIndex, charsets, ref.archive, sources.pictureBudget)
+                    openEntry(sources.archive(ref.archive), ref.archiveId, ref.entryIndex, charsets, ref.archive, sources.pictureBudget, sources.password(ref.archiveId))
                 }
             }
         }
@@ -227,8 +228,8 @@ private suspend fun openDocument(resolver: ContentResolver, uri: Uri, id: BookId
  * 挿絵 from the same archive, which stays open with the text. The index keeps [archive] and the entry so home
  * bookmarks reopen the text (docs/spec.md section 4.6). The names are decoded in [charsets].
  */
-internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int, charsets: EntryCharsets, archive: EntryArchive, pictureBudget: Int = pictureBudgetBytes()): TextOpenResult = guarded {
-    val session = when (val opened = ArchiveSession.open(source)) {
+internal suspend fun openEntry(source: ByteSource, archiveId: BookId, entryIndex: Int, charsets: EntryCharsets, archive: EntryArchive, pictureBudget: Int = pictureBudgetBytes(), password: io.github.yuubiz.hirari.core.model.BookPassword? = null): TextOpenResult = guarded {
+    val session = when (val opened = ArchiveSession.open(source, password = password)) {
         is OpenResult.Failed -> return@guarded TextOpenResult.Failed(TextFailure.ReadError)
         OpenResult.Encrypted -> return@guarded TextOpenResult.Failed(TextFailure.Encrypted)
         is OpenResult.Opened -> opened.session

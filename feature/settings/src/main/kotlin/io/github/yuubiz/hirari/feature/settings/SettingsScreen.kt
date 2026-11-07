@@ -118,6 +118,9 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                     item(key = "extraction") {
                         ActionRow(stringResource(R.string.settings_clear_extraction), stringResource(R.string.settings_clear_extraction_summary), viewModel::clearExtraction)
                     }
+                    item(key = "book-passwords") {
+                        ActionRow(stringResource(R.string.settings_clear_book_passwords), null, viewModel::clearBookPasswords)
+                    }
                     item(key = "licenses") { ActionRow(stringResource(R.string.settings_licenses), null, onOpenLicenses) }
                     item(key = "about") { ActionRow(stringResource(R.string.settings_about), null) { aboutDialog = true } }
                 }

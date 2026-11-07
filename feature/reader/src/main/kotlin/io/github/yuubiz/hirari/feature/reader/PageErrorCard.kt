@@ -26,11 +26,11 @@ data class PageErrorCard(val text: PageErrorText, val actions: List<PageErrorAct
  */
 fun pageErrorCard(result: PageResult<*>): PageErrorCard? = when (result) {
     is PageResult.Ready -> null
-    is PageResult.Failed -> {
+    is PageResult.Failed -> if (result.reason == FailureReason.PasswordRequired) null else {
         val text = when (result.reason) {
             FailureReason.Corrupt, FailureReason.Truncated -> PageErrorText.Corrupt
             FailureReason.ReadError, FailureReason.ConnectionLost -> PageErrorText.ReadFailed
-            FailureReason.Timeout -> PageErrorText.TimedOut
+            FailureReason.PasswordRequired, FailureReason.Timeout -> PageErrorText.TimedOut
         }
         val actions = buildList {
             if (result.retryable) add(PageErrorAction.Retry)

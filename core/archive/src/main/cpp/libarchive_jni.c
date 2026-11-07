@@ -21,6 +21,8 @@
 /* Status codes shared with NativeArchive.kt. The negative ones are libarchive's. */
 #define STATUS_STOPPED 2
 #define STATUS_ENCRYPTED_HEADERS 3
+#define STATUS_PASSWORD_REQUIRED 4
+#define STATUS_ENCRYPTED_ENTRY 5
 
 /*
  * A read right after a seek or a skip is usually for one local header, so it
@@ -154,7 +156,7 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeCreate(
  */
 JNIEXPORT jint JNICALL
 Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeOpen(
-	JNIEnv *env, jobject self, jlong handle, jlong jump_at, jlong jump_to) {
+	JNIEnv *env, jobject self, jlong handle, jlong jump_at, jlong jump_to, jbyteArray password) {
 	(void)self;
 	session *s = from_handle(handle);
 	s->env = env;
@@ -180,6 +182,17 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeOpen(
 	if (r == ARCHIVE_OK) r = archive_read_set_seek_callback(a, seek_callback);
 	if (r == ARCHIVE_OK) r = archive_read_set_skip_callback(a, skip_callback);
 	if (r == ARCHIVE_OK) r = archive_read_set_callback_data(a, s);
+	if (r == ARCHIVE_OK && password != NULL) {
+		jsize length = (*env)->GetArrayLength(env, password);
+		char *phrase = calloc((size_t)length + 1, 1);
+		if (phrase == NULL) return ARCHIVE_FATAL;
+		(*env)->GetByteArrayRegion(env, password, 0, length, (jbyte *)phrase);
+		if ((*env)->ExceptionCheck(env)) r = ARCHIVE_FATAL;
+		else if (length > 0) r = archive_read_add_passphrase(a, phrase);
+		volatile char *wipe = phrase;
+		for (jsize i = 0; i < length; i++) wipe[i] = 0;
+		free(phrase);
+	}
 	if (r == ARCHIVE_OK) r = archive_read_open1(a);
 	return r;
 }
@@ -249,7 +262,14 @@ Java_io_github_yuubiz_hirari_core_archive_NativeArchive_nativeReadData(JNIEnv *e
 		la_int64_t offset;
 		int r = archive_read_data_block(s->archive, &block, &size, &offset);
 		if (r == ARCHIVE_EOF) return ARCHIVE_OK;
-		if (r != ARCHIVE_OK && r != ARCHIVE_WARN) return r;
+		if (r != ARCHIVE_OK && r != ARCHIVE_WARN) {
+			const char *error = archive_error_string(s->archive);
+			if (error != NULL && (strstr(error, "Encrypted file is unsupported") != NULL ||
+			    strstr(error, "Unsupported encryption") != NULL)) return STATUS_ENCRYPTED_ENTRY;
+			if (error != NULL && (strstr(error, "passphrase") != NULL || strstr(error, "Passphrase") != NULL))
+				return STATUS_PASSWORD_REQUIRED;
+			return r;
+		}
 		if (size == 0) continue;
 		jobject view = (*env)->NewDirectByteBuffer(env, (void *)block, (jlong)size);
 		if (view == NULL) return ARCHIVE_FATAL;

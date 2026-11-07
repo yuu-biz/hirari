@@ -229,6 +229,22 @@ class SettingsTransferTest {
     }
 
     @Test
+    fun `book passwords stay outside both export variants`() = runBlocking {
+        withStorage { storage ->
+            val secret = "book-secret-51df".toCharArray()
+            storage.bookPasswords.put(BookId("private-book-id"), secret)
+            try {
+                for (reading in listOf(false, true)) {
+                    val exported = storage.transfer.export(includeReading = reading)
+                    assertFalse("book-secret-51df" in exported)
+                    assertFalse("private-book-id" in exported)
+                    assertFalse("book_passwords" in exported)
+                }
+            } finally { secret.fill('\u0000') }
+        }
+    }
+
+    @Test
     fun `export, a fresh install and import bring back settings, overrides, servers and reading`() = runBlocking {
         val (book, exported) = withStorage { storage -> storage.fill() to storage.transfer.export(includeReading = true) }
         withStorage { storage ->

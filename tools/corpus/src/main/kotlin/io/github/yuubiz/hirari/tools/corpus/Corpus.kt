@@ -99,7 +99,7 @@ private fun encryptedZip(): CorpusCase {
     val after = file("003.jpg", 3000, 3)
     return CorpusCase(
         writeZip(listOf(before, encrypted, after)).bytes,
-        Expected.Opens(listOf(readable(before), unsupported(encrypted, "encrypted"), readable(after))),
+        Expected.Opens(listOf(readable(before), fails(encrypted, Failure.PasswordRequired), readable(after))),
     )
 }
 
@@ -209,6 +209,7 @@ fun corpusCases(): Map<String, CorpusCase> = buildMap {
     put("zip/no-images.zip", readableZip(listOf(file("readme.txt", 500, 1), file("info.nfo", 300, 2), directory("notes/"))))
     put("zip/methods.zip", methodsZip())
     put("zip/encrypted.zip", encryptedZip())
+    putAll(passwordZipCases())
     put("zip/corrupt.zip", corruptZip())
     put("zip/declared-huge.zip", declaredHugeZip())
     put("zip/not-a-zip.zip", CorpusCase(ascii("This is not a ZIP archive.\n"), Expected.OpenFails(Failure.Corrupt)))
@@ -221,6 +222,7 @@ fun corpusCases(): Map<String, CorpusCase> = buildMap {
 
 const val MANIFEST = "expected.tsv"
 const val PAGES_MANIFEST = "pages.tsv"
+const val PASSWORDS_MANIFEST = "passwords.tsv"
 
 /** Every corpus file by its path, with the archive expectations in [MANIFEST] and the page ones in [PAGES_MANIFEST]. */
 fun corpus(): Map<String, ByteArray> {
@@ -228,6 +230,7 @@ fun corpus(): Map<String, ByteArray> {
     val pdfs = pdfCases()
     return cases.mapValues { it.value.bytes } + pdfs.mapValues { it.value.bytes } +
         (MANIFEST to manifest(cases).toByteArray(Charsets.UTF_8)) +
+        (PASSWORDS_MANIFEST to "zip/zipcrypto.zip\thirari\nzip/aes.zip\thirari\npdf/password.pdf\thirari\n".toByteArray(Charsets.UTF_8)) +
         (PAGES_MANIFEST to (pagesManifest(cases) + pdfPagesManifest(pdfs)).toByteArray(Charsets.UTF_8))
 }
 

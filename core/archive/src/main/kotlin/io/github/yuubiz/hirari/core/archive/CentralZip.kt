@@ -39,6 +39,7 @@ internal class ZipRecord(
         isDirectory = kind == ZipKind.Directory,
         encrypted = encrypted,
         compression = methodName(method),
+        traditionalEncryption = encrypted && flags and FLAG_STRONG_ENCRYPTION == 0 && method != 99,
     )
 }
 
@@ -148,7 +149,8 @@ internal object CentralZip {
     }
 
     /** Whether [read] reads [record]. libarchive reads the other methods, PPMd among them. */
-    fun reads(record: ZipRecord): Boolean = record.kind == ZipKind.Link || record.method == STORED || record.method == DEFLATED
+    fun reads(record: ZipRecord): Boolean = !record.encrypted &&
+        (record.kind == ZipKind.Link || record.method == STORED || record.method == DEFLATED)
 
     /**
      * The data of [record], which [reads] and which is not encrypted, read from its local header on in as few reads

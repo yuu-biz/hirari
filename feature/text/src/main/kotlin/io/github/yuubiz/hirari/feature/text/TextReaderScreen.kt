@@ -149,6 +149,17 @@ fun TextReaderScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val back by rememberUpdatedState(onBack)
+    val passwordQuestion by viewModel.passwordPrompt.question.collectAsStateWithLifecycle()
+    passwordQuestion?.let { question ->
+        val context = LocalContext.current
+        io.github.yuubiz.hirari.core.ui.BookPasswordDialog(question.wrong, question.busy,
+            submit = viewModel.passwordPrompt::submit,
+            cancel = {
+                viewModel.passwordPrompt.cancel()
+                android.widget.Toast.makeText(context, io.github.yuubiz.hirari.core.ui.R.string.book_password_required, android.widget.Toast.LENGTH_SHORT).show()
+                back()
+            })
+    }
     var panel by rememberSaveable { mutableStateOf<TextPanel?>(null) }
     var bookEndEdge by rememberSaveable { mutableStateOf<BookEdge?>(null) }
     var orientation by rememberSaveable { mutableStateOf<ReaderOrientation?>(null) }

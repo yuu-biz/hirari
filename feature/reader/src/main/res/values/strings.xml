@@ -14,7 +14,7 @@
     <string name="page_error_corrupt">このページのデータは壊れています</string>
     <string name="page_error_read">このページを読み込めませんでした</string>
     <string name="page_error_timeout">読み込みに時間がかかりすぎました</string>
-    <string name="page_error_encrypted">このページは暗号化されています</string>
+    <string name="page_error_encrypted">この暗号方式には対応していません</string>
     <string name="page_error_compression">対応していない圧縮方式です（%1$s）</string>
     <string name="page_error_image_feature">対応していない画像です（%1$s）</string>
     <string name="page_error_too_large">画像が大きすぎます</string>

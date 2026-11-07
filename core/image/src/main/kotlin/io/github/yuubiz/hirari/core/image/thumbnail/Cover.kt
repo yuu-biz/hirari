@@ -101,18 +101,20 @@ internal sealed interface Made {
 /** A book that did not open: encrypted or broken is final, a missing permission or a read error may pass. */
 internal fun BookFailure.made(): Made = when (this) {
     BookFailure.Encrypted, BookFailure.Corrupt, BookFailure.Truncated -> Made.Unreadable
+    BookFailure.PasswordRequired -> Made.Unavailable
     BookFailure.NotFound, BookFailure.NoPermission, BookFailure.NoRoomForCopy, BookFailure.ReadError -> Made.Unavailable
 }
 
 /** Why listing an archive stopped before it found a page: a read that failed may pass, a broken archive does not. */
 internal fun FailureReason.made(): Made = when (this) {
     FailureReason.Corrupt, FailureReason.Truncated -> Made.Unreadable
+    FailureReason.PasswordRequired -> Made.Unavailable
     FailureReason.ReadError, FailureReason.ConnectionLost, FailureReason.Timeout -> Made.Unavailable
 }
 
 /** A page that did not give an image. A failure that [PageResult.Failed.retryable] allows again is not final. */
 internal fun PageResult<*>.made(): Made = when (this) {
     is PageResult.Ready -> error("a ready page is not a failure")
-    is PageResult.Failed -> if (retryable) Made.Unavailable else Made.Unreadable
+    is PageResult.Failed -> if (retryable || reason == FailureReason.PasswordRequired) Made.Unavailable else Made.Unreadable
     is PageResult.Unsupported -> Made.Unreadable
 }

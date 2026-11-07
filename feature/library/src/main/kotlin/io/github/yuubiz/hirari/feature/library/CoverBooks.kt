@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ExtractionCache
 import io.github.yuubiz.hirari.core.data.BookRepository
+import io.github.yuubiz.hirari.core.data.silent
 import io.github.yuubiz.hirari.core.data.SettingsRepository
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
@@ -63,13 +64,14 @@ class DeviceCoverBooks(
     private val smb: SmbPlaces,
     private val indexed: BookRepository,
     private val settings: SettingsRepository,
+    private val passwords: io.github.yuubiz.hirari.core.data.BookPasswordStore? = null,
 ) : CoverBooks {
     private val copyDir get() = File(cacheDir, "copy")
 
     private suspend fun openDocument(uri: Uri, spec: CoverSpec.Book, decoding: ImageDecoding, naming: EntryNaming): BookResult =
         Books.openDocument(resolver, uri, copyDir, decoding, naming = naming, extractDirOf = { source ->
             withContext(Dispatchers.IO) { coverExtractDir(cacheDir, spec.id, source.size, source.lastModifiedMs) }
-        })
+        }, password = passwords?.silent(spec.id))
 
     private suspend fun openBook(source: ByteSource, spec: CoverSpec.Book, decoding: ImageDecoding, naming: EntryNaming): BookResult {
         val dir = try {
@@ -78,7 +80,7 @@ class DeviceCoverBooks(
             source.close()
             throw e
         }
-        return Books.openBook(source, decoding, dir, naming)
+        return Books.openBook(source, decoding, dir, naming, password = passwords?.silent(spec.id))
     }
 
     override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = try {

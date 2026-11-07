@@ -14,6 +14,7 @@ class FailuresTest {
     @Test
     fun archiveResultsMapToTheErrorTable() {
         val table = mapOf(
+            EntryResult.Failed(ArchiveFailure.PasswordRequired) to PageResult.Failed(FailureReason.PasswordRequired, retryable = false),
             EntryResult.Failed(ArchiveFailure.Corrupt) to PageResult.Failed(FailureReason.Corrupt, retryable = false),
             EntryResult.Failed(ArchiveFailure.Truncated) to PageResult.Failed(FailureReason.Truncated, retryable = false),
             EntryResult.Failed(ArchiveFailure.ReadError) to PageResult.Failed(FailureReason.ReadError, retryable = true),
