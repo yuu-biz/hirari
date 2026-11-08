@@ -8,10 +8,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.completeWith
@@ -82,6 +84,40 @@ class Thumbnails internal constructor(
         gates.values.forEach { it.setPermits(n) }
     }
 
+    @Volatile
+    private var following: Deferred<Unit>? = null
+
+    /**
+     * Applies each count of [counts] with [setParallelism], starting at the first thumbnail or preview asked for, which
+     * waits for the first count. Not at once: the start of the app must be the first to read the stored settings (it
+     * reports a file it cannot read), and the library is built before it.
+     */
+    fun followParallelism(counts: Flow<Int>) {
+        following = scope.async(start = CoroutineStart.LAZY) {
+            val first = CompletableDeferred<Unit>()
+            scope.launch {
+                try {
+                    counts.distinctUntilChanged().collect {
+                        setParallelism(it)
+                        first.complete(Unit)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // The counts stop; the last applied one stays.
+                } finally {
+                    first.complete(Unit)
+                }
+            }
+            first.await()
+        }
+    }
+
+    private suspend fun gate(lane: ThumbLane): PriorityGate {
+        following?.await()
+        return gates.getValue(lane)
+    }
+
     /** One listing at a time per lane for the searches for folder covers, beside the covers being made (section 4.4). */
     private val listingGates = ThumbLane.entries.associateWith { PriorityGate(1) }
     private val unavailableUntil = ConcurrentHashMap<ThumbnailKey, Long>()
@@ -150,7 +186,7 @@ class Thumbnails internal constructor(
      * IO dispatcher, whatever thread asks.
      */
     suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview = try {
-        gates.getValue(book.lane).withPermit(Urgency(ThumbPriority.Visible)) { previewOnIo(book, entryIndex, maxSidePx) }
+        gate(book.lane).withPermit(Urgency(ThumbPriority.Visible)) { previewOnIo(book, entryIndex, maxSidePx) }
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
@@ -264,7 +300,7 @@ class Thumbnails internal constructor(
     }
 
     private suspend fun make(book: ThumbSubject.Book, key: ThumbnailKey, urgency: Urgency): ThumbResult =
-        gates.getValue(book.lane).withPermit(urgency) {
+        gate(book.lane).withPermit(urgency) {
             // Another flight for the key may have finished while this one waited for its turn.
             stored(key)?.let { return@withPermit it }
             try {

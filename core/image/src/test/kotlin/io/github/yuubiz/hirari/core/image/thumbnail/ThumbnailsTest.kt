@@ -15,6 +15,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -186,6 +188,33 @@ class ThumbnailsTest {
         runCurrent()
         assertEquals(0, maker.running)
         assertEquals(10, maker.calls.size)
+        thumbnails.close()
+    }
+
+    @Test
+    fun theCountIsReadAtTheFirstThumbnailNotWhenFollowed() = runTest {
+        val decoding = ArrayList<Pair<Long, Int>>()
+        val thumbnails = thumbnails(256L shl 20) { budget, n -> decoding += budget to n }
+        var reads = 0
+        val counts = MutableStateFlow(4)
+        thumbnails.followParallelism(counts.onStart { reads++ })
+        runCurrent()
+        assertEquals(0, reads)
+        val release = CompletableDeferred<Unit>()
+        maker.script = { book ->
+            release.await()
+            image(book)
+        }
+        repeat(5) { index -> launch { thumbnails.thumbnail(request(book("b$index"))) } }
+        runCurrent()
+        assertEquals(1, reads)
+        assertEquals(listOf((64L shl 20) to 4), decoding)
+        assertEquals(4, maker.running)
+        counts.value = 2
+        runCurrent()
+        assertEquals((128L shl 20) to 2, decoding.last())
+        release.complete(Unit)
+        runCurrent()
         thumbnails.close()
     }
 
