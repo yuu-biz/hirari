@@ -68,7 +68,7 @@ class SettingsTableTest {
     fun `every field of GlobalSettings has a row`() {
         val fields = GlobalSettings.serializer().descriptor.elementNames.toSet()
         val keys = SettingsTable.map { it.key }
-        assertEquals(78, keys.size)
+        assertEquals(79, keys.size)
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
         assertEquals(fields, keys.toSet())
     }
