@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.SemanticsNode
@@ -114,8 +115,10 @@ class ReaderSheetsTest {
     }
 
     /** A touch on the middle of the page bar where the reader lays it out, as its accessibility node reports. */
+    /** The page bar is found by its action, which both the shown bars and the hidden bar's node carry (section 4.8). */
     private fun tapPageBar() {
-        val bar = compose.onNodeWithContentDescription("ページバー").fetchSemanticsNode().boundsInRoot
+        val opensPages = SemanticsMatcher("opens the page panel") { it.config.getOrNull(SemanticsActions.OnClick)?.label == "ページパネルを開く" }
+        val bar = compose.onNode(opensPages).fetchSemanticsNode().boundsInRoot
         compose.onRoot().performTouchInput { click(bar.center) }
     }
 
