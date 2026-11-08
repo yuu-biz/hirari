@@ -40,7 +40,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Thumbnails for the lists of the library (docs/spec.md sections 4.4 and 5.4): finds one in the [ThumbnailStore],
- * and otherwise makes it from the cover page and stores it.
+ * and otherwise makes it from the cover page, hands it over at once and stores it afterwards ([Saves]).
  *
  * The work is not tied to the caller. Each [ThumbLane] makes as many thumbnails at once as [setParallelism]
  * allows, on a decode dispatcher of their own. A request that asks for a thumbnail already being made
@@ -70,6 +70,7 @@ class Thumbnails internal constructor(
     private val updateDecoding: (Long, Int) -> Unit = { _, _ -> },
 ) {
     private val bookFlights = Flights<ThumbnailKey, ThumbResult>(scope)
+    private val saves = Saves(store, scope)
     private val folderFlights = HashMap<ThumbnailKey, FolderFlight>()
     private val folderWrites = Mutex()
     private var parallelism = ThumbnailParallelism.effective(2, deviceBudgetBytes)
@@ -270,20 +271,27 @@ class Thumbnails internal constructor(
     private suspend fun book(book: ThumbSubject.Book, request: ThumbRequest, mode: Mode, urgency: Urgency): ThumbResult? {
         val key = keyOf(book, request)
         if (mode == Mode.Remake) {
-            store.remove(key)
+            saves.forget(key)
             skipped.remove(key)
         }
         if (mode == Mode.Remake || mode == Mode.Retry) unavailableUntil.remove(key)
         if (key in skipped) return ThumbResult.Unavailable
-        stored(key)?.let { return it }
+        known(key)?.let { return it }
         if (mode == Mode.CacheOnly) return null
         if (mode != Mode.Remake && isHeld()) return ThumbResult.Unavailable
         if (backingOff(key)) return ThumbResult.Unavailable
         return bookFlights.join(key, urgency) { make(book, key, it) }
     }
 
+    /**
+     * A book's thumbnail made and not stored yet, or what the store knows. The store is asked second: a save writes the
+     * store before it lets the thumbnail go, so one of the two has it.
+     */
+    private suspend fun known(key: ThumbnailKey): ThumbResult? =
+        saves.pending(key)?.let { ThumbResult.Ready(ThumbImage.Fresh(it), key) } ?: stored(key)
+
     private suspend fun stored(key: ThumbnailKey): ThumbResult? = when (val found = store.get(key)) {
-        is StoredThumb.Hit -> ThumbResult.Ready(found.file, key)
+        is StoredThumb.Hit -> ThumbResult.Ready(ThumbImage.Stored(found.file), key)
         StoredThumb.Failed -> ThumbResult.Failed
         StoredThumb.Interrupted -> if (isHeld()) ThumbResult.Failed else skip(key)
         StoredThumb.Miss -> null
@@ -299,25 +307,41 @@ class Thumbnails internal constructor(
         return ThumbResult.Unavailable
     }
 
-    private suspend fun make(book: ThumbSubject.Book, key: ThumbnailKey, urgency: Urgency): ThumbResult =
-        gate(book.lane).withPermit(urgency) {
+    /** What a flight came to in its turn of the lane: an outcome, or a WebP to store once the turn is given back. */
+    private sealed interface Turn {
+        class Settled(val result: ThumbResult) : Turn
+
+        class Encoded(val webp: ByteArray) : Turn
+    }
+
+    /** The thumbnail goes to everyone waiting before it is stored, and the save waits for no turn (section 4.4). */
+    private suspend fun make(book: ThumbSubject.Book, key: ThumbnailKey, urgency: Urgency): ThumbResult {
+        val turn = gate(book.lane).withPermit(urgency) {
             // Another flight for the key may have finished while this one waited for its turn.
-            stored(key)?.let { return@withPermit it }
+            known(key)?.let { return@withPermit Turn.Settled(it) }
             try {
                 when (val made = store.making(key) { timed(book.lane) { maker.make(book, key.sizePx, key.direction) } }) {
-                    is Made.Webp -> ThumbResult.Ready(store.put(key, made.bytes), key)
+                    is Made.Webp -> Turn.Encoded(made.bytes)
                     Made.Unreadable -> {
                         store.markFailed(key)
-                        ThumbResult.Failed
+                        Turn.Settled(ThumbResult.Failed)
                     }
-                    Made.Unavailable -> unavailable(key)
+                    Made.Unavailable -> Turn.Settled(unavailable(key))
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                unavailable(key)
+                Turn.Settled(unavailable(key))
             }
         }
+        return when (turn) {
+            is Turn.Settled -> turn.result
+            is Turn.Encoded -> {
+                saves.add(key, turn.webp)
+                ThumbResult.Ready(ThumbImage.Fresh(turn.webp), key)
+            }
+        }
+    }
 
     /** A cover that takes longer than its lane allows gives the lane up and counts as one that may be made later. */
     private suspend fun timed(lane: ThumbLane, make: suspend () -> Made): Made {
@@ -468,7 +492,7 @@ class Thumbnails internal constructor(
             currentCoroutineContext().ensureActive()
             val found = search.found
             when {
-                found != null -> ThumbResult.Ready(store.put(key, found), key)
+                found != null -> ThumbResult.Ready(ThumbImage.Stored(store.put(key, found)), key)
                 search.unavailable || search.skipped -> ThumbResult.Unavailable
                 else -> {
                     store.markFailed(key)
@@ -503,7 +527,10 @@ class Thumbnails internal constructor(
         val key = keyOf(book, search.request)
         store.hold(key).use {
             when (val result = checkNotNull(book(book, search.request, search.mode, search.urgency))) {
-                is ThumbResult.Ready -> search.found = withContext(io) { result.file.readBytes() }
+                is ThumbResult.Ready -> search.found = when (val image = result.image) {
+                    is ThumbImage.Stored -> withContext(io) { image.file.readBytes() }
+                    is ThumbImage.Fresh -> image.webp
+                }
                 ThumbResult.Failed -> Unit
                 ThumbResult.Unavailable -> if (key in skipped) search.skipped = true else search.unavailable = true
             }

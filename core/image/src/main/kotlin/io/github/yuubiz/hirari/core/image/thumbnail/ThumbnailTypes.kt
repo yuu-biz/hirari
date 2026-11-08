@@ -187,10 +187,22 @@ sealed interface PagePreview {
     data object Unavailable : PagePreview
 }
 
+/** The WebP of a ready thumbnail, and where to decode it from. */
+sealed interface ThumbImage {
+    /** In the store. */
+    data class Stored(val file: File) : ThumbImage
+
+    /**
+     * Just made and not in the store yet (docs/spec.md section 4.4): [webp] is what the store is given. Everyone who asks
+     * for the thumbnail before the store has it gets the same array. Nobody writes to it.
+     */
+    class Fresh(val webp: ByteArray) : ThumbImage
+}
+
 /** The outcome of a request. Cancelling it is not an outcome: the call throws `CancellationException`. */
 sealed interface ThumbResult {
     /** [key] names the thumbnail in the store; for a folder it is the folder's own key, under which its cover is kept. */
-    data class Ready(val file: File, val key: ThumbnailKey) : ThumbResult
+    data class Ready(val image: ThumbImage, val key: ThumbnailKey) : ThumbResult
 
     /** The book cannot give a thumbnail: encrypted, broken, or without an image. It is recorded and not tried again. */
     data object Failed : ThumbResult

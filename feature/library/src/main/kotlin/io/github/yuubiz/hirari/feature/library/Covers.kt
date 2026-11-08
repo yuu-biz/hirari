@@ -13,6 +13,7 @@ import io.github.yuubiz.hirari.core.image.thumbnail.CoverListing
 import io.github.yuubiz.hirari.core.image.thumbnail.FolderEntry as ThumbEntry
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.image.thumbnail.PagePreview
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbImage
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbLane
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
@@ -35,7 +36,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import java.io.File
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.CoroutineContext
@@ -56,7 +56,7 @@ class Covers(
     decodeContext: CoroutineContext = Dispatchers.IO.limitedParallelism(DECODE_PARALLELISM),
     /** The covers chosen from the first images of a RAR or a tar (docs/spec.md section 4.4). */
     private val provisional: ProvisionalCovers = ProvisionalCovers.None,
-    decode: (File) -> ImageBitmap? = ::decodeCover,
+    decode: (ThumbImage) -> ImageBitmap? = ::decodeCover,
 ) {
     /** The first page a whole listing found, by book, while [settle] makes its cover again from it. */
     private val corrections = ConcurrentHashMap<BookId, Int>()
@@ -301,5 +301,8 @@ class Covers(
     }
 }
 
-/** Reads the WebP of a thumbnail. Called off the main thread. */
-internal fun decodeCover(file: File): ImageBitmap? = BitmapFactory.decodeFile(file.path)?.asImageBitmap()
+/** Reads the WebP of a thumbnail, from its file or from the bytes just made. Called off the main thread. */
+internal fun decodeCover(image: ThumbImage): ImageBitmap? = when (image) {
+    is ThumbImage.Stored -> BitmapFactory.decodeFile(image.file.path)
+    is ThumbImage.Fresh -> BitmapFactory.decodeByteArray(image.webp, 0, image.webp.size)
+}?.asImageBitmap()

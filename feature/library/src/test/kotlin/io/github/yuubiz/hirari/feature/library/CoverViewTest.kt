@@ -5,6 +5,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbImage
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbnailKey
 import io.github.yuubiz.hirari.core.model.BookId
@@ -33,7 +34,7 @@ class CoverViewTest {
         val spec = CoverSpec.Book(BookId("cached"), Instant.EPOCH, 10, null,
             ReadingDirection.RightToLeft, CoverOrigin.Document(UriString("content://cached")))
         val ref = CoverRef(spec, 300)
-        source.result = ThumbResult.Ready(File("cached.webp"),
+        source.result = ThumbResult.Ready(ThumbImage.Stored(File("cached.webp")),
             ThumbnailKey(spec.id, spec.modified, spec.byteSize, null, ref.sizePx, spec.direction))
         val covers = Covers(source, FakeCoverBooks(), 1 shl 20, { 2f }, Dispatchers.Unconfined) { image }
         runBlocking { covers.show(ref).first() }

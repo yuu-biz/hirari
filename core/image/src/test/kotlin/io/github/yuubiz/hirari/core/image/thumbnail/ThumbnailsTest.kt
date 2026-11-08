@@ -110,7 +110,10 @@ private class MemoryStore(private val dir: File) : ThumbnailStore {
 private fun image(book: ThumbSubject.Book) = Made.Webp(book.id.value.toByteArray())
 
 /** The book whose image [result] shows. */
-private fun shows(result: ThumbResult?): String = (result as ThumbResult.Ready).file.readText()
+private fun shows(result: ThumbResult?): String = when (val image = (result as ThumbResult.Ready).image) {
+    is ThumbImage.Stored -> image.file.readText()
+    is ThumbImage.Fresh -> String(image.webp)
+}
 
 private class FakeMaker(var script: suspend (ThumbSubject.Book) -> Made = ::image) : ThumbnailMaker {
     class Call(val book: ThumbSubject.Book, val sizePx: Int, val direction: ReadingDirection)
@@ -274,7 +277,8 @@ class ThumbnailsTest {
         assertTrue(first.await() is ThumbResult.Ready)
         val second = async { thumbnails.thumbnail(request(book("a"))) }
         runCurrent()
-        assertEquals(first.await(), second.await())
+        assertEquals(shows(first.await()), shows(second.await()))
+        assertTrue((second.await() as ThumbResult.Ready).image is ThumbImage.Stored)
         assertEquals(1, maker.calls.size)
         assertEquals(1, store.puts)
     }
@@ -623,16 +627,27 @@ class ThumbnailsTest {
     }
 
     @Test
-    fun aStoreThatThrowsIsAnUnavailableThumbnailNotACrash() = runTest {
+    fun aSaveThatFailsStillShowsTheCoverRecordsNothingAndTheNextRequestMakesItAgain() = runTest {
+        var puts = 0
         val broken = object : ThumbnailStore by store {
-            override suspend fun put(key: ThumbnailKey, webp: ByteArray): File = throw java.io.IOException("disk full")
+            override suspend fun put(key: ThumbnailKey, webp: ByteArray): File {
+                puts++
+                throw IOException("disk full")
+            }
         }
         val dispatcher = StandardTestDispatcher(testScheduler)
         val thumbnails = Thumbnails(broken, maker, CoroutineScope(SupervisorJob() + dispatcher), dispatcher, now = { clock })
         val result = async { thumbnails.thumbnail(request(book("a"))) }
         runCurrent()
-        assertEquals(ThumbResult.Unavailable, result.await())
+        assertEquals("a", shows(result.await()))
+        assertEquals("the save was tried", 1, puts)
+        assertTrue(store.files.isEmpty())
         assertTrue(store.failed.isEmpty())
+        assertNull(thumbnails.cached(request(book("a"))))
+        val again = async { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        assertEquals("a", shows(again.await()))
+        assertEquals("made again, without a back-off", 2, maker.calls.size)
     }
 
     @Test
@@ -1422,5 +1437,129 @@ class ThumbnailsTest {
         } finally {
             executor.shutdown()
         }
+    }
+
+    /** [store], whose saves wait for [open] and note the books they are for, in the order they start. */
+    private inner class GatedStore : ThumbnailStore by store {
+        val open = CompletableDeferred<Unit>()
+        val saving = ArrayList<String>()
+
+        override suspend fun put(key: ThumbnailKey, webp: ByteArray): File {
+            saving += key.book.value
+            open.await()
+            return store.put(key, webp)
+        }
+    }
+
+    private fun TestScope.thumbnailsOver(gated: ThumbnailStore): Thumbnails {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        return Thumbnails(gated, maker, CoroutineScope(SupervisorJob() + dispatcher), dispatcher, now = { clock })
+    }
+
+    private fun webp(result: ThumbResult?): ByteArray = ((result as ThumbResult.Ready).image as ThumbImage.Fresh).webp
+
+    @Test
+    fun aCoverJustMadeReachesItsRequesterBeforeItsSaveEnds() = runTest {
+        val gated = GatedStore()
+        val thumbnails = thumbnailsOver(gated)
+        val shown = async { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        assertTrue("the cover came before the save", shown.isCompleted)
+        assertEquals("a", String(webp(shown.await())))
+        assertEquals(listOf("a"), gated.saving)
+        assertTrue("nothing is stored yet", store.files.isEmpty())
+        gated.open.complete(Unit)
+        runCurrent()
+        assertTrue(store.get((shown.await() as ThumbResult.Ready).key) is StoredThumb.Hit)
+        assertTrue((thumbnails.cached(request(book("a"))) as ThumbResult.Ready).image is ThumbImage.Stored)
+    }
+
+    @Test
+    fun aRequestWhileTheSaveIsPendingGetsTheSameBytesWithoutMakingItAgain() = runTest {
+        val gated = GatedStore()
+        val thumbnails = thumbnailsOver(gated)
+        val first = async { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        val second = async { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        assertTrue(webp(first.await()) === webp(second.await()))
+        assertTrue(webp(first.await()) === webp(thumbnails.cached(request(book("a")))))
+        assertEquals(1, maker.calls.size)
+        gated.open.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("a"), gated.saving)
+        assertEquals(1, store.puts)
+    }
+
+    @Test
+    fun theTurnOfTheLaneIsFreeWhileTheSaveIsPending() = runTest {
+        val gated = GatedStore()
+        val thumbnails = thumbnailsOver(gated)
+        thumbnails.setParallelism(1)
+        launch { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        assertEquals(listOf("a"), gated.saving)
+        val next = async { thumbnails.thumbnail(request(book("b"))) }
+        runCurrent()
+        assertEquals("the save of a holds no turn", listOf("a", "b"), maker.ids)
+        assertEquals("b", shows(next.await()))
+        gated.open.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun coversAreSavedOneAtATimeInTheOrderTheyWereMade() = runTest {
+        val gated = GatedStore()
+        val thumbnails = thumbnailsOver(gated)
+        thumbnails.setParallelism(2)
+        val done = mapOf("a" to CompletableDeferred<Unit>(), "b" to CompletableDeferred(), "c" to CompletableDeferred())
+        maker.script = { book ->
+            done.getValue(book.id.value).await()
+            image(book)
+        }
+        for (id in listOf("a", "b", "c")) launch { thumbnails.thumbnail(request(book(id, lane = if (id == "c") ThumbLane.Smb else ThumbLane.Local))) }
+        runCurrent()
+        for (id in listOf("c", "a", "b")) {
+            done.getValue(id).complete(Unit)
+            runCurrent()
+        }
+        assertEquals("one save at a time: the first waits, the others queue", listOf("c"), gated.saving)
+        gated.open.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("c", "a", "b"), gated.saving)
+        assertEquals(3, store.files.size)
+    }
+
+    @Test
+    fun aRegenerationWhileASaveIsPendingDoesNotLetTheOldCoverBack() = runTest {
+        val gated = GatedStore()
+        val thumbnails = thumbnailsOver(gated)
+        launch { thumbnails.thumbnail(request(book("a"))) }
+        launch { thumbnails.thumbnail(request(book("b"))) }
+        runCurrent()
+        assertEquals("a is saving, b waits", listOf("a"), gated.saving)
+        maker.script = { Made.Webp("b again".toByteArray()) }
+        val again = async { thumbnails.regenerate(request(book("b"))) }
+        runCurrent()
+        gated.open.complete(Unit)
+        runCurrent()
+        assertEquals("b again", shows(again.await()))
+        assertEquals("b again", shows(thumbnails.cached(request(book("b")))))
+        assertEquals(listOf("a", "b"), gated.saving)
+    }
+
+    @Test
+    fun aCoverThatFindsTheQueueFullIsShownButNotStored() = runTest {
+        val gated = GatedStore()
+        val thumbnails = thumbnailsOver(gated)
+        val ids = List(Saves.MAX_QUEUED + 2) { "b$it" }
+        val shown = ids.map { id -> async { thumbnails.thumbnail(request(book(id))) } }
+        runCurrent()
+        assertEquals(ids, shown.map { shows(it.await()) })
+        assertEquals("one saving and the queue full", ids.dropLast(1), ids.filter { thumbnails.cached(request(book(it))) != null })
+        gated.open.complete(Unit)
+        runCurrent()
+        assertNull(thumbnails.cached(request(book(ids.last()))))
+        assertEquals(ids.size - 1, store.files.size)
     }
 }

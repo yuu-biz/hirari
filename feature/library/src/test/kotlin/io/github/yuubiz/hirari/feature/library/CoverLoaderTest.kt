@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbImage
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
@@ -38,10 +39,10 @@ import kotlin.test.assertTrue
 class CoverLoaderTest {
     private val source = FakeThumbnails()
     private val memory = MemoryImages<CoverKey, String>(maxBytes = 100) { it.length }
-    private val decoded = mutableListOf<File>()
-    private val loader = CoverLoader(source, memory, Dispatchers.Unconfined) { file ->
-        decoded += file
-        "image:${file.name}"
+    private val decoded = mutableListOf<ThumbImage>()
+    private val loader = CoverLoader(source, memory, Dispatchers.Unconfined) { image ->
+        decoded += image
+        "image:${image.name}"
     }
 
     private val spec = CoverSpec.Book(BookId("a"), Instant.EPOCH, 10, null, ReadingDirection.RightToLeft, CoverOrigin.Document(UriString("content://a")))
@@ -54,7 +55,12 @@ class CoverLoaderTest {
         priority,
     )
 
-    private fun ready(name: String) = ThumbResult.Ready(File(name), ThumbnailKey(spec.id, spec.modified, spec.byteSize, null, 300, spec.direction))
+    private val ThumbImage.name: String get() = when (this) {
+        is ThumbImage.Stored -> file.name
+        is ThumbImage.Fresh -> String(webp)
+    }
+
+    private fun ready(name: String) = ThumbResult.Ready(ThumbImage.Stored(File(name)), ThumbnailKey(spec.id, spec.modified, spec.byteSize, null, 300, spec.direction))
 
     @Test
     fun `a visible transient failure is retried every sixty seconds without rebinding`() = runTest(UnconfinedTestDispatcher()) {
@@ -101,9 +107,9 @@ class CoverLoaderTest {
         val worker = Executors.newSingleThreadExecutor { Thread(it, "cover-decode") }
         try {
             var decodedOn = ""
-            val off = CoverLoader(source, memory, worker.asCoroutineDispatcher()) { file ->
+            val off = CoverLoader(source, memory, worker.asCoroutineDispatcher()) { image ->
                 decodedOn = Thread.currentThread().name
-                "image:${file.name}"
+                "image:${image.name}"
             }
             source.result = ready("a.webp")
             val state = runBlocking { off.show(key, request()).first() }
@@ -112,6 +118,16 @@ class CoverLoaderTest {
         } finally {
             worker.shutdownNow()
         }
+    }
+
+    @Test
+    fun `a cover just made is decoded from its bytes, not from the store`() = runTest(UnconfinedTestDispatcher()) {
+        val made = ThumbImage.Fresh("made".toByteArray())
+        source.result = ThumbResult.Ready(made, ThumbnailKey(spec.id, spec.modified, spec.byteSize, null, 300, spec.direction))
+        val row = launch { loader.show(key, request()).collect {} }
+        assertEquals(listOf<ThumbImage>(made), decoded)
+        assertEquals("image:made", loader.peek(key))
+        row.cancel()
     }
 
     @Test
@@ -223,7 +239,7 @@ class CoverLoaderTest {
         assertEquals(ThumbPriority.Nearby, source.cached.single().priority)
         assertTrue(source.watches.isEmpty())
         assertTrue(source.holds.single().active)
-        assertEquals(listOf(File("a.webp")), decoded)
+        assertEquals(listOf<ThumbImage>(ThumbImage.Stored(File("a.webp"))), decoded)
         assertEquals("image:a.webp", loader.peek(key))
         job.cancel()
         assertTrue(source.holds.none { it.active })
@@ -272,7 +288,7 @@ class CoverLoaderTest {
         source.result = ready("visible.webp")
         val visible = launch { queued.show(key, request()).collect {} }
         runCurrent()
-        assertEquals(listOf(File("visible.webp"), File("nearby.webp")), decoded)
+        assertEquals(listOf<ThumbImage>(ThumbImage.Stored(File("visible.webp")), ThumbImage.Stored(File("nearby.webp"))), decoded)
         nearby.cancel()
         visible.cancel()
     }

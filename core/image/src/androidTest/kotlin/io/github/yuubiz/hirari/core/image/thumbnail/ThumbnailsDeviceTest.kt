@@ -65,14 +65,21 @@ class ThumbnailsDeviceTest {
     private fun request(subject: ThumbSubject, direction: ReadingDirection = ReadingDirection.RightToLeft) =
         ThumbRequest(subject, SIZE_PX, direction)
 
-    private fun bounds(file: File): Pair<Int, Int> {
+    /** The WebP of a ready thumbnail, from the store or as just made. */
+    private fun webp(result: ThumbResult): ByteArray = when (val image = (result as ThumbResult.Ready).image) {
+        is ThumbImage.Stored -> image.file.readBytes()
+        is ThumbImage.Fresh -> image.webp
+    }
+
+    private fun decoded(webp: ByteArray): Bitmap = BitmapFactory.decodeByteArray(webp, 0, webp.size)
+
+    private fun bounds(webp: ByteArray): Pair<Int, Int> {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.path, options)
+        BitmapFactory.decodeByteArray(webp, 0, webp.size, options)
         return options.outWidth to options.outHeight
     }
 
-    private fun assertWebp(file: File) {
-        val head = file.readBytes()
+    private fun assertWebp(head: ByteArray) {
         assertEquals("RIFF", String(head, 0, 4, Charsets.US_ASCII))
         assertEquals("WEBP", String(head, 8, 4, Charsets.US_ASCII))
     }
@@ -80,9 +87,9 @@ class ThumbnailsDeviceTest {
     @Test
     fun aCoverIsAWebpWhoseLongSideIsTheRequestedSize() = runBlocking {
         val result = thumbnails.thumbnail(request(book("images", corpusFile("zip/images.zip"))))
-        val file = (result as ThumbResult.Ready).file
-        assertWebp(file)
-        val (width, height) = bounds(file)
+        val webp = webp(result)
+        assertWebp(webp)
+        val (width, height) = bounds(webp)
         assertEquals(SIZE_PX, maxOf(width, height))
         assertTrue("expected a portrait cover, got $width x $height", height > width)
     }
@@ -90,7 +97,7 @@ class ThumbnailsDeviceTest {
     @Test
     fun aPdfGivesItsFirstPage() = runBlocking {
         val result = thumbnails.thumbnail(request(book("pdf", corpusFile("pdf/mixed-sizes.pdf"))))
-        val (width, height) = bounds((result as ThumbResult.Ready).file)
+        val (width, height) = bounds(webp(result))
         assertEquals(SIZE_PX, maxOf(width, height))
         assertTrue("the first page is 595 x 842 points, got $width x $height", height > width)
     }
@@ -100,8 +107,8 @@ class ThumbnailsDeviceTest {
         val file = corpusFile("zip/images.zip")
         val opened = Books.openDocument(context.contentResolver, Uri.fromFile(file), File(dir, "copy"), ImageDecoding.forDevice(context))
         val spread = (opened as BookResult.Opened).book.use { book -> book.pages.single { it.name == "spread.jpg" }.entryIndex }
-        val chosen = thumbnails.thumbnail(request(book("images", file, coverEntry = spread), ReadingDirection.LeftToRight)) as ThumbResult.Ready
-        val (width, height) = bounds(chosen.file)
+        val chosen = thumbnails.thumbnail(request(book("images", file, coverEntry = spread), ReadingDirection.LeftToRight))
+        val (width, height) = bounds(webp(chosen))
         assertEquals(SIZE_PX, maxOf(width, height))
         assertTrue("the left half of 1800 x 1200 is 900 x 1200, got $width x $height", height > width)
     }
@@ -117,8 +124,7 @@ class ThumbnailsDeviceTest {
             Books.openFolder(listOf(FolderFile("wide.png", wide.length()) { FileChannelSource(RandomAccessFile(wide, "r").channel) }), decoding)
         }
         for ((direction, expected) in listOf(ReadingDirection.RightToLeft to Color.BLUE, ReadingDirection.LeftToRight to Color.RED)) {
-            val file = (thumbnails.regenerate(request(subject, direction)) as ThumbResult.Ready).file
-            val image = BitmapFactory.decodeFile(file.path)
+            val image = decoded(webp(thumbnails.regenerate(request(subject, direction))))
             assertEquals("a half of 1200 x 800 is 600 x 800", SIZE_PX, image.height)
             assertTrue(image.width < image.height)
             val pixel = image.getPixel(image.width / 2, image.height / 2)
@@ -140,8 +146,7 @@ class ThumbnailsDeviceTest {
             Books.openFolder(listOf(FolderFile("stripes.png", page.length()) { FileChannelSource(RandomAccessFile(page, "r").channel) }), decoding)
         }
 
-        val middle = (thumbnails.regenerate(request(subject(CoverCrop(3333, 0, 6667, 5000)))) as ThumbResult.Ready).file
-        val green = BitmapFactory.decodeFile(middle.path)
+        val green = decoded(webp(thumbnails.regenerate(request(subject(CoverCrop(3333, 0, 6667, 5000))))))
         assertEquals("the middle third of the top half is square", SIZE_PX, green.width)
         assertEquals(SIZE_PX.toDouble(), green.height.toDouble(), 2.0)
         for ((x, y) in listOf(6 to 6, green.width - 7 to 6, 6 to green.height - 7, green.width - 7 to green.height - 7, green.width / 2 to green.height / 2)) {
@@ -149,16 +154,16 @@ class ThumbnailsDeviceTest {
         }
         green.recycle()
 
-        val top = (thumbnails.regenerate(request(subject(CoverCrop(0, 0, 10_000, 5000)))) as ThumbResult.Ready).file
-        val stripes = BitmapFactory.decodeFile(top.path)
+        val top = webp(thumbnails.regenerate(request(subject(CoverCrop(0, 0, 10_000, 5000)))))
+        val stripes = decoded(top)
         assertEquals(SIZE_PX, stripes.width)
         assertEquals("the top half of 1200 x 800 is 3:1", SIZE_PX / 3.0, stripes.height.toDouble(), 2.0)
         assertEquals(Color.RED, nearest(stripes.getPixel(6, 6)))
         assertEquals(Color.BLUE, nearest(stripes.getPixel(stripes.width - 7, stripes.height - 7)))
         stripes.recycle()
 
-        val whole = (thumbnails.regenerate(request(subject(null))) as ThumbResult.Ready).file
-        assertTrue("the page whole is not the range", whole.length() != top.length())
+        val whole = webp(thumbnails.regenerate(request(subject(null))))
+        assertTrue("the page whole is not the range", whole.size != top.size)
 
         val shown = thumbnails.preview(subject(null), entryIndex = 0, maxSidePx = 600) as PagePreview.Ready
         assertEquals(PageShape.Known(1200, 800), shown.shape)

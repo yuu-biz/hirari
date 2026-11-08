@@ -3,6 +3,7 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbImage
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbRequest
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbResult
 import io.github.yuubiz.hirari.core.ui.TraceSection
@@ -32,7 +33,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.math.abs
@@ -99,15 +99,16 @@ class MemoryImages<K : Any, I : Any>(private val maxBytes: Long, private val siz
  * Turns the results of the thumbnail source into what a row draws. [show] is for a row on screen: its collection
  * is the hold on the thumbnail, so collect it for as long as the row is bound and cancel it when the row leaves. A
  * row whose cover is unavailable looks again each time its `recoveries` emit (docs/spec.md section 4.4).
- * Decoding the stored WebP runs on [decodeContext], never on the caller's thread, and the decoded image is kept in
- * [memory] so a row scrolled back into view needs neither the store nor a decode.
+ * Decoding the WebP, from the store or from the bytes just made, runs on [decodeContext], never on the caller's
+ * thread, and the decoded image is kept in [memory] so a row scrolled back into view needs neither the store nor a
+ * decode.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CoverLoader<I : Any>(
     private val source: ThumbnailSource,
     private val memory: MemoryImages<CoverKey, I>,
     private val decodeContext: CoroutineContext,
-    private val decode: (File) -> I?,
+    private val decode: (ThumbImage) -> I?,
 ) {
     private val refreshed = MutableSharedFlow<CoverKey>(extraBufferCapacity = REFRESH_BUFFER)
     private val decodeSlots = Semaphore(2)
@@ -155,7 +156,7 @@ class CoverLoader<I : Any>(
                         visibleDecodes.first { it == 0 }
                         decodeSlots.withPermit {
                             if (visibleDecodes.value == 0) {
-                                if (memory[key] == null) loaded(key, result.file)
+                                if (memory[key] == null) loaded(key, result.image)
                                 done = true
                             }
                         }
@@ -188,7 +189,7 @@ class CoverLoader<I : Any>(
                     is ThumbResult.Ready -> {
                         visibleDecodes.update { it + 1 }
                         try {
-                            decodeSlots.withPermit { loaded(key, result.file) }
+                            decodeSlots.withPermit { loaded(key, result.image) }
                         } finally {
                             visibleDecodes.update { it - 1 }
                         }
@@ -204,8 +205,8 @@ class CoverLoader<I : Any>(
         }
     }
 
-    private suspend fun loaded(key: CoverKey, file: File): CoverState<I> {
-        val image = withContext(decodeContext) { decode(file) } ?: return CoverState.Unavailable
+    private suspend fun loaded(key: CoverKey, webp: ThumbImage): CoverState<I> {
+        val image = withContext(decodeContext) { decode(webp) } ?: return CoverState.Unavailable
         memory.put(key, image)
         return CoverState.Loaded(image)
     }
