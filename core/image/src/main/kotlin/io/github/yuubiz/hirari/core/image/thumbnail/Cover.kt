@@ -19,13 +19,17 @@ import kotlin.math.ceil
  * [listingFinal] is false when the listing of [pages] stopped for a reason that may pass. Entries it did not
  * reach may then hold the chosen page or sort before the first, so only a chosen page it did reach is the cover,
  * and anything else is `null`.
+ *
+ * [partial] is true when the listing stopped where the need it was opened with was met: the first page is then the
+ * first of the images that listing counted ([CoverListing.firstCounted]).
  */
-internal fun coverPage(pages: List<PageEntry>, coverEntry: Int?, listingFinal: Boolean): PageEntry? {
+internal fun coverPage(pages: List<PageEntry>, coverEntry: Int?, listingFinal: Boolean, partial: Boolean = false): PageEntry? {
     val chosen = coverEntry?.let { entry -> pages.firstOrNull { it.entryIndex == entry } }
     return when {
         chosen != null -> chosen
-        listingFinal -> pages.firstOrNull()
-        else -> null
+        !listingFinal -> null
+        partial -> CoverListing.firstCounted(pages)
+        else -> pages.firstOrNull()
     }
 }
 

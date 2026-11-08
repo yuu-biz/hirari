@@ -17,17 +17,23 @@ object CoverListing {
      * leading dot, `__MACOSX`, the extension) is ASCII, so the raw name is read as ISO-8859-1. A CP932 pair taken
      * for a separator can only leave an image uncounted, which reads on.
      */
-    val automatic: ListingNeed = ListingNeed.Images(IMAGES) { entry ->
-        pageCandidate(String(entry.rawName, Charsets.ISO_8859_1), entry.isDirectory) == PageCandidate.Image
-    }
+    val automatic: ListingNeed = ListingNeed.Images(IMAGES) { entry -> counts(entry.rawName, entry.isDirectory) }
+
+    private fun counts(rawName: ByteArray, isDirectory: Boolean) =
+        pageCandidate(String(rawName, Charsets.ISO_8859_1), isDirectory) == PageCandidate.Image
 
     /**
-     * The `entryIndex` of the provisional cover of [book], opened with [need]: the first page in natural order, which
-     * the cover shows, of a listing that stopped at the first images. `null` when the listing went to the end or
-     * stopped at a chosen page.
+     * The first of [pages], in natural order, that a listing stopped where its need was met counted towards the
+     * [IMAGES]: an entry it took in by its first bytes was not counted (section 4.4). The first page when none was.
+     */
+    internal fun firstCounted(pages: List<PageEntry>): PageEntry? = pages.firstOrNull { counts(it.rawName, isDirectory = false) } ?: pages.firstOrNull()
+
+    /**
+     * The `entryIndex` of the provisional cover of [book], opened with [need]: the page the cover shows, of a listing
+     * that stopped at the first images. `null` when the listing went to the end or stopped at a chosen page.
      */
     fun provisional(need: ListingNeed, book: OpenBook): Int? = provisional(need, book.partial, book.pages)
 
     internal fun provisional(need: ListingNeed, partial: Boolean, pages: List<PageEntry>): Int? =
-        if (need is ListingNeed.Images && partial) coverPage(pages, coverEntry = null, listingFinal = true)?.entryIndex else null
+        if (need is ListingNeed.Images && partial) coverPage(pages, coverEntry = null, listingFinal = true, partial = true)?.entryIndex else null
 }
