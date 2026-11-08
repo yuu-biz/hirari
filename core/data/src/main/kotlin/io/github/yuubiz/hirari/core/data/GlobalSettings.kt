@@ -128,6 +128,7 @@ data class GlobalSettings(
     val foldersFirst: Boolean = true,
     val showDotFiles: Boolean = false,
     val showParentItem: Boolean = true,
+    val showSortStrip: Boolean = true,
     val allowFileEdits: Boolean = false,
     val reopenLastFolder: Boolean = false,
     val reopenLastBook: ReopenLastBook = ReopenLastBook.Off,

@@ -83,7 +83,7 @@ class ReaderConfigTest {
         "textTypeface", "textSizeSp", "textLineGap", "textLetterGap", "textMargin", "textLayout", "textLatinMode",
         "textPaper", "textInkOverride", "textPaperOverride",
         "libraryView", "thumbSize", "thumbnailParallelism", "gridColumnsPortrait", "gridColumnsLandscape", "gridNameLines", "gridNoteLine", "coverAspect",
-        "libraryTextSize", "libraryGrouping", "librarySubgrouping", "librarySection", "mergeCircleAuthors", "librarySort", "foldersFirst", "showParentItem", "allowFileEdits", "reopenLastFolder",
+        "libraryTextSize", "libraryGrouping", "librarySubgrouping", "librarySection", "mergeCircleAuthors", "librarySort", "foldersFirst", "showParentItem", "showSortStrip", "allowFileEdits", "reopenLastFolder",
         "reopenLastBook", "historySort", "bookmarkSort",
         "appTheme", "colorPalette", "pureBlack",
     )

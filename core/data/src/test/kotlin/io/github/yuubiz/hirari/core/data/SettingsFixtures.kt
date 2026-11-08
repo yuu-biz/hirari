@@ -107,6 +107,7 @@ val everything = GlobalSettings(
     foldersFirst = false,
     showDotFiles = true,
     showParentItem = false,
+    showSortStrip = false,
     allowFileEdits = true,
     reopenLastFolder = true,
     reopenLastBook = ReopenLastBook.Ask,
