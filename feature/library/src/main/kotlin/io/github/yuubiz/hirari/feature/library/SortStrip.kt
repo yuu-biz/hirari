@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,7 +89,7 @@ internal fun SortStripRow(strip: SortStrip, onSort: (LibrarySort) -> Unit, onGro
     val scroll = rememberScrollState()
     var viewport by remember { mutableIntStateOf(0) }
     var chosenEnd by remember { mutableIntStateOf(0) }
-    var placed by remember { mutableStateOf(false) }
+    var placed by rememberSaveable { mutableStateOf(false) }
     val edge = with(LocalDensity.current) { STRIP_PADDING.roundToPx() }
     LaunchedEffect(viewport, chosenEnd) {
         if (!placed && viewport > 0 && chosenEnd > 0) {
