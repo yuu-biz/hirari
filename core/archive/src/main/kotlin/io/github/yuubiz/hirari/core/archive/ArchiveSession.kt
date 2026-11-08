@@ -48,8 +48,14 @@ class ArchiveSession private constructor(
     /** The entries in archive order, as far as the archive could be listed. */
     val entries: List<ArchiveEntry> = listing.entries
 
-    /** Why listing stopped before the end of the archive, or null when it reached the end. */
+    /** Why listing stopped before the end of the archive, or null when it reached the end or [partial] stopped it. */
     val indexError: ArchiveFailure? = listing.error
+
+    /**
+     * Listing stopped where the [ListingNeed] given to [open] was met, before the end of the archive, so [entries]
+     * leaves out the ones after the last (docs/spec.md section 4.4). It is not an error.
+     */
+    val partial: Boolean = listing.partial
 
     private val closed = AtomicBoolean(false)
     private val passwordLock = Mutex()
@@ -106,9 +112,18 @@ class ArchiveSession private constructor(
 
     private val reader: EntryReader = when {
         listing.records != null -> FromCentralDirectory(listing.records)
-        solid && extractDir != null -> Extraction(libarchive.value, dispatcher, entries, extractDir)
+        // An extraction pass goes through the whole archive, which a partial listing does not know.
+        solid && extractDir != null && !partial -> Extraction(libarchive.value, dispatcher, entries, extractDir)
         // A solid entry needs the data of the entries before it, which a jump would skip.
-        else -> Direct(if (indexError == null) Cursor.Before(entries.size) else Cursor.Closed, listing.positions.takeUnless { solid })
+        else -> Direct(
+            when {
+                // Listing stopped after the header of the last entry it gives, before that entry's data.
+                partial -> Cursor.At(entries.lastIndex)
+                indexError == null -> Cursor.Before(entries.size)
+                else -> Cursor.Closed
+            },
+            listing.positions.takeUnless { solid },
+        )
     }
 
     // libarchive turns `\` into `/` in RAR 4 names that lack the Unicode flag (docs/spec.md section 3.4).
@@ -316,6 +331,7 @@ class ArchiveSession private constructor(
             val filter: Int,
             val records: List<ZipRecord>? = null,
             val positions: LongArray? = null,
+            val partial: Boolean = false,
         ) : Listing
     }
 
@@ -329,22 +345,36 @@ class ArchiveSession private constructor(
         /** How many headers a read walks forward before it jumps instead. A jump reads two. */
         private const val WALK_AHEAD = 2
 
-        /** The formats whose entries each start from a header of their own, which a jump can land on. */
-        private val JUMPABLE = setOf(ArchiveFormat.Rar, ArchiveFormat.Rar5, ArchiveFormat.Tar)
+        /**
+         * The formats whose entries each start from a header of their own: a jump can land on one, and a listing
+         * that stops early leaves the rest of the archive unread (docs/spec.md section 4.4).
+         */
+        private val OWN_HEADERS = setOf(ArchiveFormat.Rar, ArchiveFormat.Rar5, ArchiveFormat.Tar)
 
         /**
-         * Opens the archive in [source] and lists its entries. The session owns [source] from here on, and closes
-         * it with itself, or right away when opening fails. A solid archive is extracted into [extractDir], the
-         * directory of this book under `cacheDir/extract/` (docs/spec.md section 7), when it is given.
+         * Opens the archive in [source] and lists its entries, as far as [need] asks in a format without an index in
+         * one place. The session owns [source] from here on, and closes it with itself, or right away when opening
+         * fails. A solid archive is extracted into [extractDir], the directory of this book under `cacheDir/extract/`
+         * (docs/spec.md section 7), when it is given and the listing is not [partial].
          */
-        suspend fun open(source: ByteSource, extractDir: File? = null, password: BookPassword? = null): OpenResult =
-            open(source, extractDir, ::NativeArchive, password)
+        suspend fun open(
+            source: ByteSource,
+            extractDir: File? = null,
+            password: BookPassword? = null,
+            need: ListingNeed = ListingNeed.All,
+        ): OpenResult = open(source, extractDir, ::NativeArchive, password, need)
 
         /** [open] with [handle] in place of libarchive. [handle] is called on the session thread, if at all. */
         internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle): OpenResult =
             open(source, extractDir, handle, null)
 
-        internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle, password: BookPassword?): OpenResult {
+        internal suspend fun open(
+            source: ByteSource,
+            extractDir: File?,
+            handle: (ByteSource) -> ArchiveHandle,
+            password: BookPassword?,
+            need: ListingNeed = ListingNeed.All,
+        ): OpenResult {
             val libarchive = lazy(LazyThreadSafetyMode.NONE) { handle(source) }
             val executor = Executors.newSingleThreadExecutor { Thread(it, "archive-session").apply { isDaemon = true } }
             val dispatcher = executor.asCoroutineDispatcher()
@@ -356,7 +386,7 @@ class ArchiveSession private constructor(
                     val listing = listCentralDirectory(source, prefix, job) ?: try {
                         libarchive.value.let {
                             it.begin(job)
-                            list(it)
+                            list(it, need)
                         }
                     } catch (_: OutOfMemoryError) {
                         Listing.Unopened(ArchiveFailure.ReadError)
@@ -400,7 +430,7 @@ class ArchiveSession private constructor(
             return buffer.array().copyOf(buffer.position())
         }
 
-        private fun list(archive: ArchiveHandle): Listing {
+        private fun list(archive: ArchiveHandle, need: ListingNeed): Listing {
             // Telling the format reads ahead past the end of a short file, which is no sign of truncation.
             if (!Status.succeeded(archive.open())) {
                 val failure = archive.failure()
@@ -410,7 +440,9 @@ class ArchiveSession private constructor(
             val positions = ArrayList<Long?>()
             var format: ArchiveFormat? = null
             var filter = 0
-            fun listed(error: ArchiveFailure?) = Listing.Listed(entries, error, format, filter, positions = jumpable(format, filter, positions))
+            val met = metBy(need)
+            fun listed(error: ArchiveFailure?, partial: Boolean = false) =
+                Listing.Listed(entries, error, format, filter, positions = jumpable(format, filter, positions), partial = partial)
             while (true) {
                 val status = archive.nextHeader()
                 if (status == Status.EOF) return listed(null)
@@ -420,7 +452,7 @@ class ArchiveSession private constructor(
                 format = format ?: ArchiveFormat.of(header.format)
                 filter = header.filter
                 positions += header.position
-                entries += ArchiveEntry(
+                val entry = ArchiveEntry(
                     entryIndex = entries.size,
                     rawName = header.name ?: ByteArray(0),
                     declaredSize = header.size,
@@ -429,6 +461,18 @@ class ArchiveSession private constructor(
                     compression = if (format == ArchiveFormat.Zip) compressionOf(header.formatName) else null,
                     traditionalEncryption = format == ArchiveFormat.Zip && header.encrypted && compressionOf(header.formatName) != "aes",
                 )
+                entries += entry
+                if (format in OWN_HEADERS && met(entry)) return listed(null, partial = true)
+            }
+        }
+
+        /** Whether [need] is met once the walk has listed the entry it is given, after the ones before it. */
+        private fun metBy(need: ListingNeed): (ArchiveEntry) -> Boolean = when (need) {
+            ListingNeed.All -> { _ -> false }
+            is ListingNeed.UpTo -> { entry -> entry.entryIndex >= need.entryIndex }
+            is ListingNeed.Images -> {
+                var found = 0
+                { entry -> need.isImage(entry) && ++found >= need.count }
             }
         }
 
@@ -437,7 +481,7 @@ class ArchiveSession private constructor(
          * read with no filter around it, when every header gave one and each comes after the one before.
          */
         private fun jumpable(format: ArchiveFormat?, filter: Int, positions: List<Long?>): LongArray? {
-            if (format !in JUMPABLE || filter != 0 || positions.size < 2) return null
+            if (format !in OWN_HEADERS || filter != 0 || positions.size < 2) return null
             val known = positions.filterNotNull()
             if (known.size != positions.size || known.zipWithNext().any { (a, b) -> b <= a }) return null
             return known.toLongArray()
