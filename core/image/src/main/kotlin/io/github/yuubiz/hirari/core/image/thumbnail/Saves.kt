@@ -26,7 +26,12 @@ internal class Saves(private val store: ThumbnailStore, scope: CoroutineScope) {
 
     init {
         scope.launch {
-            for (save in queue) save(save)
+            try {
+                for (save in queue) save(save)
+            } finally {
+                queue.close()
+                pending.clear()
+            }
         }
     }
 

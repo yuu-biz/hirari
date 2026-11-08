@@ -12,6 +12,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -1561,5 +1562,25 @@ class ThumbnailsTest {
         runCurrent()
         assertNull(thumbnails.cached(request(book(ids.last()))))
         assertEquals(ids.size - 1, store.files.size)
+    }
+
+    @Test
+    fun closingDropsTheSavesStillWaitingAndRefusesNewOnes() = runTest {
+        fun key(id: String) = ThumbnailKey(BookId(id), Instant.ofEpochMilli(1000), 5000, null, 300, ReadingDirection.RightToLeft)
+        val gated = GatedStore()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val saves = Saves(gated, scope)
+        val first = key("a")
+        val second = key("b")
+        saves.add(first, "a".toByteArray())
+        saves.add(second, "b".toByteArray())
+        runCurrent()
+        assertEquals(listOf("a"), gated.saving)
+        scope.cancel()
+        runCurrent()
+        assertNull("a waiting save is dropped", saves.pending(second))
+        saves.add(key("c"), "c".toByteArray())
+        assertNull("a save after closing is refused", saves.pending(key("c")))
     }
 }
