@@ -17,8 +17,12 @@ class Storage internal constructor(
     /** The fonts imported for the text reader. */
     val fonts: FontStore,
     debuggable: Boolean = false,
+    /** The covers chosen from part of a book's listing (docs/spec.md section 4.4). */
+    val provisionalCovers: ProvisionalCovers = ProvisionalCovers.None,
 ) {
-    constructor(context: Context) : this(
+    constructor(context: Context) : this(context, openThumbnailIndex(context))
+
+    private constructor(context: Context, thumbnailIndex: ThumbnailIndexDatabase) : this(
         database = openDatabase(context),
         credentialDatabase = openCredentialDatabase(context),
         cipher = SecretCipher(::keystoreKey),
@@ -26,11 +30,12 @@ class Storage internal constructor(
         launchStore = openLaunch(context.applicationContext),
         thumbnails = DiskThumbnailCache(
             File(context.cacheDir, "thumbs"),
-            openThumbnailIndex(context).thumbs(),
+            thumbnailIndex.thumbs(),
             makingDir = File(context.noBackupFilesDir, "thumbs-making"),
         ),
         fonts = FontStore(File(context.filesDir, "fonts")),
         debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+        provisionalCovers = RoomProvisionalCovers(thumbnailIndex.provisionalCovers()),
     )
 
     val progress: ProgressRepository = RoomProgressRepository(database.bookProgress())

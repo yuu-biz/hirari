@@ -1,0 +1,98 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "b9f56b2140c77b672dc51980d2598325",
+    "entities": [
+      {
+        "tableName": "thumbs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`digest` TEXT NOT NULL, `bytes` INTEGER NOT NULL, `last_used` INTEGER NOT NULL, `failed` INTEGER NOT NULL, `book_id` TEXT, PRIMARY KEY(`digest`))",
+        "fields": [
+          {
+            "fieldPath": "digest",
+            "columnName": "digest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytes",
+            "columnName": "bytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUsed",
+            "columnName": "last_used",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failed",
+            "columnName": "failed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bookId",
+            "columnName": "book_id",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "digest"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_thumbs_last_used",
+            "unique": false,
+            "columnNames": [
+              "last_used"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_thumbs_last_used` ON `${TABLE_NAME}` (`last_used`)"
+          },
+          {
+            "name": "index_thumbs_book_id",
+            "unique": false,
+            "columnNames": [
+              "book_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_thumbs_book_id` ON `${TABLE_NAME}` (`book_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "provisional_covers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`book_id` TEXT NOT NULL, `entry_index` INTEGER NOT NULL, PRIMARY KEY(`book_id`))",
+        "fields": [
+          {
+            "fieldPath": "bookId",
+            "columnName": "book_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryIndex",
+            "columnName": "entry_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "book_id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b9f56b2140c77b672dc51980d2598325')"
+    ]
+  }
+}

@@ -169,11 +169,18 @@ internal interface ThumbDao {
 /**
  * The index lives in `noBackupFilesDir`, outside the cache directory: the system may clear the cache while the
  * app runs, and an index that names missing files recovers per entry, where a database file deleted under an
- * open connection does not.
+ * open connection does not. The provisional covers of section 4.4 live next to the thumbnails they name.
  */
-@Database(entities = [ThumbRow::class], version = 2, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2)])
+@Database(
+    entities = [ThumbRow::class, ProvisionalCoverRow::class],
+    version = 3,
+    exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+)
 internal abstract class ThumbnailIndexDatabase : RoomDatabase() {
     abstract fun thumbs(): ThumbDao
+
+    abstract fun provisionalCovers(): ProvisionalCoverDao
 }
 
 internal fun openThumbnailIndex(context: Context): ThumbnailIndexDatabase =
