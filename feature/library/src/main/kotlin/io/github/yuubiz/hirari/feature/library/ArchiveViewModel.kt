@@ -123,56 +123,65 @@ class ArchiveViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ArchiveUi.Loading)
 
+    /** Reads the archive for [settleCover] on the app's scope; once it ends, the archive may be closed ([close]). */
+    private var settleReading: Job? = null
+
     init {
         viewModelScope.launch {
             val services = services.await()
             val place = services.locations.get(book.location) ?: return@launch run { opening.value = Opening.Failed(ArchiveFailure.NotFound) }
             val id = locationBookId(place, book.path)
-            val base = async { coverBase(services, place, id) }
-            when (val result = services.archives.open(place, book.path, book.documentId, id)) {
-                is ArchiveOpenResult.Failed -> {
-                    base.cancel()
-                    opening.value = Opening.Failed(result.reason)
+            val base = services.appScope.async { coverBase(services, place, id) }
+            var settling = false
+            try {
+                when (val result = services.archives.open(place, book.path, book.documentId, id)) {
+                    is ArchiveOpenResult.Failed -> opening.value = Opening.Failed(result.reason)
+                    // Until the archive is in opening, where onCleared finds it, leaving the screen closes it here.
+                    is ArchiveOpenResult.Opened -> try {
+                        if (result.contents.listedWhole) {
+                            settleCover(services, id, result.contents, base)
+                            settling = true
+                        }
+                        val opened = Opening.Opened(place, id, result.contents, base.await())
+                        ensureActive()
+                        opening.value = opened
+                    } catch (e: CancellationException) {
+                        close(result.contents)
+                        throw e
+                    }
                 }
-                // Until the archive is in opening, where onCleared finds it, leaving the screen closes it here.
-                is ArchiveOpenResult.Opened -> try {
-                    val opened = Opening.Opened(place, id, result.contents, base.await())
-                    ensureActive()
-                    opening.value = opened
-                    if (result.contents.listedWhole) settleCover(services, opened)
-                } catch (e: CancellationException) {
-                    result.contents.close()
-                    throw e
-                }
+            } finally {
+                if (!settling) base.cancel()
             }
         }
     }
 
-    /** Reads the archive for [settleCover] on the app's scope; once it ends, [onCleared] may close the archive. */
-    private var settleReading: Job? = null
-
     /**
      * Hands the first page in natural order of the whole listing to [settleProvisionalCover] (docs/spec.md section
-     * 4.4), all of it on the app's scope, so leaving the screen stops neither. The names are decoded as the cover
-     * decodes them; the archive stays open until they are read.
+     * 4.4), with everything it needs, [base] included, on the app's scope, so leaving the screen stops none of it. The
+     * names are decoded as the cover decodes them; the archive stays open until they are read.
      */
-    private fun settleCover(services: LibraryServices, opened: Opening.Opened) {
-        val id = opened.id
+    private fun settleCover(services: LibraryServices, id: BookId, contents: ArchiveContents, base: Deferred<CoverSpec.Book?>) {
         val first = services.appScope.async {
             val fallback = Charset.forName(services.settings.settings.first().fallbackCharset.charsetName)
-            val charset = opened.contents.charset(services.books.overrides(id).first().nameCharset, fallback)
-            withContext(compute) { opened.contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
+            val charset = contents.charset(services.books.overrides(id).first().nameCharset, fallback)
+            withContext(compute) { contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
         }
         settleReading = first
         services.appScope.launch {
             try {
-                services.settleProvisionalCover(id, first.await(), opened.base?.copy(direction = services.directionOf(id)))
+                services.settleProvisionalCover(id, first.await(), base.await()?.copy(direction = services.directionOf(id)))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 // The provisional cover stays, and the next opening settles it.
             }
         }
+    }
+
+    /** Closes [contents] once [settleCover] has read what it needs from it. */
+    private fun close(contents: ArchiveContents) {
+        settleReading?.invokeOnCompletion { contents.close() } ?: contents.close()
     }
 
     /** The archive without a chosen page, dated by its own entry in its folder, or `null` when that cannot be found. */
@@ -313,8 +322,7 @@ class ArchiveViewModel(
     }
 
     override fun onCleared() {
-        val contents = opened?.contents ?: return
-        settleReading?.invokeOnCompletion { contents.close() } ?: contents.close()
+        opened?.contents?.let(::close)
     }
 }
 
