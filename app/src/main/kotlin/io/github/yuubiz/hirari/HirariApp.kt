@@ -38,7 +38,9 @@ import io.github.yuubiz.hirari.feature.library.SmbjPlaces
 import io.github.yuubiz.hirari.feature.library.SafFolderLister
 import io.github.yuubiz.hirari.feature.library.SafTreeGrants
 import io.github.yuubiz.hirari.feature.library.remakeCover
+import io.github.yuubiz.hirari.feature.library.settleProvisionalCover
 import io.github.yuubiz.hirari.feature.reader.CoverRemaker
+import io.github.yuubiz.hirari.feature.reader.ListedBooks
 import io.github.yuubiz.hirari.feature.reader.ReaderServices
 import io.github.yuubiz.hirari.feature.text.SmbFiles
 import io.github.yuubiz.hirari.feature.text.TextReaderServices
@@ -114,6 +116,7 @@ class HirariApp : Application() {
                 smbPool.await(),
                 SmbPrefetchCache(File(cacheDir, "smb")),
                 CoverRemaker { library.await().remakeCover(it) },
+                ListedBooks { book, firstEntry -> library.await().settleProvisionalCover(book, firstEntry) },
             )
         }
         library = appScope.async {
@@ -127,6 +130,7 @@ class HirariApp : Application() {
                 books = DeviceCoverBooks(contentResolver, cacheDir, folders, smb, storage.books, storage.settings, storage.bookPasswords),
                 memoryBytes = CoverMemoryBudget.forDevice(this@HirariApp),
                 density = { resources.displayMetrics.density },
+                provisional = storage.provisionalCovers,
             )
             LibraryServices(
                 locations = storage.locations,

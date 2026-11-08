@@ -47,6 +47,7 @@ import io.github.yuubiz.hirari.core.model.BookFormat
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookOverrides
 import io.github.yuubiz.hirari.core.model.BookSource
+import io.github.yuubiz.hirari.core.model.NaturalPageOrder
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FallbackCharset
@@ -127,6 +128,7 @@ class ReaderServices(
     /** The SMB prefetch layer on disk, `cacheDir/smb/` (docs/spec.md section 5.3). */
     val smbCache: SmbPrefetchCache? = null,
     val covers: CoverRemaker = CoverRemaker.None,
+    val listed: ListedBooks = ListedBooks.None,
 ) {
     val overrides = BookOverridesStore(storage.books, appScope)
 }
@@ -140,6 +142,19 @@ fun interface CoverRemaker {
 
     companion object {
         val None = CoverRemaker {}
+    }
+}
+
+/**
+ * Hears that the reader listed a whole archive, whose first page in natural order has the `entryIndex` [firstEntry],
+ * so that a cover chosen from part of its listing can be corrected (docs/spec.md section 4.4). The lists own the
+ * thumbnails, so the app hands this in.
+ */
+fun interface ListedBooks {
+    suspend fun listed(book: BookId, firstEntry: Int?)
+
+    companion object {
+        val None = ListedBooks { _, _ -> }
     }
 }
 
@@ -811,6 +826,13 @@ class ReaderViewModel internal constructor(
         val loader = BookPageLoader(book, services.decoding.dispatcher)
         val prefetcher = Prefetcher(viewModelScope, loader, ::recycleAfterFrames, services.decoding.budgetBytes, prefetchDepths(lowRam), listener)
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
+        if (book.container in ARCHIVES && book.indexError == null) {
+            val first = book.pages.minWithOrNull(NaturalPageOrder)?.entryIndex
+            services.appScope.launch {
+                session.indexed()
+                quietly { services.listed.listed(id, first) }
+            }
+        }
         val remote = located.remote
         val disk = book.stash?.let { DiskPrefetch(viewModelScope, it, book.pages.size) }
         opened = Opened(book, id, start, startOffset, config, prefetcher, services, ProgressLog(id, book.pages.size, saved, indexComplete = book.indexError == null), writer, ReaderConfig.of(settings), settings, shareDir, loader, session, remote, disk)

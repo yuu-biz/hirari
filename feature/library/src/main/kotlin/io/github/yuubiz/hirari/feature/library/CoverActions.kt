@@ -33,6 +33,23 @@ suspend fun LibraryServices.remakeCover(id: BookId) {
 }
 
 /**
+ * Settles the provisional cover of [id], if it has one, once the reader or the archive list listed the whole book and
+ * found the page with the `entryIndex` [firstEntry] first in natural order (docs/spec.md section 4.4). The cover is
+ * made again from [spec] when it is given, which the archive list has whether or not the book is in the index, and
+ * otherwise as [remakeCover] makes it. A failure keeps the provisional cover, so the next opening tries again.
+ */
+suspend fun LibraryServices.settleProvisionalCover(id: BookId, firstEntry: Int?, spec: CoverSpec.Book? = null) {
+    try {
+        covers.settle(id, firstEntry) {
+            if (spec != null) covers.regenerate(spec, covers.sizesFrom(settings.settings.first().thumbSize)) else remakeCover(id)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+    }
+}
+
+/**
  * 子の画像やページをフォルダの表紙にする / 選ぶのをやめる (docs/spec.md section 4.4): saves the choice for the
  * folder at [folder] of [place], then makes the thumbnail of that folder again at every size. When the folder's own
  * entry cannot be found, only the choice is saved; the folder shows it once its listing is read again. It runs on

@@ -81,8 +81,8 @@ class ReaderViewModelTest {
     }
 
     /** The native listing is outside this JVM test; supply exactly the OpenBook it hands the reader. */
-    private suspend fun archive(pages: Int, reason: FailureReason?): OpenBook {
-        val files = List(pages) { index -> FolderFile("$index.jpg", 1) { throw IOException("fixture page data is not available") } }
+    private suspend fun archive(pages: Int, reason: FailureReason?, names: List<String> = List(pages) { "$it.jpg" }): OpenBook {
+        val files = names.map { name -> FolderFile(name, 1) { throw IOException("fixture page data is not available") } }
         val book = (Books.openFolder(files, decoding) as BookResult.Opened).book
         ReflectionHelpers.setField(book, "container", Container.Zip)
         ReflectionHelpers.setField(book, "indexError", reason)
@@ -156,6 +156,29 @@ class ReaderViewModelTest {
         val progress = services.storage.progress.get(id)
         assertEquals(ReadingPosition.Image(1, 2), progress?.position)
         assertEquals(ReadState.Reading, progress?.state)
+    }
+
+    private fun hearListings(): CompletableDeferred<Pair<BookId, Int?>> {
+        val heard = CompletableDeferred<Pair<BookId, Int?>>()
+        services = ReaderServices(services.storage, services.progress, decoding, scope, listed = ListedBooks { book, first -> heard.complete(book to first) })
+        return heard
+    }
+
+    @Test
+    fun aWholeArchiveListingReportsItsFirstPageInNaturalOrderForTheCover() = runBlocking(main) {
+        val heard = hearListings()
+        val model = reader { BookResult.Opened(archive(2, null, names = listOf("b10.jpg", "b2.jpg"))) }
+        model.awaitOpen()
+        assertEquals(id to 1, withTimeout(10_000) { heard.await() })
+    }
+
+    @Test
+    fun aListingThatStoppedReportsNothing() = runBlocking(main) {
+        val heard = hearListings()
+        val model = reader { BookResult.Opened(archive(2, FailureReason.Corrupt)) }
+        model.awaitOpen()
+        delay(200)
+        assertFalse(heard.isCompleted)
     }
 
     @Test

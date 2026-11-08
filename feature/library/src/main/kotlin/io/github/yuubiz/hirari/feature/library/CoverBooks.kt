@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import io.github.yuubiz.hirari.core.archive.ExtractionCache
+import io.github.yuubiz.hirari.core.archive.ListingNeed
 import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.data.silent
 import io.github.yuubiz.hirari.core.data.SettingsRepository
@@ -35,8 +36,11 @@ import kotlin.coroutines.cancellation.CancellationException
  * does its I/O off the main thread, and only when a thumbnail has to be made.
  */
 interface CoverBooks {
-    /** Opens the book of [spec] for the thumbnail maker. Throws nothing but cancellation. */
-    suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult
+    /**
+     * Opens the book of [spec] for the thumbnail maker, a RAR or a tar listed as far as [need] asks (docs/spec.md
+     * section 4.4). Throws nothing but cancellation.
+     */
+    suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding, need: ListingNeed): BookResult
 
     /**
      * The entries directly in the folder at [path] of [place].
@@ -68,28 +72,28 @@ class DeviceCoverBooks(
 ) : CoverBooks {
     private val copyDir get() = File(cacheDir, "copy")
 
-    private suspend fun openDocument(uri: Uri, spec: CoverSpec.Book, decoding: ImageDecoding, naming: EntryNaming): BookResult =
+    private suspend fun openDocument(uri: Uri, spec: CoverSpec.Book, decoding: ImageDecoding, naming: EntryNaming, need: ListingNeed): BookResult =
         Books.openDocument(resolver, uri, copyDir, decoding, naming = naming, extractDirOf = { source ->
             withContext(Dispatchers.IO) { coverExtractDir(cacheDir, spec.id, source.size, source.lastModifiedMs) }
-        }, password = passwords?.silent(spec.id))
+        }, password = passwords?.silent(spec.id), need = need)
 
-    private suspend fun openBook(source: ByteSource, spec: CoverSpec.Book, decoding: ImageDecoding, naming: EntryNaming): BookResult {
+    private suspend fun openBook(source: ByteSource, spec: CoverSpec.Book, decoding: ImageDecoding, naming: EntryNaming, need: ListingNeed): BookResult {
         val dir = try {
             withContext(Dispatchers.IO) { coverExtractDir(cacheDir, spec.id, source.size, source.lastModifiedMs) }
         } catch (e: Throwable) {
             source.close()
             throw e
         }
-        return Books.openBook(source, decoding, dir, naming, password = passwords?.silent(spec.id))
+        return Books.openBook(source, decoding, dir, naming, password = passwords?.silent(spec.id), need = need)
     }
 
-    override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = try {
+    override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding, need: ListingNeed): BookResult = try {
         val naming = EntryNaming(indexed.overrides(spec.id).first().nameCharset, settings.settings.first().fallbackCharset)
         when (val origin = spec.origin) {
             is CoverOrigin.Archive -> when (val place = origin.place) {
                 is LibraryLocation.SafTree ->
-                    openDocument(documentUri(place, origin.path, origin.documentId), spec, decoding, naming)
-                is LibraryLocation.SmbShare -> openBook(smb.open(place, origin.path, SmbPurpose.Background), spec, decoding, naming)
+                    openDocument(documentUri(place, origin.path, origin.documentId), spec, decoding, naming, need)
+                is LibraryLocation.SmbShare -> openBook(smb.open(place, origin.path, SmbPurpose.Background), spec, decoding, naming, need)
             }
             is CoverOrigin.Image -> {
                 val name = origin.path.substringAfterLast('/')
@@ -117,7 +121,7 @@ class DeviceCoverBooks(
                     Books.openFolder(files, decoding)
                 }
             }
-            is CoverOrigin.Document -> openDocument(Uri.parse(origin.uri.value), spec, decoding, naming)
+            is CoverOrigin.Document -> openDocument(Uri.parse(origin.uri.value), spec, decoding, naming, need)
             is CoverOrigin.Tree -> Books.openTreeFolder(resolver, Uri.parse(origin.uri.value), null, copyDir, decoding)
         }
     } catch (e: CancellationException) {

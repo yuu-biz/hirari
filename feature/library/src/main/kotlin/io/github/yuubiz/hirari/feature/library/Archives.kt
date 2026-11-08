@@ -55,6 +55,9 @@ class ArchiveItem(
 interface ArchiveContents : Closeable {
     val entries: List<ArchiveItem>
 
+    /** Whether listing reached the end of the archive, so [entries] are all of them (docs/spec.md section 4.4). */
+    val listedWhole: Boolean
+
     /** The archive's own document, which the text reader opens a text entry of; null in an SMB place. */
     val documentUri: UriString?
 
@@ -165,6 +168,8 @@ private class SessionContents(private val session: ArchiveSession, override val 
     override val entries: List<ArchiveItem> = session.entries.map {
         ArchiveItem(it.entryIndex, it.rawName, it.declaredSize, it.isDirectory, (it.encrypted && !it.traditionalEncryption) || (it.declaredSize ?: 0) > ArchiveSession.MAX_ENTRY_BYTES)
     }
+
+    override val listedWhole: Boolean = session.indexError == null && !session.partial
 
     override fun charset(override: Charset?, fallback: Charset): Charset = session.nameCharset(override, fallback)
 

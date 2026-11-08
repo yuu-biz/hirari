@@ -138,11 +138,31 @@ class ArchiveViewModel(
                     val opened = Opening.Opened(place, id, result.contents, base.await())
                     ensureActive()
                     opening.value = opened
+                    if (result.contents.listedWhole) settleCover(services, opened)
                 } catch (e: CancellationException) {
                     result.contents.close()
                     throw e
                 }
             }
+        }
+    }
+
+    /**
+     * Hands the first page in natural order of the whole listing to [settleProvisionalCover] (docs/spec.md section
+     * 4.4), which goes on after the screen is left. The names are decoded as the cover decodes them.
+     */
+    private fun settleCover(services: LibraryServices, opened: Opening.Opened) = viewModelScope.launch {
+        try {
+            val id = opened.id
+            val fallback = Charset.forName(services.settings.settings.first().fallbackCharset.charsetName)
+            val charset = opened.contents.charset(services.books.overrides(id).first().nameCharset, fallback)
+            val first = withContext(compute) { opened.contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
+            val spec = opened.base?.takeIf { services.books.get(id)?.coverEntry == null }?.copy(direction = services.directionOf(id))
+            services.appScope.launch { services.settleProvisionalCover(id, first, spec) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // The provisional cover stays, and the next opening settles it.
         }
     }
 

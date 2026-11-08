@@ -5,7 +5,13 @@ import android.content.ComponentCallbacks2
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import io.github.yuubiz.hirari.core.archive.ListingNeed
+import io.github.yuubiz.hirari.core.data.ProvisionalCovers
+import io.github.yuubiz.hirari.core.image.BookResult
+import io.github.yuubiz.hirari.core.image.ImageDecoding
+import io.github.yuubiz.hirari.core.image.thumbnail.CoverListing
 import io.github.yuubiz.hirari.core.image.thumbnail.FolderEntry as ThumbEntry
+import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.image.thumbnail.PagePreview
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbLane
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbPriority
@@ -31,6 +37,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -47,8 +54,13 @@ class Covers(
     private val memoryBytes: Long,
     private val density: () -> Float,
     decodeContext: CoroutineContext = Dispatchers.IO.limitedParallelism(DECODE_PARALLELISM),
+    /** The covers chosen from the first images of a RAR or a tar (docs/spec.md section 4.4). */
+    private val provisional: ProvisionalCovers = ProvisionalCovers.None,
     decode: (File) -> ImageBitmap? = ::decodeCover,
 ) {
+    /** The first page a whole listing found, by book, while [settle] makes its cover again from it. */
+    private val corrections = ConcurrentHashMap<BookId, Int>()
+
     private data class ListingKey(val place: LibraryLocation, val path: String)
     private class Listing(val job: Deferred<List<FolderEntry>>, var waiters: Int = 0)
     private val chosenLookups = Semaphore(CHOSEN_LOOKUPS)
@@ -148,7 +160,55 @@ class Covers(
      * choosing a range of it as the cover (docs/spec.md section 4.4). The book opens as a cover's does, in its lane.
      */
     suspend fun preview(spec: CoverSpec.Book, entryIndex: Int, maxSidePx: Int): PagePreview =
-        source.preview(book(spec), entryIndex, maxSidePx)
+        source.preview(book(spec) { decoding -> books.open(spec, decoding, ListingNeed.UpTo(entryIndex)) }, entryIndex, maxSidePx)
+
+    /**
+     * Settles the provisional cover of [id], if it has one, once a whole listing of the book put the page with the
+     * `entryIndex` [firstEntry] first in natural order (docs/spec.md section 4.4): when that is another page, [remake]
+     * makes the cover again from it, and either way the provisional cover is forgotten.
+     */
+    suspend fun settle(id: BookId, firstEntry: Int?, remake: suspend () -> Unit) {
+        val remembered = provisional.entry(id) ?: return
+        if (firstEntry != null && firstEntry != remembered) {
+            corrections[id] = firstEntry
+            try {
+                remake()
+            } finally {
+                corrections.remove(id, firstEntry)
+            }
+        }
+        provisional.forget(id)
+    }
+
+    /**
+     * Opens the book of [spec] for its cover: up to the chosen page, and otherwise up to the first images, or up to
+     * the first page a whole listing found while [settle] corrects the cover (docs/spec.md section 4.4). A partial
+     * listing that reached the chosen entry without finding a page there cannot tell which page stands in for it, so
+     * the book opens again as one without a chosen page. A cover chosen from the first images is remembered as provisional.
+     */
+    private suspend fun openCover(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult {
+        spec.coverEntry?.let { chosen ->
+            val opened = books.open(spec, decoding, ListingNeed.UpTo(chosen))
+            val book = (opened as? BookResult.Opened)?.book
+            if (book == null || !book.partial || book.pages.any { it.entryIndex == chosen }) return opened
+            book.close()
+        }
+        val need = corrections[spec.id]?.let(ListingNeed::UpTo) ?: CoverListing.automatic
+        val opened = books.open(spec, decoding, need)
+        if (opened is BookResult.Opened) {
+            CoverListing.provisional(need, opened.book)?.let { entry ->
+                try {
+                    provisional.remember(spec.id, entry)
+                } catch (e: CancellationException) {
+                    opened.book.close()
+                    throw e
+                } catch (_: Exception) {
+                    // The cover still shows; only its correction once the book is opened is lost.
+                }
+            }
+        }
+        return opened
+    }
 
     /**
      * The listing entry of the item at [path] of [place], found in its folder, or `null` when the folder cannot be
@@ -188,9 +248,8 @@ class Covers(
         }
     }
 
-    private fun book(spec: CoverSpec.Book) = ThumbSubject.Book(spec.id, spec.modified, spec.byteSize, spec.coverEntry, spec.origin.lane(), spec.coverCrop) { decoding ->
-        books.open(spec, decoding)
-    }
+    private fun book(spec: CoverSpec.Book, open: suspend (ImageDecoding) -> BookResult = { openCover(spec, it) }) =
+        ThumbSubject.Book(spec.id, spec.modified, spec.byteSize, spec.coverEntry, spec.origin.lane(), spec.coverCrop, open)
 
     /**
      * What a thumbnail can be made from in the folder at [path] (docs/spec.md section 4.4): archives, PDFs and

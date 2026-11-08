@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.library
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import io.github.yuubiz.hirari.core.archive.ListingNeed
 import io.github.yuubiz.hirari.core.image.BookResult
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.model.FallbackCharset
@@ -62,7 +63,7 @@ class DeviceCoverBooksTest {
                     indexed.updateOverrides(spec.id) { it.copy(nameCharset = chosen) }
                     val charset = contents.charset(chosen, cp932)
                     val rows = contents.rows(charset, spec.id)
-                    (covers.open(spec, decoding) as BookResult.Opened).book.use { cover ->
+                    (covers.open(spec, decoding, ListingNeed.All) as BookResult.Opened).book.use { cover ->
                         assertEquals(rows.pages.map { it.entryIndex }, cover.pages.map { it.entryIndex })
                         assertEquals(rows.pages.first().name, cover.pages.first().name)
                         firstEntries += cover.pages.first().entryIndex
@@ -85,7 +86,7 @@ class DeviceCoverBooksTest {
             }
             val covers = DeviceCoverBooks(context.contentResolver, context.cacheDir, FakeLister(), stored, indexed, settings)
             settings.value.value = settings.value.value.copy(fallbackCharset = FallbackCharset.Utf8)
-            (covers.open(spec(CoverOrigin.Archive(nas, "s/1.zip", null)), decoding) as BookResult.Opened).book.use {
+            (covers.open(spec(CoverOrigin.Archive(nas, "s/1.zip", null)), decoding, ListingNeed.All) as BookResult.Opened).book.use {
                 assertEquals(listOf("�.jpg", "�.jpg"), it.pages.map { page -> page.name })
             }
         } finally {
@@ -106,20 +107,20 @@ class DeviceCoverBooksTest {
 
     @Test
     fun `opening an archive for its cover asks the server in the background`() = runTest {
-        books.open(spec(CoverOrigin.Archive(nas, "s/1.zip", null)), decoding)
+        books.open(spec(CoverOrigin.Archive(nas, "s/1.zip", null)), decoding, ListingNeed.All)
         assertEquals(listOf("s/1.zip" to SmbPurpose.Background), smb.opened)
     }
 
     @Test
     fun `opening an image for its cover asks the server in the background`() = runTest {
-        readFirstPage(books.open(spec(CoverOrigin.Image(nas, "s/1.png", null)), decoding))
+        readFirstPage(books.open(spec(CoverOrigin.Image(nas, "s/1.png", null)), decoding, ListingNeed.All))
         assertEquals(listOf("s/1.png" to SmbPurpose.Background), smb.opened)
     }
 
     @Test
     fun `opening a folder of images for its cover lists and opens in the background`() = runTest {
         smb.folders["s"] = listOf(FolderEntry("1.png", null, false, 10, at))
-        readFirstPage(books.open(spec(CoverOrigin.ImageFolder(nas, "s", null)), decoding))
+        readFirstPage(books.open(spec(CoverOrigin.ImageFolder(nas, "s", null)), decoding, ListingNeed.All))
         assertEquals(listOf(SmbPurpose.Background), smb.listPurposes)
         assertTrue(smb.opened.isNotEmpty())
         assertTrue(smb.opened.all { it.second == SmbPurpose.Background })

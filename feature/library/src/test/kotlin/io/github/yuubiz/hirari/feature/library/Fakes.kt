@@ -1,6 +1,8 @@
 package io.github.yuubiz.hirari.feature.library
 
+import io.github.yuubiz.hirari.core.archive.ListingNeed
 import io.github.yuubiz.hirari.core.data.BookOpening
+import io.github.yuubiz.hirari.core.data.ProvisionalCovers
 import io.github.yuubiz.hirari.core.data.BookRepository
 import io.github.yuubiz.hirari.core.data.CoverIndex
 import io.github.yuubiz.hirari.core.image.BookFailure
@@ -462,6 +464,7 @@ internal class FakeContents(
     private val names: Map<Charset, List<String>>,
     private val detected: Charset,
     override val documentUri: UriString? = UriString("content://tree/manga/document/book.zip"),
+    override val listedWhole: Boolean = true,
 ) : ArchiveContents {
     var closed = false
 
@@ -551,7 +554,7 @@ internal class FakeSaveFolders : SaveFolders {
     override fun open(tree: UriString): SaveFolder = folder.also { opened += tree }
 }
 
-internal class Fixture {
+internal class Fixture(provisional: ProvisionalCovers = ProvisionalCovers.None) {
     val locations = FakeLocations()
     val books = FakeBooks()
     val history = FakeHistory(books, locations)
@@ -565,7 +568,7 @@ internal class Fixture {
     val coverIndex = FakeCoverIndex()
     val thumbnails = FakeThumbnails()
     val coverBooks = FakeCoverBooks()
-    val covers = Covers(thumbnails, coverBooks, memoryBytes = 1 shl 20, density = { 2f }, decodeContext = Dispatchers.Unconfined, decode = { null })
+    val covers = Covers(thumbnails, coverBooks, memoryBytes = 1 shl 20, density = { 2f }, decodeContext = Dispatchers.Unconfined, decode = { null }, provisional = provisional)
 
     /** What the process's scope was left to handle: the app has no handler of its own, so each of these would end it. */
     val uncaught = ArrayList<Throwable>()
@@ -665,7 +668,13 @@ internal class FakeCoverBooks : CoverBooks {
     /** Holds the next listing of a path until it completes; the listings after it go at once. */
     val stalls = mutableMapOf<String, CompletableDeferred<Unit>>()
 
-    override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding): BookResult = BookResult.Failed(BookFailure.NotFound)
+    /** The listing each open asked for, by the book's id. */
+    val needs = mutableListOf<Pair<BookId, ListingNeed>>()
+
+    override suspend fun open(spec: CoverSpec.Book, decoding: ImageDecoding, need: ListingNeed): BookResult {
+        needs += spec.id to need
+        return BookResult.Failed(BookFailure.NotFound)
+    }
 
     /** The places whose connection comes back when the test emits on their flow. */
     val reconnected = mutableMapOf<LibraryLocation, MutableSharedFlow<Unit>>()
