@@ -109,6 +109,7 @@ class HirariApp : Application() {
             val smb = smbPlaces.await()
             val folders = SafFolderLister(contentResolver)
             val thumbnails = Thumbnails.forDevice(this@HirariApp, ThumbnailStoreAdapter(storage.thumbnails))
+            thumbnails.setParallelism(storage.settings.settings.first().thumbnailParallelism)
             appScope.launch {
                 storage.settings.settings.map { it.thumbnailParallelism }.distinctUntilChanged().collect(thumbnails::setParallelism)
             }

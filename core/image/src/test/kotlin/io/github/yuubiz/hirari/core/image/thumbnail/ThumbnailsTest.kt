@@ -189,6 +189,17 @@ class ThumbnailsTest {
         thumbnails.close()
     }
 
+    @Test
+    fun choosingAnotherCountAboveTheDeviceCapKeepsTheDecoding() = runTest {
+        val decoding = ArrayList<Pair<Long, Int>>()
+        val thumbnails = thumbnails(128L shl 20) { budget, n -> decoding += budget to n }
+        thumbnails.setParallelism(2)
+        thumbnails.setParallelism(3)
+        thumbnails.setParallelism(8)
+        assertEquals(emptyList<Pair<Long, Int>>(), decoding)
+        thumbnails.close()
+    }
+
     private fun book(
         id: String,
         lane: ThumbLane = ThumbLane.Local,

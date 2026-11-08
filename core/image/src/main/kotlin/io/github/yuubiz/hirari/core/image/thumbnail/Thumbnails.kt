@@ -70,11 +70,14 @@ class Thumbnails internal constructor(
     private val bookFlights = Flights<ThumbnailKey, ThumbResult>(scope)
     private val folderFlights = HashMap<ThumbnailKey, FolderFlight>()
     private val folderWrites = Mutex()
-    private val gates = ThumbLane.entries.associateWith { PriorityGate(ThumbnailParallelism.effective(2, deviceBudgetBytes)) }
+    private var parallelism = ThumbnailParallelism.effective(2, deviceBudgetBytes)
+    private val gates = ThumbLane.entries.associateWith { PriorityGate(parallelism) }
 
     @Synchronized
     fun setParallelism(chosen: Int) {
         val n = ThumbnailParallelism.effective(chosen, deviceBudgetBytes)
+        if (n == parallelism) return
+        parallelism = n
         updateDecoding(ThumbnailParallelism.perDecodeBudget(deviceBudgetBytes, n), n)
         gates.values.forEach { it.setPermits(n) }
     }
