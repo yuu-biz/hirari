@@ -203,6 +203,10 @@
     <string name="look_group_series">シリーズ</string>
     <string name="look_group_original">元ネタ</string>
     <string name="look_group_event">イベント</string>
+    <string name="strip_sort_kind">並べ替え</string>
+    <string name="strip_group_kind">グループ</string>
+    <string name="strip_group_none">グループなし</string>
+    <string name="strip_selected">選択中</string>
     <string name="look_section">セクション</string>
     <string name="look_section_read_state">読書状態</string>
     <string name="look_section_added_time">追加時期</string>

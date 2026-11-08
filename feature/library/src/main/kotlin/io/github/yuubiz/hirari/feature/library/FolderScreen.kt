@@ -174,6 +174,14 @@ fun FolderScreen(model: FolderViewModel, actions: FolderActions, reveal: String?
         Box(Modifier.padding(padding).fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 val shown = state.content as? FolderContent.Shown
+                if (shown != null && shown.sortStrip) {
+                    val strip = remember(shown.look, shown.sort, shown.pseudo) { sortStrip(shown.look, shown.sort, shown.pseudo) }
+                    SortStripRow(
+                        strip,
+                        onSort = model::setSort,
+                        onGroup = { value -> model.changeLook(strip.group?.choose(value) ?: { it }) },
+                    )
+                }
                 if (filtering && shown != null) {
                     FilterField(
                         initial = shown.filter,

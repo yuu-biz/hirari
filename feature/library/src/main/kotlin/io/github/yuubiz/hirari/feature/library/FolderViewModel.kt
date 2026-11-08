@@ -72,6 +72,8 @@ sealed interface FolderContent {
         val returnTo: FolderKey? = null,
         /** The current matched group; remembered membership is only used to find it. */
         val pseudo: PseudoFolder? = null,
+        /** Whether the strip of sort and group chips shows under the top bar (docs/spec.md section 4.3, 並べ替えの帯). */
+        val sortStrip: Boolean = true,
     ) : FolderContent
 }
 
@@ -138,7 +140,7 @@ private sealed interface ListingState {
     data class Done(val listing: Listing) : ListingState
 }
 
-private data class Layout(val view: LibraryView, val look: ListLook, val ordering: Ordering, val showParentItem: Boolean)
+private data class Layout(val view: LibraryView, val look: ListLook, val ordering: Ordering, val showParentItem: Boolean, val showSortStrip: Boolean)
 
 /**
  * One folder of a SAF place. The folder is listed once; sorting, filtering and the read-state marks are worked
@@ -165,7 +167,7 @@ class FolderViewModel(
     val state: StateFlow<FolderUi> = flow { emit(services.await()) }
         .flatMapLatest { services ->
             val layout = services.settings.settings
-                .map { Layout(it.libraryView, it.listLook(), Ordering(it.librarySort, it.foldersFirst, it.showDotFiles), it.showParentItem) }
+                .map { Layout(it.libraryView, it.listLook(), Ordering(it.librarySort, it.foldersFirst, it.showDotFiles), it.showParentItem, it.showSortStrip) }
                 .distinctUntilChanged()
             val content = listing.flatMapLatest { state ->
                 when (state) {
@@ -223,7 +225,7 @@ class FolderViewModel(
             val parentItem = layout.showParentItem && (pseudo != null || folderTrail("", folder.path).parent != null)
             FolderContent.Shown(visible, members.size, query, layout.view, layout.look, layout.ordering.sort, layout.ordering.foldersFirst, covers, chosenHere, parentItem,
                 returnTo = if (generateSequence(existing) { it.parent }.count() != generateSequence(pseudo) { it.parent }.count())
-                    folder.copy(pseudo = existing) else null, pseudo = existing)
+                    folder.copy(pseudo = existing) else null, pseudo = existing, sortStrip = layout.showSortStrip)
         }.flowOn(compute)
     }
 

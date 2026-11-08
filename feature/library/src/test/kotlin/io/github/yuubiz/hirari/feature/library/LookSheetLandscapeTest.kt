@@ -40,7 +40,7 @@ class LookSheetLandscapeTest {
     private fun show() {
         fixture.locations.rows.value = listOf(place)
         fixture.lister.folders["a"] = (1..12).map { FolderEntry("${it}巻.zip", "doc:$it", directory = false, size = 1, modified = null) }
-        fixture.settings.value.value = fixture.settings.value.value.copy(libraryView = LibraryView.Grid)
+        fixture.settings.value.value = fixture.settings.value.value.copy(libraryView = LibraryView.Grid, showSortStrip = false)
         val model = FolderViewModel(CompletableDeferred(fixture.services), FolderKey(place.id, "a"), Dispatchers.Unconfined)
         val actions = FolderActions(openBook = {}, openText = {}, openArchive = {}, openFolder = {}, pinShortcut = { true }, openAncestor = {}, close = {})
         rule.setContent { MaterialTheme { FolderScreen(model, actions) } }
