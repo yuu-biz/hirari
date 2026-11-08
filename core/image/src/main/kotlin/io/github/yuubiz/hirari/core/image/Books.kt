@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.archive.ArchiveFailure
 import io.github.yuubiz.hirari.core.archive.ArchiveFormat
 import io.github.yuubiz.hirari.core.archive.ArchiveSession
 import io.github.yuubiz.hirari.core.archive.EntryResult
+import io.github.yuubiz.hirari.core.archive.ListingNeed
 import io.github.yuubiz.hirari.core.archive.OpenResult
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.FailureReason
@@ -72,7 +73,8 @@ object Books {
     /**
      * Opens the archive in [source], which the book owns from here on. A solid archive is extracted into
      * [extractDir], the book's directory under `cacheDir/extract/` (docs/spec.md section 3.3), when it is given.
-     * The entries of any other archive go into [stash] once read, when it is given (section 5.3).
+     * The entries of any other archive go into [stash] once read, when it is given (section 5.3). A RAR or a tar is
+     * listed as far as [need] asks (section 4.4).
      */
     suspend fun openArchive(
         source: ByteSource,
@@ -81,8 +83,9 @@ object Books {
         naming: EntryNaming = EntryNaming(),
         stash: DiskStash? = null,
         password: BookPassword? = null,
+        need: ListingNeed = ListingNeed.All,
     ): BookResult {
-        val session = when (val opened = ArchiveSession.open(source, extractDir, password)) {
+        val session = when (val opened = ArchiveSession.open(source, extractDir, password, need)) {
             is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
             OpenResult.Encrypted -> return BookResult.Failed(BookFailure.Encrypted)
             is OpenResult.Opened -> opened.session
@@ -98,7 +101,7 @@ object Books {
             }
             val extracted = session.solid && extractDir != null
             val bytes = ArchivePages(session).let { if (stash != null && !extracted) StashedPages(it, stash) else it }
-            BookResult.Opened(OpenBook(BookContent.Images(bytes), session.format.container(), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding))
+            BookResult.Opened(OpenBook(BookContent.Images(bytes), session.format.container(), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding, session.partial))
         } catch (_: OutOfMemoryError) {
             session.close()
             BookResult.Failed(BookFailure.ReadError)
@@ -142,7 +145,8 @@ object Books {
     /**
      * Opens the book in [source], which the book owns from here on: a single image when its first bytes show an
      * image, a PDF when `%PDF-` starts within its first 1024 bytes (docs/spec.md section 3.2), and otherwise an
-     * archive, extracted into [extractDir] when solid, and its entries kept in [stash] otherwise.
+     * archive, extracted into [extractDir] when solid, its entries kept in [stash] otherwise, and listed as far as
+     * [need] asks.
      */
     suspend fun openBook(
         source: ByteSource,
@@ -151,6 +155,7 @@ object Books {
         naming: EntryNaming = EntryNaming(),
         stash: DiskStash? = null,
         password: BookPassword? = null,
+        need: ListingNeed = ListingNeed.All,
     ): BookResult {
         val read = try {
             safely { readPrefix(source, PDF_SNIFF_BYTES) }
@@ -166,7 +171,7 @@ object Books {
             }
         }
         sniffImage(prefix)?.let { return openImage(source, it, decoding) }
-        return if (isPdf(prefix)) openPdf(source, decoding, password) else openArchive(source, decoding, extractDir, naming, stash, password)
+        return if (isPdf(prefix)) openPdf(source, decoding, password) else openArchive(source, decoding, extractDir, naming, stash, password, need)
     }
 
     /** Opens the PDF in [source], which the book owns from here on (docs/spec.md section 3.9). */
@@ -188,7 +193,8 @@ object Books {
 
     /**
      * Opens the archive or PDF document at [uri]. A provider that cannot seek gets the document copied into
-     * [copyDir]. A solid archive is extracted into [extractDir] when it is given. [naming] decodes an archive's names.
+     * [copyDir]. A solid archive is extracted into [extractDir] when it is given. [naming] decodes an archive's names,
+     * and [need] says how far a RAR or a tar is listed.
      */
     suspend fun openDocument(
         resolver: ContentResolver,
@@ -199,6 +205,7 @@ object Books {
         naming: EntryNaming = EntryNaming(),
         extractDirOf: (suspend (ByteSource) -> File?)? = null,
         password: BookPassword? = null,
+        need: ListingNeed = ListingNeed.All,
     ): BookResult {
         val modified = withContext(Dispatchers.IO) { resolver.documentLastModifiedMs(uri) }
         val source = when (val opened = safely(release = ByteSource::close) {
@@ -215,7 +222,7 @@ object Books {
                 throw e
             }
         }
-        return openBook(source, decoding, dir, naming, password = password)
+        return openBook(source, decoding, dir, naming, password = password, need = need)
     }
 
     /**

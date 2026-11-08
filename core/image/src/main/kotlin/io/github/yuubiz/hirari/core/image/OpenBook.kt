@@ -54,6 +54,8 @@ internal sealed interface BookContent : Closeable {
  * @property pages the page list in natural order, or in another after [ordered], fixed while the book is open (section 3.5).
  * @property indexError why listing the archive stopped early, or null when it reached the end.
  * @property container what the book was opened from, for the index of opened books (section 2.2).
+ * @property partial listing the archive stopped where the `ListingNeed` it was opened with was met (section 4.4), so
+ *   [pages] are those of the entries up to there. It is not an error, and [indexError] is null.
  */
 class OpenBook internal constructor(
     private val content: BookContent,
@@ -61,6 +63,7 @@ class OpenBook internal constructor(
     val pages: List<PageEntry>,
     val indexError: FailureReason?,
     private val decoding: ImageDecoding,
+    val partial: Boolean = false,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob())
 
@@ -82,7 +85,7 @@ class OpenBook internal constructor(
      */
     fun ordered(order: PageOrder): OpenBook {
         val own = if (container == Container.Folder) order.copy(entries = EntryOrder.Natural) else order
-        return OpenBook(content, container, sortedPages(pages, own), indexError, decoding)
+        return OpenBook(content, container, sortedPages(pages, own), indexError, decoding, partial)
     }
 
     suspend fun invalidate(index: Int) { (content as? BookContent.Images)?.bytes?.invalidate(pages[index]) }
