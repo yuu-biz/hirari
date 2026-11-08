@@ -10,6 +10,7 @@ import io.github.yuubiz.hirari.core.model.normalizePath
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.RandomAccessFile
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
@@ -22,44 +23,55 @@ class NoRoomForCopyException(val reserveBytes: Long) : IOException("not enough f
  * Opens the document at [uri] for random access (docs/spec.md section 3.1). When the provider hands over a pipe
  * instead of a file, copies the document into [copyDir] first. The copy has no name on disk once it is open, so
  * it disappears when the source closes. [lastModifiedMs] is the provider's time, also for a copied document.
- * Blocks on Binder and disk, so never call it on the main thread.
+ * Blocks on Binder and disk, so never call it on the main thread. A copy stops before the next 64 KB once [isActive]
+ * is false (docs/spec.md section 4.4), as when the cover it is read for is no longer wanted.
  *
  * @throws java.io.FileNotFoundException when the document is gone.
  * @throws SecurityException when the permission to read it is gone.
  * @throws NoRoomForCopyException when the copy would leave less than [COPY_RESERVE_BYTES] free.
  * @throws IOException when reading fails.
+ * @throws CancellationException when [isActive] turned false during a copy.
  */
-fun ContentResolver.openByteSource(uri: Uri, copyDir: File, lastModifiedMs: Long? = null): ByteSource {
+fun ContentResolver.openByteSource(
+    uri: Uri,
+    copyDir: File,
+    lastModifiedMs: Long? = null,
+    isActive: () -> Boolean = { true },
+): ByteSource {
     val descriptor = openFileDescriptor(uri, "r") ?: throw IOException("the provider returned no descriptor")
     if (descriptor.statSize >= 0) return descriptor.asByteSource(lastModifiedMs)
-    return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
-        copyDir.mkdirs()
-        val file = File.createTempFile("copy", null, copyDir)
-        val copy = try {
-            RandomAccessFile(file, "rw")
-        } finally {
-            file.delete()
-        }
-        try {
-            val buffer = ByteArray(COPY_CHUNK)
-            var sinceCheck = Long.MAX_VALUE
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                if (sinceCheck >= SPACE_CHECK_INTERVAL) {
-                    if (copyDir.usableSpace < COPY_RESERVE_BYTES + SPACE_CHECK_INTERVAL) {
-                        throw NoRoomForCopyException(COPY_RESERVE_BYTES)
-                    }
-                    sinceCheck = 0
+    return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input -> copied(input, copyDir, lastModifiedMs, isActive) }
+}
+
+/** [input] copied into a file in [copyDir] that has no name once open, checking [isActive] before each chunk. */
+internal fun copied(input: InputStream, copyDir: File, lastModifiedMs: Long?, isActive: () -> Boolean): ByteSource {
+    copyDir.mkdirs()
+    val file = File.createTempFile("copy", null, copyDir)
+    val copy = try {
+        RandomAccessFile(file, "rw")
+    } finally {
+        file.delete()
+    }
+    try {
+        val buffer = ByteArray(COPY_CHUNK)
+        var sinceCheck = Long.MAX_VALUE
+        while (true) {
+            if (!isActive()) throw CancellationException("cancelled while copying")
+            val read = input.read(buffer)
+            if (read < 0) break
+            if (sinceCheck >= SPACE_CHECK_INTERVAL) {
+                if (copyDir.usableSpace < COPY_RESERVE_BYTES + SPACE_CHECK_INTERVAL) {
+                    throw NoRoomForCopyException(COPY_RESERVE_BYTES)
                 }
-                copy.write(buffer, 0, read)
-                sinceCheck += read
+                sinceCheck = 0
             }
-            FileChannelSource(copy.channel, lastModifiedMs)
-        } catch (e: Throwable) {
-            copy.close()
-            throw e
+            copy.write(buffer, 0, read)
+            sinceCheck += read
         }
+        return FileChannelSource(copy.channel, lastModifiedMs)
+    } catch (e: Throwable) {
+        copy.close()
+        throw e
     }
 }
 

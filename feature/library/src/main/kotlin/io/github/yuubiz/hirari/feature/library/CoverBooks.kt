@@ -21,9 +21,11 @@ import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -100,7 +102,8 @@ class DeviceCoverBooks(
                 val file = when (val place = origin.place) {
                     is LibraryLocation.SafTree -> {
                         val uri = documentUri(place, origin.path, origin.documentId)
-                        FolderFile(name, spec.byteSize) { resolver.openByteSource(uri, copyDir) }
+                        val cover = currentCoroutineContext().job
+                        FolderFile(name, spec.byteSize) { resolver.openByteSource(uri, copyDir, isActive = { cover.isActive }) }
                     }
                     is LibraryLocation.SmbShare -> FolderFile(name, spec.byteSize) { runBlocking { smb.open(place, origin.path, SmbPurpose.Background) } }
                 }

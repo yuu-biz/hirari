@@ -100,13 +100,17 @@ class OpenBook internal constructor(
 
     /**
      * The encoded bytes of the page at [index], for the raw-data prefetch layer to hold (docs/spec.md section
-     * 5.3). [page] and [shape] decode from them without reading the book again. A PDF page has none to hold.
+     * 5.3). [page] and [shape] decode from them without reading the book again. A PDF page has none to hold. A
+     * caller cancelled while they were read does not get them (section 4.4).
      */
     suspend fun raw(index: Int): RawResult = guarded {
         when (content) {
             is BookContent.Pdf -> PageResult.Ready(RawPage.Drawn)
             is BookContent.Images -> when (val read = content.bytes.read(pages[index])) {
-                is PageResult.Ready -> PageResult.Ready(RawPage.Encoded(read.image))
+                is PageResult.Ready -> {
+                    currentCoroutineContext().ensureActive()
+                    PageResult.Ready(RawPage.Encoded(read.image))
+                }
                 is PageResult.Failed -> read
                 is PageResult.Unsupported -> read
             }
@@ -139,8 +143,15 @@ class OpenBook internal constructor(
         }
     }
 
-    /** The size of the page at [index], from the image header alone (docs/spec.md sections 2.5 and 5.3). */
-    suspend fun shape(index: Int, raw: RawPage? = null): PageResult<PageShape.Known> = when (content) {
+    /**
+     * The size of the page at [index], from the image header alone (docs/spec.md sections 2.5 and 5.3). A caller
+     * cancelled meanwhile does not get it (section 4.4).
+     */
+    suspend fun shape(index: Int, raw: RawPage? = null): PageResult<PageShape.Known> = shapeOf(index, raw).also {
+        currentCoroutineContext().ensureActive()
+    }
+
+    private suspend fun shapeOf(index: Int, raw: RawPage?): PageResult<PageShape.Known> = when (content) {
         // Opening a page reads from the source, so it has the time limit of a page drawn (docs/spec.md section 3.9).
         is BookContent.Pdf -> guarded {
             decodeWithTimeout(scope, content.document.dispatcher, release = {}) { _ ->

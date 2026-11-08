@@ -19,7 +19,8 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Decodes [bytes] to fit [target] by the steps of docs/spec.md section 3.7, on the calling thread. [isActive]
- * is checked once the header is read, which is the last point `ImageDecoder` can stop. With [Tiling.AsPlanned],
+ * is checked once the header is read, which is the last point `ImageDecoder` can stop, and before each step of
+ * the scaling after it (section 4.4). With [Tiling.AsPlanned],
  * an image narrower than 1:3 becomes tiles instead, and with [Tiling.Always] every image does.
  */
 internal fun decodePage(
@@ -198,7 +199,7 @@ private fun decodeOnce(
         }
     }
     val from = PixelSize(decoded.width, decoded.height)
-    val bitmap = scaledInSteps(decoded, null, shrinkToFit(planned!!.output, from), recycleSource = true)
+    val bitmap = scaledInSteps(decoded, null, shrinkToFit(planned!!.output, from), recycleSource = true, isActive = isActive)
     bitmap.prepareToDraw()
     return PageResult.Ready(PreparedImage.Whole(bitmap, shape!!))
 }
@@ -209,9 +210,16 @@ private fun source(bytes: ByteArray): ImageDecoder.Source = ImageDecoder.createS
  * [source], or its [part], scaled to [to] in ARGB_8888 by the steps of [downscaleSteps] for [turn], the
  * orientation the result is shown in afterwards (docs/spec.md section 5.3). Intermediate bitmaps are recycled;
  * [source] is recycled only with [recycleSource]. The result is [source] itself when [part] is null, it is
- * already [to] and ARGB_8888.
+ * already [to] and ARGB_8888. Before each step it throws [CancellationException] once [isActive] is false.
  */
-internal fun scaledInSteps(source: Bitmap, part: Rect?, to: PixelSize, recycleSource: Boolean, turn: Orientation = Orientation.Normal): Bitmap {
+internal fun scaledInSteps(
+    source: Bitmap,
+    part: Rect?,
+    to: PixelSize,
+    recycleSource: Boolean,
+    turn: Orientation = Orientation.Normal,
+    isActive: () -> Boolean = { true },
+): Bitmap {
     var current = source
     var currentPart = part
     try {
@@ -220,6 +228,7 @@ internal fun scaledInSteps(source: Bitmap, part: Rect?, to: PixelSize, recycleSo
             if (part == null && source.config == Bitmap.Config.ARGB_8888) return source else listOf(ScaleStep.Bilinear(to))
         }
         for (step in steps) {
+            if (!isActive()) throw CancellationException("cancelled between scaling steps")
             val next = drawn(step.size) { canvas ->
                 when (step) {
                     is ScaleStep.Halve -> canvas.drawPaint(halving(current, currentPart, step))

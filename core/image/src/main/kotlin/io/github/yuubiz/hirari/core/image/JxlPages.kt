@@ -57,7 +57,7 @@ internal fun prepareJxlPage(
         return when (val decoded = decode(plan.sampleSize * extraSample)) {
             is JxlDecodeResult.Failed -> decoded.failure.pageResult(header.width, header.height)
             is JxlDecodeResult.Decoded -> PageResult.Ready(
-                PreparedImage.Whole(scaledToOutput(decoded.bitmap, plan.output), shape),
+                PreparedImage.Whole(scaledToOutput(decoded.bitmap, plan.output, isActive), shape),
             )
         }
     }
@@ -78,5 +78,6 @@ private fun JxlFailure.pageResult(width: Int, height: Int): PageResult<Nothing> 
 }
 
 /** [decoded] brought down to [output] by halving and one last bilinear step (docs/spec.md section 5.3). */
-private fun scaledToOutput(decoded: Bitmap, output: PixelSize): Bitmap =
-    scaledInSteps(decoded, null, shrinkToFit(output, PixelSize(decoded.width, decoded.height)), recycleSource = true).also { it.prepareToDraw() }
+private fun scaledToOutput(decoded: Bitmap, output: PixelSize, isActive: () -> Boolean): Bitmap =
+    scaledInSteps(decoded, null, shrinkToFit(output, PixelSize(decoded.width, decoded.height)), recycleSource = true, isActive = isActive)
+        .also { it.prepareToDraw() }
