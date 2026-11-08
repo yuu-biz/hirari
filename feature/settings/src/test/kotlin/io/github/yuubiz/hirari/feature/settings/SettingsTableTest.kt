@@ -68,9 +68,24 @@ class SettingsTableTest {
     fun `every field of GlobalSettings has a row`() {
         val fields = GlobalSettings.serializer().descriptor.elementNames.toSet()
         val keys = SettingsTable.map { it.key }
-        assertEquals(77, keys.size)
+        assertEquals(78, keys.size)
         assertEquals(keys.size, keys.toSet().size, "a key is listed twice")
         assertEquals(fields, keys.toSet())
+    }
+
+    @Test
+    fun `thumbnail parallelism keeps all choices and explains only a device cap below the chosen count`() {
+        for (cap in listOf(1, 2, 4, 8)) {
+            for (chosen in listOf(2, 3, 4, 6, 8)) {
+                val settings = GlobalSettings(thumbnailParallelism = chosen)
+                val library = settingsFor(28, settings, cap).getValue(SettingGroup.Library)
+                val row = library.first { it.key == "thumbnailParallelism" } as ChoiceSetting<*>
+                assertEquals("表紙を同時に作る数", row.label)
+                assertEquals(listOf(2, 3, 4, 6, 8), row.options.map { it.value })
+                assertEquals(if (chosen > cap) "この端末では $cap まで" else null, row.note)
+                assertEquals("thumbSize", library[library.indexOf(row) - 1].key)
+            }
+        }
     }
 
     @Test

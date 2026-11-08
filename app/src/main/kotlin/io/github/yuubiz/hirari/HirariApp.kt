@@ -15,6 +15,7 @@ import io.github.yuubiz.hirari.core.data.Storage
 import io.github.yuubiz.hirari.core.model.logFailure
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.thumbnail.Thumbnails
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbnailParallelism
 import io.github.yuubiz.hirari.feature.library.LibraryServices
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
@@ -76,6 +77,8 @@ class HirariApp : Application() {
     /** The last start of this process; it outlives an activity recreated before the start finished. */
     internal var start: AppStart? = null
 
+    internal val thumbnailParallelismCap: Int by lazy { ThumbnailParallelism.cap(ImageDecoding.deviceBudget(this)) }
+
     override fun onCreate() {
         if (debuggable) enableStrictMode()
         super.onCreate()
@@ -106,6 +109,9 @@ class HirariApp : Application() {
             val smb = smbPlaces.await()
             val folders = SafFolderLister(contentResolver)
             val thumbnails = Thumbnails.forDevice(this@HirariApp, ThumbnailStoreAdapter(storage.thumbnails))
+            appScope.launch {
+                storage.settings.settings.map { it.thumbnailParallelism }.distinctUntilChanged().collect(thumbnails::setParallelism)
+            }
             val covers = Covers(
                 source = ThumbnailsSource(thumbnails),
                 books = DeviceCoverBooks(contentResolver, cacheDir, folders, smb, storage.books, storage.settings, storage.bookPasswords),

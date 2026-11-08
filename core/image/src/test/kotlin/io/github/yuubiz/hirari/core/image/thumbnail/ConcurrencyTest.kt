@@ -15,6 +15,103 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConcurrencyTest {
+    @Test
+    fun raisingTheLimitStartsTwoMoreOfSixWaitersInCurrentUrgencyOrder() = runTest {
+        val gate = PriorityGate(2)
+        val release = CompletableDeferred<Unit>()
+        repeat(2) { launch { gate.withPermit(Urgency(ThumbPriority.Visible)) { release.await() } } }
+        runCurrent()
+        val order = ArrayList<Int>()
+        val distances = mutableListOf(5, 4, 3, 2, 1, 0)
+        repeat(6) { index ->
+            launch {
+                gate.withPermit(Urgency(ThumbPriority.Visible) { distances[index] }) {
+                    order += index
+                    release.await()
+                }
+            }
+        }
+        runCurrent()
+        distances[0] = 0
+        gate.setPermits(4)
+        runCurrent()
+        assertEquals(listOf(0, 5), order)
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(0, 5, 4, 3, 2, 1), order)
+    }
+
+    @Test
+    fun loweringTheLimitLetsAllFourFinishAndWaitsUntilFewerThanTwoRun() = runTest {
+        val gate = PriorityGate(4)
+        val releases = List(4) { CompletableDeferred<Unit>() }
+        val running = releases.map { release ->
+            launch { gate.withPermit(Urgency(ThumbPriority.Visible)) { release.await() } }
+        }
+        runCurrent()
+        val releaseNext = CompletableDeferred<Unit>()
+        var nextStarted = false
+        launch {
+            gate.withPermit(Urgency(ThumbPriority.Visible)) {
+                nextStarted = true
+                releaseNext.await()
+            }
+        }
+        runCurrent()
+        gate.setPermits(2)
+        runCurrent()
+        assertTrue(running.all { it.isActive && !it.isCancelled })
+        assertFalse(nextStarted)
+        repeat(2) { index ->
+            releases[index].complete(Unit)
+            runCurrent()
+            assertFalse(nextStarted)
+        }
+        releases[2].complete(Unit)
+        runCurrent()
+        assertTrue(nextStarted)
+        assertTrue(running.none { it.isCancelled })
+        releases[3].complete(Unit)
+        releaseNext.complete(Unit)
+    }
+
+    @Test
+    fun cancellationAfterResizeHandsTheGrantedPermitToTheNextWaiter() = runTest {
+        val gate = PriorityGate(1)
+        val release = CompletableDeferred<Unit>()
+        launch { gate.withPermit(Urgency(ThumbPriority.Visible)) { release.await() } }
+        runCurrent()
+        val cancelled = launch { gate.withPermit(Urgency(ThumbPriority.Visible)) { error("cancelled waiter ran") } }
+        var started = false
+        launch {
+            gate.withPermit(Urgency(ThumbPriority.Visible)) {
+                started = true
+                release.await()
+            }
+        }
+        runCurrent()
+        gate.setPermits(2)
+        cancelled.cancel()
+        runCurrent()
+        assertTrue(started)
+        release.complete(Unit)
+        runCurrent()
+        var running = 0
+        val finish = CompletableDeferred<Unit>()
+        repeat(3) {
+            launch {
+                gate.withPermit(Urgency(ThumbPriority.Visible)) {
+                    running++
+                    finish.await()
+                    running--
+                }
+            }
+        }
+        runCurrent()
+        assertEquals(2, running)
+        finish.complete(Unit)
+    }
+
     private fun TestScope.workScope() = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
 
     @Test

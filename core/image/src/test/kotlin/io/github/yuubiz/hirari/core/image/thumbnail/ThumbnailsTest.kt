@@ -141,9 +141,52 @@ class ThumbnailsTest {
     private var clock = 0L
     private var previousExit = PreviousExit.Crashed
 
-    private fun TestScope.thumbnails(): Thumbnails {
+    private fun TestScope.thumbnails(
+        deviceBudgetBytes: Long = 128L shl 20,
+        updateDecoding: (Long, Int) -> Unit = { _, _ -> },
+    ): Thumbnails {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        return Thumbnails(store, maker, CoroutineScope(SupervisorJob() + dispatcher), dispatcher, now = { clock }, previousExit = { previousExit })
+        return Thumbnails(
+            store, maker, CoroutineScope(SupervisorJob() + dispatcher), dispatcher, now = { clock }, previousExit = { previousExit },
+            deviceBudgetBytes = deviceBudgetBytes, updateDecoding = updateDecoding,
+        )
+    }
+
+    @Test
+    fun changingParallelismResizesBothLanesWithinTheBudgetWithoutStoppingWork() = runTest {
+        val decoding = ArrayList<Pair<Long, Int>>()
+        val thumbnails = thumbnails(256L shl 20) { budget, n -> decoding += budget to n }
+        val releases = ThumbLane.entries.flatMap { lane -> (0..4).map { "$lane$it" to CompletableDeferred<Unit>() } }.toMap()
+        maker.script = { book ->
+            releases.getValue(book.id.value).await()
+            image(book)
+        }
+        for (lane in ThumbLane.entries) {
+            repeat(5) { index -> launch { thumbnails.thumbnail(request(book("$lane$index", lane))) } }
+        }
+        runCurrent()
+        assertEquals(4, maker.running)
+        thumbnails.setParallelism(8)
+        runCurrent()
+        assertEquals(8, maker.running)
+        assertEquals((64L shl 20) to 4, decoding.last())
+        thumbnails.setParallelism(2)
+        runCurrent()
+        assertEquals(8, maker.running)
+        assertEquals((128L shl 20) to 2, decoding.last())
+        for (lane in ThumbLane.entries) {
+            repeat(2) { index -> releases.getValue("$lane$index").complete(Unit) }
+            runCurrent()
+            assertFalse("$lane started too soon", "${lane}4" in maker.ids)
+            releases.getValue("${lane}2").complete(Unit)
+            runCurrent()
+            assertTrue("$lane did not use its freed slot", "${lane}4" in maker.ids)
+        }
+        releases.values.forEach { it.complete(Unit) }
+        runCurrent()
+        assertEquals(0, maker.running)
+        assertEquals(10, maker.calls.size)
+        thumbnails.close()
     }
 
     private fun book(
@@ -607,7 +650,7 @@ class ThumbnailsTest {
 
     /** Starts a cover over SMB for each place of the lane, each held by the test's `release`. */
     private fun TestScope.holdSmbLane(thumbnails: Thumbnails) {
-        repeat(ThumbLane.Smb.parallelism) { launch { thumbnails.thumbnail(request(book("busy$it", lane = ThumbLane.Smb))) } }
+        repeat(2) { launch { thumbnails.thumbnail(request(book("busy$it", lane = ThumbLane.Smb))) } }
     }
 
     @Test

@@ -26,6 +26,21 @@ import kotlin.test.assertFailsWith
 
 class SettingsSerializerTest {
     @Test
+    fun `thumbnail parallelism defaults rounds to nearest with ties down and round trips`() = runTest {
+        for (text in listOf("{}", """{"thumbnailParallelism":"many"}""")) {
+            assertEquals(2, read(text).thumbnailParallelism)
+        }
+        for ((input, expected) in listOf(5 to 4, 7 to 6, 1 to 2, 100 to 8, Int.MIN_VALUE to 2)) {
+            assertEquals(expected, GlobalSettings(thumbnailParallelism = input).normalized().thumbnailParallelism)
+            assertEquals(expected, read("""{"thumbnailParallelism":$input}""").thumbnailParallelism)
+        }
+        for (n in GlobalSettings.THUMBNAIL_PARALLELISM) {
+            val settings = GlobalSettings(thumbnailParallelism = n)
+            assertEquals(settings, roundTrip(settings))
+        }
+    }
+
+    @Test
     fun `legacy dynamic color migrates while an explicit palette wins`() = runTest {
         assertEquals(ColorPalette.Wallpaper, read("""{"dynamicColor":true}""").colorPalette)
         assertEquals(ColorPalette.Standard, read("""{"dynamicColor":false}""").colorPalette)
@@ -195,10 +210,10 @@ class SettingsSerializerTest {
     }
 
     @Test
-    fun `the settings are the 77 of the spec and the fixture changes each of them`() {
+    fun `the settings are the 78 of the spec and the fixture changes each of them`() {
         val defaults = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), GlobalSettings()).jsonObject
         val changed = SettingsJson.encodeToJsonElement(GlobalSettings.serializer(), everything).jsonObject
-        assertEquals(77, defaults.size)
+        assertEquals(78, defaults.size)
         assertEquals(defaults.keys, defaults.keys.filter { defaults[it] != changed[it] }.toSet())
     }
 

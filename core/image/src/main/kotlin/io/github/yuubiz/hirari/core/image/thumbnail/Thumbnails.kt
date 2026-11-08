@@ -40,8 +40,8 @@ import kotlin.coroutines.cancellation.CancellationException
  * Thumbnails for the lists of the library (docs/spec.md sections 4.4 and 5.4): finds one in the [ThumbnailStore],
  * and otherwise makes it from the cover page and stores it.
  *
- * The work is not tied to the caller. At most two thumbnails are made at once from local files and two from SMB
- * ([ThumbLane]), on a decode dispatcher of their own. A request that asks for a thumbnail already being made
+ * The work is not tied to the caller. Each [ThumbLane] makes as many thumbnails at once as [setParallelism]
+ * allows, on a decode dispatcher of their own. A request that asks for a thumbnail already being made
  * waits for that one. Cancelling a request, as a list does when the item scrolls out, stops the work once nobody
  * else waits for it. Visible requests are served before nearby ones.
  *
@@ -64,11 +64,20 @@ class Thumbnails internal constructor(
     private val now: () -> Long,
     private val previewer: PagePreviewer = PagePreviewer { _, _, _ -> PagePreview.Unavailable },
     private val previousExit: () -> PreviousExit = { PreviousExit.Unknown },
+    private val deviceBudgetBytes: Long = 128L shl 20,
+    private val updateDecoding: (Long, Int) -> Unit = { _, _ -> },
 ) {
     private val bookFlights = Flights<ThumbnailKey, ThumbResult>(scope)
     private val folderFlights = HashMap<ThumbnailKey, FolderFlight>()
     private val folderWrites = Mutex()
-    private val gates = ThumbLane.entries.associateWith { PriorityGate(it.parallelism) }
+    private val gates = ThumbLane.entries.associateWith { PriorityGate(ThumbnailParallelism.effective(2, deviceBudgetBytes)) }
+
+    @Synchronized
+    fun setParallelism(chosen: Int) {
+        val n = ThumbnailParallelism.effective(chosen, deviceBudgetBytes)
+        updateDecoding(ThumbnailParallelism.perDecodeBudget(deviceBudgetBytes, n), n)
+        gates.values.forEach { it.setPermits(n) }
+    }
 
     /** One listing at a time per lane for the searches for folder covers, beside the covers being made (section 4.4). */
     private val listingGates = ThumbLane.entries.associateWith { PriorityGate(1) }
@@ -503,7 +512,15 @@ class Thumbnails internal constructor(
          * Thumbnails that decode with [decoding], a decoder of their own, and ask [previousExit] whether the last
          * process crashed. Make one for the process.
          */
-        fun create(store: ThumbnailStore, decoding: ImageDecoding, previousExit: () -> PreviousExit): Thumbnails {
+        fun create(store: ThumbnailStore, decoding: ImageDecoding, previousExit: () -> PreviousExit): Thumbnails =
+            create(store, decoding, decoding.budgetBytes * 2, previousExit)
+
+        private fun create(
+            store: ThumbnailStore,
+            decoding: ImageDecoding,
+            deviceBudgetBytes: Long,
+            previousExit: () -> PreviousExit,
+        ): Thumbnails {
             val maker = BookThumbnailMaker(decoding)
             return Thumbnails(
                 store,
@@ -513,20 +530,20 @@ class Thumbnails internal constructor(
                 now = { System.nanoTime() / 1_000_000 },
                 previewer = maker,
                 previousExit = previousExit,
+                deviceBudgetBytes = deviceBudgetBytes,
+                updateDecoding = { budget, n -> maker.decoding = ImageDecoding(budget, n, decoding.storage) },
             )
         }
 
         /**
-         * Thumbnails sized for this device: half the memory budget of the reader, two decodes at once (one on a
+         * Thumbnails sized for this device: half the memory budget of the reader, initially two decodes at once (one on a
          * device with little memory), and PDF support.
          */
         fun forDevice(context: Context, store: ThumbnailStore): Thumbnails {
             val budget = ImageDecoding.deviceBudget(context)
-            val parallelism = if (budget < LOW_MEMORY_BYTES) 1 else ThumbLane.Local.parallelism
+            val parallelism = ThumbnailParallelism.effective(2, budget)
             val decoding = ImageDecoding(budget / 2, parallelism, context.getSystemService(StorageManager::class.java))
-            return create(store, decoding) { previousExit(context) }
+            return create(store, decoding, budget) { previousExit(context) }
         }
-
-        private const val LOW_MEMORY_BYTES = 128L shl 20
     }
 }

@@ -82,7 +82,7 @@ class ReaderConfigTest {
     private val otherScreens = setOf(
         "textTypeface", "textSizeSp", "textLineGap", "textLetterGap", "textMargin", "textLayout", "textLatinMode",
         "textPaper", "textInkOverride", "textPaperOverride",
-        "libraryView", "thumbSize", "gridColumnsPortrait", "gridColumnsLandscape", "gridNameLines", "gridNoteLine", "coverAspect",
+        "libraryView", "thumbSize", "thumbnailParallelism", "gridColumnsPortrait", "gridColumnsLandscape", "gridNameLines", "gridNoteLine", "coverAspect",
         "libraryTextSize", "libraryGrouping", "librarySubgrouping", "librarySection", "mergeCircleAuthors", "librarySort", "foldersFirst", "showParentItem", "allowFileEdits", "reopenLastFolder",
         "reopenLastBook", "historySort", "bookmarkSort",
         "appTheme", "colorPalette", "pureBlack",

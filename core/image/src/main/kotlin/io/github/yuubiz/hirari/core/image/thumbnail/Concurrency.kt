@@ -90,9 +90,19 @@ internal class PriorityGate(permits: Int) {
     private class Waiter(val urgency: Urgency, val order: Long, val continuation: CancellableContinuation<Unit>)
 
     private val lock = Any()
-    private var free = permits
+    private var limit = permits.also { require(it > 0) }
+    private var running = 0
     private var arrivals = 0L
     private val waiting = ArrayList<Waiter>()
+
+    fun setPermits(n: Int) {
+        require(n > 0)
+        val ready = synchronized(lock) {
+            limit = n
+            grantWaiting()
+        }
+        ready.forEach { it.continuation.resume(Unit) { release() } }
+    }
 
     suspend fun <T> withPermit(urgency: Urgency, block: suspend () -> T): T {
         acquire(urgency)
@@ -105,8 +115,8 @@ internal class PriorityGate(permits: Int) {
 
     private suspend fun acquire(urgency: Urgency) = suspendCancellableCoroutine { continuation ->
         val granted = synchronized(lock) {
-            if (free > 0) {
-                free--
+            if (running < limit) {
+                running++
                 true
             } else {
                 waiting += Waiter(urgency, arrivals++, continuation)
@@ -122,11 +132,20 @@ internal class PriorityGate(permits: Int) {
     }
 
     private fun release() {
-        val next = synchronized(lock) {
-            val next = waiting.minWithOrNull(compareBy<Waiter>({ it.urgency.rank }, { it.order }))
-            if (next == null) free++ else waiting.remove(next)
-            next
+        val ready = synchronized(lock) {
+            running--
+            grantWaiting()
         }
-        next?.continuation?.resume(Unit) { release() }
+        ready.forEach { it.continuation.resume(Unit) { release() } }
+    }
+
+    private fun grantWaiting(): List<Waiter> = buildList {
+        while (running < limit) {
+            val next = waiting.minWithOrNull(compareBy<Waiter>({ it.urgency.rank }, { it.order }))
+                ?: break
+            waiting.remove(next)
+            running++
+            add(next)
+        }
     }
 }

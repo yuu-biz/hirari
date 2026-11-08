@@ -254,6 +254,7 @@ val SettingsTable: List<Setting> = buildList {
         LibraryView.Grid to "グリッド", LibraryView.ThumbnailList to "サムネイル付きリスト", LibraryView.List to "リスト"))
     add(choice(GlobalSettings::thumbSize, library, "サムネイルの大きさ", { s, v -> s.copy(thumbSize = v) },
         ThumbSize.Small to "小", ThumbSize.Medium to "中", ThumbSize.Large to "大"))
+    add(thumbnailParallelismSetting(null, Int.MAX_VALUE))
     add(columns(GlobalSettings::gridColumnsPortrait, "グリッドの列数（縦画面）", GlobalSettings.GRID_COLUMNS_PORTRAIT) { s, v -> s.copy(gridColumnsPortrait = v) })
     add(columns(GlobalSettings::gridColumnsLandscape, "グリッドの列数（横画面）", GlobalSettings.GRID_COLUMNS_LANDSCAPE) { s, v -> s.copy(gridColumnsLandscape = v) })
     add(
@@ -327,8 +328,20 @@ val SettingsTable: List<Setting> = buildList {
 }
 
 /** The rows to show on a device with API level [sdk], grouped in the order of [SettingGroup]. */
-fun settingsFor(sdk: Int, settings: GlobalSettings? = null): Map<SettingGroup, List<Setting>> =
-    SettingsTable.filter { it.minSdk <= sdk }.map { if (it.key == "colorPalette") paletteSetting(sdk) else it }.mapNotNull { if (settings == null) it else it.forSettings(settings) }.groupBy { it.group }
+fun settingsFor(sdk: Int, settings: GlobalSettings? = null, thumbnailParallelismCap: Int = Int.MAX_VALUE): Map<SettingGroup, List<Setting>> =
+    SettingsTable.filter { it.minSdk <= sdk }.map {
+        when (it.key) {
+            "colorPalette" -> paletteSetting(sdk)
+            "thumbnailParallelism" -> thumbnailParallelismSetting(settings, thumbnailParallelismCap)
+            else -> it
+        }
+    }.mapNotNull { if (settings == null) it else it.forSettings(settings) }.groupBy { it.group }
+
+private fun thumbnailParallelismSetting(settings: GlobalSettings?, cap: Int) = choice(
+    GlobalSettings::thumbnailParallelism, SettingGroup.Library, "表紙を同時に作る数", { s, v -> s.copy(thumbnailParallelism = v) },
+    *GlobalSettings.THUMBNAIL_PARALLELISM.map { it to "$it" }.toTypedArray(),
+    note = if (settings != null && settings.thumbnailParallelism > cap) "この端末では $cap まで" else null,
+)
 
 /** The second key is available only beneath a different first key. */
 internal fun Setting.forSettings(settings: GlobalSettings): Setting? = when {

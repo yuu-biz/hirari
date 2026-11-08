@@ -15,6 +15,8 @@ import io.github.yuubiz.hirari.core.model.PageResult
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.UnsupportedKind
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.Instant
@@ -22,6 +24,27 @@ import java.time.Instant
 class BookThumbnailMakerTest {
     private val decoding = ImageDecoding(budgetBytes = 64L shl 20, parallelism = 1)
     private val maker = BookThumbnailMaker(decoding)
+
+    @Test
+    fun changingDecodingLeavesAnOpenBookOnItsOriginalBudgetAndAppliesToTheNextMake() = runTest {
+        val opened = CompletableDeferred<ImageDecoding>()
+        val release = CompletableDeferred<Unit>()
+        val used = ArrayList<ImageDecoding>()
+        val book = ThumbSubject.Book(BookId("changing"), Instant.EPOCH, byteSize = 100) { current ->
+            used += current
+            opened.complete(current)
+            release.await()
+            BookResult.Opened(OpenBook(BookContent.Images(noBytes), Container.Zip, emptyList(), null, current))
+        }
+        val first = async { make(book) }
+        assertEquals(decoding, opened.await())
+        val next = ImageDecoding(32L shl 20, 4)
+        maker.decoding = next
+        release.complete(Unit)
+        assertEquals(Made.Unreadable, first.await())
+        assertEquals(Made.Unreadable, make(book))
+        assertEquals(listOf(decoding, next), used)
+    }
 
     private val noBytes = object : PageBytes {
         override suspend fun read(page: PageEntry): PageResult<ByteArray> = error("no page to read")

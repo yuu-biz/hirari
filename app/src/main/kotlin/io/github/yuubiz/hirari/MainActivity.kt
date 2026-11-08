@@ -240,6 +240,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 opening = opening,
+                                thumbnailParallelismCap = app.thumbnailParallelismCap,
                             )
                         }
                     }

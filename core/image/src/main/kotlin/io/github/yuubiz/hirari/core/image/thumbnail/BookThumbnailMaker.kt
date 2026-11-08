@@ -33,17 +33,19 @@ internal fun interface PagePreviewer {
  * 3.7, cuts the front half from a wide cover or the part the user chose, and encodes it. [decoding] is the
  * instance of the thumbnails, so its dispatcher is not the reader's.
  */
-internal class BookThumbnailMaker(private val decoding: ImageDecoding) : ThumbnailMaker, PagePreviewer {
+internal class BookThumbnailMaker(@Volatile var decoding: ImageDecoding) : ThumbnailMaker, PagePreviewer {
     override suspend fun make(book: ThumbSubject.Book, sizePx: Int, direction: ReadingDirection): Made {
-        val open = when (val opened = openOrNull(book)) {
+        val decoding = decoding
+        val open = when (val opened = openOrNull(book, decoding)) {
             is Opened.Book -> opened.book
             is Opened.Not -> return opened.made
         }
-        return open.use { cover(it, book.coverEntry, book.coverCrop, sizePx, direction) }
+        return open.use { cover(it, book.coverEntry, book.coverCrop, sizePx, direction, decoding) }
     }
 
     override suspend fun preview(book: ThumbSubject.Book, entryIndex: Int, maxSidePx: Int): PagePreview {
-        val open = when (val opened = openOrNull(book)) {
+        val decoding = decoding
+        val open = when (val opened = openOrNull(book, decoding)) {
             is Opened.Book -> opened.book
             is Opened.Not -> return opened.made.asPreview()
         }
@@ -56,7 +58,7 @@ internal class BookThumbnailMaker(private val decoding: ImageDecoding) : Thumbna
         class Not(val made: Made) : Opened
     }
 
-    private suspend fun openOrNull(book: ThumbSubject.Book): Opened {
+    private suspend fun openOrNull(book: ThumbSubject.Book, decoding: ImageDecoding): Opened {
         val opened = try {
             book.open(decoding)
         } catch (e: CancellationException) {
@@ -70,7 +72,7 @@ internal class BookThumbnailMaker(private val decoding: ImageDecoding) : Thumbna
         }
     }
 
-    private suspend fun cover(open: OpenBook, coverEntry: Int?, crop: CoverCrop?, sizePx: Int, direction: ReadingDirection): Made {
+    private suspend fun cover(open: OpenBook, coverEntry: Int?, crop: CoverCrop?, sizePx: Int, direction: ReadingDirection, decoding: ImageDecoding): Made {
         val listingFinal = open.indexError?.made() != Made.Unavailable
         val page = coverPage(open.pages, coverEntry, listingFinal) ?: return open.indexError?.made() ?: Made.Unreadable
         val raw: RawPage = when (val read = open.raw(page.index)) {

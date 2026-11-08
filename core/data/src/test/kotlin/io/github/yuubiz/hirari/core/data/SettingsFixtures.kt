@@ -92,6 +92,7 @@ val everything = GlobalSettings(
     textPaperOverride = Rgb(0xFFFFFF),
     libraryView = LibraryView.List,
     thumbSize = ThumbSize.Large,
+    thumbnailParallelism = 8,
     gridColumnsPortrait = 3,
     gridColumnsLandscape = 7,
     gridNameLines = 3,

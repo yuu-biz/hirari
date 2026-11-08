@@ -52,16 +52,16 @@ enum class SettingsOpening { List, CommandBar, About }
  * [onBack] leaves the screen. [onOpenLicenses] opens [LicenseScreen]. All reads and writes run off the main thread.
  */
 @Composable
-fun SettingsScreen(storage: Storage, onBack: () -> Unit, onOpenLicenses: () -> Unit, opening: SettingsOpening = SettingsOpening.List) {
+fun SettingsScreen(storage: Storage, onBack: () -> Unit, onOpenLicenses: () -> Unit, opening: SettingsOpening = SettingsOpening.List, thumbnailParallelismCap: Int = Int.MAX_VALUE) {
     val context: Context = LocalContext.current
     val services = remember(storage) { settingsServices(storage, context) }
-    SettingsScreen(services, onBack, onOpenLicenses, opening)
+    SettingsScreen(services, onBack, onOpenLicenses, opening, thumbnailParallelismCap)
 }
 
 /** The same screen on any [services], for the tests and for apps that build their own. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicenses: () -> Unit, opening: SettingsOpening = SettingsOpening.List) {
+fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicenses: () -> Unit, opening: SettingsOpening = SettingsOpening.List, thumbnailParallelismCap: Int = Int.MAX_VALUE) {
     val viewModel: SettingsViewModel = viewModel(factory = remember(services) { viewModelFactory { initializer { SettingsViewModel(services) } } })
     val ui by viewModel.state.collectAsStateWithLifecycle()
 
@@ -95,7 +95,7 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
             }
             is SettingsLoad.Ready -> {
                 val settings = load.settings
-                val groups = remember(settings) { settingsFor(Build.VERSION.SDK_INT, settings) }
+                val groups = remember(settings, thumbnailParallelismCap) { settingsFor(Build.VERSION.SDK_INT, settings, thumbnailParallelismCap) }
                 LazyColumn(Modifier.padding(padding).fillMaxSize()) {
                     for ((group, rows) in groups) {
                         item(key = "group-${group.name}") { GroupHeader(group.title) }
@@ -125,7 +125,7 @@ fun SettingsScreen(services: SettingsServices, onBack: () -> Unit, onOpenLicense
                     item(key = "about") { ActionRow(stringResource(R.string.settings_about), null) { aboutDialog = true } }
                 }
                 openedSetting?.let { key ->
-                    SettingsTable.firstOrNull { it.key == key }?.forSettings(settings)?.let {
+                    groups.values.flatten().firstOrNull { it.key == key }?.let {
                         SettingDialog(it, settings, ui.fonts, { openFont.launch(FONT_MIME_TYPES) }, viewModel::change) {
                             openedSetting = null
                             if (opening == SettingsOpening.CommandBar) onBack()
