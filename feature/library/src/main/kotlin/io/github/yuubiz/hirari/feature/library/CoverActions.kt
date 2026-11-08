@@ -26,23 +26,26 @@ internal suspend fun LibraryServices.directionOf(id: BookId): ReadingDirection =
  * or whose place is gone, is left for the lists to make when they show it.
  */
 suspend fun LibraryServices.remakeCover(id: BookId) {
-    val stored = books.get(id) ?: return
-    val place = (stored.book.source as? BookSource.InLocation)?.let { locations.get(it.location) ?: return }
-    val spec = coverSpecOf(stored.book, stored.coverEntry, place, directionOf(id), stored.coverCrop) ?: return
+    val spec = indexedCoverSpec(id) ?: return
     covers.regenerate(spec, covers.sizesFrom(settings.settings.first().thumbSize))
+}
+
+/** The cover of the indexed book [id] as the lists show it, or `null` when it is not in the index or its place is gone. */
+private suspend fun LibraryServices.indexedCoverSpec(id: BookId): CoverSpec.Book? {
+    val stored = books.get(id) ?: return null
+    val place = (stored.book.source as? BookSource.InLocation)?.let { locations.get(it.location) ?: return null }
+    return coverSpecOf(stored.book, stored.coverEntry, place, directionOf(id), stored.coverCrop)
 }
 
 /**
  * Settles the provisional cover of [id], if it has one, once the reader or the archive list listed the whole book and
- * found the page with the `entryIndex` [firstEntry] first in natural order (docs/spec.md section 4.4). The cover is
- * made again from [spec] when it is given, which the archive list has whether or not the book is in the index, and
- * otherwise as [remakeCover] makes it. A failure keeps the provisional cover, so the next opening tries again.
+ * found the page with the `entryIndex` [firstEntry] first in natural order (docs/spec.md section 4.4). The automatic
+ * cover is made again from [spec] when it is given, which the archive list has whether or not the book is in the
+ * index, and otherwise from the book in the index. A failure keeps the provisional cover, so the next opening tries again.
  */
 suspend fun LibraryServices.settleProvisionalCover(id: BookId, firstEntry: Int?, spec: CoverSpec.Book? = null) {
     try {
-        covers.settle(id, firstEntry) {
-            if (spec != null) covers.regenerate(spec, covers.sizesFrom(settings.settings.first().thumbSize)) else remakeCover(id)
-        }
+        covers.settle(id, firstEntry, covers.sizesFrom(settings.settings.first().thumbSize)) { spec ?: indexedCoverSpec(id) }
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {

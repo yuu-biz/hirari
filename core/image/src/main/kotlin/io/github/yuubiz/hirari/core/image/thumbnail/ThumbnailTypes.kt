@@ -108,6 +108,9 @@ sealed interface ThumbSubject {
      * [coverEntry]. A page that no longer exists gives the first page. With a [coverCrop] the thumbnail is that part
      * of the chosen page, whatever its shape, and the wide cover's half is not cut (section 4.4). A range belongs to its page: without a [coverEntry], or when that page is gone, it has no effect.
      *
+     * @property firstEntry the `entryIndex` of the first page in natural order, when a whole listing found it and
+     * [open] lists only up to it: without a [coverEntry], the thumbnail is made from that page and named as the first
+     * page's (section 4.4). It is not part of the key.
      * @property open opens the book with the decoding it is given, with [io.github.yuubiz.hirari.core.image.Books].
      * It may throw, which counts as the book being unavailable for now.
      */
@@ -118,6 +121,7 @@ sealed interface ThumbSubject {
         val coverEntry: Int? = null,
         val lane: ThumbLane = ThumbLane.Local,
         val coverCrop: CoverCrop? = null,
+        val firstEntry: Int? = null,
         val open: suspend (ImageDecoding) -> BookResult,
     ) : ThumbSubject
 

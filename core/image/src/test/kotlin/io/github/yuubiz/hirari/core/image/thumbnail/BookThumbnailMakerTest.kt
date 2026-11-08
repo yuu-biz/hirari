@@ -113,6 +113,28 @@ class BookThumbnailMakerTest {
         assertEquals(listOf("002.jpg"), read)
     }
 
+    /** A RAR whose listing stopped where its need was met, after [pages]. */
+    private fun partialRar(pages: List<PageEntry>, firstEntry: Int? = null) =
+        ThumbSubject.Book(BookId("a"), Instant.EPOCH, byteSize = 100, firstEntry = firstEntry) {
+            BookResult.Opened(OpenBook(BookContent.Images(unshownBytes), Container.Rar, pages, null, it, partial = true))
+        }
+
+    private fun named(index: Int, entryIndex: Int, name: String) = PageEntry(index, entryIndex, name.toByteArray(), name, null, null)
+
+    @Test
+    fun aCoverMadeAgainFromTheFirstPageOfAWholeListingIsThatPage() = runTest {
+        val listed = listOf(named(0, entryIndex = 4, "001.jpg"), named(1, entryIndex = 7, "002.jpg"))
+        assertEquals(Made.Unreadable, make(partialRar(listed, firstEntry = 7)))
+        assertEquals(listOf("002.jpg"), read)
+    }
+
+    @Test
+    fun aCoverFromTheFirstImagesIsTheFirstOfTheImagesTheListingCounted() = runTest {
+        val listed = listOf(named(0, entryIndex = 0, "000.dat"), named(1, entryIndex = 1, "001.jpg"))
+        assertEquals(Made.Unreadable, make(partialRar(listed)))
+        assertEquals(listOf("001.jpg"), read)
+    }
+
     @Test
     fun aRangeIsCutFromTheChosenPageAndTheSameRulesFindThatPage() = runTest {
         val listed = listOf(page(0, entryIndex = 0, "001.jpg"), page(1, entryIndex = 5, "002.jpg"))

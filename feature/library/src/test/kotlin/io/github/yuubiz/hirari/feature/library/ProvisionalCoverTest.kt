@@ -11,6 +11,8 @@ import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.locationBookId
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import java.time.Instant
 import kotlin.test.Test
@@ -63,16 +65,18 @@ class ProvisionalCoverTest {
         assertEquals(listOf(ListingNeed.UpTo(12)), needs)
     }
 
+    private val sizes = listOf(320, 480)
+
+    private val remade get() = fixture.thumbnails.regenerated.map { assertIs<ThumbSubject.Book>(it.subject) }
+
     @Test
-    fun `a whole listing that puts another page first makes the cover again from that page and forgets the provisional one`() = runTest {
+    fun `a whole listing that puts another page first makes the automatic cover again from that page and forgets the provisional one`() = runTest {
         val id = spec().id
         remembered.entries[id] = 3
-        var remakes = 0
-        covers.settle(id, firstEntry = 8) {
-            remakes++
-            openCover(spec())
-        }
-        assertEquals(1, remakes)
+        covers.settle(id, firstEntry = 8, sizes) { spec(cover = 40) }
+        assertEquals(sizes, fixture.thumbnails.regenerated.map { it.sizePx })
+        assertTrue(remade.all { it.coverEntry == null && it.firstEntry == 8 }, "under the automatic key, made from the page found")
+        remade.first().open(decoding)
         assertEquals(listOf(ListingNeed.UpTo(8)), needs)
         assertNull(remembered.entries[id])
         openCover(spec())
@@ -83,17 +87,38 @@ class ProvisionalCoverTest {
     fun `a whole listing that puts the same page first only forgets the provisional cover`() = runTest {
         val id = spec().id
         remembered.entries[id] = 3
-        covers.settle(id, firstEntry = 3) { error("nothing to remake") }
+        covers.settle(id, firstEntry = 3, sizes) { error("nothing to remake") }
         assertNull(remembered.entries[id])
         remembered.entries[id] = 3
-        covers.settle(id, firstEntry = null) { error("a book without pages has nothing to show") }
+        covers.settle(id, firstEntry = null, sizes) { error("a book without pages has nothing to show") }
         assertNull(remembered.entries[id])
     }
 
     @Test
     fun `a book without a provisional cover is left alone`() = runTest {
-        covers.settle(BookId("other"), firstEntry = 1) { error("nothing to remake") }
+        covers.settle(BookId("other"), firstEntry = 1, sizes) { error("nothing to remake") }
         assertTrue(remembered.entries.isEmpty())
+    }
+
+    @Test
+    fun `a cover that cannot be found to make again stays provisional`() = runTest {
+        val id = spec().id
+        remembered.entries[id] = 3
+        covers.settle(id, firstEntry = 8, sizes) { null }
+        assertEquals(3, remembered.entries[id])
+    }
+
+    @Test
+    fun `a second settle of the same book waits for the first and finds nothing left to correct`() = runTest {
+        val id = spec().id
+        remembered.entries[id] = 3
+        fixture.thumbnails.regenerating = { delay(1_000) }
+        val first = async { covers.settle(id, firstEntry = 8, sizes) { spec() } }
+        val second = async { covers.settle(id, firstEntry = 8, sizes) { spec() } }
+        first.await()
+        second.await()
+        assertEquals(sizes, fixture.thumbnails.regenerated.map { it.sizePx })
+        assertNull(remembered.entries[id])
     }
 
     @Test
@@ -102,7 +127,7 @@ class ProvisionalCoverTest {
         remembered.entries[spec.id] = 3
         fixture.services.settleProvisionalCover(spec.id, 8, spec)
         assertEquals(covers.sizesFrom(fixture.settings.value.value.thumbSize), fixture.thumbnails.regenerated.map { it.sizePx })
-        assertTrue(fixture.thumbnails.regenerated.all { it.subject.id == spec.id })
+        assertTrue(remade.all { it.id == spec.id && it.firstEntry == 8 })
         assertNull(remembered.entries[spec.id])
     }
 }

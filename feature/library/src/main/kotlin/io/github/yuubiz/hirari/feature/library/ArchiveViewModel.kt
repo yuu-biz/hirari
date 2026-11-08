@@ -157,7 +157,7 @@ class ArchiveViewModel(
             val fallback = Charset.forName(services.settings.settings.first().fallbackCharset.charsetName)
             val charset = opened.contents.charset(services.books.overrides(id).first().nameCharset, fallback)
             val first = withContext(compute) { opened.contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
-            val spec = opened.base?.takeIf { services.books.get(id)?.coverEntry == null }?.copy(direction = services.directionOf(id))
+            val spec = opened.base?.copy(direction = services.directionOf(id))
             services.appScope.launch { services.settleProvisionalCover(id, first, spec) }
         } catch (e: CancellationException) {
             throw e

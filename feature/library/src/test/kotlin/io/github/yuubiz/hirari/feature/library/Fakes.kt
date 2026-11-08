@@ -636,8 +636,12 @@ internal class FakeThumbnails : ThumbnailSource {
         return Closeable { hold.active = false }
     }
 
+    /** What a regeneration does before it answers, such as taking its time. */
+    var regenerating: suspend () -> Unit = {}
+
     override suspend fun regenerate(request: ThumbRequest): ThumbResult {
         regenerated += request
+        regenerating()
         return result
     }
 
