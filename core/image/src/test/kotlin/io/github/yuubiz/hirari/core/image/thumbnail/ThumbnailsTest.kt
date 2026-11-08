@@ -406,6 +406,33 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun aSecondRegenerationWaitsForTheMakeTheFirstStoppedToo() = runTest {
+        val thumbnails = thumbnails()
+        val release = CompletableDeferred<Unit>()
+        maker.script = {
+            withContext(NonCancellable) { release.await() }
+            Made.Webp("old".toByteArray())
+        }
+        launch { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        maker.script = { Made.Webp("first".toByteArray()) }
+        val first = async { thumbnails.regenerate(request(book("a"))) }
+        runCurrent()
+        maker.script = { Made.Webp("second".toByteArray()) }
+        val second = async { thumbnails.regenerate(request(book("a"))) }
+        runCurrent()
+        assertEquals("nothing is made before the old make ends", 1, maker.calls.size)
+        release.complete(Unit)
+        runCurrent()
+        assertEquals("second", shows(first.await()))
+        assertEquals("second", shows(second.await()))
+        assertEquals("second", shows(thumbnails.cached(request(book("a")))))
+        runCurrent()
+        assertEquals("second", store.files.values.single().readText())
+        assertEquals(2, maker.calls.size)
+    }
+
+    @Test
     fun theWorkStopsWhenTheLastRequestScrollsAway() = runTest {
         val thumbnails = thumbnails()
         var stopped = false

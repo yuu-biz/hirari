@@ -7,8 +7,11 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -89,7 +92,9 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
     /** Called with [lock] held. Only the last work of [flight] answers it. */
     private fun fly(key: K, flight: Flight<V>, replaced: Job?, work: suspend (Urgency) -> V) {
         val job = scope.async(start = CoroutineStart.LAZY) {
-            replaced?.join()
+            // Waited for even once replaced itself, so a chain of replacements ends in order.
+            replaced?.let { withContext(NonCancellable) { it.join() } }
+            ensureActive()
             work(flight.urgency)
         }
         flight.work = job
