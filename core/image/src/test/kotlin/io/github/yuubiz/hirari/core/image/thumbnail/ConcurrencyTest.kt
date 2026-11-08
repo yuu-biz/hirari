@@ -2,13 +2,16 @@ package io.github.yuubiz.hirari.core.image.thumbnail
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -186,6 +189,52 @@ class ConcurrencyTest {
         runCurrent()
         assertEquals(2, runs)
         assertEquals(5, second.getCompleted())
+    }
+
+    /** Work that, once cancelled, takes until [finishing] completes to end. */
+    private fun slowToStop(started: MutableList<String>, finishing: CompletableDeferred<Unit>): suspend (Urgency) -> Int = {
+        started += "old"
+        try {
+            awaitCancellation()
+        } finally {
+            withContext(NonCancellable) { finishing.await() }
+        }
+    }
+
+    @Test
+    fun aReplacementWaitsForEveryEarlierRunEvenWhenTheOneBetweenWasStoppedBeforeItStarted() = runTest {
+        val flights = Flights<String, Int>(workScope())
+        val started = ArrayList<String>()
+        val finishing = CompletableDeferred<Unit>()
+        launch { flights.join("a", Urgency(ThumbPriority.Visible), slowToStop(started, finishing)) }
+        runCurrent()
+        val middle = async { flights.replace("a", Urgency(ThumbPriority.Visible)) { started += "middle"; 2 } }
+        val last = async { flights.replace("a", Urgency(ThumbPriority.Visible)) { started += "last"; 3 } }
+        runCurrent()
+        assertEquals("nothing starts while the first run ends", listOf("old"), started)
+        finishing.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("old", "last"), started)
+        assertEquals(3, middle.await())
+        assertEquals(3, last.await())
+    }
+
+    @Test
+    fun aReplacementWaitsForARunThatNobodyWaitsForAnyMoreUntilItEnds() = runTest {
+        val flights = Flights<String, Int>(workScope())
+        val started = ArrayList<String>()
+        val finishing = CompletableDeferred<Unit>()
+        val first = launch { flights.join("a", Urgency(ThumbPriority.Visible), slowToStop(started, finishing)) }
+        runCurrent()
+        first.cancel()
+        runCurrent()
+        val next = async { flights.replace("a", Urgency(ThumbPriority.Visible)) { started += "new"; 2 } }
+        runCurrent()
+        assertEquals("nothing starts while the first run ends", listOf("old"), started)
+        finishing.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("old", "new"), started)
+        assertEquals(2, next.await())
     }
 
     @Test

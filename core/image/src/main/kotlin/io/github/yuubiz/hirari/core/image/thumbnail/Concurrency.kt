@@ -7,11 +7,9 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
-import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -59,11 +57,15 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
     private val lock = Any()
     private val running = HashMap<K, Flight<V>>()
 
+    /** The work of each key that has not ended yet, whether it still answers anyone or ever started: what [replace] waits for. */
+    private val unfinished = HashMap<K, MutableList<Job>>()
+
     suspend fun join(key: K, urgency: Urgency, work: suspend (Urgency) -> V): V = board(key, urgency, replace = false, work)
 
     /**
-     * [join], except that the work running for [key] is cancelled and [work] starts in its place once it has ended, so
-     * nothing the replaced work does comes after. Everyone waiting for the replaced work gets what [work] comes to.
+     * [join], except that the work running for [key] is cancelled and [work] starts in its place once every work of
+     * [key] started before has ended, so nothing they do comes after. Everyone waiting for the replaced work gets
+     * what [work] comes to.
      */
     suspend fun replace(key: K, urgency: Urgency, work: suspend (Urgency) -> V): V = board(key, urgency, replace = true, work)
 
@@ -71,7 +73,7 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
         val flight = synchronized(lock) {
             val current = running[key]
             val flight = current ?: Flight<V>(Urgency.borrowed()).also { running[key] = it }
-            if (current == null) fly(key, flight, replaced = null, work) else if (replace) fly(key, flight, current.work, work)
+            if (current == null || replace) fly(key, flight, current?.work, replace, work)
             flight.urgency.follow(urgency)
             flight.waiters++
             flight
@@ -90,16 +92,20 @@ internal class Flights<K : Any, V>(private val scope: CoroutineScope) {
     }
 
     /** Called with [lock] held. Only the last work of [flight] answers it. */
-    private fun fly(key: K, flight: Flight<V>, replaced: Job?, work: suspend (Urgency) -> V) {
+    private fun fly(key: K, flight: Flight<V>, replaced: Job?, replace: Boolean, work: suspend (Urgency) -> V) {
+        val before = if (replace) unfinished[key].orEmpty().toList() else emptyList()
         val job = scope.async(start = CoroutineStart.LAZY) {
-            // Waited for even once replaced itself, so a chain of replacements ends in order.
-            replaced?.let { withContext(NonCancellable) { it.join() } }
-            ensureActive()
+            before.joinAll()
             work(flight.urgency)
         }
+        unfinished.getOrPut(key, ::ArrayList) += job
         flight.work = job
         job.invokeOnCompletion { cause ->
             synchronized(lock) {
+                unfinished[key]?.let { jobs ->
+                    jobs.remove(job)
+                    if (jobs.isEmpty()) unfinished.remove(key)
+                }
                 if (flight.work !== job) return@invokeOnCompletion
                 if (running[key] === flight) running.remove(key)
             }
