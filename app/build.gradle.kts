@@ -12,8 +12,8 @@ val releaseSigning = loadReleaseSigning(rootDir)
 android {
     defaultConfig {
         applicationId = "io.github.yuubiz.hirari"
-        versionCode = 11
-        versionName = "1.0.0"
+        versionCode = 12
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
     }
