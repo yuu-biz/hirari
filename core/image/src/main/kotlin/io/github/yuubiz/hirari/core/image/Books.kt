@@ -24,6 +24,8 @@ import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
@@ -208,8 +210,9 @@ object Books {
         need: ListingNeed = ListingNeed.All,
     ): BookResult {
         val modified = withContext(Dispatchers.IO) { resolver.documentLastModifiedMs(uri) }
+        val job = currentCoroutineContext().job
         val source = when (val opened = safely(release = ByteSource::close) {
-            resolver.openByteSource(uri, copyDir, modified)
+            resolver.openByteSource(uri, copyDir, modified, isActive = { job.isActive })
         }) {
             is Safely.Done -> opened.value
             is Safely.Failed -> return BookResult.Failed(opened.reason)
