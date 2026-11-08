@@ -276,7 +276,7 @@ class Thumbnails internal constructor(
             saves.forget(key)
             skipped.remove(key)
             unavailableUntil.remove(key)
-            // What the replaced make saved before it ended goes too.
+            // A failure the replaced make recorded before it ended goes too, so this make does not take it for its answer.
             return bookFlights.replace(key, urgency) {
                 saves.forget(key)
                 make(book, key, it)
@@ -324,6 +324,7 @@ class Thumbnails internal constructor(
 
     /** The thumbnail goes to everyone waiting before it is stored, and the save waits for no turn (section 4.4). */
     private suspend fun make(book: ThumbSubject.Book, key: ThumbnailKey, urgency: Urgency): ThumbResult {
+        val epoch = saves.epoch(key)
         val turn = gate(book.lane).withPermit(urgency) {
             // Another flight for the key may have finished while this one waited for its turn.
             known(key)?.let { return@withPermit Turn.Settled(it) }
@@ -345,7 +346,7 @@ class Thumbnails internal constructor(
         return when (turn) {
             is Turn.Settled -> turn.result
             is Turn.Encoded -> {
-                saves.add(key, turn.webp)
+                saves.add(key, turn.webp, epoch)
                 ThumbResult.Ready(ThumbImage.Fresh(turn.webp), key)
             }
         }

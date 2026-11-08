@@ -406,6 +406,28 @@ class ThumbnailsTest {
     }
 
     @Test
+    fun aMakeThatEndsAfterARegenerationStoppedItNeverReachesTheStore() = runTest {
+        val thumbnails = thumbnails()
+        val written = ArrayList<String>()
+        store.afterPut = { written += store.files.getValue(it).readText() }
+        val release = CompletableDeferred<Unit>()
+        maker.script = {
+            withContext(NonCancellable) { release.await() }
+            Made.Webp("old".toByteArray())
+        }
+        launch { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        maker.script = { Made.Webp("new".toByteArray()) }
+        val again = async { thumbnails.regenerate(request(book("a"))) }
+        runCurrent()
+        release.complete(Unit)
+        runCurrent()
+        assertEquals("new", shows(again.await()))
+        runCurrent()
+        assertEquals(listOf("new"), written)
+    }
+
+    @Test
     fun aSecondRegenerationWaitsForTheMakeTheFirstStoppedToo() = runTest {
         val thumbnails = thumbnails()
         val release = CompletableDeferred<Unit>()
@@ -1647,14 +1669,14 @@ class ThumbnailsTest {
         val saves = Saves(gated, scope)
         val first = key("a")
         val second = key("b")
-        saves.add(first, "a".toByteArray())
-        saves.add(second, "b".toByteArray())
+        saves.add(first, "a".toByteArray(), saves.epoch(first))
+        saves.add(second, "b".toByteArray(), saves.epoch(second))
         runCurrent()
         assertEquals(listOf("a"), gated.saving)
         scope.cancel()
         runCurrent()
         assertNull("a waiting save is dropped", saves.pending(second))
-        saves.add(key("c"), "c".toByteArray())
+        saves.add(key("c"), "c".toByteArray(), saves.epoch(key("c")))
         assertNull("a save after closing is refused", saves.pending(key("c")))
     }
 }
