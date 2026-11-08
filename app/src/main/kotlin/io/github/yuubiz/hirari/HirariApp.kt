@@ -116,7 +116,7 @@ class HirariApp : Application() {
                 smbPool.await(),
                 SmbPrefetchCache(File(cacheDir, "smb")),
                 CoverRemaker { library.await().remakeCover(it) },
-                ListedBooks { book, firstEntry -> library.await().settleProvisionalCover(book, firstEntry) },
+                ListedBooks { book, firstEntry, named -> library.await().settleProvisionalCover(book, firstEntry, named) },
             )
         }
         library = appScope.async {

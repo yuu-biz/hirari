@@ -160,7 +160,7 @@ class ReaderViewModelTest {
 
     private fun hearListings(): CompletableDeferred<Pair<BookId, Int?>> {
         val heard = CompletableDeferred<Pair<BookId, Int?>>()
-        services = ReaderServices(services.storage, services.progress, decoding, scope, listed = ListedBooks { book, first -> heard.complete(book to first) })
+        services = ReaderServices(services.storage, services.progress, decoding, scope, listed = ListedBooks { book, first, _ -> heard.complete(book to first) })
         return heard
     }
 

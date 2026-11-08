@@ -159,18 +159,21 @@ class ArchiveViewModel(
     /**
      * Hands the first page in natural order of the whole listing to [settleProvisionalCover] (docs/spec.md section
      * 4.4), with everything it needs, [base] included, on the app's scope, so leaving the screen stops none of it. The
-     * names are decoded as the cover decodes them; the archive stays open until they are read.
+     * names are decoded as the cover decodes them, with the charset chosen for the book, which the settle is told of;
+     * the archive stays open until they are read.
      */
     private fun settleCover(services: LibraryServices, id: BookId, contents: ArchiveContents, base: Deferred<CoverSpec.Book?>) {
         val first = services.appScope.async {
             val fallback = Charset.forName(services.settings.settings.first().fallbackCharset.charsetName)
-            val charset = contents.charset(services.books.overrides(id).first().nameCharset, fallback)
-            withContext(compute) { contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
+            val named = services.books.overrides(id).first().nameCharset
+            val charset = contents.charset(named, fallback)
+            named to withContext(compute) { contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
         }
         settleReading = first
         services.appScope.launch {
             try {
-                services.settleProvisionalCover(id, first.await(), base.await()?.copy(direction = services.directionOf(id)))
+                val (named, entry) = first.await()
+                services.settleProvisionalCover(id, entry, named, base.await()?.copy(direction = services.directionOf(id)))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

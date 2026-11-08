@@ -73,7 +73,7 @@ class ProvisionalCoverTest {
     fun `a whole listing that puts another page first makes the automatic cover again from that page and forgets the provisional one`() = runTest {
         val id = spec().id
         remembered.entries[id] = 3
-        covers.settle(id, firstEntry = 8, sizes) { spec(cover = 40) }
+        covers.settle(id, firstEntry = 8, named = null, sizes, naming = { null }) { spec(cover = 40) }
         assertEquals(sizes, fixture.thumbnails.regenerated.map { it.sizePx })
         assertTrue(remade.all { it.coverEntry == null && it.firstEntry == 8 }, "under the automatic key, made from the page found")
         remade.first().open(decoding)
@@ -87,16 +87,16 @@ class ProvisionalCoverTest {
     fun `a whole listing that puts the same page first only forgets the provisional cover`() = runTest {
         val id = spec().id
         remembered.entries[id] = 3
-        covers.settle(id, firstEntry = 3, sizes) { error("nothing to remake") }
+        covers.settle(id, firstEntry = 3, named = null, sizes, naming = { null }) { error("nothing to remake") }
         assertNull(remembered.entries[id])
         remembered.entries[id] = 3
-        covers.settle(id, firstEntry = null, sizes) { error("a book without pages has nothing to show") }
+        covers.settle(id, firstEntry = null, named = null, sizes, naming = { null }) { error("a book without pages has nothing to show") }
         assertNull(remembered.entries[id])
     }
 
     @Test
     fun `a book without a provisional cover is left alone`() = runTest {
-        covers.settle(BookId("other"), firstEntry = 1, sizes) { error("nothing to remake") }
+        covers.settle(BookId("other"), firstEntry = 1, named = null, sizes, naming = { null }) { error("nothing to remake") }
         assertTrue(remembered.entries.isEmpty())
     }
 
@@ -104,7 +104,7 @@ class ProvisionalCoverTest {
     fun `a cover that cannot be found to make again stays provisional`() = runTest {
         val id = spec().id
         remembered.entries[id] = 3
-        covers.settle(id, firstEntry = 8, sizes) { null }
+        covers.settle(id, firstEntry = 8, named = null, sizes, naming = { null }) { null }
         assertEquals(3, remembered.entries[id])
     }
 
@@ -113,8 +113,8 @@ class ProvisionalCoverTest {
         val id = spec().id
         remembered.entries[id] = 3
         fixture.thumbnails.regenerating = { delay(1_000) }
-        val first = async { covers.settle(id, firstEntry = 8, sizes) { spec() } }
-        val second = async { covers.settle(id, firstEntry = 8, sizes) { spec() } }
+        val first = async { covers.settle(id, firstEntry = 8, named = null, sizes, naming = { null }) { spec() } }
+        val second = async { covers.settle(id, firstEntry = 8, named = null, sizes, naming = { null }) { spec() } }
         first.await()
         second.await()
         assertEquals(sizes, fixture.thumbnails.regenerated.map { it.sizePx })
@@ -122,10 +122,32 @@ class ProvisionalCoverTest {
     }
 
     @Test
+    fun `a settle whose names were read in a charset chosen no longer keeps the provisional cover`() = runTest {
+        val id = spec().id
+        remembered.entries[id] = 3
+        covers.settle(id, firstEntry = 8, named = null, sizes, naming = { Charsets.UTF_8 }) { error("nothing to remake") }
+        assertTrue(fixture.thumbnails.regenerated.isEmpty())
+        assertEquals(3, remembered.entries[id])
+    }
+
+    @Test
+    fun `making a book's cover again waits for the settle running now`() = runTest {
+        val id = spec().id
+        remembered.entries[id] = 3
+        fixture.thumbnails.regenerating = { delay(1_000) }
+        val settle = async { covers.settle(id, firstEntry = 8, named = null, sizes, naming = { null }) { spec() } }
+        val again = async { covers.regenerate(spec(), sizes) }
+        settle.await()
+        again.await()
+        val made = remade.map { it.firstEntry }
+        assertEquals(listOf(8, 8, null, null), made, "the settle's sizes, then the regeneration's")
+    }
+
+    @Test
     fun `the archive list makes every size of the cover again from its spec`() = runTest {
         val spec = spec()
         remembered.entries[spec.id] = 3
-        fixture.services.settleProvisionalCover(spec.id, 8, spec)
+        fixture.services.settleProvisionalCover(spec.id, 8, named = null, spec)
         assertEquals(covers.sizesFrom(fixture.settings.value.value.thumbSize), fixture.thumbnails.regenerated.map { it.sizePx })
         assertTrue(remade.all { it.id == spec.id && it.firstEntry == 8 })
         assertNull(remembered.entries[spec.id])

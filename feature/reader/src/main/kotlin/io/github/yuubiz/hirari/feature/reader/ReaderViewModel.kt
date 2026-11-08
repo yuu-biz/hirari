@@ -146,15 +146,15 @@ fun interface CoverRemaker {
 }
 
 /**
- * Hears that the reader listed a whole archive, whose first page in natural order has the `entryIndex` [firstEntry],
- * so that a cover chosen from part of its listing can be corrected (docs/spec.md section 4.4). The lists own the
- * thumbnails, so the app hands this in.
+ * Hears that the reader listed a whole archive, whose first page in natural order has the `entryIndex` [firstEntry]
+ * with the names in the charset chosen as [nameCharset], so that a cover chosen from part of its listing can be
+ * corrected (docs/spec.md section 4.4). The lists own the thumbnails, so the app hands this in.
  */
 fun interface ListedBooks {
-    suspend fun listed(book: BookId, firstEntry: Int?)
+    suspend fun listed(book: BookId, firstEntry: Int?, nameCharset: Charset?)
 
     companion object {
-        val None = ListedBooks { _, _ -> }
+        val None = ListedBooks { _, _, _ -> }
     }
 }
 
@@ -828,9 +828,10 @@ class ReaderViewModel internal constructor(
         val session = ReadingSession(indexed, openedAt, settings.historyLimit, services.storage.books, services.storage.history, services.appScope)
         if (book.container in ARCHIVES && book.indexError == null) {
             val first = book.pages.minWithOrNull(NaturalPageOrder)?.entryIndex
+            val named = writer.current.nameCharset
             services.appScope.launch {
                 session.indexed()
-                quietly { services.listed.listed(id, first) }
+                quietly { services.listed.listed(id, first, named) }
             }
         }
         val remote = located.remote

@@ -38,6 +38,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import java.nio.charset.Charset
 import java.time.Instant
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -59,7 +60,10 @@ class Covers(
     private val provisional: ProvisionalCovers = ProvisionalCovers.None,
     decode: (ThumbImage) -> ImageBitmap? = ::decodeCover,
 ) {
-    /** One [settle] at a time, so a second one for a book finds what the first left. */
+    /**
+     * One [settle] at a time, so a second one for a book finds what the first left, and a book's cover is made again
+     * by [regenerate] only once no settle is making it from what the book was before.
+     */
     private val settling = Mutex()
 
     private data class ListingKey(val place: LibraryLocation, val path: String)
@@ -148,9 +152,12 @@ class Covers(
 
     /**
      * サムネイルを作り直す for [spec] at each of [sizes], the first being the one on screen: forgets it in the store,
-     * makes it again, and tells the rows showing it to look again.
+     * makes it again, and tells the rows showing it to look again. A book's cover waits for the [settle] running now.
      */
-    suspend fun regenerate(spec: CoverSpec, sizes: List<Int>) = remake(spec, sizes, subject(spec))
+    suspend fun regenerate(spec: CoverSpec, sizes: List<Int>) = when (spec) {
+        is CoverSpec.Book -> settling.withLock { remake(spec, sizes, subject(spec)) }
+        is CoverSpec.Folder -> remake(spec, sizes, subject(spec))
+    }
 
     private suspend fun remake(spec: CoverSpec, sizes: List<Int>, subject: ThumbSubject) {
         for (sizePx in sizes) {
@@ -173,9 +180,21 @@ class Covers(
      * automatic cover of the book of [spec] is made again from that page at each of [sizes], under the key it has, and
      * either way the provisional cover is forgotten. [spec] is asked for only to make the cover again; `null` keeps the
      * provisional cover for the next opening. Settles run one at a time.
+     *
+     * [named] is the charset chosen for the names of the book (`BookOverrides.nameCharset`) when [firstEntry] was
+     * found, and [naming] reads that choice now. When it changed, [firstEntry] may not be the first page any more, so
+     * nothing is settled and the provisional cover is kept for the next opening.
      */
-    suspend fun settle(id: BookId, firstEntry: Int?, sizes: List<Int>, spec: suspend () -> CoverSpec.Book?) = settling.withLock {
+    suspend fun settle(
+        id: BookId,
+        firstEntry: Int?,
+        named: Charset?,
+        sizes: List<Int>,
+        naming: suspend () -> Charset?,
+        spec: suspend () -> CoverSpec.Book?,
+    ) = settling.withLock {
         val remembered = provisional.entry(id) ?: return@withLock
+        if (naming() != named) return@withLock
         if (firstEntry != null && firstEntry != remembered) {
             val automatic = spec()?.copy(coverEntry = null, coverCrop = null) ?: return@withLock
             remake(automatic, sizes, book(automatic, firstEntry))

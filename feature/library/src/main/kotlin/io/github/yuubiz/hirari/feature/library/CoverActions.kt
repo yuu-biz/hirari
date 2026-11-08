@@ -15,6 +15,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.nio.charset.Charset
 
 /** The binding direction a book is shown with: its own, else the global one (docs/spec.md section 4.4). */
 internal suspend fun LibraryServices.directionOf(id: BookId): ReadingDirection =
@@ -39,13 +40,15 @@ private suspend fun LibraryServices.indexedCoverSpec(id: BookId): CoverSpec.Book
 
 /**
  * Settles the provisional cover of [id], if it has one, once the reader or the archive list listed the whole book and
- * found the page with the `entryIndex` [firstEntry] first in natural order (docs/spec.md section 4.4). The automatic
- * cover is made again from [spec] when it is given, which the archive list has whether or not the book is in the
- * index, and otherwise from the book in the index. A failure keeps the provisional cover, so the next opening tries again.
+ * found the page with the `entryIndex` [firstEntry] first in natural order, with the names in the charset chosen as
+ * [named] (docs/spec.md section 4.4). The automatic cover is made again from [spec] when it is given, which the archive
+ * list has whether or not the book is in the index, and otherwise from the book in the index. A failure keeps the
+ * provisional cover, so the next opening tries again.
  */
-suspend fun LibraryServices.settleProvisionalCover(id: BookId, firstEntry: Int?, spec: CoverSpec.Book? = null) {
+suspend fun LibraryServices.settleProvisionalCover(id: BookId, firstEntry: Int?, named: Charset?, spec: CoverSpec.Book? = null) {
     try {
-        covers.settle(id, firstEntry, covers.sizesFrom(settings.settings.first().thumbSize)) { spec ?: indexedCoverSpec(id) }
+        val sizes = covers.sizesFrom(settings.settings.first().thumbSize)
+        covers.settle(id, firstEntry, named, sizes, naming = { books.overrides(id).first().nameCharset }) { spec ?: indexedCoverSpec(id) }
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
