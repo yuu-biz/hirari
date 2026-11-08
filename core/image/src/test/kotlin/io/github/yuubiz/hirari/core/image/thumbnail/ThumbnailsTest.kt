@@ -9,6 +9,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
@@ -24,6 +25,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -356,6 +358,51 @@ class ThumbnailsTest {
         runCurrent()
         assertEquals(1, maker.calls.size)
         assertEquals(1, results.map { it.await() }.toSet().size)
+    }
+
+    @Test
+    fun aRegenerationStopsTheMakeItFindsAndGivesItsWaitersTheNewThumbnail() = runTest {
+        val thumbnails = thumbnails()
+        var stopped = false
+        maker.script = {
+            try {
+                awaitCancellation()
+            } finally {
+                stopped = true
+            }
+        }
+        val shown = async { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        maker.script = { Made.Webp("new".toByteArray()) }
+        val again = async { thumbnails.regenerate(request(book("a"))) }
+        runCurrent()
+        assertTrue(stopped)
+        assertEquals("new", shows(again.await()))
+        assertEquals("the row that waited", "new", shows(shown.await()))
+        assertEquals(2, maker.calls.size)
+    }
+
+    @Test
+    fun aMakeThatEndsAfterARegenerationStoppedItStoresNothing() = runTest {
+        val thumbnails = thumbnails()
+        val release = CompletableDeferred<Unit>()
+        maker.script = {
+            withContext(NonCancellable) { release.await() }
+            Made.Webp("old".toByteArray())
+        }
+        val shown = async { thumbnails.thumbnail(request(book("a"))) }
+        runCurrent()
+        maker.script = { Made.Webp("new".toByteArray()) }
+        val again = async { thumbnails.regenerate(request(book("a"))) }
+        runCurrent()
+        assertEquals("the regeneration waits for the make it stopped", 1, maker.calls.size)
+        release.complete(Unit)
+        runCurrent()
+        assertEquals("new", shows(again.await()))
+        assertEquals("new", shows(shown.await()))
+        assertEquals("new", shows(thumbnails.cached(request(book("a")))))
+        runCurrent()
+        assertEquals("new", store.files.values.single().readText())
     }
 
     @Test

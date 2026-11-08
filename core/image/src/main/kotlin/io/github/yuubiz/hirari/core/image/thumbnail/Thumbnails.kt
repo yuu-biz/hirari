@@ -176,7 +176,9 @@ class Thumbnails internal constructor(
 
     /**
      * サムネイルを作り直す: forgets the thumbnail and the failure of [request], including those of the images a
-     * folder tried before the one it shows, and makes the thumbnail again.
+     * folder tried before the one it shows, and makes the thumbnail again. A book's thumbnail being made meanwhile is
+     * stopped, not joined, and what it made is not stored: it may come from what the book was before (section 4.4).
+     * Everyone waiting for it gets the thumbnail made again.
      */
     suspend fun regenerate(request: ThumbRequest): ThumbResult = checkNotNull(resolve(request, Mode.Remake))
 
@@ -273,12 +275,18 @@ class Thumbnails internal constructor(
         if (mode == Mode.Remake) {
             saves.forget(key)
             skipped.remove(key)
+            unavailableUntil.remove(key)
+            // What the replaced make saved before it ended goes too.
+            return bookFlights.replace(key, urgency) {
+                saves.forget(key)
+                make(book, key, it)
+            }
         }
-        if (mode == Mode.Remake || mode == Mode.Retry) unavailableUntil.remove(key)
+        if (mode == Mode.Retry) unavailableUntil.remove(key)
         if (key in skipped) return ThumbResult.Unavailable
         known(key)?.let { return it }
         if (mode == Mode.CacheOnly) return null
-        if (mode != Mode.Remake && isHeld()) return ThumbResult.Unavailable
+        if (isHeld()) return ThumbResult.Unavailable
         if (backingOff(key)) return ThumbResult.Unavailable
         return bookFlights.join(key, urgency) { make(book, key, it) }
     }
