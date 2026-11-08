@@ -58,6 +58,9 @@ import io.github.yuubiz.hirari.core.source.save.SaveFile
 import io.github.yuubiz.hirari.core.source.save.SaveFolder
 import io.github.yuubiz.hirari.core.source.save.SaveOutcome
 import io.github.yuubiz.hirari.core.source.save.SaveProgress
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredServer
+import io.github.yuubiz.hirari.core.source.smb.ServerFinder
+import io.github.yuubiz.hirari.core.source.smb.ServerSearch
 import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -70,6 +73,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import java.io.Closeable
@@ -371,11 +375,22 @@ internal class FakeLister : FolderLister {
  * SMB places by path below their folder; what each test was asked with, and the forgotten places. A [lost] server
  * fails every listing as unreachable until a [reconnect] finds it back.
  */
+/** A finder for [SmbjPlaces] that sees no network. */
+internal val NoServers = ServerFinder({ emptyList() }, { emptyFlow() }, { emptyFlow() })
+
 internal class FakeSmb : SmbPlaces {
     var discovering: suspend () -> io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult = {
         io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult.Failed(io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryFailure.Empty)
     }
     val discoveries = mutableListOf<Triple<SmbServer, String?, CredentialRef?>>()
+
+    /** What each サーバーを探す collects, and the host field each chosen server gets. */
+    var searching: Flow<ServerSearch> = emptyFlow()
+    var hostFields: suspend (DiscoveredServer) -> String = { it.address.hostAddress.orEmpty() }
+
+    override fun servers(): Flow<ServerSearch> = searching
+
+    override suspend fun hostField(server: DiscoveredServer): String = hostFields(server)
 
     override suspend fun discover(server: SmbServer, password: CharArray?, stored: CredentialRef?): io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult {
         discoveries += Triple(server, password?.let(::String), stored)

@@ -236,6 +236,12 @@
     <string name="smb_discovery_permission">ローカルネットワークの許可がない</string>
     <string name="smb_discovery_unsupported">このサーバーは共有の一覧を出さない。共有名を入力してください</string>
     <string name="smb_discovery_empty">共有が 1 つもない</string>
+    <string name="smb_find_servers">サーバーを探す</string>
+    <string name="smb_finding_servers">サーバーを探しています</string>
+    <string name="smb_find_servers_again">もう一度探す</string>
+    <string name="smb_servers_none">サーバーが見つかりません。ホストを入力してください</string>
+    <string name="smb_servers_windows">Windows のサーバーは、ネットワーク探索と NetBIOS over TCP/IP が有効なときに見つかります</string>
+    <string name="smb_servers_no_network">Wi-Fi か有線のネットワークにつないでください</string>
     <string name="sheet_rename">名前を変更</string>
     <string name="sheet_delete">削除</string>
     <string name="edit_name">名前（拡張子は保ちます）</string>

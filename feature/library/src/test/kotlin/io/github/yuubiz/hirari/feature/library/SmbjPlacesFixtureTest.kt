@@ -37,7 +37,7 @@ class SmbjPlacesFixtureTest {
     private val scope = CoroutineScope(SupervisorJob())
     private val credentials = MemoryCredentials()
     private var allowed = true
-    private val places = SmbjPlaces(SmbShares({ credentials.smbLogin(it.user, it.credential) }, scope), credentials, { allowed }, scope)
+    private val places = SmbjPlaces(SmbShares({ credentials.smbLogin(it.user, it.credential) }, scope), credentials, { allowed }, scope, serverFinder = NoServers)
 
     @Before
     fun fixture() = assumeTrue("SMB fixture not configured (tools/smb-fixture/fixture.sh props)", host != null)
@@ -105,7 +105,7 @@ class SmbjPlacesFixtureTest {
     fun `a retry after every reconnect failed connects again once the server is back`() = runBlocking {
         assumeTrue("SMB fixture container not named (-Dhirari.smb.container)", container != null)
         val shares = SmbShares({ SmbLogin.Guest }, scope, timeouts = SmbTimeouts(connect = 2.seconds, request = 3.seconds))
-        val quick = SmbjPlaces(shares, credentials, { true }, scope)
+        val quick = SmbjPlaces(shares, credentials, { true }, scope, serverFinder = NoServers)
         val nas = place("public")
         assertTrue("big.bin" in quick.list(nas, "").names())
 

@@ -6,6 +6,7 @@ import android.app.Application
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
+import android.net.nsd.NsdManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -17,6 +18,10 @@ import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.thumbnail.Thumbnails
 import io.github.yuubiz.hirari.core.image.thumbnail.ThumbnailParallelism
 import io.github.yuubiz.hirari.feature.library.LibraryServices
+import io.github.yuubiz.hirari.core.source.smb.ConnectivityLanNetworks
+import io.github.yuubiz.hirari.core.source.smb.NodeStatusBrowser
+import io.github.yuubiz.hirari.core.source.smb.NsdBrowser
+import io.github.yuubiz.hirari.core.source.smb.ServerFinder
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
@@ -87,7 +92,12 @@ class HirariApp : Application() {
             SmbServerPool(storage.await().credentials, appScope, getSystemService(ConnectivityManager::class.java).networkAvailable())
         }
         val smbPlaces = appScope.async {
-            SmbjPlaces(smbPool.await().shares, storage.await().credentials, AndroidLocalNetwork(this@HirariApp), appScope)
+            val servers = ServerFinder(
+                ConnectivityLanNetworks(getSystemService(ConnectivityManager::class.java)),
+                NsdBrowser(getSystemService(NsdManager::class.java)),
+                NodeStatusBrowser(),
+            )
+            SmbjPlaces(smbPool.await().shares, storage.await().credentials, AndroidLocalNetwork(this@HirariApp), appScope, serverFinder = servers)
         }
         services = appScope.async {
             val storage = storage.await()

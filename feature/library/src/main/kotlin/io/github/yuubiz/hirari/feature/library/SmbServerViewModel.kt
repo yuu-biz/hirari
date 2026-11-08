@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredServer
 import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.ServerSearch
 import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
 import io.github.yuubiz.hirari.core.data.SmbServer as ServerForm
 
@@ -93,7 +95,8 @@ sealed interface SmbFormUi {
 
     /**
      * [storedPassword] tells that the edited server keeps a password, which the form never shows; [removePassword]
-     * drops it on saving. [errors] are of the last save or test.
+     * drops it on saving. [errors] are of the last save or test. [servers] is the list of サーバーを探す while it is
+     * open.
      */
     data class Editing(
         val fields: SmbFields,
@@ -105,6 +108,7 @@ sealed interface SmbFormUi {
         val saving: Boolean = false,
         val discovery: ShareDiscoveryResult? = null,
         val discovering: Boolean = false,
+        val servers: ServerSearch? = null,
     ) : SmbFormUi {
         val canDiscover: Boolean get() = fields.host.isNotBlank() && !saving && !discovering
     }
@@ -124,6 +128,8 @@ class SmbServerViewModel(private val services: Deferred<LibraryServices>, privat
     private var stored: LibraryLocation.SmbShare? = null
     private var testing: Job? = null
     private var discoveryJob: Job? = null
+    private var serverSearch: Job? = null
+    private var choosing: Job? = null
 
     init {
         if (id != null) {
@@ -137,6 +143,7 @@ class SmbServerViewModel(private val services: Deferred<LibraryServices>, privat
 
     fun edit(fields: SmbFields) {
         cancelDiscovery()
+        choosing?.cancel()
         editing { it.copy(fields = fields, test = ConnectionTest.Idle) }
     }
 
@@ -182,6 +189,62 @@ class SmbServerViewModel(private val services: Deferred<LibraryServices>, privat
         editing { it.copy(fields = it.fields.copy(share = share.name), errors = it.errors - SmbField.Share, test = ConnectionTest.Idle) }
     }
 
+    /** Opens the server list and searches again from nothing; a search under way stops first. */
+    fun searchServers() {
+        if (mutableState.value !is SmbFormUi.Editing) return
+        serverSearch?.cancel()
+        editing { it.copy(servers = ServerSearch.Searching(emptyList())) }
+        serverSearch = viewModelScope.launch {
+            services.await().smb.servers().collect { search ->
+                currentCoroutineContext().ensureActive()
+                editing { it.copy(servers = search) }
+            }
+        }
+    }
+
+    /** Closes the server list, which stops the search; nothing it finds later is shown. */
+    fun closeServers() {
+        serverSearch?.cancel()
+        serverSearch = null
+        editing { it.copy(servers = null) }
+    }
+
+    /**
+     * Fills the host, the port and a blank display name from [server], then lists the shares with [password] when the
+     * share is blank (docs/spec.md section 4.5). [password] is what the form holds now; this call wipes it.
+     */
+    fun chooseServer(server: DiscoveredServer, password: CharArray?) {
+        val form = mutableState.value as? SmbFormUi.Editing ?: return password.wipe()
+        val shown = when (val servers = form.servers) {
+            is ServerSearch.Searching -> servers.found
+            is ServerSearch.Settled -> servers.found
+            else -> emptyList()
+        }
+        if (server !in shown) return password.wipe()
+        closeServers()
+        choosing?.cancel()
+        choosing = viewModelScope.launch {
+            var handed = false
+            try {
+                val host = services.await().smb.hostField(server)
+                currentCoroutineContext().ensureActive()
+                editing {
+                    it.copy(
+                        fields = it.fields.copy(host = host, port = server.port.toString(), displayName = it.fields.displayName.ifBlank { server.name }),
+                        errors = it.errors - SmbField.Host - SmbField.Port,
+                        test = ConnectionTest.Idle,
+                    )
+                }
+                if ((mutableState.value as? SmbFormUi.Editing)?.fields?.share?.isBlank() == true) {
+                    handed = true
+                    discover(password)
+                }
+            } finally {
+                if (!handed) password.wipe()
+            }
+        }
+    }
+
     /** 接続を試す with what the form holds. [password] is null or empty to keep the stored one. */
     fun test(password: CharArray?) {
         val form = mutableState.value as? SmbFormUi.Editing ?: return password.wipe()
@@ -211,6 +274,8 @@ class SmbServerViewModel(private val services: Deferred<LibraryServices>, privat
         val form = mutableState.value as? SmbFormUi.Editing ?: return password.wipe()
         if (form.saving) return password.wipe()
         cancelDiscovery()
+        closeServers()
+        choosing?.cancel()
         val typed = password?.takeIf { it.isNotEmpty() }
         val server = when (val checked = form.fields.check(typed != null)) {
             is FormCheck.Invalid -> return editing { it.copy(errors = checked.errors) }.also { password.wipe() }

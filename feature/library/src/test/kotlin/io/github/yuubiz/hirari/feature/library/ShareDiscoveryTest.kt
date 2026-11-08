@@ -4,11 +4,16 @@ import io.github.yuubiz.hirari.core.data.CredentialStore
 import io.github.yuubiz.hirari.core.data.StoredSecret
 import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.ServerFinder
+import io.github.yuubiz.hirari.core.source.smb.ServerSearch
 import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryFailure
 import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
 import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbShareLister
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,6 +34,7 @@ class ShareDiscoveryTest {
     fun `permission and unreadable stored password fail before calling the lister`() = runTest {
         var allowed = false
         val places = SmbjPlaces(SmbShares({ error("must not use place pool") }, backgroundScope), credentials, { allowed }, backgroundScope,
+            serverFinder = NoServers,
             shareLister = SmbShareLister { _, _ -> error("must not connect") })
         val password = "secret".toCharArray()
         assertEquals(ShareDiscoveryResult.Failed(ShareDiscoveryFailure.NoLocalNetwork), places.discover(form, password, null))
@@ -38,10 +44,24 @@ class ShareDiscoveryTest {
     }
 
     @Test
+    fun `server search needs the local network permission before it looks at any network`() = runTest {
+        var allowed = false
+        var looked = 0
+        val finder = ServerFinder({ looked++; emptyList() }, { emptyFlow() }, { emptyFlow() }, io = StandardTestDispatcher(testScheduler))
+        val places = SmbjPlaces(SmbShares({ error("must not use place pool") }, backgroundScope), credentials, { allowed }, backgroundScope, serverFinder = finder)
+        assertEquals(listOf<ServerSearch>(ServerSearch.NoLocalNetwork), places.servers().toList())
+        assertEquals(0, looked)
+        allowed = true
+        assertEquals(listOf<ServerSearch>(ServerSearch.NoNetwork), places.servers().toList())
+        assertEquals(1, looked)
+    }
+
+    @Test
     fun `fake lister failures reach the form unchanged and guest ignores a typed password`() = runTest {
         var calls = 0
         var expected: ShareDiscoveryResult = ShareDiscoveryResult.Listed(listOf(DiscoveredShare("books", 0)))
         val places = SmbjPlaces(SmbShares({ error("must not use place pool") }, backgroundScope), credentials, { true }, backgroundScope,
+            serverFinder = NoServers,
             shareLister = SmbShareLister { address, login ->
                 calls++
                 assertEquals("nas", address.host)

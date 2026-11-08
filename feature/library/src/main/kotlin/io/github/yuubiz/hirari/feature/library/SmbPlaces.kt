@@ -16,6 +16,7 @@ import io.github.yuubiz.hirari.core.source.save.SaveOutcome
 import io.github.yuubiz.hirari.core.source.save.SaveProgress
 import io.github.yuubiz.hirari.core.source.save.saveTo
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredServer
 import io.github.yuubiz.hirari.core.source.smb.PasswordUnreadableException
 import io.github.yuubiz.hirari.core.source.smb.SmbAddress
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectException
@@ -26,7 +27,10 @@ import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import io.github.yuubiz.hirari.core.source.smb.SmbRequestException
 import io.github.yuubiz.hirari.core.source.smb.SmbServer
+import io.github.yuubiz.hirari.core.source.smb.ServerFinder
+import io.github.yuubiz.hirari.core.source.smb.ServerSearch
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
+import io.github.yuubiz.hirari.core.source.smb.hostField
 import io.github.yuubiz.hirari.core.source.smb.SmbTimeouts
 import io.github.yuubiz.hirari.core.source.smb.SmbShareLister
 import io.github.yuubiz.hirari.core.source.smb.SrvsvcShareLister
@@ -95,6 +99,15 @@ interface SmbPlaces {
 
     /** Lists shares on a separate, temporary connection, without registering a place. */
     suspend fun discover(server: ServerForm, password: CharArray?, stored: CredentialRef?): ShareDiscoveryResult
+
+    /**
+     * サーバーを探す (docs/spec.md section 4.5) while collected. Without the local network permission it is only
+     * [ServerSearch.NoLocalNetwork].
+     */
+    fun servers(): Flow<ServerSearch>
+
+    /** What the host field gets for the chosen [server]: its name when that looks up to its address, else the address. */
+    suspend fun hostField(server: DiscoveredServer): String
 
     /**
      * Opens the file at [path], counted from the place's folder, for random access. Every read of it is a request for
@@ -170,7 +183,7 @@ suspend fun CredentialStore.smbLogin(user: String?, credential: CredentialRef?):
 
 /**
  * [SmbPlaces] over the process's [shares], which log on with [smbLogin]. [credentials] gives the stored password to
- * a connection test.
+ * a connection test. [serverFinder] searches the LAN for servers.
  */
 class SmbjPlaces(
     private val shares: SmbShares,
@@ -179,6 +192,7 @@ class SmbjPlaces(
     private val scope: CoroutineScope,
     private val timeouts: SmbTimeouts = SmbTimeouts(),
     private val shareLister: SmbShareLister = SrvsvcShareLister(timeouts),
+    private val serverFinder: ServerFinder,
 ) : SmbPlaces {
     override suspend fun list(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): Listing {
         if (!localNetwork.granted()) return Listing.Failed(ListFailure.NoLocalNetwork)
@@ -264,6 +278,12 @@ class SmbjPlaces(
             password?.fill('\u0000')
         }
     }
+
+    override fun servers(): Flow<ServerSearch> = flow {
+        if (localNetwork.granted()) emitAll(serverFinder.search()) else emit(ServerSearch.NoLocalNetwork)
+    }
+
+    override suspend fun hostField(server: DiscoveredServer): String = server.hostField()
 
     override suspend fun open(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): ByteSource {
         if (!localNetwork.granted()) throw SmbConnectException(SmbConnectFailure.Unreachable, "local network not granted")

@@ -58,7 +58,9 @@ import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.announced
 import io.github.yuubiz.hirari.core.ui.decorative
 import io.github.yuubiz.hirari.core.ui.minTouchTarget
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredServer
 import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.ServerSearch
 import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryFailure
 import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
 
@@ -96,7 +98,10 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
     val password = remember { TextFieldState() }
     val gate = rememberLocalNetworkGate()
     DisposableEffect(model) {
-        onDispose { model.cancelDiscovery() }
+        onDispose {
+            model.cancelDiscovery()
+            model.closeServers()
+        }
     }
     // A save the form rejects keeps the typed password for the next try; only a saved one is cleared.
     LaunchedEffect(state) {
@@ -128,11 +133,20 @@ fun SmbServerScreen(model: SmbServerViewModel, onClose: () -> Unit) {
                 onTest = { gate { model.test(typed()) } },
                 onSave = { gate { model.save(typed()) } },
                 onDiscover = { gate { model.discover(typed()) } },
+                onFindServers = { gate { model.searchServers() } },
             )
         }
     }
     (state as? SmbFormUi.Editing)?.let { form ->
         ShareDiscoveryDialog(form, model::cancelDiscovery, model::chooseShare)
+        form.servers?.let { servers ->
+            ServerSearchDialog(
+                servers,
+                onClose = model::closeServers,
+                onAgain = { gate { model.searchServers() } },
+                onChoose = { model.chooseServer(it, typed()) },
+            )
+        }
     }
 }
 
@@ -147,6 +161,7 @@ private fun SmbForm(
     onTest: () -> Unit,
     onSave: () -> Unit,
     onDiscover: () -> Unit,
+    onFindServers: () -> Unit,
 ) {
     val fields = form.fields
     Column(
@@ -154,7 +169,12 @@ private fun SmbForm(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Field(R.string.smb_display_name, fields.displayName, hint = R.string.smb_display_name_hint) { onEdit(fields.copy(displayName = it)) }
-        Field(R.string.smb_host, fields.host, error = form.errors[SmbField.Host], type = KeyboardType.Uri) { onEdit(fields.copy(host = it)) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Field(R.string.smb_host, fields.host, error = form.errors[SmbField.Host], type = KeyboardType.Uri) { onEdit(fields.copy(host = it)) }
+            }
+            OutlinedButton(onClick = onFindServers) { Text(stringResource(R.string.smb_find_servers)) }
+        }
         Field(R.string.smb_port, fields.port, error = form.errors[SmbField.Port], type = KeyboardType.Number) { onEdit(fields.copy(port = it)) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
@@ -216,6 +236,57 @@ private fun ShareDiscoveryDialog(form: SmbFormUi.Editing, onClose: () -> Unit, o
         confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.cancel)) } },
     )
 }
+
+/** The list of サーバーを探す (docs/spec.md section 4.5); [onAgain] is offered once the search settles. */
+@Composable
+private fun ServerSearchDialog(servers: ServerSearch, onClose: () -> Unit, onAgain: () -> Unit, onChoose: (DiscoveredServer) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.smb_find_servers)) },
+        text = {
+            when (servers) {
+                ServerSearch.NoNetwork -> Text(stringResource(R.string.smb_servers_no_network), Modifier.announced())
+                ServerSearch.NoLocalNetwork -> Text(stringResource(R.string.smb_discovery_permission), Modifier.announced())
+                is ServerSearch.Searching -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.announced(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(Modifier.padding(4.dp).decorative())
+                        Text(stringResource(R.string.smb_finding_servers))
+                    }
+                    ServerRows(servers.found, onChoose)
+                }
+                is ServerSearch.Settled -> if (servers.found.isEmpty()) {
+                    Column(Modifier.announced(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.smb_servers_none))
+                        Text(stringResource(R.string.smb_servers_windows), style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    ServerRows(servers.found, onChoose)
+                }
+            }
+        },
+        confirmButton = {
+            if (servers is ServerSearch.Settled) TextButton(onClick = onAgain) { Text(stringResource(R.string.smb_find_servers_again)) }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+@Composable
+private fun ServerRows(servers: List<DiscoveredServer>, onChoose: (DiscoveredServer) -> Unit) {
+    LazyColumn {
+        items(servers, key = { it.address.hostAddress.orEmpty() }) { server ->
+            TextButton(onClick = { onChoose(server) }, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(server.name)
+                    Text(server.shownAddress(), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+/** The address of a row, with its port only when it is not 445. */
+internal fun DiscoveredServer.shownAddress(): String = address.hostAddress.orEmpty().let { if (port == SMB_PORT) it else "$it:$port" }
 
 @StringRes
 internal fun ShareDiscoveryFailure.discoveryMessage(): Int = when (this) {

@@ -6,6 +6,7 @@ import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.source.smb.ConnectionLostException
+import io.github.yuubiz.hirari.core.source.smb.ServerFinder
 import io.github.yuubiz.hirari.core.source.smb.SmbConnectionState
 import io.github.yuubiz.hirari.feature.library.ListFailure
 import io.github.yuubiz.hirari.feature.library.Listing
@@ -29,7 +30,7 @@ class SmbServerPoolTest {
     private val scope = CoroutineScope(SupervisorJob())
     private val credentials = Passwords()
     private val pool = SmbServerPool(credentials, scope, emptyFlow())
-    private val library = SmbjPlaces(pool.shares, credentials, { true }, scope)
+    private val library = SmbjPlaces(pool.shares, credentials, { true }, scope, serverFinder = ServerFinder({ emptyList() }, { emptyFlow() }, { emptyFlow() }))
 
     private fun nas(credential: CredentialRef?) =
         LibraryLocation.SmbShare(LocationId(1), "NAS", "nas.invalid", 445, "books", "漫画", null, "reader", credential)

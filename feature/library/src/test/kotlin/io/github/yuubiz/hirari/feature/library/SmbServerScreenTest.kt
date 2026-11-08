@@ -30,7 +30,13 @@ import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredServer
 import io.github.yuubiz.hirari.core.source.smb.DiscoveredShare
+import io.github.yuubiz.hirari.core.source.smb.DiscoverySource
+import io.github.yuubiz.hirari.core.source.smb.ServerSearch
+import kotlinx.coroutines.flow.flowOf
+import java.net.Inet4Address
+import java.net.InetAddress
 import io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult
 
 /** The password field of the SMB server form never lets its text out to the accessibility tree (docs/spec.md section 4.5). */
@@ -63,6 +69,38 @@ class SmbServerScreenTest {
             assertEquals("books2", (model.state.value as SmbFormUi.Editing).fields.share)
             assertTrue(fixture.locations.rows.value.isEmpty())
         }
+    }
+
+    @Test
+    @Config(sdk = [36])
+    fun `a found server is chosen from the list and its shares are listed next`() {
+        val fixture = Fixture()
+        val model = SmbServerViewModel(CompletableDeferred(fixture.services), null)
+        val server = DiscoveredServer("My NAS", InetAddress.getByName("192.168.1.5") as Inet4Address, 4450, setOf(DiscoverySource.DnsSd), null)
+        fixture.smb.searching = flowOf(ServerSearch.Settled(listOf(server)))
+        fixture.smb.discovering = { ShareDiscoveryResult.Listed(listOf(DiscoveredShare("books", 0))) }
+        rule.setContent { MaterialTheme { SmbServerScreen(model, onClose = {}) } }
+        rule.onNodeWithText("サーバーを探す").performClick()
+        rule.onNodeWithText("192.168.1.5:4450").assertIsDisplayed()
+        rule.onNodeWithText("もう一度探す").assertIsDisplayed()
+        rule.onNodeWithText("My NAS").performClick()
+        rule.onNodeWithText("books").assertIsDisplayed()
+        rule.runOnIdle {
+            val fields = (model.state.value as SmbFormUi.Editing).fields
+            assertEquals(SmbFields(displayName = "My NAS", host = "192.168.1.5", port = "4450"), fields)
+        }
+    }
+
+    @Test
+    @Config(sdk = [36])
+    fun `an empty search tells how Windows servers are found`() {
+        val fixture = Fixture()
+        val model = SmbServerViewModel(CompletableDeferred(fixture.services), null)
+        fixture.smb.searching = flowOf(ServerSearch.Settled(emptyList()))
+        rule.setContent { MaterialTheme { SmbServerScreen(model, onClose = {}) } }
+        rule.onNodeWithText("サーバーを探す").performClick()
+        rule.onNodeWithText("サーバーが見つかりません。ホストを入力してください").assertIsDisplayed()
+        rule.onNodeWithText("Windows のサーバーは、ネットワーク探索と NetBIOS over TCP/IP が有効なときに見つかります").assertIsDisplayed()
     }
 
     @Test

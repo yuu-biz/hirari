@@ -10,6 +10,8 @@ import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.save.SaveFolder
 import io.github.yuubiz.hirari.core.source.save.SaveOutcome
 import io.github.yuubiz.hirari.core.source.save.SaveProgress
+import io.github.yuubiz.hirari.core.source.smb.DiscoveredServer
+import io.github.yuubiz.hirari.core.source.smb.ServerSearch
 import io.github.yuubiz.hirari.core.source.smb.SmbPurpose
 import io.github.yuubiz.hirari.feature.library.FolderEntry
 import io.github.yuubiz.hirari.feature.library.FolderLister
@@ -55,6 +57,10 @@ internal class Shares(private val listings: Map<String, List<FolderEntry>>) : Sm
     override suspend fun test(server: ServerForm, password: CharArray?, stored: CredentialRef?): SmbTestResult = error("not used")
 
     override suspend fun discover(server: ServerForm, password: CharArray?, stored: CredentialRef?): io.github.yuubiz.hirari.core.source.smb.ShareDiscoveryResult = error("not used")
+
+    override fun servers(): Flow<ServerSearch> = error("not used")
+
+    override suspend fun hostField(server: DiscoveredServer): String = error("not used")
 
     override suspend fun open(place: LibraryLocation.SmbShare, path: String, purpose: SmbPurpose): ByteSource = error("not used")
 

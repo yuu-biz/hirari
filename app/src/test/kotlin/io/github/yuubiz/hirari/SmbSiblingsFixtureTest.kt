@@ -7,6 +7,7 @@ import io.github.yuubiz.hirari.core.model.CredentialRef
 import io.github.yuubiz.hirari.core.model.LibraryLocation
 import io.github.yuubiz.hirari.core.model.LocationId
 import io.github.yuubiz.hirari.core.model.UriString
+import io.github.yuubiz.hirari.core.source.smb.ServerFinder
 import io.github.yuubiz.hirari.core.source.smb.SmbLogin
 import io.github.yuubiz.hirari.core.source.smb.SmbShares
 import io.github.yuubiz.hirari.feature.library.FolderLister
@@ -17,6 +18,7 @@ import io.github.yuubiz.hirari.core.model.Sibling
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -56,7 +58,7 @@ class SmbSiblingsFixtureTest {
     @Test
     fun theSeriesOnTheServerGivesTheNextAndThePreviousBook() = runBlocking {
         val place = LibraryLocation.SmbShare(LocationId(3), "NAS", host!!, port, "public", "", null, null, null)
-        val smb = SmbjPlaces(SmbShares({ SmbLogin.Guest }, scope), NoSecrets, { true }, scope)
+        val smb = SmbjPlaces(SmbShares({ SmbLogin.Guest }, scope), NoSecrets, { true }, scope, serverFinder = ServerFinder({ emptyList() }, { emptyFlow() }, { emptyFlow() }))
         val siblings = FolderSiblings(placeFolders({ if (it == place.id) place else null }, NoSaf, smb), dotFiles = { false })
         fun book(path: String, folder: Boolean = false) = BookAddress.InLocation(place.id, path, folder)
 
