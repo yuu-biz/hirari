@@ -57,6 +57,12 @@ class ArchiveSession private constructor(
      */
     val partial: Boolean = listing.partial
 
+    /**
+     * The [ListingNeed] the listing went as far as: the one given to [open] in a format that lists entry by entry from
+     * headers of its own, and [ListingNeed.All] in one listed from an index, which lists every entry whatever was asked.
+     */
+    val need: ListingNeed = listing.need
+
     private val closed = AtomicBoolean(false)
     private val passwordLock = Mutex()
     private var passwordLoaded = false
@@ -332,6 +338,7 @@ class ArchiveSession private constructor(
             val records: List<ZipRecord>? = null,
             val positions: LongArray? = null,
             val partial: Boolean = false,
+            val need: ListingNeed = ListingNeed.All,
         ) : Listing
     }
 
@@ -442,7 +449,7 @@ class ArchiveSession private constructor(
             var filter = 0
             val met = metBy(need)
             fun listed(error: ArchiveFailure?, partial: Boolean = false) =
-                Listing.Listed(entries, error, format, filter, positions = jumpable(format, filter, positions), partial = partial)
+                Listing.Listed(entries, error, format, filter, positions = jumpable(format, filter, positions), partial = partial, need = if (format in OWN_HEADERS) need else ListingNeed.All)
             while (true) {
                 val status = archive.nextHeader()
                 if (status == Status.EOF) return listed(null)

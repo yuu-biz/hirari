@@ -20,15 +20,15 @@ import kotlin.math.ceil
  * reach may then hold the chosen page or sort before the first, so only a chosen page it did reach is the cover,
  * and anything else is `null`.
  *
- * [partial] is true when the listing stopped where the need it was opened with was met: the first page is then the
- * first of the images that listing counted ([CoverListing.firstCounted]).
+ * [counted] is true when the listing counted the first images ([CoverListing.automatic]), whether it stopped at them or
+ * found fewer before the end: the first page is then the first of the images it counted ([CoverListing.firstCounted]).
  */
-internal fun coverPage(pages: List<PageEntry>, coverEntry: Int?, listingFinal: Boolean, partial: Boolean = false): PageEntry? {
+internal fun coverPage(pages: List<PageEntry>, coverEntry: Int?, listingFinal: Boolean, counted: Boolean = false): PageEntry? {
     val chosen = coverEntry?.let { entry -> pages.firstOrNull { it.entryIndex == entry } }
     return when {
         chosen != null -> chosen
         !listingFinal -> null
-        partial -> CoverListing.firstCounted(pages)
+        counted -> CoverListing.firstCounted(pages)
         else -> pages.firstOrNull()
     }
 }

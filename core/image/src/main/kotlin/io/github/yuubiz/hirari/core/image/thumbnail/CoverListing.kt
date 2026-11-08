@@ -23,8 +23,8 @@ object CoverListing {
         pageCandidate(String(rawName, Charsets.ISO_8859_1), isDirectory) == PageCandidate.Image
 
     /**
-     * The first of [pages], in natural order, that a listing stopped where its need was met counted towards the
-     * [IMAGES]: an entry it took in by its first bytes was not counted (section 4.4). The first page when none was.
+     * The first of [pages], in natural order, that a listing for the first images counted towards the [IMAGES]: an
+     * entry it took in by its first bytes was not counted (section 4.4). The first page when none was.
      */
     internal fun firstCounted(pages: List<PageEntry>): PageEntry? = pages.firstOrNull { counts(it.rawName, isDirectory = false) } ?: pages.firstOrNull()
 
@@ -35,5 +35,5 @@ object CoverListing {
     fun provisional(need: ListingNeed, book: OpenBook): Int? = provisional(need, book.partial, book.pages)
 
     internal fun provisional(need: ListingNeed, partial: Boolean, pages: List<PageEntry>): Int? =
-        if (need is ListingNeed.Images && partial) coverPage(pages, coverEntry = null, listingFinal = true, partial = true)?.entryIndex else null
+        if (need is ListingNeed.Images && partial) coverPage(pages, coverEntry = null, listingFinal = true, counted = true)?.entryIndex else null
 }

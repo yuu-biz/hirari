@@ -103,7 +103,7 @@ object Books {
             }
             val extracted = session.solid && extractDir != null
             val bytes = ArchivePages(session).let { if (stash != null && !extracted) StashedPages(it, stash) else it }
-            BookResult.Opened(OpenBook(BookContent.Images(bytes), session.format.container(), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding, session.partial))
+            BookResult.Opened(OpenBook(BookContent.Images(bytes), session.format.container(), sortedPages(pages), session.indexError?.pageFailure()?.reason, decoding, session.partial, session.need))
         } catch (_: OutOfMemoryError) {
             session.close()
             BookResult.Failed(BookFailure.ReadError)

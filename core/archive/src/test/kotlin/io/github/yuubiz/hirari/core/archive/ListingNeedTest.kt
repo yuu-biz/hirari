@@ -33,6 +33,7 @@ class ListingNeedTest {
                 assertEquals(format.name, listOf("001.jpg", "002.jpg", "003.txt", "004.jpg", "005.jpg", "006.txt", "007.jpg"), names(session))
                 assertEquals(format.name, 7, archive.headers.get())
                 assertTrue(format.name, session.partial)
+                assertEquals(format.name, images, session.need)
                 assertNull("a stop where the need is met is not an error", session.indexError)
             }
         }
@@ -46,6 +47,7 @@ class ListingNeedTest {
                 session.use {
                     assertEquals(format.name, entries.size, session.entries.size)
                     assertFalse(format.name, session.partial)
+                    assertEquals(format.name, ListingNeed.All, session.need)
                 }
             }
         }
@@ -80,6 +82,7 @@ class ListingNeedTest {
             session.use {
                 assertEquals(entries.size, session.entries.size)
                 assertFalse(session.partial)
+                assertEquals("the need the listing went for, though it reached the end", need, session.need)
                 assertNull(session.indexError)
             }
         }

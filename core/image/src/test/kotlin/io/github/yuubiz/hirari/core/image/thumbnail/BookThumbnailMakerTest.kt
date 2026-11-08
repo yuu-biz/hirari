@@ -1,5 +1,6 @@
 package io.github.yuubiz.hirari.core.image.thumbnail
 
+import io.github.yuubiz.hirari.core.archive.ListingNeed
 import io.github.yuubiz.hirari.core.image.BookContent
 import io.github.yuubiz.hirari.core.image.BookFailure
 import io.github.yuubiz.hirari.core.image.BookResult
@@ -113,10 +114,10 @@ class BookThumbnailMakerTest {
         assertEquals(listOf("002.jpg"), read)
     }
 
-    /** A RAR whose listing stopped where its need was met, after [pages]. */
-    private fun partialRar(pages: List<PageEntry>, firstEntry: Int? = null) =
+    /** A RAR listed for [need] as far as [pages], which stopped where the need was met when [partial]. */
+    private fun rar(pages: List<PageEntry>, need: ListingNeed, partial: Boolean = true, firstEntry: Int? = null) =
         ThumbSubject.Book(BookId("a"), Instant.EPOCH, byteSize = 100, firstEntry = firstEntry) {
-            BookResult.Opened(OpenBook(BookContent.Images(unshownBytes), Container.Rar, pages, null, it, partial = true))
+            BookResult.Opened(OpenBook(BookContent.Images(unshownBytes), Container.Rar, pages, null, it, partial, need))
         }
 
     private fun named(index: Int, entryIndex: Int, name: String) = PageEntry(index, entryIndex, name.toByteArray(), name, null, null)
@@ -124,15 +125,29 @@ class BookThumbnailMakerTest {
     @Test
     fun aCoverMadeAgainFromTheFirstPageOfAWholeListingIsThatPage() = runTest {
         val listed = listOf(named(0, entryIndex = 4, "001.jpg"), named(1, entryIndex = 7, "002.jpg"))
-        assertEquals(Made.Unreadable, make(partialRar(listed, firstEntry = 7)))
+        assertEquals(Made.Unreadable, make(rar(listed, ListingNeed.UpTo(7), firstEntry = 7)))
         assertEquals(listOf("002.jpg"), read)
     }
 
     @Test
     fun aCoverFromTheFirstImagesIsTheFirstOfTheImagesTheListingCounted() = runTest {
         val listed = listOf(named(0, entryIndex = 0, "000.dat"), named(1, entryIndex = 1, "001.jpg"))
-        assertEquals(Made.Unreadable, make(partialRar(listed)))
+        assertEquals(Made.Unreadable, make(rar(listed, CoverListing.automatic)))
         assertEquals(listOf("001.jpg"), read)
+    }
+
+    @Test
+    fun aCoverFromTheFirstImagesOfAListingThatFoundFewerIsStillOneItCounted() = runTest {
+        val listed = listOf(named(0, entryIndex = 0, "000.dat"), named(1, entryIndex = 1, "001.jpg"))
+        assertEquals(Made.Unreadable, make(rar(listed, CoverListing.automatic, partial = false)))
+        assertEquals(listOf("001.jpg"), read)
+    }
+
+    @Test
+    fun aCoverFromAListingOfEveryEntryIsItsFirstPage() = runTest {
+        val listed = listOf(named(0, entryIndex = 0, "000.dat"), named(1, entryIndex = 1, "001.jpg"))
+        assertEquals(Made.Unreadable, make(rar(listed, ListingNeed.All, partial = false)))
+        assertEquals(listOf("000.dat"), read)
     }
 
     @Test

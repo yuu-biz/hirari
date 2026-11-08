@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.image
 
 import android.graphics.Bitmap
+import io.github.yuubiz.hirari.core.archive.ListingNeed
 import io.github.yuubiz.hirari.core.model.Container
 import io.github.yuubiz.hirari.core.model.EntryOrder
 import io.github.yuubiz.hirari.core.model.FailureReason
@@ -56,6 +57,8 @@ internal sealed interface BookContent : Closeable {
  * @property container what the book was opened from, for the index of opened books (section 2.2).
  * @property partial listing the archive stopped where the `ListingNeed` it was opened with was met (section 4.4), so
  *   [pages] are those of the entries up to there. It is not an error, and [indexError] is null.
+ * @property need the `ListingNeed` the archive was listed for (`ArchiveSession.need`), whether the listing stopped where
+ *   it was met or went to the end.
  */
 class OpenBook internal constructor(
     private val content: BookContent,
@@ -64,6 +67,7 @@ class OpenBook internal constructor(
     val indexError: FailureReason?,
     private val decoding: ImageDecoding,
     val partial: Boolean = false,
+    val need: ListingNeed = ListingNeed.All,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob())
 
@@ -85,7 +89,7 @@ class OpenBook internal constructor(
      */
     fun ordered(order: PageOrder): OpenBook {
         val own = if (container == Container.Folder) order.copy(entries = EntryOrder.Natural) else order
-        return OpenBook(content, container, sortedPages(pages, own), indexError, decoding, partial)
+        return OpenBook(content, container, sortedPages(pages, own), indexError, decoding, partial, need)
     }
 
     suspend fun invalidate(index: Int) { (content as? BookContent.Images)?.bytes?.invalidate(pages[index]) }
