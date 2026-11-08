@@ -3,6 +3,8 @@ package io.github.yuubiz.hirari.feature.library
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import io.github.yuubiz.hirari.core.data.ProgressRepository
+import io.github.yuubiz.hirari.core.data.ProvisionalCovers
+import io.github.yuubiz.hirari.core.image.thumbnail.ThumbSubject
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookProgress
@@ -33,7 +35,9 @@ import org.junit.Before
 import java.nio.charset.Charset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -286,6 +290,35 @@ class ArchiveViewModelTest {
 
         screen.clear()
         opening.complete(Unit)
+        assertTrue(contents.closed)
+    }
+
+    @Test
+    fun `leaving the screen while the whole listing is read still corrects the provisional cover, then closes the archive`() = runTest {
+        val remembered = mutableMapOf(id to 0)
+        val local = Fixture(object : ProvisionalCovers {
+            override suspend fun remember(book: BookId, entryIndex: Int) {
+                remembered[book] = entryIndex
+            }
+
+            override suspend fun entry(book: BookId): Int? = remembered[book]
+
+            override suspend fun forget(book: BookId) {
+                remembered.remove(book)
+            }
+        })
+        local.coverBooks.folders["作品"] = listOf(FolderEntry("book.zip", "doc:book", false, 500, T0))
+        local.locations.rows.value = listOf(place)
+        local.archives.result = ArchiveOpenResult.Opened(contents)
+        val screen = ViewModelStore()
+        screen.own { ArchiveViewModel(CompletableDeferred(local.services), ArchiveKey(place.id, "作品/book.zip", "doc:book"), StandardTestDispatcher(testScheduler)) }
+
+        screen.clear()
+        assertFalse(contents.closed, "the names are still to be read")
+        advanceUntilIdle()
+        val remade = local.thumbnails.regenerated.map { assertIs<ThumbSubject.Book>(it.subject) }
+        assertTrue(remade.isNotEmpty() && remade.all { it.firstEntry == 1 }, "made again from 第1話.jpg")
+        assertNull(remembered[id])
         assertTrue(contents.closed)
     }
 

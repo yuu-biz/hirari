@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
@@ -147,22 +148,30 @@ class ArchiveViewModel(
         }
     }
 
+    /** Reads the archive for [settleCover] on the app's scope; once it ends, [onCleared] may close the archive. */
+    private var settleReading: Job? = null
+
     /**
      * Hands the first page in natural order of the whole listing to [settleProvisionalCover] (docs/spec.md section
-     * 4.4), which goes on after the screen is left. The names are decoded as the cover decodes them.
+     * 4.4), all of it on the app's scope, so leaving the screen stops neither. The names are decoded as the cover
+     * decodes them; the archive stays open until they are read.
      */
-    private fun settleCover(services: LibraryServices, opened: Opening.Opened) = viewModelScope.launch {
-        try {
-            val id = opened.id
+    private fun settleCover(services: LibraryServices, opened: Opening.Opened) {
+        val id = opened.id
+        val first = services.appScope.async {
             val fallback = Charset.forName(services.settings.settings.first().fallbackCharset.charsetName)
             val charset = opened.contents.charset(services.books.overrides(id).first().nameCharset, fallback)
-            val first = withContext(compute) { opened.contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
-            val spec = opened.base?.copy(direction = services.directionOf(id))
-            services.appScope.launch { services.settleProvisionalCover(id, first, spec) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // The provisional cover stays, and the next opening settles it.
+            withContext(compute) { opened.contents.rows(charset, id).pages.firstOrNull()?.entryIndex }
+        }
+        settleReading = first
+        services.appScope.launch {
+            try {
+                services.settleProvisionalCover(id, first.await(), opened.base?.copy(direction = services.directionOf(id)))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // The provisional cover stays, and the next opening settles it.
+            }
         }
     }
 
@@ -304,7 +313,8 @@ class ArchiveViewModel(
     }
 
     override fun onCleared() {
-        opened?.contents?.close()
+        val contents = opened?.contents ?: return
+        settleReading?.invokeOnCompletion { contents.close() } ?: contents.close()
     }
 }
 
