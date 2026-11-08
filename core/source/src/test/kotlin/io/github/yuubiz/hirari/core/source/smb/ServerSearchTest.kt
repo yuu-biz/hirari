@@ -1,7 +1,8 @@
 package io.github.yuubiz.hirari.core.source.smb
 
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
@@ -18,7 +19,6 @@ import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -145,37 +145,91 @@ class ServerSearchTest {
     }
 
     @Test
-    fun `the host field gets the name only when it looks up to the same address`() = runTest {
+    fun `the host field gets the name only when it looks up to the same address`() = runBlocking {
         val server = DiscoveredServer("My NAS", ip("192.168.1.5"), 445, setOf(DiscoverySource.NetBios), "nas")
-        val inline = java.util.concurrent.Executor { it.run() }
-        assertEquals("nas", server.hostField(lookup = { listOf(ip("10.0.0.1"), ip("192.168.1.5")) }, executor = inline))
-        assertEquals("192.168.1.5", server.hostField(lookup = { listOf(ip("192.168.1.6")) }, executor = inline))
-        assertEquals("192.168.1.5", server.hostField(lookup = { throw java.net.UnknownHostException(it) }, executor = inline))
-        var looked = false
-        assertEquals("192.168.1.5", server.copy(hostName = null).hostField(lookup = { looked = true; emptyList() }, executor = inline))
-        assertFalse(looked)
+        val lookups = HostLookups.newExecutor()
+        try {
+            assertEquals("nas", server.hostField(lookup = { listOf(ip("10.0.0.1"), ip("192.168.1.5")) }, lookups = lookups))
+            assertEquals("192.168.1.5", server.hostField(lookup = { listOf(ip("192.168.1.6")) }, lookups = lookups))
+            assertEquals("192.168.1.5", server.hostField(lookup = { throw java.net.UnknownHostException(it) }, lookups = lookups))
+            var looked = false
+            assertEquals("192.168.1.5", server.copy(hostName = null).hostField(lookup = { looked = true; emptyList() }, lookups = lookups))
+            assertFalse(looked)
+        } finally {
+            lookups.shutdown()
+        }
     }
 
     @Test
     fun `a lookup that does not answer in time gives the address and is left behind`() = runBlocking {
         val server = DiscoveredServer("NAS", ip("192.168.1.5"), 445, setOf(DiscoverySource.NetBios), "nas")
         val release = CountDownLatch(1)
-        val pool = Executors.newSingleThreadExecutor()
+        val lookups = HostLookups.newExecutor(threads = 1, queue = 1)
         try {
             val started = System.nanoTime()
             val host = withTimeout(2.seconds) {
-                server.hostField(limit = 100.milliseconds, lookup = { release.await(); listOf(ip("192.168.1.5")) }, executor = pool)
+                server.hostField(limit = 100.milliseconds, lookup = { release.await(); listOf(ip("192.168.1.5")) }, lookups = lookups)
             }
             assertEquals("192.168.1.5", host)
             assertTrue((System.nanoTime() - started) / 1_000_000 < 1_000)
-            val cancelled = CompletableDeferred<String>()
-            val job = launch { cancelled.complete(server.hostField(lookup = { release.await(); emptyList() }, executor = pool)) }
-            job.cancel()
-            withTimeout(1.seconds) { job.join() }
-            assertFalse(cancelled.isCompleted)
         } finally {
             release.countDown()
-            pool.shutdown()
+            lookups.shutdown()
+        }
+    }
+
+    @Test
+    fun `a lookup still waiting in the queue when the caller gives up or is cancelled never runs`() = runBlocking {
+        val server = DiscoveredServer("NAS", ip("192.168.1.5"), 445, setOf(DiscoverySource.NetBios), "nas")
+        val release = CountDownLatch(1)
+        val busy = CountDownLatch(1)
+        val ran = java.util.concurrent.atomic.AtomicInteger()
+        val lookups = HostLookups.newExecutor(threads = 1, queue = 4)
+        try {
+            val first = launch(Dispatchers.IO) { server.hostField(lookup = { busy.countDown(); release.await(); emptyList() }, lookups = lookups) }
+            busy.await()
+            val timedOut = server.hostField(limit = 50.milliseconds, lookup = { ran.incrementAndGet(); listOf(ip("192.168.1.5")) }, lookups = lookups)
+            assertEquals("192.168.1.5", timedOut)
+            assertEquals(0, lookups.queue.size, "the timed out lookup left the queue")
+            val second = launch(Dispatchers.IO) { server.hostField(lookup = { ran.incrementAndGet(); emptyList() }, lookups = lookups) }
+            withTimeout(2.seconds) { while (lookups.queue.isEmpty()) delay(5) }
+            second.cancel()
+            second.join()
+            assertEquals(0, lookups.queue.size, "the cancelled lookup left the queue")
+            release.countDown()
+            first.join()
+            lookups.shutdown()
+            assertTrue(lookups.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals(0, ran.get())
+        } finally {
+            release.countDown()
+            lookups.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `with the queue full the address comes at once and the lookup is not started`() = runBlocking {
+        val server = DiscoveredServer("NAS", ip("192.168.1.5"), 445, setOf(DiscoverySource.NetBios), "nas")
+        val release = CountDownLatch(1)
+        val busy = CountDownLatch(1)
+        val ran = java.util.concurrent.atomic.AtomicInteger()
+        val lookups = HostLookups.newExecutor(threads = 1, queue = 1)
+        try {
+            val first = launch(Dispatchers.IO) { server.hostField(lookup = { busy.countDown(); release.await(); emptyList() }, lookups = lookups) }
+            busy.await()
+            val queued = launch(Dispatchers.IO) { server.hostField(lookup = { ran.incrementAndGet(); emptyList() }, lookups = lookups) }
+            withTimeout(2.seconds) { while (lookups.queue.isEmpty()) delay(5) }
+            val started = System.nanoTime()
+            val host = withTimeout(1.seconds) { server.hostField(lookup = { ran.incrementAndGet(); listOf(ip("192.168.1.5")) }, lookups = lookups) }
+            assertEquals("192.168.1.5", host)
+            assertTrue((System.nanoTime() - started) / 1_000_000 < 500)
+            release.countDown()
+            first.join()
+            queued.join()
+            assertEquals(1, ran.get(), "only the queued lookup ran")
+        } finally {
+            release.countDown()
+            lookups.shutdownNow()
         }
     }
 

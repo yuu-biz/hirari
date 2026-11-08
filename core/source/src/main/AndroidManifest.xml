@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The network permissions of SMB (docs/spec.md section 7). ACCESS_LOCAL_NETWORK is a runtime permission that the
+<!-- The network permissions of SMB (docs/spec.md section 7). CHANGE_WIFI_MULTICAST_STATE lets a server search hold the
+     multicast lock. ACCESS_LOCAL_NETWORK is a runtime permission that the
      app requests when the first server is registered. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 </manifest>

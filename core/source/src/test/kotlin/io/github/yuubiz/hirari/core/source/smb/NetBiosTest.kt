@@ -42,10 +42,56 @@ class NetBiosTest {
     }
 
     @Test
-    fun `an answer naming itself with a pointer is read too`() {
-        val packet = response(0x1234, listOf(Entry("NAS", 0x20)), name = byteArrayOf(0xc0.toByte(), 0x0c))
-        assertEquals(NodeStatusReply.FileServer("NAS"), parseNodeStatus(packet, packet.size, 0x1234))
+    fun `a name pointer that points at itself, ahead, into the header or out of the packet is malformed`() {
+        val names = listOf(Entry("NAS", 0x20))
+        val pointers = mapOf(
+            "itself" to byteArrayOf(0xc0.toByte(), 0x0c),
+            "ahead" to byteArrayOf(0xc0.toByte(), 0x30),
+            "into the header" to byteArrayOf(0xc0.toByte(), 0x00),
+            "past the packet" to byteArrayOf(0xc1.toByte(), 0x00),
+            "reserved label bits" to byteArrayOf(0x80.toByte(), 0x0c),
+        )
+        for ((case, pointer) in pointers) {
+            val packet = response(0x1234, names, name = pointer)
+            assertEquals(NodeStatusReply.Malformed, parseNodeStatus(packet, packet.size, 0x1234), case)
+        }
     }
+
+    @Test
+    fun `a name is skipped over a pointer only when the pointer goes back to a well formed name`() {
+        val name = byteArrayOf(2, 'N'.code.toByte(), 'S'.code.toByte(), 0)
+        val packet = ByteArray(12) + name + byteArrayOf(0xc0.toByte(), 12, 9, 9)
+        assertEquals(16, skipName(packet, 12, packet.size))
+        assertEquals(18, skipName(packet, 16, packet.size))
+        val viaPointer = ByteArray(12) + name + byteArrayOf(3, 'A'.code.toByte(), 'B'.code.toByte(), 'C'.code.toByte(), 0xc0.toByte(), 12)
+        assertEquals(viaPointer.size, skipName(viaPointer, 16, viaPointer.size))
+        val cut = ByteArray(12) + byteArrayOf(1, 'N'.code.toByte(), 0xc0.toByte(), 12)
+        assertEquals(null, skipName(cut, 14, cut.size), "the name it points at runs into the pointer")
+        val loop = ByteArray(12) + byteArrayOf(0xc0.toByte(), 14, 0xc0.toByte(), 12)
+        assertEquals(null, skipName(loop, 12, loop.size), "two pointers at each other")
+        assertEquals(null, skipName(packet, 16, 17), "a pointer cut short")
+    }
+
+    @Test
+    fun `an answer with a question or other than one answer is malformed`() {
+        val names = listOf(Entry("NAS", 0x20))
+        for ((case, packet) in mapOf(
+            "a question" to response(0x1234, names, questions = 1),
+            "two answers" to response(0x1234, names, answers = 2),
+            "no answer" to response(0x1234, names, answers = 0),
+        )) {
+            assertEquals(NodeStatusReply.Malformed, parseNodeStatus(packet, packet.size, 0x1234), case)
+        }
+    }
+
+    @Test
+    fun `the statistics after the name table are not read`() {
+        val withoutStatistics = response(0x1234, listOf(Entry("NAS", 0x20)), statistics = 0)
+        assertEquals(NodeStatusReply.FileServer("NAS"), parseNodeStatus(withoutStatistics, withoutStatistics.size, 0x1234))
+        val long = response(0x1234, listOf(Entry("NAS", 0x20)), statistics = 80)
+        assertEquals(NodeStatusReply.FileServer("NAS"), parseNodeStatus(long, long.size, 0x1234))
+    }
+
 
     @Test
     fun `a machine without a unique 0x20 name is not a file server`() {
@@ -182,6 +228,8 @@ private fun response(
     entries: List<Entry>,
     flags: Int = 0x8400,
     answers: Int = 1,
+    questions: Int = 0,
+    statistics: Int = 46,
     name: ByteArray = encodedStar(),
     type: Int = 0x0021,
     count: Int = entries.size,
@@ -195,14 +243,14 @@ private fun response(
             writeByte(entry.suffix)
             writeShort(entry.flags)
         }
-        write(ByteArray(46))
+        write(ByteArray(statistics))
     }
     val data = table.toByteArray()
     val bytes = ByteArrayOutputStream()
     DataOutputStream(bytes).run {
         writeShort(id)
         writeShort(flags)
-        writeShort(0)
+        writeShort(questions)
         writeShort(answers)
         writeShort(0)
         writeShort(0)

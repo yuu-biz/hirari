@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.net.nsd.NsdManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -23,6 +24,7 @@ import io.github.yuubiz.hirari.core.source.smb.NodeStatusBrowser
 import io.github.yuubiz.hirari.core.source.smb.NsdBrowser
 import io.github.yuubiz.hirari.core.source.smb.ServerFinder
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
+import io.github.yuubiz.hirari.core.source.smb.WifiMulticastHold
 import io.github.yuubiz.hirari.core.source.smb.networkAvailable
 import io.github.yuubiz.hirari.feature.library.AndroidLocalNetwork
 import io.github.yuubiz.hirari.feature.library.Covers
@@ -94,7 +96,7 @@ class HirariApp : Application() {
         val smbPlaces = appScope.async {
             val servers = ServerFinder(
                 ConnectivityLanNetworks(getSystemService(ConnectivityManager::class.java)),
-                NsdBrowser(getSystemService(NsdManager::class.java)),
+                NsdBrowser(getSystemService(NsdManager::class.java), WifiMulticastHold(applicationContext.getSystemService(WifiManager::class.java))),
                 NodeStatusBrowser(),
             )
             SmbjPlaces(smbPool.await().shares, storage.await().credentials, AndroidLocalNetwork(this@HirariApp), appScope, serverFinder = servers)

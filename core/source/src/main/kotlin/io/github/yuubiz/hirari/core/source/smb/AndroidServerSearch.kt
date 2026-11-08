@@ -5,9 +5,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.annotation.TargetApi
 import android.os.Build
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -48,17 +48,67 @@ private fun Network.datagramSocket(): DatagramSocket {
 }
 
 /**
- * `_smb._tcp` over [NsdManager], each service resolved once by name. From API 34 a service info callback resolves
- * them side by side; before it, resolves go one at a time, since the system refuses a second while one is under way.
+ * A [WifiManager.MulticastLock] that is not reference counted. Older Android drops the multicast answers of DNS-SD
+ * without it, so a search holds it whatever the API level (docs/spec.md section 4.5). Without a Wi-Fi service, or if the
+ * system refuses the lock, the search goes on without it.
  */
-class NsdBrowser(private val nsd: NsdManager) : DnsSdBrowser {
-    override fun services(): Flow<DnsSdService> = callbackFlow {
+class WifiMulticastHold(private val wifi: WifiManager?) : MulticastHold {
+    private val lock: WifiManager.MulticastLock? by lazy {
+        wifi?.createMulticastLock(MULTICAST_LOCK_TAG)?.apply { setReferenceCounted(false) }
+    }
+
+    override fun acquire() {
+        try {
+            lock?.acquire()
+        } catch (_: SecurityException) {
+        }
+    }
+
+    override fun release() {
+        try {
+            lock?.takeIf { it.isHeld }?.release()
+        } catch (_: RuntimeException) {
+        }
+    }
+}
+
+private const val MULTICAST_LOCK_TAG = "hirari-smb-search"
+
+/**
+ * `_smb._tcp` over [NsdManager], each service resolved once by name, with [multicast] held while it runs. From API 34
+ * a service info callback resolves them side by side; before it, resolves go one at a time across every search of this
+ * browser, since the system refuses a second while one is under way.
+ */
+class NsdBrowser(private val nsd: NsdManager, private val multicast: MulticastHold) : DnsSdBrowser {
+    @Suppress("DEPRECATION")
+    private val legacy = SerialResolver<NsdServiceInfo> { found, reply ->
+        nsd.resolveService(
+            found,
+            object : NsdManager.ResolveListener {
+                override fun onServiceResolved(info: NsdServiceInfo) {
+                    val address = info.host as? Inet4Address
+                    reply(if (address == null) Resolution.Failed else Resolution.Found(DnsSdService(found.serviceName, host = null, address, info.port)))
+                }
+
+                override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                    reply(if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE) Resolution.Busy else Resolution.Failed)
+                }
+            },
+        )
+    }
+
+    override fun services(): Flow<DnsSdService> = discover().whileHolding(multicast)
+
+    private fun discover(): Flow<DnsSdService> = callbackFlow {
         val seen = HashSet<String>()
         val resolver = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) CallbackResolver(nsd) else null
         val queue = Channel<NsdServiceInfo>(Channel.UNLIMITED)
         if (resolver == null) {
             launch {
-                for (info in queue) resolveOnce(nsd, info)?.let { send(it) }
+                for (info in queue) {
+                    val service = legacy.resolve(info)
+                    if (service != null) send(service) else synchronized(seen) { seen.remove(info.serviceName) }
+                }
             }
         }
         val listener = object : NsdManager.DiscoveryListener {
@@ -89,25 +139,6 @@ class NsdBrowser(private val nsd: NsdManager) : DnsSdBrowser {
             resolver?.close()
         }
     }
-}
-
-/** Resolves [found] with the API before 34 and waits for its one answer; a late answer after cancellation is dropped. */
-@Suppress("DEPRECATION")
-private suspend fun resolveOnce(nsd: NsdManager, found: NsdServiceInfo): DnsSdService? {
-    val answer = CompletableDeferred<DnsSdService?>()
-    nsd.resolveService(
-        found,
-        object : NsdManager.ResolveListener {
-            override fun onServiceResolved(info: NsdServiceInfo) {
-                answer.complete((info.host as? Inet4Address)?.let { DnsSdService(found.serviceName, host = null, it, info.port) })
-            }
-
-            override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
-                answer.complete(null)
-            }
-        },
-    )
-    return answer.await()
 }
 
 @TargetApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)

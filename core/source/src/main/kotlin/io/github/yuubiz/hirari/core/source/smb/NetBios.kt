@@ -82,8 +82,9 @@ internal fun nodeStatusRequest(transactionId: Int): ByteArray {
 }
 
 /**
- * Reads the first [length] bytes of [packet] as the answer to the request [transactionId]. Every field is checked
- * against the bytes that came, so a short or inconsistent datagram is [NodeStatusReply.Malformed].
+ * Reads the first [length] bytes of [packet] as the answer to the request [transactionId]: no question and one answer.
+ * Every field is checked against the bytes that came, so a short or inconsistent datagram is [NodeStatusReply.Malformed].
+ * The statistics after the name table are not read, since responders differ in them.
  */
 internal fun parseNodeStatus(packet: ByteArray, length: Int, transactionId: Int): NodeStatusReply {
     val end = length.coerceAtMost(packet.size)
@@ -93,7 +94,8 @@ internal fun parseNodeStatus(packet: ByteArray, length: Int, transactionId: Int)
         flags and FLAG_RESPONSE != 0 &&
         flags shr 11 and 0xf == 0 &&
         flags and 0xf == 0 &&
-        packet.short(6) >= 1
+        packet.short(4) == 0 &&
+        packet.short(6) == 1
     if (!valid) return NodeStatusReply.Malformed
     var at = skipName(packet, HEADER_LENGTH, end) ?: return NodeStatusReply.Malformed
     if (at + 10 > end) return NodeStatusReply.Malformed
@@ -114,14 +116,27 @@ internal fun parseNodeStatus(packet: ByteArray, length: Int, transactionId: Int)
     return NodeStatusReply.NoFileServer
 }
 
-/** The offset after the encoded name at [start], which ends in a zero length or a two-byte pointer. */
-private fun skipName(packet: ByteArray, start: Int, end: Int): Int? {
+/**
+ * The offset after the name at [start] in the first [end] bytes. A name ends in a zero length or a two-byte pointer.
+ * A pointer is followed only backwards, to a position after the header and before the pointer itself, and the name it
+ * reaches must end before that pointer, so a pointer to itself, ahead or into the header, and any loop, is null.
+ */
+internal fun skipName(packet: ByteArray, start: Int, end: Int): Int? {
     var at = start
-    while (at < end) {
+    var limit = end
+    var after: Int? = null
+    while (at < limit) {
         val label = packet[at].toInt() and 0xff
         when {
-            label == 0 -> return at + 1
-            label and 0xc0 == 0xc0 -> return (at + 2).takeIf { it <= end }
+            label == 0 -> return after ?: (at + 1)
+            label and 0xc0 == 0xc0 -> {
+                if (at + 2 > limit) return null
+                val target = (label and 0x3f shl 8) or (packet[at + 1].toInt() and 0xff)
+                if (target < HEADER_LENGTH || target >= at) return null
+                if (after == null) after = at + 2
+                limit = at
+                at = target
+            }
             label and 0xc0 != 0 -> return null
             else -> at += 1 + label
         }

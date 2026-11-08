@@ -4,7 +4,6 @@ import io.github.yuubiz.hirari.core.model.NaturalOrder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -20,7 +19,11 @@ import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.util.concurrent.Executor
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.FutureTask
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -145,17 +148,19 @@ internal fun Map<Inet4Address, DiscoveredServer>.with(host: NetBiosHost): Map<In
 /**
  * What the host field gets for a chosen row (docs/spec.md section 4.5): [DiscoveredServer.hostName] when looking it
  * up within [limit] gives the row's address, else the dotted address. The lookup has no timeout of its own, so it runs
- * on [executor] and is left behind when [limit] passes or the caller is cancelled.
+ * on [lookups], whose few threads and short queue bound what a lookup that never answers can hold. A lookup that has
+ * not started when [limit] passes or the caller is cancelled is taken off the queue and never runs; one that has
+ * started is left behind. When the queue is full the answer is the address at once.
  */
 suspend fun DiscoveredServer.hostField(
     limit: Duration = HOST_LOOKUP_LIMIT,
     lookup: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
-    executor: Executor = Dispatchers.IO.asExecutor(),
+    lookups: ThreadPoolExecutor = HostLookups.shared,
 ): String {
     val dotted = address.hostAddress.orEmpty()
     val name = hostName ?: return dotted
     val answer = CompletableDeferred<List<InetAddress>>()
-    executor.execute {
+    val task = FutureTask<Unit> {
         answer.complete(
             try {
                 lookup(name)
@@ -164,10 +169,32 @@ suspend fun DiscoveredServer.hostField(
             },
         )
     }
-    val addresses = withTimeoutOrNull(limit) { answer.await() }.orEmpty()
+    try {
+        lookups.execute(task)
+    } catch (_: RejectedExecutionException) {
+        return dotted
+    }
+    val addresses = try {
+        withTimeoutOrNull(limit) { answer.await() }.orEmpty()
+    } finally {
+        if (task.cancel(false)) lookups.remove(task)
+    }
     return if (address in addresses) name else dotted
 }
 
 val HOST_LOOKUP_LIMIT = 2.seconds
+
+/** The threads and the queue that name lookups of [hostField] share. */
+internal object HostLookups {
+    const val THREADS = 2
+    const val QUEUE = 8
+
+    fun newExecutor(threads: Int = THREADS, queue: Int = QUEUE): ThreadPoolExecutor =
+        ThreadPoolExecutor(threads, threads, 10, TimeUnit.SECONDS, ArrayBlockingQueue(queue), { runnable ->
+            Thread(runnable, "hirari-host-lookup").apply { isDaemon = true }
+        }, ThreadPoolExecutor.AbortPolicy()).apply { allowCoreThreadTimeOut(true) }
+
+    val shared: ThreadPoolExecutor by lazy { newExecutor() }
+}
 
 private const val SMB_DEFAULT_PORT = 445

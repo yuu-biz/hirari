@@ -25,6 +25,7 @@ Hirari は開発者にデータを送りません。利用状況の収集、広�
 | `INTERNET` | 登録した SMB サーバーに接続するため | インストール時に宣言します |
 | `ACCESS_LOCAL_NETWORK` | 登録した LAN 内の SMB サーバーに接続するため | Android 17（API 37）以上で、SMB の接続を試すときや保存するときに求めます。この権限が原因で失敗した一覧を読み直すときも求めます |
 | `ACCESS_NETWORK_STATE` | ネットワークの変化を知り、SMB に再接続するため | インストール時に宣言します |
+| `CHANGE_WIFI_MULTICAST_STATE` | 「サーバーを探す」を開いている間だけ、Wi-Fi でマルチキャストの答えを受け取るため | インストール時に宣言します |
 | `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC` | 画面を離れても「端末に保存」を続けるため | インストール時に宣言します |
 | `POST_NOTIFICATIONS` | 「端末に保存」の進み具合と結果を知らせるため | Android 13（API 33）以上で、最初の保存を始めるときに求めます。断っても保存は続きます |
 | `RECORD_AUDIO` | 「息でめくる」で音量を計るため | 「息でめくる」をオンにしたときだけ求めます |
