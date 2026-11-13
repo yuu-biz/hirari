@@ -130,8 +130,6 @@ sealed interface PanelItem : PanelTarget {
     /** Closes the reader. */
     data object Close : PanelItem
     data object Menu : PanelItem
-    data object More : PanelItem
-
     /** An empty slot of the visible row, which does nothing. */
     data object Blank : PanelItem
     data class Command(val command: ReaderCommand) : PanelItem

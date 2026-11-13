@@ -142,7 +142,7 @@ internal class ReaderInput(
         val origin = down.position.dp(density)
         var moved = false
         down.consume()
-        val cell = row.indexAt(origin)
+        val cell = row.indexAt(origin)?.takeIf { row.cells[it] != PanelItem.Blank }
         ui.pressed = cell
         try {
             while (true) {

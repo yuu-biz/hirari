@@ -79,7 +79,6 @@ internal fun runPanelItem(item: PanelItem, viewModel: ReaderViewModel, ui: Reade
     when (item) {
         PanelItem.Close -> onClose()
         PanelItem.Menu -> ui.toggleMenu()
-        PanelItem.More -> ui.commandBar = CommandBarState.Open
         PanelItem.Blank -> Unit
         is PanelItem.Command ->
             if (item.command == ReaderCommand.ShiftPairing && viewModel.state?.shiftsPairs == false) ui.message = R.string.shift_needs_spread

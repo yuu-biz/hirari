@@ -590,7 +590,6 @@ internal fun PanelItem.enabled(shiftsPairs: Boolean): Boolean = this != PanelIte
 internal fun PanelItem.label(): String = when (this) {
     PanelItem.Close -> stringResource(R.string.panel_close)
     PanelItem.Menu -> stringResource(R.string.panel_menu)
-    PanelItem.More -> stringResource(R.string.panel_more)
     PanelItem.Blank -> ""
     is PanelItem.Command -> stringResource(command.label)
 }
@@ -599,7 +598,6 @@ internal val PanelItem.icon: ImageVector?
     get() = when (this) {
         PanelItem.Close -> BarIcons.Close
         PanelItem.Menu -> BarIcons.Menu
-        PanelItem.More -> BarIcons.More
         PanelItem.Blank -> null
         is PanelItem.Command -> command.icon
     }

@@ -129,7 +129,7 @@ class ReaderBarsTest {
         assertNull(row.tapped(Point(row.cellWidth * 1.9f, 820f), Point(row.cellWidth * 3.1f, 820f), moved = false))
         val narrow = CommandRow(ReaderCommand.DefaultSlots, Rect(0f, 794f, 240f, 854f))
         assertEquals(5, narrow.cells.size)
-        assertTrue(PanelItem.More !in narrow.cells)
+        assertEquals(listOf(PanelItem.Command(ReaderCommand.BookSettings)) + ReaderCommand.DefaultSlots.map { PanelItem.Command(it!!) } + PanelItem.Menu, narrow.cells)
     }
 
     @Test

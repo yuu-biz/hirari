@@ -50,10 +50,10 @@ import io.github.yuubiz.hirari.core.model.ReadingDirection
 private const val ICON_MIN_BAR_DP = 52f
 
 /** The amber the assignable slots of the command row are tinted with, apart from the fixed buttons. */
-private val SlotTint = Color(0xFFF2C46A)
+internal val SlotTint = Color(0xFFF2C46A)
 
 /** How much of the text color, or of [SlotTint], the parts of the bars carry. */
-private object BarAlpha {
+internal object BarAlpha {
     const val DIVIDER = 0.14f
     const val BUTTON = 0.12f
     const val PRESSED = 0.24f

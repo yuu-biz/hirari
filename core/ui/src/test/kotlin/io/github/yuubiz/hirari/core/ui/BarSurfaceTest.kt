@@ -1,6 +1,7 @@
 package io.github.yuubiz.hirari.core.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import org.junit.Test
 import kotlin.test.assertNotEquals
@@ -23,6 +24,17 @@ class BarSurfaceTest {
         for (background in backgrounds) {
             val ratio = contrast(readableOn(background), barSurface(background))
             assertTrue(ratio >= 4.5f, "text on the bar over $background has contrast $ratio")
+        }
+    }
+
+    @Test
+    fun textOnAnAmberSlotReadsOnEveryBackgroundEvenWhilePressed() {
+        for (background in backgrounds) {
+            for (alpha in listOf(BarAlpha.SLOT, BarAlpha.SLOT_PRESSED)) {
+                val slot = SlotTint.copy(alpha = alpha).compositeOver(barSurface(background))
+                val ratio = contrast(readableOn(background), slot)
+                assertTrue(ratio >= 4.5f, "text on a slot at $alpha over $background has contrast $ratio")
+            }
         }
     }
 
