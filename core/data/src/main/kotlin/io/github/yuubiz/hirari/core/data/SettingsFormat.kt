@@ -1,5 +1,7 @@
 package io.github.yuubiz.hirari.core.data
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -7,10 +9,10 @@ import kotlinx.serialization.json.JsonPrimitive
  * The version of the stored settings and of the settings file (docs/spec.md sections 4.11 and 7). A newer file
  * still reads; keys this version does not know are ignored.
  */
-internal const val SETTINGS_FORMAT = 2
+internal const val SETTINGS_FORMAT = 3
 
 /** A default that a format changed: a setting stored as [before] was most likely never chosen, and reads as [after]. */
-private class ChangedDefault(val key: String, val before: JsonPrimitive, val after: JsonPrimitive)
+private class ChangedDefault(val key: String, val before: JsonElement, val after: JsonElement)
 
 /** The defaults each format changed, by the format that changed them. */
 private val changedDefaults: Map<Int, List<ChangedDefault>> = mapOf(
@@ -20,7 +22,12 @@ private val changedDefaults: Map<Int, List<ChangedDefault>> = mapOf(
         ChangedDefault("scaleMode", JsonPrimitive("FitScreen"), JsonPrimitive("FitPage")),
         ChangedDefault("tapAdvancesStops", JsonPrimitive(false), JsonPrimitive(true)),
     ),
+    3 to listOf(
+        ChangedDefault("commandBarItems", names("Orientation", "Trim", "Layout", "ScaleMode"), names("ShiftPairing", "ScaleMode", "AddBookmark")),
+    ),
 )
+
+private fun names(vararg names: String) = JsonArray(names.map(::JsonPrimitive))
 
 /**
  * These settings, written in [format], as the current format reads them: a setting that still holds a default a

@@ -69,7 +69,7 @@ private val commandChoices: List<Option<ReaderCommand>> = listOf(
     ReaderCommand.Gutter to "綴じ目の表示",
     ReaderCommand.EditCommandBar to "コマンドバーの編集",
     ReaderCommand.Breath to "息で操作",
-    ReaderCommand.BookSettings to "本ごとの設定",
+    ReaderCommand.BookSettings to "表示",
     ReaderCommand.SetCover to "表紙にする",
     ReaderCommand.SharePage to "ページを共有",
     ReaderCommand.Settings to "設定",
@@ -181,13 +181,12 @@ val SettingsTable: List<Setting> = buildList {
         ) { s, v -> s.copy(barHeightDp = v) },
     )
     add(
-        OrderedSetSetting(
+        SlotsSetting(
             key = GlobalSettings::commandBarItems.name,
             group = controls,
             label = "コマンドバーの項目",
-            note = "最大 ${ReaderCommand.MAX_ITEMS} 個まで選べます。",
-            choices = commandChoices,
-            max = ReaderCommand.MAX_ITEMS,
+            note = "表示とメニューの間の ${ReaderCommand.SLOTS} つの枠に入れる操作です。",
+            choices = commandChoices.filter { it.value != ReaderCommand.BookSettings },
             read = GlobalSettings::commandBarItems,
             write = { s, v -> s.copy(commandBarItems = v) },
         ),

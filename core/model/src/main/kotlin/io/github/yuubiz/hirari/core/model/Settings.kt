@@ -64,8 +64,15 @@ enum class ReaderCommand {
     ;
 
     companion object {
-        val Defaults = listOf(Orientation, Trim, Layout, ScaleMode)
-        const val MAX_ITEMS = 8
+        /** How many slots the command row assigns, between the fixed 表示 and メニュー (docs/spec.md section 4.8). */
+        const val SLOTS = 3
+
+        /** The slots as they come, `null` for an empty one. */
+        val DefaultSlots: List<ReaderCommand?> = listOf(ShiftPairing, ScaleMode, AddBookmark)
+
+        /** Exactly [SLOTS] slots: missing ones are empty, extra ones dropped, and the fixed [BookSettings] empties its slot. */
+        fun slots(commands: List<ReaderCommand?>): List<ReaderCommand?> =
+            (commands.map { it.takeUnless { command -> command == BookSettings } } + List(SLOTS) { null }).take(SLOTS)
     }
 }
 

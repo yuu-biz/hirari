@@ -45,7 +45,7 @@ data class ReaderConfig(
     val barHeightDp: Float = 60f,
     val barDisplay: BarDisplay = BarDisplay.Portrait,
     val gutter: GutterStyle = GutterStyle.Gap,
-    val commandBarItems: List<ReaderCommand> = ReaderCommand.Defaults,
+    val commandBarItems: List<ReaderCommand?> = ReaderCommand.DefaultSlots,
     /** The book's rotation (docs/spec.md section 2.9), which has no global setting. */
     val rotation: Rotation = Rotation.None,
     val orientation: ReaderOrientation = ReaderOrientation.System,

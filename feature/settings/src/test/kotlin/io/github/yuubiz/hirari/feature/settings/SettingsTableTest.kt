@@ -39,11 +39,9 @@ class SettingsTableTest {
         is ChoiceSetting<*> -> setting.options.map { it.value }
         is SliderSetting<*> -> setting.values(base)
         is ColorSetting<*> -> (setting as ColorSetting<Any?>).let { color -> color.presets.map { it.value } + color.custom(Rgb(0x123456)) }
-        is OrderedSetSetting -> listOf(
-            emptyList<Any?>(),
-            setting.choices.map { it.value }.take(setting.max),
-            setting.choices.map { it.value }.take(3).reversed(),
-        )
+        is SlotsSetting -> setting.choices.map { it.value }.let { commands ->
+            listOf(listOf(null, null, null), commands.take(3), listOf(commands[3], null, commands[0]))
+        }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -52,7 +50,7 @@ class SettingsTableTest {
         is ChoiceSetting<*> -> (setting as ChoiceSetting<Any?>).write(base, value)
         is SliderSetting<*> -> (setting as SliderSetting<Any?>).write(base, value)
         is ColorSetting<*> -> (setting as ColorSetting<Any?>).write(base, value)
-        is OrderedSetSetting -> setting.write(base, value as List<ReaderCommand>)
+        is SlotsSetting -> setting.write(base, value as List<ReaderCommand?>)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -61,7 +59,7 @@ class SettingsTableTest {
         is ChoiceSetting<*> -> setting.read(settings)
         is SliderSetting<*> -> setting.read(settings)
         is ColorSetting<*> -> setting.read(settings)
-        is OrderedSetSetting -> setting.read(settings)
+        is SlotsSetting -> setting.read(settings)
     }
 
     @Test
@@ -136,7 +134,7 @@ class SettingsTableTest {
                     val color = setting as ColorSetting<Any?>
                     assertTrue(default in color.presets.map { it.value } || color.customOf(default) != null, setting.key)
                 }
-                is OrderedSetSetting -> assertTrue(setting.choices.map { it.value }.containsAll(defaults.commandBarItems), setting.key)
+                is SlotsSetting -> assertTrue(setting.choices.map { it.value }.containsAll(defaults.commandBarItems.filterNotNull()), setting.key)
                 else -> assertTrue(default in candidates(setting, defaults), "${setting.key} default $default is not offered")
             }
         }

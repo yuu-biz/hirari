@@ -95,19 +95,23 @@ class ColorSetting<T>(
         presets.firstOrNull { it.value == value }?.label ?: customOf(value)?.let(::hexOf) ?: value.toString()
 }
 
-/** An ordered choice of at most [max] distinct items out of [choices]. */
-class OrderedSetSetting(
+/** [ReaderCommand.SLOTS] slots, each holding one of [choices] or nothing (`null`). */
+class SlotsSetting(
     key: String,
     group: SettingGroup,
     label: String,
     note: String? = null,
     minSdk: Int = 0,
     val choices: List<Option<ReaderCommand>>,
-    val max: Int,
-    val read: (GlobalSettings) -> List<ReaderCommand>,
-    val write: (GlobalSettings, List<ReaderCommand>) -> GlobalSettings,
+    val read: (GlobalSettings) -> List<ReaderCommand?>,
+    val write: (GlobalSettings, List<ReaderCommand?>) -> GlobalSettings,
 ) : Setting(key, group, label, note, minSdk) {
-    fun labelOf(command: ReaderCommand): String = choices.firstOrNull { it.value == command }?.label ?: command.name
+    fun labelOf(command: ReaderCommand?): String =
+        if (command == null) EMPTY_SLOT else choices.firstOrNull { it.value == command }?.label ?: command.name
+
+    companion object {
+        const val EMPTY_SLOT = "空き"
+    }
 }
 
 /** `#RRGGBB`. */

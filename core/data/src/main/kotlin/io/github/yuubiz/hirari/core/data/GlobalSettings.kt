@@ -85,7 +85,7 @@ data class GlobalSettings(
     val turnHaptics: Boolean = false,
     val barHeightDp: Int = 60,
     @Serializable(with = CommandBarItemsSerializer::class)
-    val commandBarItems: List<ReaderCommand> = ReaderCommand.Defaults,
+    val commandBarItems: List<ReaderCommand?> = ReaderCommand.DefaultSlots,
     val autoPlaySeconds: Double = 1.5,
 
     val barDisplay: BarDisplay = BarDisplay.Portrait,
@@ -155,7 +155,7 @@ data class GlobalSettings(
             if (tapLayout == TapLayout.BothSideBands || tapLayout == TapLayout.TopAndBottomBands) TAP_TWO_BAND_PERCENT else TAP_BAND_PERCENT,
         ),
         barHeightDp = barHeightDp.snapTo(BAR_HEIGHT_DP),
-        commandBarItems = commandBarItems.distinct().take(ReaderCommand.MAX_ITEMS),
+        commandBarItems = ReaderCommand.slots(commandBarItems),
         autoPlaySeconds = AUTO_PLAY_SECONDS.snap(autoPlaySeconds),
         readerBrightness = readerBrightness?.snapTo(READER_BRIGHTNESS),
         thumbnailParallelism = THUMBNAIL_PARALLELISM.minBy { abs(it.toLong() - thumbnailParallelism) },

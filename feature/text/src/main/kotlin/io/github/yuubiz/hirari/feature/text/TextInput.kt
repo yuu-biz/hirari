@@ -183,6 +183,10 @@ internal class TextInput(
     private val edges: () -> SystemGestureEdges,
     private val openingSettings: () -> GlobalSettings = { GlobalSettings() },
 ) {
+    /** The button of the visible command row under a finger that has not moved off it. */
+    var pressed: TextPanelItem? by mutableStateOf(null)
+        private set
+
     suspend fun PointerInputScope.handle() {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -206,17 +210,23 @@ internal class TextInput(
         val origin = down.position.dp(density)
         var moved = false
         down.consume()
-        while (true) {
-            val event = awaitPointerEvent()
-            val change = event.changes.firstOrNull { it.id == down.id } ?: return
-            val taken = change.takenBySystem
-            val point = change.position.dp(density)
-            moved = moved || hypot(point.x - origin.x, point.y - origin.y) > slop || event.changes.any { it.id != down.id }
-            event.changes.forEach { it.consume() }
-            if (!change.pressed) {
-                if (!taken) row.tapped(origin, point, moved)?.let(onItem)
-                return
+        pressed = row.itemAt(origin)
+        try {
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id } ?: return
+                val taken = change.takenBySystem
+                val point = change.position.dp(density)
+                moved = moved || hypot(point.x - origin.x, point.y - origin.y) > slop || event.changes.any { it.id != down.id }
+                if (moved || taken) pressed = null
+                event.changes.forEach { it.consume() }
+                if (!change.pressed) {
+                    if (!taken) row.tapped(origin, point, moved)?.let(onItem)
+                    return
+                }
             }
+        } finally {
+            pressed = null
         }
     }
 

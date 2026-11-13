@@ -27,21 +27,23 @@ class ReaderBarsAccessibilityTest {
 
     @Test
     fun visibleCellsAreButtonsAndInfoAndPageBarsOpenTheirPanels() {
-        val config = ReaderConfig(barDisplay = BarDisplay.Always, commandBarItems = ReaderCommand.entries.take(8))
+        val config = ReaderConfig(barDisplay = BarDisplay.Always, commandBarItems = listOf(ReaderCommand.Layout, null, ReaderCommand.Trim))
         val state = readerOf(List(4) { TALL }, config, Viewport(411f, 914f, 1f))
         val items = mutableListOf<PanelItem>()
         val controls = mutableListOf<ReaderControl>()
         rule.setContent {
             Box(Modifier.requiredSize(411.dp, 914.dp)) {
-                ReaderBars(ReaderBackground.White, "長い本の名前.zip", state, { controls += it }, { items += it })
+                ReaderBars(ReaderBackground.White, "長い本の名前.zip", state, null, { controls += it }, { items += it })
             }
         }
-        for (label in listOf("閉じる", "メニュー", "その他", "組み方")) {
+        for (label in listOf("表示", "メニュー", "組み方")) {
             val node = rule.onNodeWithText(label).fetchSemanticsNode()
             assertEquals(Role.Button, node.config.getOrNull(SemanticsProperties.Role))
             rule.onNodeWithText(label).performSemanticsAction(SemanticsActions.OnClick)
         }
-        assertEquals(listOf(PanelItem.Close, PanelItem.Menu, PanelItem.More, PanelItem.Command(ReaderCommand.Layout)), items)
+        assertEquals(listOf(PanelItem.Command(ReaderCommand.BookSettings), PanelItem.Menu, PanelItem.Command(ReaderCommand.Layout)), items)
+        rule.onNodeWithText("閉じる").assertDoesNotExist()
+        rule.onNodeWithText("その他").assertDoesNotExist()
         rule.onNodeWithText("長い本の名前.zip", substring = true).performSemanticsAction(SemanticsActions.OnClick)
         // Default overlay positions are Off, yet the visible page bar and the info strip both show the number.
         rule.onNodeWithText("1-2 / 4", useUnmergedTree = true).assertExists()

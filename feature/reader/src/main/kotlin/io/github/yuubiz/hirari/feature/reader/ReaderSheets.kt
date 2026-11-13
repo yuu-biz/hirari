@@ -305,16 +305,17 @@ private fun MenuRow(label: Int, value: String?, onClick: () -> Unit) {
 
 @Composable
 private fun MenuItem.value(viewModel: ReaderViewModel, state: ReaderState): String? = when (this) {
-    MenuItem.Orientation -> stringResource(
-        when (state.config.orientation) {
-            ReaderOrientation.Portrait -> R.string.orientation_portrait
-            ReaderOrientation.Landscape -> R.string.orientation_landscape
-            ReaderOrientation.System -> R.string.orientation_device
-        },
-    )
+    MenuItem.Orientation -> stringResource(state.config.orientation.label)
     MenuItem.MirrorControls -> stringResource(if (state.config.mirrored) R.string.menu_on else R.string.menu_off)
     else -> null
 }
+
+internal val ReaderOrientation.label: Int
+    get() = when (this) {
+        ReaderOrientation.Portrait -> R.string.orientation_portrait
+        ReaderOrientation.Landscape -> R.string.orientation_landscape
+        ReaderOrientation.System -> R.string.orientation_device
+    }
 
 private val MenuItem.label: Int
     get() = when (this) {

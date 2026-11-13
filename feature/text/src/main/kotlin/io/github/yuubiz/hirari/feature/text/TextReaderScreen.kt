@@ -100,6 +100,9 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.delay
 import io.github.yuubiz.hirari.core.ui.PageBarGestureExclusion
 import io.github.yuubiz.hirari.core.ui.systemGestureEdges
+import androidx.compose.runtime.SideEffect
+import io.github.yuubiz.hirari.core.ui.barSurface
+import io.github.yuubiz.hirari.core.ui.insetEdges
 
 /**
  * Hands key events to the open text reader. The activity calls [dispatch] from `dispatchKeyEvent` before Compose
@@ -163,6 +166,7 @@ fun TextReaderScreen(
     var panel by rememberSaveable { mutableStateOf<TextPanel?>(null) }
     var bookEndEdge by rememberSaveable { mutableStateOf<BookEdge?>(null) }
     var orientation by rememberSaveable { mutableStateOf<ReaderOrientation?>(null) }
+    var barsShown by remember { mutableStateOf(false) }
     var touched by remember { mutableIntStateOf(0) }
     val touch = remember { TextTouch() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
@@ -244,11 +248,14 @@ fun TextReaderScreen(
                     ReaderOrientation.Landscape -> ReaderOrientation.System
                 }
             }
+            val background = readerBackgroundColor(s.settings.readerBackground)
+            val insets = readerInsets(s.settings.hideSystemBars)
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(readerBackgroundColor(s.settings.readerBackground))
-                    .windowInsetsPadding(readerInsets(s.settings.hideSystemBars)),
+                    .background(background)
+                    .insetEdges(insets, if (barsShown) barSurface(background) else null)
+                    .windowInsetsPadding(insets),
             ) {
                 Reading(
                     s, viewModel, touch, bounds,
@@ -267,6 +274,7 @@ fun TextReaderScreen(
                             TextControl.OpenCommands -> panel = TextPanel.Commands
                         }
                     },
+                    onBarsShown = { barsShown = it },
                 )
                 TextPanels(panel, s, viewModel, bounds, touch.highlight, onPanel = { panel = it }, onClose = back, onCommand = run)
                 BookEndEffects(viewModel, onAsk = { edge ->
@@ -319,6 +327,7 @@ private fun Reading(
     turn: (Turn, Float?) -> Unit,
     accessible: Boolean,
     onControl: (TextControl) -> Unit,
+    onBarsShown: (Boolean) -> Unit,
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -337,9 +346,11 @@ private fun Reading(
             .then(if (accessible) Modifier.textAccessibility(state, onControl) else Modifier.clearAndSetSemantics {}),
     ) {
         val regions = textRegions(Size(constraints.maxWidth / density.density, constraints.maxHeight / density.density), state.settings)
+        val barsShown = regions.commandRow != null
+        SideEffect { onBarsShown(barsShown) }
         PageBarGestureExclusion(state.settings.barHeightDp.toFloat())
         if (regions.commandRow != null) {
-            TextBars(state, regions, onControl, onItem)
+            TextBars(state, regions, input.pressed, onControl, onItem)
         } else if (accessible) {
             BarSemantics(
                 state.settings.barHeightDp.toFloat(),

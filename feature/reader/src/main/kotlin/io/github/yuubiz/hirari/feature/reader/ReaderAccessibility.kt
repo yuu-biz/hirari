@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.traversalIndex
 import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.ReaderAction
+import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Turn
 import io.github.yuubiz.hirari.core.ui.BarSemantics
 
@@ -70,13 +71,19 @@ internal fun ControlEffect.applyTo(viewModel: ReaderViewModel, ui: ReaderUi) {
     }
 }
 
-/** Runs a panel item of the command bar: 閉じる closes the reader, メニュー opens the menu, a command runs. */
+/**
+ * Runs a panel item of the command bar: 閉じる closes the reader, メニュー opens the menu, an empty slot does nothing,
+ * and a command runs, except 組ずらし away from a spread, which only says when it works (docs/spec.md section 4.8).
+ */
 internal fun runPanelItem(item: PanelItem, viewModel: ReaderViewModel, ui: ReaderUi, onClose: () -> Unit) {
     when (item) {
         PanelItem.Close -> onClose()
         PanelItem.Menu -> ui.toggleMenu()
         PanelItem.More -> ui.commandBar = CommandBarState.Open
-        is PanelItem.Command -> ui.follow(viewModel.command(item.command, SystemClock.uptimeMillis()))
+        PanelItem.Blank -> Unit
+        is PanelItem.Command ->
+            if (item.command == ReaderCommand.ShiftPairing && viewModel.state?.shiftsPairs == false) ui.message = R.string.shift_needs_spread
+            else ui.follow(viewModel.command(item.command, SystemClock.uptimeMillis()))
     }
 }
 

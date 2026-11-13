@@ -1,11 +1,11 @@
 package io.github.yuubiz.hirari.core.model
 
-/** The visible command row: keep both ends and use the last middle cell for overflow. Bounds are dp. */
-data class CommandCells<T>(val commands: List<T>, val close: T, val end: T, val more: T, val bounds: Rect) {
+/** The visible command row: keep both ends, when there is a [close], and use the last middle cell for overflow. Bounds are dp. */
+data class CommandCells<T>(val commands: List<T>, val close: T?, val end: T, val more: T, val bounds: Rect) {
     val cells: List<T> = run {
-        val middle = ((bounds.width / 56f).toInt() - 2).coerceAtLeast(1)
+        val middle = ((bounds.width / 56f).toInt() - if (close == null) 1 else 2).coerceAtLeast(1)
         val items = if (commands.size > middle) commands.take(middle - 1) + more else commands
-        listOf(close) + items + end
+        listOfNotNull(close) + items + end
     }
     val cellWidth: Float get() = bounds.width / cells.size
 

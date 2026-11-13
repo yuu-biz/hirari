@@ -47,16 +47,16 @@ class AccessibilityTest {
     }
 
     @Test
-    fun `the command list is made of labelled buttons and not of arrows`() {
-        val setting = SettingsTable.filterIsInstance<OrderedSetSetting>().single()
-        val settings = GlobalSettings(commandBarItems = listOf(ReaderCommand.Layout, ReaderCommand.Trim))
-        rule.setContent { CommandsDialog(setting, settings, onChange = {}, onClose = {}) }
-        val layout = setting.labelOf(ReaderCommand.Layout)
-        rule.onNodeWithContentDescription(setting.labelOf(ReaderCommand.Layout) + " を下へ").assertExists()
-        rule.onNodeWithContentDescription("$layout を外す").assertExists()
-        assertEquals(0, rule.onAllNodes(hasText("↑") or hasText("×") or hasText("＋")).fetchSemanticsNodes().size)
-        val add = setting.labelOf(setting.choices.map { it.value }.first { it !in settings.commandBarItems })
-        rule.onNodeWithContentDescription("$add を加える").assert(SemanticsMatcher("is a button") { it.config.getOrNull(SemanticsProperties.Role) == Role.Button })
-        assertTrue(rule.onAllNodes(SemanticsMatcher("a heading") { it.config.getOrNull(SemanticsProperties.Heading) != null }).fetchSemanticsNodes().size >= 2)
+    fun `the slots are labelled buttons and a slot opens what it can hold`() {
+        val setting = SettingsTable.filterIsInstance<SlotsSetting>().single()
+        val settings = GlobalSettings(commandBarItems = listOf(ReaderCommand.Layout, null, ReaderCommand.Trim))
+        rule.setContent { SlotsDialog(setting, settings, onChange = {}, onClose = {}) }
+        val button = SemanticsMatcher("is a button") { it.config.getOrNull(SemanticsProperties.Role) == Role.Button }
+        rule.onNodeWithText("枠 2").assert(button)
+        rule.onNodeWithText(SlotsSetting.EMPTY_SLOT).assertExists()
+        rule.onNodeWithText("枠 1").performClick()
+        rule.onNodeWithText("枠 1 に入れる操作").assertExists()
+        rule.onNodeWithText(SlotsSetting.EMPTY_SLOT).assert(button)
+        rule.onNodeWithText(setting.labelOf(ReaderCommand.Layout)).assert(button)
     }
 }

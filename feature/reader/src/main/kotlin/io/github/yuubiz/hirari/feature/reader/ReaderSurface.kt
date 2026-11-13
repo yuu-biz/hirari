@@ -55,7 +55,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import io.github.yuubiz.hirari.core.model.GutterStyle
 import io.github.yuubiz.hirari.core.ui.decorative
+import io.github.yuubiz.hirari.core.ui.BarIcons
 import io.github.yuubiz.hirari.core.ui.ReaderCommandCell
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
@@ -264,14 +266,14 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
         }
         PageBarGestureExclusion(state.config.barHeightDp)
         if (shown) {
-            ReaderBars(viewModel.background, viewModel.bookTitle, state, control) { item ->
+            ReaderBars(viewModel.background, viewModel.bookTitle, state, ui.pressed, control) { item ->
                 if (latest.autoPlay != null) viewModel.dispatch(ReaderEvent.AutoPlayStopped) else runPanelItem(item, viewModel, ui, close)
             }
         } else {
             BarAccessibility(state.config.barHeightDp, control)
         }
         if (ui.commandBar.panelVisible) {
-            CommandPanelView(state.commandPanel(), ui.commandBar) { item ->
+            CommandPanelView(state.commandPanel(), ui.commandBar, state.shiftsPairs) { item ->
                 ui.commandBar = CommandBarState.Closed
                 runPanelItem(item, viewModel, ui, close)
             }
@@ -542,7 +544,7 @@ internal fun OutlinedText(text: String, modifier: Modifier, size: Int) {
 }
 
 @Composable
-private fun CommandPanelView(panel: CommandPanel, state: CommandBarState, onItem: (PanelItem) -> Unit) {
+private fun CommandPanelView(panel: CommandPanel, state: CommandBarState, shiftsPairs: Boolean, onItem: (PanelItem) -> Unit) {
     val highlight = (state as? CommandBarState.Sliding)?.highlight
     val bounds = panel.bounds
     val title = stringResource(R.string.guide_command_bar)
@@ -566,33 +568,66 @@ private fun CommandPanelView(panel: CommandPanel, state: CommandBarState, onItem
         }
         for ((index, cell) in items.withIndex()) {
             val (row, column, item) = cell
-            CommandCell(
-                item,
+            ReaderCommandCell(
+                item.label(),
+                item.icon,
                 Color.White,
                 Modifier
                     .offset((column * cellWidth).dp, (row * cellHeight).dp)
                     .size(cellWidth.dp, cellHeight.dp)
                     .background(if (item == highlight) Color(0x66FFFFFF) else Color.Transparent)
                     .semantics { traversalIndex = index.toFloat() },
-                onItem,
-            )
+                enabled = item.enabled(shiftsPairs),
+            ) { onItem(item) }
         }
     }
 }
 
-/** The same text cell in the panel and the visible command row. Touches are routed by [ReaderInput]. */
-@Composable
-internal fun CommandCell(item: PanelItem, color: Color, modifier: Modifier, onItem: (PanelItem) -> Unit) {
-    ReaderCommandCell(item.label(), color, modifier) { onItem(item) }
-}
+/** Whether [this] runs as it is: 組ずらし away from a spread only says when it works, and shows faded. */
+internal fun PanelItem.enabled(shiftsPairs: Boolean): Boolean = this != PanelItem.Command(ReaderCommand.ShiftPairing) || shiftsPairs
 
 @Composable
 internal fun PanelItem.label(): String = when (this) {
     PanelItem.Close -> stringResource(R.string.panel_close)
     PanelItem.Menu -> stringResource(R.string.panel_menu)
     PanelItem.More -> stringResource(R.string.panel_more)
+    PanelItem.Blank -> ""
     is PanelItem.Command -> stringResource(command.label)
 }
+
+internal val PanelItem.icon: ImageVector?
+    get() = when (this) {
+        PanelItem.Close -> BarIcons.Close
+        PanelItem.Menu -> BarIcons.Menu
+        PanelItem.More -> BarIcons.More
+        PanelItem.Blank -> null
+        is PanelItem.Command -> command.icon
+    }
+
+internal val ReaderCommand.icon: ImageVector
+    get() = when (this) {
+        ReaderCommand.Layout -> BarIcons.Layout
+        ReaderCommand.ShiftPairing -> BarIcons.ShiftPairing
+        ReaderCommand.ScaleMode -> BarIcons.Zoom
+        ReaderCommand.Trim -> BarIcons.Trim
+        ReaderCommand.Direction -> BarIcons.Direction
+        ReaderCommand.Rotate -> BarIcons.Rotate
+        ReaderCommand.Orientation -> BarIcons.Orientation
+        ReaderCommand.AddBookmark -> BarIcons.AddBookmark
+        ReaderCommand.Bookmarks -> BarIcons.Bookmarks
+        ReaderCommand.AutoPlay -> BarIcons.AutoPlay
+        ReaderCommand.ReverseOrder -> BarIcons.ReverseOrder
+        ReaderCommand.ImageAdjust -> BarIcons.ImageAdjust
+        ReaderCommand.MirrorControls -> BarIcons.MirrorControls
+        ReaderCommand.StopOrder -> BarIcons.StopOrder
+        ReaderCommand.Gutter -> BarIcons.Gutter
+        ReaderCommand.EditCommandBar -> BarIcons.EditItems
+        ReaderCommand.Breath -> BarIcons.Breath
+        ReaderCommand.BookSettings -> BarIcons.View
+        ReaderCommand.SetCover -> BarIcons.SetCover
+        ReaderCommand.SharePage -> BarIcons.Share
+        ReaderCommand.Settings -> BarIcons.Settings
+    }
 
 internal val ReaderCommand.label: Int
     get() = when (this) {

@@ -15,8 +15,10 @@ import io.github.yuubiz.hirari.core.model.ScaleMode
 import io.github.yuubiz.hirari.core.model.StopOrder
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 private fun ReaderConfig.configured(command: ReaderCommand): ReaderConfig = assertIs<CommandEffect.Configure>(effectOf(command)).config
 
@@ -24,14 +26,25 @@ class CommandEffectTest {
     private val config = ReaderConfig()
 
     @Test
-    fun thePanelHoldsTheChosenCommandBarItemsInTheirOrder() {
-        val chosen = listOf(ReaderCommand.Gutter, ReaderCommand.Layout, ReaderCommand.StopOrder)
+    fun thePanelHoldsTheViewAndTheAssignedSlotsInTheirOrder() {
+        val chosen = listOf(ReaderCommand.Gutter, null, ReaderCommand.StopOrder)
         val state = readerOf(List(2) { TALL }, spreadConfig().copy(commandBarItems = chosen), PORTRAIT)
         val panel = state.commandPanel()
-        assertEquals(chosen, panel.commands)
+        assertEquals(listOf(ReaderCommand.BookSettings, ReaderCommand.Gutter, ReaderCommand.StopOrder), panel.commands)
+        assertEquals(2, panel.rows)
         val cell = panel.bounds.width / panel.columns
         val secondRow = panel.bounds.top + panel.bounds.height / panel.rows * 1.5f
-        assertEquals(PanelItem.Command(ReaderCommand.Layout), panel.itemAt(Point(cell * 1.5f, secondRow)))
+        assertEquals(PanelItem.Command(ReaderCommand.Gutter), panel.itemAt(Point(cell * 1.5f, secondRow)))
+    }
+
+    @Test
+    fun pairingShiftsOnlyInASpread() {
+        assertTrue(readerOf(List(2) { TALL }, spreadConfig(), PORTRAIT).shiftsPairs)
+        val single = spreadConfig().let { it.copy(layout = it.layout.copy(mode = LayoutMode.Single)) }
+        assertFalse(readerOf(List(2) { TALL }, single, PORTRAIT).shiftsPairs)
+        assertFalse(PanelItem.Command(ReaderCommand.ShiftPairing).enabled(shiftsPairs = false))
+        assertTrue(PanelItem.Command(ReaderCommand.ShiftPairing).enabled(shiftsPairs = true))
+        assertTrue(PanelItem.Command(ReaderCommand.Layout).enabled(shiftsPairs = false))
     }
 
     @Test
@@ -136,8 +149,8 @@ class CommandEffectTest {
     }
 
     @Test
-    fun theDefaultItemsStayTheFourOfTheSpec() {
-        assertEquals(listOf(ReaderCommand.Orientation, ReaderCommand.Trim, ReaderCommand.Layout, ReaderCommand.ScaleMode), ReaderCommand.Defaults)
+    fun theDefaultSlotsAreTheThreeOfTheSpec() {
+        assertEquals(listOf(ReaderCommand.ShiftPairing, ReaderCommand.ScaleMode, ReaderCommand.AddBookmark), ReaderCommand.DefaultSlots)
     }
 
     @Test

@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
@@ -47,7 +46,6 @@ import io.github.yuubiz.hirari.core.data.GlobalSettings
 import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rgb
 import io.github.yuubiz.hirari.core.model.TextTypeface
-import io.github.yuubiz.hirari.core.ui.GlyphButton
 import io.github.yuubiz.hirari.core.ui.decorative
 import io.github.yuubiz.hirari.core.ui.minTouchTarget
 import io.github.yuubiz.hirari.core.ui.rememberBreathPermission
@@ -69,7 +67,7 @@ internal fun SettingRow(
         is SliderSetting<*> -> SliderRow(setting, settings, saveFailures, onChange)
         is ChoiceSetting<*> -> ChoiceRow(setting, settings, onOpen)
         is ColorSetting<*> -> ColorRow(setting, settings, onOpen)
-        is OrderedSetSetting -> CommandsRow(setting, settings, onOpen)
+        is SlotsSetting -> SlotsRow(setting, settings, onOpen)
     }
 }
 
@@ -87,7 +85,7 @@ internal fun SettingDialog(
         TypefaceSetting -> TypefaceDialog(importedFonts, settings, onImportFont, onChange, onClose)
         is ChoiceSetting<*> -> ChoiceDialog(setting, settings, onChange, onClose)
         is ColorSetting<*> -> ColorDialog(setting, settings, onChange, onClose)
-        is OrderedSetSetting -> CommandsDialog(setting, settings, onChange, onClose)
+        is SlotsSetting -> SlotsDialog(setting, settings, onChange, onClose)
         is ToggleSetting, is SliderSetting<*> -> onClose()
     }
 }
@@ -178,9 +176,8 @@ private fun ColorSwatch(color: Rgb) {
 }
 
 @Composable
-private fun CommandsRow(setting: OrderedSetSetting, settings: GlobalSettings, onOpen: (String) -> Unit) {
-    val items = setting.read(settings)
-    SummaryRow(setting, items.joinToString("、") { setting.labelOf(it) }.ifEmpty { stringResource(R.string.settings_command_empty) }, onOpen)
+private fun SlotsRow(setting: SlotsSetting, settings: GlobalSettings, onOpen: (String) -> Unit) {
+    SummaryRow(setting, setting.read(settings).joinToString("、") { setting.labelOf(it) }, onOpen)
 }
 
 /** 本文の書体: the system typefaces, the imported fonts, and a button to import another. */
@@ -298,60 +295,49 @@ private fun <T> ColorDialog(setting: ColorSetting<T>, settings: GlobalSettings, 
     )
 }
 
+/** The slots, each a button; a slot opens the list of what it can hold, and picking one goes back to the slots. */
 @Composable
-internal fun CommandsDialog(setting: OrderedSetSetting, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit, onClose: () -> Unit) {
-    val selected = setting.read(settings)
-    val available = setting.choices.map { it.value }.filter { it !in selected }
-    fun edit(transform: (List<ReaderCommand>) -> List<ReaderCommand>) = onChange { setting.write(it, transform(setting.read(it))) }
+internal fun SlotsDialog(setting: SlotsSetting, settings: GlobalSettings, onChange: ((GlobalSettings) -> GlobalSettings) -> Unit, onClose: () -> Unit) {
+    val slots = setting.read(settings)
+    var picking by rememberSaveable { mutableStateOf<Int?>(null) }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(setting.label) },
+        title = { Text(picking?.let { stringResource(R.string.settings_slot_pick, it + 1) } ?: setting.label) },
         text = {
+            val index = picking
             LazyColumn {
-                item(key = "selected-title") { SectionTitle(stringResource(R.string.settings_command_selected) + " (${selected.size}/${setting.max})") }
-                if (selected.isEmpty()) item(key = "selected-empty") { Text(stringResource(R.string.settings_command_empty)) }
-                items(selected, key = { "selected-${it.name}" }) { command ->
-                    val name = setting.labelOf(command)
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(name, Modifier.weight(1f))
-                        GlyphButton("↑", stringResource(R.string.settings_command_up, name), { edit { it.movedCommand(command, -1) } }, enabled = command != selected.first())
-                        GlyphButton("↓", stringResource(R.string.settings_command_down, name), { edit { it.movedCommand(command, 1) } }, enabled = command != selected.last())
-                        GlyphButton("×", stringResource(R.string.settings_command_remove, name), { edit { it.withoutCommand(command) } })
+                if (index == null) {
+                    items(slots.indices.toList(), key = { "slot-$it" }) { i ->
+                        DialogRow(stringResource(R.string.settings_slot, i + 1), setting.labelOf(slots[i])) { picking = i }
                     }
-                }
-                item(key = "available-title") {
-                    SectionTitle(
-                        stringResource(R.string.settings_command_available) +
-                            if (selected.size >= setting.max) " " + stringResource(R.string.settings_command_full, setting.max) else "",
-                    )
-                }
-                items(available, key = { "available-${it.name}" }) { command ->
-                    val add = stringResource(R.string.settings_command_add, setting.labelOf(command))
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = selected.size < setting.max, role = Role.Button) {
-                                edit { it.withCommand(command, setting.max) }
-                            }
-                            .minTouchTarget()
-                            .semantics { contentDescription = add },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            setting.labelOf(command),
-                            Modifier.weight(1f).padding(vertical = 12.dp).decorative(),
-                            color = if (selected.size < setting.max) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text("＋", Modifier.decorative())
+                } else {
+                    val options = listOf<ReaderCommand?>(null) + setting.choices.map { it.value }
+                    items(options, key = { "pick-${it?.name}" }) { command ->
+                        DialogRow(setting.labelOf(command), if (command == slots[index]) stringResource(R.string.settings_slot_current) else null) {
+                            onChange { setting.write(it, setting.read(it).withSlot(index, command)) }
+                            picking = null
+                        }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.settings_close)) } },
+        confirmButton = {
+            if (picking == null) {
+                TextButton(onClick = onClose) { Text(stringResource(R.string.settings_close)) }
+            } else {
+                TextButton(onClick = { picking = null }) { Text(stringResource(R.string.settings_slot_back)) }
+            }
+        },
     )
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(text, Modifier.padding(vertical = 8.dp).semantics { heading() }, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+private fun DialogRow(label: String, value: String?, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).minTouchTarget().padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f))
+        if (value != null) Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }

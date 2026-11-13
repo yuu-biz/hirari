@@ -2,6 +2,7 @@ package io.github.yuubiz.hirari.feature.reader
 
 import io.github.yuubiz.hirari.core.model.CommandTargets
 import io.github.yuubiz.hirari.core.model.CommandCells
+import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.OpenBookRequest
 import io.github.yuubiz.hirari.core.model.PageView
 import io.github.yuubiz.hirari.core.model.PanelTarget
@@ -14,20 +15,23 @@ import io.github.yuubiz.hirari.core.model.StopOrder
 
 private const val PANEL_ROW_DP = 64f
 
-/** The panel under the command bar, in dp, holding the chosen `commandBarItems` (docs/spec.md section 4.8, コマンドバー). */
+/** The panel under the command bar, in dp: 表示 and the assigned `commandBarItems` slots (docs/spec.md section 4.8, コマンドバー). */
 fun ReaderState.commandPanel(): CommandPanel {
     val width = screen.width / screen.density
-    val columns = if (screen.orientation == ScreenOrientation.Portrait) 4 else 8
-    val rows = 1 + ReaderCommand.MAX_ITEMS / columns
     val top = config.barHeightDp
-    return CommandPanel(config.commandBarItems, screen.orientation, Rect(0f, top, width, top + rows * PANEL_ROW_DP))
+    val panel = CommandPanel(listOf(ReaderCommand.BookSettings) + config.commandBarItems.filterNotNull(), screen.orientation, Rect(0f, top, width, top))
+    return panel.copy(bounds = Rect(0f, top, width, top + panel.rows * PANEL_ROW_DP))
 }
 
-/** A visible row keeps the two end buttons and reserves its last middle cell for その他 when needed. */
-data class CommandRow(val commands: List<ReaderCommand>, val bounds: Rect) {
+/** A visible row: the fixed 表示, the three slots with [PanelItem.Blank] for an empty one, and the fixed メニュー. */
+data class CommandRow(val slots: List<ReaderCommand?>, val bounds: Rect) {
     val layout = CommandCells<PanelItem>(
-        commands.map { PanelItem.Command(it) }, PanelItem.Close, PanelItem.Menu, PanelItem.More, bounds,
+        listOf(PanelItem.Command(ReaderCommand.BookSettings)) + slots.map { slot -> slot?.let { PanelItem.Command(it) } ?: PanelItem.Blank },
+        close = null, end = PanelItem.Menu, more = PanelItem.More, bounds = bounds,
     )
+
+    /** Whether [item] is one of the assignable slots, which the row tints apart from the fixed buttons. */
+    fun isSlot(item: PanelItem): Boolean = item != PanelItem.Menu && item != PanelItem.Command(ReaderCommand.BookSettings)
     val cells get() = layout.cells
     val cellWidth get() = layout.cellWidth
     fun itemAt(point: Point): PanelItem? = layout.itemAt(point)
@@ -125,21 +129,23 @@ sealed interface PanelItem : PanelTarget {
     data object Close : PanelItem
     data object Menu : PanelItem
     data object More : PanelItem
+
+    /** An empty slot of the visible row, which does nothing. */
+    data object Blank : PanelItem
     data class Command(val command: ReaderCommand) : PanelItem
 }
 
+/** Whether 組ずらし does anything: the layout, once the orientation resolves it, is a spread (docs/spec.md section 2.5). */
+val ReaderState.shiftsPairs: Boolean get() = pagination.settings.resolve(pagination.orientation).mode == LayoutMode.Spread
+
 /**
  * The command panel below the command bar. The top row holds [PanelItem.Close] on the left end and
- * [PanelItem.Menu] on the right end. Below it the commands fill a grid of 4 columns by 2 rows in
- * portrait and 8 by 1 in landscape, row by row from the left. [bounds] is in screen dp.
+ * [PanelItem.Menu] on the right end. Below it the commands fill a grid of 4 columns in portrait and 8 in landscape,
+ * row by row from the left, in as many rows as they need. [bounds] is in screen dp.
  */
 data class CommandPanel(val commands: List<ReaderCommand>, val orientation: ScreenOrientation, val bounds: Rect) : CommandTargets {
-    init {
-        require(commands.size <= ReaderCommand.MAX_ITEMS) { "${commands.size} commands do not fit the panel" }
-    }
-
     val columns: Int get() = if (orientation == ScreenOrientation.Portrait) 4 else 8
-    val rows: Int get() = 1 + ReaderCommand.MAX_ITEMS / columns
+    val rows: Int get() = 1 + (commands.size + columns - 1) / columns
 
     override fun contains(point: Point): Boolean =
         point.x >= bounds.left && point.x < bounds.right && point.y >= bounds.top && point.y < bounds.bottom

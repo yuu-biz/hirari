@@ -118,16 +118,13 @@ class ReaderBarsTest {
     }
 
     @Test
-    fun overflowKeepsBothEndsAndTheLastMiddleCellOpensAllCommands() {
-        val commands = ReaderCommand.entries.take(8)
-        val row = CommandRow(commands, Rect(0f, 794f, 411f, 854f))
-        assertEquals(listOf(PanelItem.Close) + commands.take(4).map { PanelItem.Command(it) } + listOf(PanelItem.More, PanelItem.Menu), row.cells)
+    fun theRowHoldsTheViewTheThreeSlotsAndTheMenuWithABlankForAnEmptySlot() {
+        val row = CommandRow(listOf(ReaderCommand.ShiftPairing, null, ReaderCommand.ShiftPairing), Rect(0f, 794f, 411f, 854f))
+        val shift = PanelItem.Command(ReaderCommand.ShiftPairing)
+        assertEquals(listOf(PanelItem.Command(ReaderCommand.BookSettings), shift, PanelItem.Blank, shift, PanelItem.Menu), row.cells)
         assertTrue(row.cellWidth >= 56f)
-        assertEquals(PanelItem.More, row.itemAt(Point(row.cellWidth * 5.5f, 820f)))
-        val exact = CommandRow(commands.take(5), row.bounds)
-        assertTrue(PanelItem.More !in exact.cells)
-        assertEquals(commands.take(5), exact.cells.filterIsInstance<PanelItem.Command>().map { it.command })
-        assertEquals(listOf(PanelItem.Close, PanelItem.Menu), CommandRow(emptyList(), row.bounds).cells)
+        assertEquals(listOf(false, true, true, true, false), row.cells.map(row::isSlot))
+        assertEquals(PanelItem.Blank, row.itemAt(Point(row.cellWidth * 2.5f, 820f)))
     }
 
     @Test

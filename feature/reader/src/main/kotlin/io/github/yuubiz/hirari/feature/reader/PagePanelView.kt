@@ -68,7 +68,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.model.PageShape
-import io.github.yuubiz.hirari.core.model.LayoutMode
 import io.github.yuubiz.hirari.core.model.ReaderAction
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.ui.blockTouches
@@ -174,7 +173,7 @@ internal fun PagePanelSheet(viewModel: ReaderViewModel, state: ReaderState, shee
 internal fun PagePanelControls(state: ReaderState, openedOn: Int, dispatch: (ReaderEvent) -> Unit) {
     PageNumberInput(state.current.pages.min(), state.pagination.shapes.size) { dispatch(ReaderEvent.GoTo(it)) }
     SheetButton(R.string.page_panel_undo) { dispatch(ReaderEvent.GoTo(openedOn)) }
-    val pairs = state.pagination.settings.resolve(state.pagination.orientation).mode == LayoutMode.Spread
+    val pairs = state.shiftsPairs
     for (forward in listOf(false, true)) {
         val description = stringResource(if (forward) R.string.menu_shift_forward else R.string.menu_shift_back)
         TextButton(

@@ -142,17 +142,23 @@ internal class ReaderInput(
         val origin = down.position.dp(density)
         var moved = false
         down.consume()
-        while (true) {
-            val event = awaitPointerEvent()
-            val change = event.changes.firstOrNull { it.id == down.id } ?: return
-            val taken = change.takenBySystem
-            val point = change.position.dp(density)
-            moved = moved || hypot(point.x - origin.x, point.y - origin.y) > slop || event.changes.any { it.id != down.id }
-            event.changes.forEach { it.consume() }
-            if (!change.pressed) {
-                if (!taken) row.tapped(origin, point, moved)?.let(::execute)
-                return
+        ui.pressed = row.itemAt(origin)
+        try {
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id } ?: return
+                val taken = change.takenBySystem
+                val point = change.position.dp(density)
+                moved = moved || hypot(point.x - origin.x, point.y - origin.y) > slop || event.changes.any { it.id != down.id }
+                if (moved || taken) ui.pressed = null
+                event.changes.forEach { it.consume() }
+                if (!change.pressed) {
+                    if (!taken) row.tapped(origin, point, moved)?.let(::execute)
+                    return
+                }
             }
+        } finally {
+            ui.pressed = null
         }
     }
 

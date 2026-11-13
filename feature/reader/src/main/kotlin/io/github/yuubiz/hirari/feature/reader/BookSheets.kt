@@ -12,6 +12,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.stateDescription
 import io.github.yuubiz.hirari.core.model.LayoutMode
+import io.github.yuubiz.hirari.core.model.ReaderOrientation
 import io.github.yuubiz.hirari.core.model.ReadingDirection
 import io.github.yuubiz.hirari.core.model.Rotation
 import io.github.yuubiz.hirari.core.model.ScaleMode
@@ -166,6 +167,9 @@ internal fun BookSettingsSheet(
         OptionRow(R.string.command_scale_mode, ScaleMode.entries, config.scaleMode, { it.label }, enabled = fit) { set(config.copy(scaleMode = it)) }
         OptionRow(R.string.command_trim, TrimStrength.entries, config.trim, { it.label }, enabled = fit) { set(config.copy(trim = it)) }
         OptionRow(R.string.command_rotate, Rotation.entries, config.rotation, { R.string.rotation_degrees }, { arrayOf(it.degrees) }) { set(config.copy(rotation = it)) }
+        OptionRow(R.string.command_orientation, ORIENTATIONS, config.orientation, { it.label }) {
+            set(config.copy(orientation = it, switched = config.switched + SessionSwitch.Orientation))
+        }
         SwitchRow(R.string.command_reverse_order, viewModel.reversed) { reversed -> onEffect(viewModel.reorder { it.reversedTo(reversed) }) }
         if (viewModel.namesHaveCharset) {
             val charsets = listOf<Charset?>(null) + EntryNames.choices
@@ -188,6 +192,9 @@ internal fun BookSettingsSheet(
         }
     }
 }
+
+/** 画面の向き in the order of the command: 縦固定, 横固定, 端末に従う. */
+private val ORIENTATIONS = listOf(ReaderOrientation.Portrait, ReaderOrientation.Landscape, ReaderOrientation.System)
 
 /** 文字コード: 自動判定, or one of the charsets a user may choose (docs/spec.md section 3.4). */
 @OptIn(ExperimentalLayoutApi::class)

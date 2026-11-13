@@ -8,6 +8,7 @@ import io.github.yuubiz.hirari.core.model.TextTypeface
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
@@ -102,20 +103,23 @@ internal object TextTypefaceSerializer : StringFormSerializer<TextTypeface>("io.
     }
 }
 
-/** Skips the names of commands this version does not know, so a file from a newer version keeps the rest. */
-internal object CommandBarItemsSerializer : KSerializer<List<ReaderCommand>> {
-    private val names = ListSerializer(String.serializer())
+/**
+ * The command slots by position: `null` is an empty slot, and so is a command this version does not know, so a file
+ * from a newer version keeps the other slots where they were.
+ */
+internal object CommandBarItemsSerializer : KSerializer<List<ReaderCommand?>> {
+    private val names = ListSerializer(String.serializer().nullable)
     private val byName = ReaderCommand.entries.associateBy { it.name }
 
     override val descriptor: SerialDescriptor = names.descriptor
 
-    override fun serialize(encoder: Encoder, value: List<ReaderCommand>) =
-        names.serialize(encoder, value.map { it.name })
+    override fun serialize(encoder: Encoder, value: List<ReaderCommand?>) =
+        names.serialize(encoder, value.map { it?.name })
 
-    override fun deserialize(decoder: Decoder): List<ReaderCommand> {
-        if (decoder !is JsonDecoder) return names.deserialize(decoder).mapNotNull(byName::get)
+    override fun deserialize(decoder: Decoder): List<ReaderCommand?> {
+        if (decoder !is JsonDecoder) return names.deserialize(decoder).map { it?.let(byName::get) }
         val array = decoder.decodeJsonElement() as? JsonArray ?: throw SerializationException("commandBarItems is not a list")
-        return array.mapNotNull { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.contentOrNull?.let(byName::get) }
+        return array.map { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.contentOrNull?.let(byName::get) }
     }
 }
 

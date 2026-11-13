@@ -39,14 +39,10 @@
     <string name="settings_custom_color">任意の色</string>
     <string name="settings_custom_color_hint">#RRGGBB の形で入力します。</string>
     <string name="settings_custom_color_label">色</string>
-    <string name="settings_command_selected">選んだ項目</string>
-    <string name="settings_command_available">選べる項目</string>
-    <string name="settings_command_empty">項目がありません。</string>
-    <string name="settings_command_full">項目は %1$d 個までです。</string>
-    <string name="settings_command_up">%1$s を上へ</string>
-    <string name="settings_command_down">%1$s を下へ</string>
-    <string name="settings_command_remove">%1$s を外す</string>
-    <string name="settings_command_add">%1$s を加える</string>
+    <string name="settings_slot">枠 %1$d</string>
+    <string name="settings_slot_pick">枠 %1$d に入れる操作</string>
+    <string name="settings_slot_current">選択中</string>
+    <string name="settings_slot_back">戻る</string>
 
     <string name="export_title">設定を書き出す</string>
     <string name="export_body">全体の設定、コマンドバーの項目、本ごとの設定、SMB サーバーの接続先を書き出します。ユーザー名、ドメイン、パスワードは書き出しません。</string>

@@ -5,7 +5,6 @@ import io.github.yuubiz.hirari.core.model.CommandBarEvent
 import io.github.yuubiz.hirari.core.model.CommandBarState
 import io.github.yuubiz.hirari.core.model.CommandBarStep
 import io.github.yuubiz.hirari.core.model.Point
-import io.github.yuubiz.hirari.core.model.ReaderCommand
 import io.github.yuubiz.hirari.core.model.Rect
 import io.github.yuubiz.hirari.core.model.ScreenOrientation.Landscape
 import io.github.yuubiz.hirari.core.model.ScreenOrientation.Portrait
@@ -26,7 +25,6 @@ import io.github.yuubiz.hirari.core.model.ReaderCommand.Settings
 import io.github.yuubiz.hirari.core.model.ReaderCommand.Trim
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -36,7 +34,7 @@ class CommandBarTest {
     private val eight = listOf(Orientation, Trim, Layout, ScaleMode, Rotate, AddBookmark, Bookmarks, AutoPlay)
     private val portrait = CommandPanel(eight, Portrait, Rect(0f, 60f, 400f, 360f))
     private val landscape = CommandPanel(eight, Landscape, Rect(0f, 60f, 800f, 260f))
-    private val panel = CommandPanel(ReaderCommand.Defaults, Portrait, Rect(0f, 60f, 400f, 360f))
+    private val panel = CommandPanel(listOf(Orientation, Trim, Layout, ScaleMode), Portrait, Rect(0f, 60f, 400f, 260f))
     private val bar = Point(200f, 30f)
 
     private fun CommandPanel.run(vararg events: CommandBarEvent): List<CommandBarStep> =
@@ -74,8 +72,11 @@ class CommandBarTest {
     }
 
     @Test
-    fun thePanelHoldsAtMostEightCommands() {
-        assertFailsWith<IllegalArgumentException> { CommandPanel(eight + Settings, Portrait, Rect(0f, 60f, 400f, 360f)) }
+    fun thePanelHasAsManyRowsAsItsCommandsNeed() {
+        assertEquals(2, panel.rows)
+        assertEquals(3, portrait.rows)
+        assertEquals(4, CommandPanel(eight + Settings, Portrait, Rect(0f, 60f, 400f, 460f)).rows)
+        assertEquals(2, landscape.rows)
     }
 
     @Test

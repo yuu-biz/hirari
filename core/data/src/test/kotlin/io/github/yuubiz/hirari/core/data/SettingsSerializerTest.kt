@@ -173,7 +173,7 @@ class SettingsSerializerTest {
     fun `the written file carries the format`() = runTest {
         val out = ByteArrayOutputStream()
         SettingsSerializer.writeTo(GlobalSettings(), out)
-        assertEquals("2", SettingsJson.parseToJsonElement(out.toByteArray().decodeToString()).jsonObject["format"].toString())
+        assertEquals("3", SettingsJson.parseToJsonElement(out.toByteArray().decodeToString()).jsonObject["format"].toString())
     }
 
     @Test
@@ -258,13 +258,28 @@ class SettingsSerializerTest {
     }
 
     @Test
-    fun `command bar items skip unknown names, repeats and anything past eight`() = runTest {
+    fun `command bar slots keep their places, empty unknown names and the fixed view, and come to three`() = runTest {
         assertEquals(
-            listOf(ReaderCommand.Trim, ReaderCommand.Layout),
-            read("""{"commandBarItems":["Trim","Teleport","Trim",3,"Layout"]}""").commandBarItems,
+            listOf(ReaderCommand.Trim, null, null),
+            read("""{"format":3,"commandBarItems":["Trim","Teleport",3,"Layout"]}""").commandBarItems,
         )
-        val many = ReaderCommand.entries.joinToString(",") { "\"${it.name}\"" }
-        assertEquals(ReaderCommand.entries.take(8), read("""{"commandBarItems":[$many]}""").commandBarItems)
-        assertEquals(emptyList(), read("""{"commandBarItems":[]}""").commandBarItems)
+        assertEquals(listOf(null, ReaderCommand.Trim, ReaderCommand.Trim), read("""{"format":3,"commandBarItems":["BookSettings","Trim","Trim"]}""").commandBarItems)
+        assertEquals(listOf(null, null, null), read("""{"format":3,"commandBarItems":[]}""").commandBarItems)
+        assertEquals(listOf(ReaderCommand.Layout, null, null), read("""{"format":3,"commandBarItems":["Layout"]}""").commandBarItems)
+    }
+
+    @Test
+    fun `the old default command bar becomes the default slots and an old choice keeps its first three`() = runTest {
+        assertEquals(GlobalSettings(), read("""{"format":2,"commandBarItems":["Orientation","Trim","Layout","ScaleMode"]}"""))
+        assertEquals(
+            listOf(ReaderCommand.Settings, ReaderCommand.AddBookmark, ReaderCommand.Rotate),
+            read("""{"format":2,"commandBarItems":["Settings","AddBookmark","Rotate","Gutter"]}""").commandBarItems,
+        )
+    }
+
+    @Test
+    fun `empty slots survive a round trip`() = runTest {
+        val chosen = GlobalSettings(commandBarItems = listOf(null, ReaderCommand.Breath, null))
+        assertEquals(chosen, roundTrip(chosen))
     }
 }

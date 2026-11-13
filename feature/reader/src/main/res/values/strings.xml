@@ -47,7 +47,8 @@
     <string name="command_gutter">綴じ目の表示</string>
     <string name="command_edit_command_bar">コマンドバーの編集</string>
     <string name="command_breath">息で操作</string>
-    <string name="command_book_settings">本ごとの設定</string>
+    <string name="command_book_settings">表示</string>
+    <string name="shift_needs_spread">見開きのときに使えます</string>
     <string name="command_set_cover">表紙にする</string>
     <string name="command_share_page">ページを共有</string>
     <string name="command_settings">設定</string>

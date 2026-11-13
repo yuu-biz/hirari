@@ -39,7 +39,7 @@ class ReaderStripsTest {
         rule.setContent {
             Box(Modifier.requiredSize(411.dp, 914.dp)) {
                 ReaderStrips(ReaderBackground.White, "本の表題", "約12 / 約300", 0.04f,
-                    ReadingDirection.RightToLeft, 16, regions, row, { it }, "操作を開く", "ページを開く",
+                    ReadingDirection.RightToLeft, 16, regions, row, { it }, { BarIcons.Close }, "操作を開く", "ページを開く",
                     { commands++ }, { pages++ }, { items += it })
             }
         }

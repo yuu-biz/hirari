@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.yuubiz.hirari.core.image.BookFailure
+import io.github.yuubiz.hirari.core.model.BarLayout
 import io.github.yuubiz.hirari.core.model.BookEdge
 import io.github.yuubiz.hirari.core.model.BookEndEffect
 import io.github.yuubiz.hirari.core.model.BookId
@@ -61,6 +62,7 @@ import io.github.yuubiz.hirari.core.ui.HoldReaderWindow
 import io.github.yuubiz.hirari.core.ui.ReaderBackdrop
 import io.github.yuubiz.hirari.core.ui.ReaderWindow
 import io.github.yuubiz.hirari.core.ui.announced
+import io.github.yuubiz.hirari.core.ui.barSurface
 import io.github.yuubiz.hirari.core.ui.isLight
 import io.github.yuubiz.hirari.core.ui.keepsAwake
 import io.github.yuubiz.hirari.core.ui.readableOn
@@ -157,9 +159,11 @@ fun ReaderScreen(
     }
     BackHandler { dismiss() }
 
+    val barsShown = viewModel.phase == ReaderPhase.Reading && viewModel.state?.area?.bars == BarLayout.Shown
     ReaderBackdrop(
         viewModel.background,
         insets = readerInsets(viewModel.hideSystemBars),
+        edges = if (barsShown) barSurface(readerBackgroundColor(viewModel.background)) else null,
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { viewModel.onViewport(Viewport(it.width.toFloat(), it.height.toFloat(), density)) }
@@ -298,6 +302,9 @@ internal class ReaderUi {
     var pageBar: PageBarState by mutableStateOf(PageBarState.Idle)
     var sheet: ReaderSheet? by mutableStateOf(null)
     var message: Int? by mutableStateOf(null)
+
+    /** The button of the visible command row under a finger that has not moved off it. */
+    var pressed: PanelItem? by mutableStateOf(null)
 
     /** Changes on every touch and key press, which 画面を消さない counts its ten minutes from. */
     var touched: Int by mutableIntStateOf(0)
