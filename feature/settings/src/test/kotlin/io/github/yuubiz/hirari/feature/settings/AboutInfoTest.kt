@@ -74,9 +74,8 @@ class AboutInfoTest {
     fun `the bundled assets give the changes of this version and a build date or none`() {
         val info = runBlocking { BundledAbout(context, UnconfinedTestDispatcher()).load() }
         val changes = assertNotNull(info.changes, "the changes text is not bundled")
-        assertTrue(changes.startsWith("1.0.0 はリリース用の鍵で署名した最初の版です。"), changes)
-        assertTrue("上書きでインストールできません" in changes, changes)
-        assertTrue("移行手順" in changes, changes)
+        val bundled = context.assets.open(AboutInfo.CHANGES_ASSET).bufferedReader().use { it.readText() }
+        assertEquals(bundled.trim(), changes)
         val buildInfo = context.assets.open(AboutInfo.BUILD_INFO_ASSET).bufferedReader().use { it.readText() }
         assertEquals(AboutInfo.parse(null, buildInfo, null).builtOn, info.builtOn)
         assertEquals(AboutInfo.parse(null, buildInfo, null).commit, info.commit)
