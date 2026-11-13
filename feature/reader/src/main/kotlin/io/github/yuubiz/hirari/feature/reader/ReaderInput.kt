@@ -142,7 +142,8 @@ internal class ReaderInput(
         val origin = down.position.dp(density)
         var moved = false
         down.consume()
-        ui.pressed = row.itemAt(origin)
+        val cell = row.indexAt(origin)
+        ui.pressed = cell
         try {
             while (true) {
                 val event = awaitPointerEvent()
@@ -150,7 +151,7 @@ internal class ReaderInput(
                 val taken = change.takenBySystem
                 val point = change.position.dp(density)
                 moved = moved || hypot(point.x - origin.x, point.y - origin.y) > slop || event.changes.any { it.id != down.id }
-                if (moved || taken) ui.pressed = null
+                if (moved || taken || row.indexAt(point) != cell) ui.pressed = null
                 event.changes.forEach { it.consume() }
                 if (!change.pressed) {
                     if (!taken) row.tapped(origin, point, moved)?.let(::execute)

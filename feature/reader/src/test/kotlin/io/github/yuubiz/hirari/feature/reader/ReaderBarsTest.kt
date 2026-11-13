@@ -125,6 +125,11 @@ class ReaderBarsTest {
         assertTrue(row.cellWidth >= 56f)
         assertEquals(listOf(false, true, true, true, false), row.cells.map(row::isSlot))
         assertEquals(PanelItem.Blank, row.itemAt(Point(row.cellWidth * 2.5f, 820f)))
+        assertEquals(3, row.indexAt(Point(row.cellWidth * 3.5f, 820f)))
+        assertNull(row.tapped(Point(row.cellWidth * 1.9f, 820f), Point(row.cellWidth * 3.1f, 820f), moved = false))
+        val narrow = CommandRow(ReaderCommand.DefaultSlots, Rect(0f, 794f, 240f, 854f))
+        assertEquals(5, narrow.cells.size)
+        assertTrue(PanelItem.More !in narrow.cells)
     }
 
     @Test

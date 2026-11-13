@@ -84,7 +84,7 @@ fun <T> ReaderStrips(
     onItem: (T) -> Unit,
     enabled: (T) -> Boolean = { true },
     slot: (T) -> Boolean = { false },
-    pressed: T? = null,
+    pressed: Int? = null,
 ) {
     val background = readerBackgroundColor(readerBackground)
     val surface = barSurface(background)
@@ -114,7 +114,7 @@ fun <T> ReaderStrips(
             .background(surface).edgeLine(divider, top = true),
     ) {
         for ((index, item) in row.cells.withIndex()) {
-            val down = item == pressed
+            val down = index == pressed
             val container = if (slot(item)) SlotTint.copy(alpha = if (down) BarAlpha.SLOT_PRESSED else BarAlpha.SLOT)
             else ink.copy(alpha = if (down) BarAlpha.PRESSED else BarAlpha.BUTTON)
             ReaderCommandCell(label(item), icon(item).takeIf { regions.barHeight >= ICON_MIN_BAR_DP }, ink,

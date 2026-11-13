@@ -303,8 +303,8 @@ internal class ReaderUi {
     var sheet: ReaderSheet? by mutableStateOf(null)
     var message: Int? by mutableStateOf(null)
 
-    /** The button of the visible command row under a finger that has not moved off it. */
-    var pressed: PanelItem? by mutableStateOf(null)
+    /** The cell of the visible command row under a finger that has not moved off it. */
+    var pressed: Int? by mutableStateOf(null)
 
     /** Changes on every touch and key press, which 画面を消さない counts its ten minutes from. */
     var touched: Int by mutableIntStateOf(0)

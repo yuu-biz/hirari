@@ -19,7 +19,8 @@ private const val PANEL_ROW_DP = 64f
 fun ReaderState.commandPanel(): CommandPanel {
     val width = screen.width / screen.density
     val top = config.barHeightDp
-    val panel = CommandPanel(listOf(ReaderCommand.BookSettings) + config.commandBarItems.filterNotNull(), screen.orientation, Rect(0f, top, width, top))
+    val commands = (listOf(ReaderCommand.BookSettings) + config.commandBarItems.filterNotNull()).distinct()
+    val panel = CommandPanel(commands, screen.orientation, Rect(0f, top, width, top))
     return panel.copy(bounds = Rect(0f, top, width, top + panel.rows * PANEL_ROW_DP))
 }
 
@@ -27,7 +28,7 @@ fun ReaderState.commandPanel(): CommandPanel {
 data class CommandRow(val slots: List<ReaderCommand?>, val bounds: Rect) {
     val layout = CommandCells<PanelItem>(
         listOf(PanelItem.Command(ReaderCommand.BookSettings)) + slots.map { slot -> slot?.let { PanelItem.Command(it) } ?: PanelItem.Blank },
-        close = null, end = PanelItem.Menu, more = PanelItem.More, bounds = bounds,
+        close = null, end = PanelItem.Menu, more = null, bounds = bounds,
     )
 
     /** Whether [item] is one of the assignable slots, which the row tints apart from the fixed buttons. */
@@ -35,6 +36,7 @@ data class CommandRow(val slots: List<ReaderCommand?>, val bounds: Rect) {
     val cells get() = layout.cells
     val cellWidth get() = layout.cellWidth
     fun itemAt(point: Point): PanelItem? = layout.itemAt(point)
+    fun indexAt(point: Point): Int? = layout.indexAt(point)
     fun tapped(origin: Point, released: Point, moved: Boolean): PanelItem? = layout.tapped(origin, released, moved)
 }
 

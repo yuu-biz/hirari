@@ -66,6 +66,8 @@ class CommandBarTest {
 
     @Test
     fun emptyCellsAndTheOutsideHoldNothing() {
+        assertNull(CommandPanel(listOf(Orientation, Trim), Portrait, Rect(0f, 60f, 400f, 260f)).itemAt(Point(350f, 200f)))
+        assertNull(panel.itemAt(Point(150f, 100f)))
         assertNull(panel.itemAt(Point(50f, 300f)))
         assertNull(panel.itemAt(Point(50f, 30f)))
         assertNull(panel.itemAt(Point(50f, 360f)))

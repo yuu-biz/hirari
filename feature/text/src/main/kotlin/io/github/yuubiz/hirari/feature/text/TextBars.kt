@@ -12,7 +12,7 @@ import io.github.yuubiz.hirari.core.ui.sp
 internal fun TextBars(
     state: TextReaderUiState.Reading,
     regions: ReaderRegions,
-    pressed: TextPanelItem?,
+    pressed: Int?,
     onControl: (TextControl) -> Unit,
     onItem: (TextPanelItem) -> Unit,
 ) {

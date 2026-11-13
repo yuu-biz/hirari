@@ -11,7 +11,7 @@ internal fun ReaderBars(
     readerBackground: ReaderBackground,
     title: String,
     state: ReaderState,
-    pressed: PanelItem?,
+    pressed: Int?,
     onControl: (ReaderControl) -> Unit,
     onItem: (PanelItem) -> Unit,
 ) {
