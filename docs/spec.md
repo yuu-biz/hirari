@@ -2893,7 +2893,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 
 ### 確認の状況
 
-2026-11-03 に、コミット `b2d4d06` の上で、M0 から M6 の完了条件を 3 つに分けて書き直した。完了条件がすべて「確認した」になったマイルストーンだけを完了とし、残りがあるものは「コード完了、端末での確認が N 件残る」のように数えて書く。
+2026-11-03 に、コミット `9f4e0f2` の上で、M0 から M6 の完了条件を 3 つに分けて書き直した。完了条件がすべて「確認した」になったマイルストーンだけを完了とし、残りがあるものは「コード完了、端末での確認が N 件残る」のように数えて書く。
 
 - **確認した**。試験かコマンドを流して確かめた。根拠の試験名かコマンドと結果を書く。
 - **実機が要る**。コードはあるが、基準端末、基準 NAS、Wi-Fi の切り替え、折りたたみ端末、実データ、人の手、何時間もかかる手動の実行が要り、エミュレータと JVM の試験では判定できない。流すコマンドか手順を書く。
@@ -2901,11 +2901,11 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 
 根拠は 3 種類ある。
 
-- **JVM の試験**。`77af990` から作った新しい作業ツリーで、端末上の試験の修正（`b9ab677`）を足して `./gradlew check`（ビルド、JVM の単体試験、lint、ライセンスの検査）を流して通った。本文で「JVM」と書いたものはこれである。
-- **端末上の試験**。API 37 と API 28 のエミュレータ（x86_64、メモリ 2 GB。実機の値ではない）の結果は、2026-11-03 に `77af990` の上で流したものである。製品のコードは `77af990` のままで、端末上の試験のコードだけ `b9ab677` で直した（下の「その実行で」）。`:core:archive`、`:core:image`、`:core:data`、`:feature:text`、`:app` のすべてを、`ANDROID_SERIAL` で 1 台に絞って API 37 と API 28 のそれぞれで流した。`:feature:reader` と `:feature:library` に端末上の試験はない。各モジュールの結果の XML が出たことを、Gradle の成否とは別に確かめた。
+- **JVM の試験**。`7bdf39b` から作った新しい作業ツリーで、端末上の試験の修正（`f26833e`）を足して `./gradlew check`（ビルド、JVM の単体試験、lint、ライセンスの検査）を流して通った。本文で「JVM」と書いたものはこれである。
+- **端末上の試験**。API 37 と API 28 のエミュレータ（x86_64、メモリ 2 GB。実機の値ではない）の結果は、2026-11-03 に `7bdf39b` の上で流したものである。製品のコードは `7bdf39b` のままで、端末上の試験のコードだけ `f26833e` で直した（下の「その実行で」）。`:core:archive`、`:core:image`、`:core:data`、`:feature:text`、`:app` のすべてを、`ANDROID_SERIAL` で 1 台に絞って API 37 と API 28 のそれぞれで流した。`:feature:reader` と `:feature:library` に端末上の試験はない。各モジュールの結果の XML が出たことを、Gradle の成否とは別に確かめた。
 - **GitHub Actions**。`gh run view <run の番号>` で結果を見られる。
 
-`77af990` の上の端末上の試験は、次のとおりである。`FuzzTest` の 2 つは、秒数と再現用のディレクトリを渡さないと読み飛ばす作りで、ここでは読み飛ばした（結果の XML では失敗の欄に数えられるが、中身は `AssumptionViolatedException` で、Gradle は通る）。API 31 の AVD は手元になく、6.2 節の「API 28、API 31、最新 API」のうち API 31 は流していない。
+`7bdf39b` の上の端末上の試験は、次のとおりである。`FuzzTest` の 2 つは、秒数と再現用のディレクトリを渡さないと読み飛ばす作りで、ここでは読み飛ばした（結果の XML では失敗の欄に数えられるが、中身は `AssumptionViolatedException` で、Gradle は通る）。API 31 の AVD は手元になく、6.2 節の「API 28、API 31、最新 API」のうち API 31 は流していない。
 
 | 試験 | API 37 | API 28 |
 |---|---|---|
@@ -2927,7 +2927,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 
 `8984533` の上の実行で、端末上の試験の誤りを 2 つ直した。`ReaderSheetsTest` は、Compose の試験用ルールのフレーム時計が 0 から数えるのに、リーダーはめくりの開始を `SystemClock.uptimeMillis` で記録するので、キーでめくるとめくりが終わらず Compose が止まらなかった。試験の側で時計を合わせた（製品のコードでは、フレーム時計と `uptimeMillis` は端末の上で同じ時計である）。`ThumbnailsDeviceTest` は API 28 にない `readNBytes` を使っていたので、`readBytes` に替えた。
 
-`77af990` の上の実行で、端末上の試験の誤りをさらに 2 つ直した（`b9ab677`）。製品のコードは変えていない。`ReaderRestoreTest` は、キーを押すたびにめくりを待たずに 3 回、4 回と続けて送っていた。リーダーは、めくる先のページの形が分かってからめくるので、その前の押下は何もしない。続けて押すと押下が落ち、保存された位置が動かずに 15 秒で止まった（API 37 で 3 回続けて、API 28 でも出た）。1 回ずつ位置が動くのを待つように替えると、API 37 で全体の 6 回、API 28 で 8 回、すべて通った。`ReaderSheetsTest` のシステムのタップは、ページバーの高さを `displayMetrics` から求めていたので、3 ボタンのナビゲーションバーがある API 28（1080 × 2160）ではバーの上に外れ、ページパネルが開かなかった（API 28 で 4 回とも）。実際の画面の大きさで下から 54 dp の位置にし、60 dp のページバーの中で、48 dp のナビゲーションバーの上に当てるようにした。下から 30 dp の位置にしたときは、数回に 1 回、アプリが閉じて試験が止まった。そのときのログに、システムが起こしたホームの起動があるので、システムバーが隠れ切る前のタップがナビゲーションバーのホームのボタンを押したと見ている。API 28 で全体の 8 回、API 37 で 6 回、すべて通った。
+`7bdf39b` の上の実行で、端末上の試験の誤りをさらに 2 つ直した（`f26833e`）。製品のコードは変えていない。`ReaderRestoreTest` は、キーを押すたびにめくりを待たずに 3 回、4 回と続けて送っていた。リーダーは、めくる先のページの形が分かってからめくるので、その前の押下は何もしない。続けて押すと押下が落ち、保存された位置が動かずに 15 秒で止まった（API 37 で 3 回続けて、API 28 でも出た）。1 回ずつ位置が動くのを待つように替えると、API 37 で全体の 6 回、API 28 で 8 回、すべて通った。`ReaderSheetsTest` のシステムのタップは、ページバーの高さを `displayMetrics` から求めていたので、3 ボタンのナビゲーションバーがある API 28（1080 × 2160）ではバーの上に外れ、ページパネルが開かなかった（API 28 で 4 回とも）。実際の画面の大きさで下から 54 dp の位置にし、60 dp のページバーの中で、48 dp のナビゲーションバーの上に当てるようにした。下から 30 dp の位置にしたときは、数回に 1 回、アプリが閉じて試験が止まった。そのときのログに、システムが起こしたホームの起動があるので、システムバーが隠れ切る前のタップがナビゲーションバーのホームのボタンを押したと見ている。API 28 で全体の 8 回、API 37 で 6 回、すべて通った。
 
 マイルストーンごとの数は次のとおりである。「実機が要る」は、完了条件のうち実機か手動の実行が要るものを数える。
 
@@ -2946,7 +2946,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 #### M0
 
 - 確認した。完了条件の 4 件すべて。
-  - 新しい作業ツリーで CI の `./gradlew check` が通る。GitHub Actions の `ci.yml` を手動で実行した run 41365514174（`e8fb121`）、run 41371848455（`a1bde04`）、run 41593299847（`77af9904`）が成功した。
+  - 新しい作業ツリーで CI の `./gradlew check` が通る。GitHub Actions の `ci.yml` を手動で実行した run 41365514174（`64b7230`）、run 41371848455（`a61e3ab`）、run 41593299847（`7bdf39bd`）が成功した。
   - 許可されないライセンスの依存で CI が失敗する。捨てブランチ `ci/license-negative-test`（`955de21`。`:app` に `org.mariadb.jdbc:mariadb-java-client:3.5.1` を足した）で `ci.yml` を手動で実行した run 41365881598 が、`SPDX identifier 'LGPL-2.1-or-later' is NOT allowed` で失敗した。手元でも `./gradlew :app:licenseeAndroidRelease` が同じ文言で失敗することを確かめた。
   - コーパスの ZIP のエントリ名を JNI 経由で一覧にできる。`ArchiveSessionTest` が API 37 と API 28 で通った。
   - API 28 と最新 API のエミュレータで、空のホームとライセンス画面（libarchive を含む）が表示される。自動の試験はなく、データを消したアプリを開き、メニューの「設定」から「ライセンス」を開いて確かめた。ホームは「場所がまだありません」と「場所を追加」を出し、ライセンス画面は `libarchive 3.8.11`（`third_party/libarchive`）と `libjxl 0.12.0` の行を出した。API 28（1080 × 2160）と API 37 の両方で同じだった。
@@ -2989,7 +2989,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
   - コーパスの CP932 と UTF-8 の名前が正しく表示され、文字コードを変えると並びが変わる。`EntryNamesTest`（CP932 と UTF-8 などの判定）と、`ArchiveViewModelTest` の `choosing another charset sorts the pages anew, is kept for the book, and a tap opens the reader at the place the list shows`（JVM）が通り、`CorpusBookTest` が全ファイルの名前を目録と照らす。
 - そのほか、確かめたこと。幅 800、高さ 50,000 の画像（`tall.png`）が、目録どおりの大きさのページとして読める。`CorpusBookTest` が通った。タイルの縮小の正しさは `TileScalingTest` が通った。縦に連続のタイル（細長いページの鮮明化を含む）は `PageTilesTest` と `SharpenedTilesTest`（JVM）で確かめた。
 - 実機が要る。
-  - fuzz を延べ 24 時間回すこと。実行は、AGENTS.md の「状態」のとおり `gh workflow run fuzz.yml` で行う。時間の記録 `fuzz-time-log` の合計は、`2026-11-03` の時点で 1087.7 秒（0.30 時間）である。記録の行は、run 41548258714（エミュレータの段階が失敗して、端末の fuzz の時間は記録されていない。ホストの fuzz が `host-archive` 182 秒と `host-jxl` 181 秒）と、run 41552109138（`3718c94`。端末の fuzz が 601.7 秒、185,314 入力で落ち 0 件、タイムアウト 0 件、捕まえた例外 0 件。`host-archive` 61 秒、`host-jxl` 62 秒）の 5 行である。run 41552109138 は、モンキー試験 1,000 イベントも落ち 0 件、ネイティブの落ち 0 件、ANR 0 件で終えた。残りは約 23.7 時間である。
+  - fuzz を延べ 24 時間回すこと。実行は、AGENTS.md の「状態」のとおり `gh workflow run fuzz.yml` で行う。時間の記録 `fuzz-time-log` の合計は、`2026-11-03` の時点で 1087.7 秒（0.30 時間）である。記録の行は、run 41548258714（エミュレータの段階が失敗して、端末の fuzz の時間は記録されていない。ホストの fuzz が `host-archive` 182 秒と `host-jxl` 181 秒）と、run 41552109138（`9189c67`。端末の fuzz が 601.7 秒、185,314 入力で落ち 0 件、タイムアウト 0 件、捕まえた例外 0 件。`host-archive` 61 秒、`host-jxl` 62 秒）の 5 行である。run 41552109138 は、モンキー試験 1,000 イベントも落ち 0 件、ネイティブの落ち 0 件、ANR 0 件で終えた。残りは約 23.7 時間である。
   - 幅 800 で高さ 50,000 の画像を最後までスクロールでき、メモリが P10 に収まること。
   - 3.3 節の libarchive に関する (要検証) の解消。圧縮した RAR 5（solid を含む）の展開と、RAR 4 の PPMd は、実データで確かめる。展開キャッシュの上限（空き容量の 10% と 2 GB の小さい方）も、大きな solid の書庫で確かめる。台帳の 3.3 の 2 行である。
 - できていない。なし。
@@ -3024,7 +3024,7 @@ libjxl 0.12.0 と Highway 1.2.0 のライセンスは次のとおり。ビルド
 - 確認した。完了条件の 4 件。
   - 余白トリミングの試験画像で、切りすぎを防ぐ規則がすべて働く。`TrimTest`（JVM）と `TrimBitmapTest`（端末。API 37 と API 28）が通った。
   - 息での操作の、10 回に 9 回を除く部分。既定でオフ（`BreathSessionTest` の `theMicrophoneIsOffByDefault`）、オンにするときだけ `RECORD_AUDIO` を求める（`BreathRowTest`、`PermissionStepTest`）、リーダーが背面に回るとマイクが止まる（`BreathSessionTest` の `leavingTheForegroundStopsTheMicrophoneAndComingBackStartsItAgain`）。判定は `BreathDetectorTest`、`BreathScrollTest`、`MicrophoneTest` が通った（すべて JVM）。
-  - モンキー試験で、落ちる回数と ANR がともに 0 件である。`./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000 --seed 1 --serial emulator-5554"` を API 37 のエミュレータで `77af990` の上（縦の連続スクロール、息での操作、操作ガイドを含む）で流し、9 冊（画像のある ZIP とエラーコーパスの本）で合計 10,000 イベント、落ち 0 件、ネイティブの落ち 0 件、ANR 0 件だった（1 時間 23 分。実行の前に `adb logcat -b crash` を空にし、終わってからも空だった）。API 28 では流していない。`fuzz.yml` の run 41552109138（API 34、`3718c94`）でも、1,000 イベントで 0 件だった。これは GitHub Actions の実行で、ここでは流し直していない。
+  - モンキー試験で、落ちる回数と ANR がともに 0 件である。`./gradlew :tools:fuzz:monkey -Pandroid.injected.build.abi=x86_64 --args="--events 10000 --seed 1 --serial emulator-5554"` を API 37 のエミュレータで `7bdf39b` の上（縦の連続スクロール、息での操作、操作ガイドを含む）で流し、9 冊（画像のある ZIP とエラーコーパスの本）で合計 10,000 イベント、落ち 0 件、ネイティブの落ち 0 件、ANR 0 件だった（1 時間 23 分。実行の前に `adb logcat -b crash` を空にし、終わってからも空だった）。API 28 では流していない。`fuzz.yml` の run 41552109138（API 34、`9189c67`）でも、1,000 イベントで 0 件だった。これは GitHub Actions の実行で、ここでは流し直していない。
   - 6.7 節の点検が済み、実機の TalkBack で残るものが課題として登録されている。点検の結果は 6.7 節に書き、`AccessibilityTest`（`:feature:library`、`:feature:reader`、`:feature:settings`）、`TextAccessibilityTest`、`ContrastTest` が通った（JVM）。実機の TalkBack で残る 6 つと、自動検査の実機での実行を、[verification.md](verification.md) の A1 から A7 に登録した。
   - この文書の (要検証) がすべて解消しているか、課題として登録されている。[verification.md](verification.md) が課題の台帳で、仕様書の (要検証) 67 件を 1 件ずつ載せ、`bash tools/verification/list.sh --check` で件数を突き合わせる。
 - そのほか、確かめたこと（M6 の内容）。ルーペ、画像補正、回転、自動再生（`LoupeTest`、`ImageAdjustmentTest`、`RotationTest`、`AutoPlayTest`）。操作ガイド（`GuideTest`、`GuideRecordTest`）。範囲を選んで表紙にする画面（`CoverRangeViewModelTest`、`CropFrameTest`、`CoverCropTest`、`CoverStoreTest`）。縦の連続スクロール（Q15。`StripTest`、`VerticalReaderTest`、`PageTilesTest`。再開の位置は `ReaderRestoreTest` の `theVerticalStripReopensAtThePageAndOffsetItWasClosedOn` が端末で見て、API 37 と API 28 で通った）。画像リーダーのメニューとコマンドバーのすべての項目（しおり、本ごとの設定、ページ順の反転、文字コードの選択、設定、コマンドバーの編集、このアプリについて。`BookmarksTest`、`BookSettingsTest`、`PageOrderTest`、`CommandEffectTest`、`CommandBarTest`）。「この操作はまだ使えません」は出さなくなった。Baseline Profile が `app/src/main/generated/baselineProfiles/` にあり、release と `benchmark` の APK に `assets/dexopt/baseline.prof` が入る。`./gradlew :app:assembleRelease` と `:app:assembleBenchmark` で作り、APK を開いて確かめた（release は 23,232 バイト、`benchmark` は 12,127 バイト。`8984533` の上）。
