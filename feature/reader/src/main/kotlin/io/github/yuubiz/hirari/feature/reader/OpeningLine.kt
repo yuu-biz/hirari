@@ -45,7 +45,7 @@ private const val MB = 1024.0 * 1024.0
 
 private fun megabytes(bytes: Long) = String.format(Locale.ROOT, "%,.1f", bytes / MB)
 
-private fun count(entries: Int) = String.format(Locale.ROOT, "%,d", entries)
+internal fun count(entries: Int) = String.format(Locale.ROOT, "%,d", entries)
 
 /** The whole percent below [share]. The epsilon keeps a share such as 0.45f, which is a hair under, from showing 44. */
 private fun percent(share: Double) = (share * 100 + 1e-4).toInt().coerceIn(0, 100)

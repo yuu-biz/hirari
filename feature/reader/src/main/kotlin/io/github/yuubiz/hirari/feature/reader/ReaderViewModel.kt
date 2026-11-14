@@ -629,6 +629,13 @@ class ReaderViewModel internal constructor(
         return FetchNeed((missing - onDisk.toSet()).sumOf { book.loader.rawEstimate(it) }, fromDisk = onDisk.isNotEmpty())
     }
 
+    /** Where the extraction of a solid archive is, for the pages of [view] that are not prepared (docs/spec.md section 4.8, 展開の状況). */
+    internal fun extractionOf(view: PageView): ExtractionProgress? {
+        val book = opened ?: return null
+        val waiting = view.pages.filter { book.prefetcher.raw(it) == null }.map { book.book.pages[it].entryIndex }
+        return extractionProgress(book.book.extractingAt, waiting)
+    }
+
     /**
      * Runs a command of the command bar. What only the screen can do comes back, such as a sheet to show.
      */

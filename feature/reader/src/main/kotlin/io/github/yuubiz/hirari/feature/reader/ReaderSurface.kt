@@ -228,7 +228,10 @@ internal fun ReaderSurface(viewModel: ReaderViewModel, state: ReaderState, ui: R
                 if (!ready) {
                     key(state.current) {
                         DelayedProgress(Modifier.align(Alignment.Center))
-                        if (viewModel.fetchedBytes != null) FetchStatus(viewModel, state.current, Modifier.align(Alignment.Center).padding(top = 96.dp))
+                        Column(Modifier.align(Alignment.Center).padding(top = 96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            ExtractionStatus(viewModel, state.current)
+                            if (viewModel.fetchedBytes != null) FetchStatus(viewModel, state.current, Modifier)
+                        }
                     }
                 }
                 if (!shown) ReaderOverlays(state.config.overlays, pageNumberText(state.current, state.pagination.shapes.size))
@@ -314,6 +317,27 @@ private fun FetchStatus(viewModel: ReaderViewModel, view: PageView, modifier: Mo
 }
 
 private const val FETCH_SAMPLE_MS = 500L
+
+/**
+ * 展開の状況 under the progress indicator for a solid archive (docs/spec.md section 4.8): the entry the extraction is
+ * at and the one the view needs, sampled every [EXTRACTION_SAMPLE_MS] once the indicator shows.
+ */
+@Composable
+private fun ExtractionStatus(viewModel: ReaderViewModel, view: PageView) {
+    var progress by remember { mutableStateOf<ExtractionProgress?>(null) }
+    LaunchedEffect(view) {
+        delay(PROGRESS_DELAY_MS)
+        while (true) {
+            progress = viewModel.extractionOf(view)
+            delay(EXTRACTION_SAMPLE_MS)
+        }
+    }
+    val shown = progress ?: return
+    OutlinedText(stringResource(R.string.extracting), Modifier, size = 16)
+    OutlinedText(stringResource(R.string.extracting_items, count(shown.at), count(shown.of)), Modifier, size = 16)
+}
+
+private const val EXTRACTION_SAMPLE_MS = 250L
 
 private fun errorOf(viewModel: ReaderViewModel, view: PageView, index: Int, page: Int): PageResult<Nothing>? {
     val prepared = viewModel.preparedView(view)?.pages?.getOrNull(index)

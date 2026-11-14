@@ -29,6 +29,9 @@ internal interface PageBytes : Closeable {
     suspend fun invalidate(page: PageEntry) = Unit
     fun fromStash(bytes: ByteArray): Boolean = false
 
+    /** The archive-order index the extraction of a solid archive is at, or null when the bytes are not extracted. */
+    val extractingAt: Int? get() = null
+
     /** The bytes of [page], as [PageResult.Ready], or why they cannot be read. */
     suspend fun read(page: PageEntry): PageResult<ByteArray>
 }
@@ -91,6 +94,12 @@ class OpenBook internal constructor(
         val own = if (container == Container.Folder) order.copy(entries = EntryOrder.Natural) else order
         return OpenBook(content, container, sortedPages(pages, own), indexError, decoding, partial, need)
     }
+
+    /**
+     * The archive-order index of the entry the extraction of a solid archive is at (docs/spec.md section 4.8, 展開の
+     * 状況), or null for a book that is not extracted.
+     */
+    val extractingAt: Int? get() = (content as? BookContent.Images)?.bytes?.extractingAt
 
     suspend fun invalidate(index: Int) { (content as? BookContent.Images)?.bytes?.invalidate(pages[index]) }
 

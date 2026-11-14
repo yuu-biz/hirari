@@ -70,6 +70,37 @@ class ExtractionTest {
     }
 
     @Test
+    fun `the pass tells which entry it is extracting as it moves forward`() {
+        val gate = CountDownLatch(1)
+        val reached = CountDownLatch(1)
+        val third = pages.take(2).sumOf { it.second.size }
+        val source = MemorySource(pages.flatMap { it.second.toList() }.toByteArray()) { offset ->
+            if (offset >= third) {
+                reached.countDown()
+                gate.await()
+            }
+        }
+        val extraction = extraction(temp.newFolder("book"), source = source)
+
+        assertTrue(reached.await(5, TimeUnit.SECONDS))
+        assertEquals(2, extraction.extractingAt)
+        gate.countDown()
+        assertData(pages[2].second, extraction.readNow(2))
+        extraction.close()
+    }
+
+    @Test
+    fun `a session extracting tells where the pass is and one that is not tells nothing`() {
+        fun open(extractDir: File?) = (runBlocking {
+            val source = MemorySource(pages.flatMap { it.second.toList() }.toByteArray())
+            ArchiveSession.open(source, extractDir) { FakeArchive(it, pages) }
+        } as OpenResult.Opened).session
+
+        open(temp.newFolder("extracting")).use { assertTrue(it.extractingAt != null) }
+        open(null).use { assertEquals(null, it.extractingAt) }
+    }
+
+    @Test
     fun `the cache returns under the limit once a page larger than it is handed over`() {
         val dir = temp.newFolder("book")
         val extraction = extraction(dir, tallLast, maxCacheBytes = 1000)

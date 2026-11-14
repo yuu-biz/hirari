@@ -353,6 +353,9 @@ internal fun ArchiveFailure.bookFailure(): BookFailure = when (this) {
 }
 
 private class ArchivePages(private val session: ArchiveSession) : PageBytes {
+    override val extractingAt: Int? get() = session.extractingAt
+
+
     override suspend fun prefix(page: PageEntry, count: Int): PageResult<ByteArray> =
         when (val result = session.readPrefix(page.entryIndex, count)) {
             is EntryResult.Data -> PageResult.Ready(result.bytes)

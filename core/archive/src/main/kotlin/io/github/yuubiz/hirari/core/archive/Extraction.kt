@@ -67,6 +67,14 @@ internal class Extraction(
     private var cachedBytes = 0L
     private var limit = maxCacheBytes
 
+    /**
+     * The archive-order index of the entry the pass is at, from 0 again when a pass starts (docs/spec.md section 4.8,
+     * 展開の状況). Written on the session thread and read from any.
+     */
+    @Volatile
+    var extractingAt = 0
+        private set
+
     /** Counts the changes to [slots], so that a read can wait for the next one. */
     private val changes = MutableStateFlow(0L)
 
@@ -156,7 +164,9 @@ internal class Extraction(
     private fun pass() {
         var next = 0
         var open = false
+        extractingAt = 0
         while (next < entries.size && needsPass(next)) {
+            extractingAt = next
             if (!open) {
                 if (!Status.succeeded(archive.open())) return settleFrom(next, archive.failure())
                 repeat(next) {

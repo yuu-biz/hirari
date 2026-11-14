@@ -132,6 +132,12 @@ class ArchiveSession private constructor(
         )
     }
 
+    /**
+     * The archive-order index of the entry the extraction pass is at, or null when this session is not extracting
+     * (docs/spec.md section 4.8, 展開の状況).
+     */
+    val extractingAt: Int? get() = (reader as? Extraction)?.extractingAt
+
     // libarchive turns `\` into `/` in RAR 4 names that lack the Unicode flag (docs/spec.md section 3.4).
     private val slashMayBeBackslash = format == ArchiveFormat.Rar
 

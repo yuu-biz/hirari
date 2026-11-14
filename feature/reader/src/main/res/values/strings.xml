@@ -68,6 +68,8 @@
     <string name="fetch_cache">キャッシュ</string>
     <string name="fetch_server">サーバー %1$d%% %2$d KB/s</string>
 
+    <string name="extracting">展開しています</string>
+    <string name="extracting_items">%1$s / %2$s 項目</string>
     <string name="opening_preparing">本を開いています</string>
     <string name="opening_connecting">サーバーに接続しています</string>
     <string name="opening_copying">端末にコピーしています</string>
