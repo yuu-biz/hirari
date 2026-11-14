@@ -67,4 +67,4 @@ apksigner verify --print-certs Hirari-X.Y.Z.apk
 
 ## ライセンス
 
-Apache-2.0。依存ライブラリのライセンスは、アプリの「ライセンス」画面で確認できます。
+Apache-2.0。著作権表示は [NOTICE](NOTICE) にあります。依存ライブラリのライセンスは、アプリの「ライセンス」画面で確認できます。
