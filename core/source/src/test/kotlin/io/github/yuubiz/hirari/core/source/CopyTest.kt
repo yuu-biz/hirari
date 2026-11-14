@@ -42,6 +42,13 @@ class CopyTest {
     }
 
     @Test
+    fun `the running total of the bytes copied is told after each chunk`() {
+        val told = ArrayList<Long>()
+        copied(Pipe(chunks = 3), temp.newFolder(), lastModifiedMs = null, isActive = { true }, onCopied = { told += it }).close()
+        assertEquals(listOf(64L * 1024, 128L * 1024, 192L * 1024), told)
+    }
+
+    @Test
     fun `a copy no longer wanted stops before the next chunk and closes its file`() {
         val pipe = Pipe(chunks = 1000)
         val dir = temp.newFolder()

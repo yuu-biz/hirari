@@ -176,7 +176,7 @@ fun ReaderScreen(
             },
     ) {
         when (val phase = viewModel.phase) {
-            ReaderPhase.Opening -> DelayedProgress(Modifier.align(Alignment.Center))
+            ReaderPhase.Opening -> OpeningStatus(viewModel, Modifier.fillMaxSize())
             is ReaderPhase.Failed -> BookError(
                 stringResource(phase.reason.message), viewModel.background, onClose,
                 onRetry = if (phase.retryable) viewModel::retryOpen else null,
@@ -392,6 +392,36 @@ internal fun DelayedProgress(modifier: Modifier = Modifier) {
     val loading = stringResource(R.string.a11y_loading)
     if (shown) CircularProgressIndicator(modifier.semantics { contentDescription = loading })
 }
+
+/**
+ * The indicator while a book opens, once [PROGRESS_DELAY_MS] has passed, with the work's name and progress under it
+ * (docs/spec.md section 4.8, 本を開いている間). The step is read every [OPENING_SAMPLE_MS], and the indicator is a ring
+ * while the progress is a share.
+ */
+@Composable
+private fun OpeningStatus(viewModel: ReaderViewModel, modifier: Modifier) {
+    var line by remember { mutableStateOf<OpeningLine?>(null) }
+    LaunchedEffect(viewModel) {
+        delay(PROGRESS_DELAY_MS)
+        while (true) {
+            line = viewModel.openStep.line()
+            delay(OPENING_SAMPLE_MS)
+        }
+    }
+    val shown = line ?: return
+    val loading = stringResource(R.string.a11y_loading)
+    Box(modifier) {
+        val indicator = Modifier.align(Alignment.Center).semantics { contentDescription = loading }
+        val fraction = shown.fraction
+        if (fraction != null) CircularProgressIndicator(progress = { fraction }, modifier = indicator) else CircularProgressIndicator(indicator)
+        Column(Modifier.align(Alignment.Center).padding(top = 96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            OutlinedText(stringResource(shown.name), Modifier, size = 16)
+            shown.detail?.let { OutlinedText(stringResource(it, *shown.args.toTypedArray()), Modifier, size = 16) }
+        }
+    }
+}
+
+private const val OPENING_SAMPLE_MS = 250L
 
 /** docs/spec.md section 4.8, 重ねて表示する情報. */
 internal const val PROGRESS_DELAY_MS = 300L

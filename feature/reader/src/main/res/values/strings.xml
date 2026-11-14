@@ -68,6 +68,17 @@
     <string name="fetch_cache">キャッシュ</string>
     <string name="fetch_server">サーバー %1$d%% %2$d KB/s</string>
 
+    <string name="opening_preparing">本を開いています</string>
+    <string name="opening_connecting">サーバーに接続しています</string>
+    <string name="opening_copying">端末にコピーしています</string>
+    <string name="opening_copied_of">%1$s / %2$s MB（%3$d%%）</string>
+    <string name="opening_copied">%1$s MB</string>
+    <string name="opening_listing">ページを数えています</string>
+    <string name="opening_items_of">%1$s 項目（%2$d%%）</string>
+    <string name="opening_items">%1$s 項目</string>
+    <string name="opening_listing_folder">フォルダの中を調べています</string>
+    <string name="opening_pdf">PDF を開いています</string>
+
     <string name="book_end_next">次の本（%1$s）</string>
     <string name="book_end_previous">前の本（%1$s）</string>
     <string name="neighbor_saved">続きから</string>

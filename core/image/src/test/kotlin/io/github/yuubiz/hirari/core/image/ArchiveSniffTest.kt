@@ -67,6 +67,15 @@ class ArchiveSniffTest {
     }
 
     @Test
+    fun openingAnArchiveNamesTheListingBeforeItBlocks() = runBlocking {
+        val steps = ArrayList<OpenStep>()
+        val source = zipSource("001.jpg", ByteArray(256) { jpeg[it % 3] })
+        val book = (Books.openArchive(source, decoding, progress = { steps += it }) as BookResult.Opened).book
+        book.close()
+        assertEquals(OpenStep.Listing(entries = 0, fraction = null), steps.first())
+    }
+
+    @Test
     fun aSolidArchiveExcludesUnknownEntriesWithoutReadingAnyData() = runBlocking {
         val names = listOf("001", "002.unknown", "003.jpg", "004.txt")
         val entries = names.mapIndexed { i, name -> entry(i, name) }

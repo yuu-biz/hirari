@@ -12,6 +12,7 @@ import io.github.yuubiz.hirari.core.image.Books
 import io.github.yuubiz.hirari.core.image.FolderFile
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.OpenBook
+import io.github.yuubiz.hirari.core.image.OpenStep
 import io.github.yuubiz.hirari.core.model.BookAddress
 import io.github.yuubiz.hirari.core.model.BookId
 import io.github.yuubiz.hirari.core.model.BookSource
@@ -133,6 +134,21 @@ class ReaderViewModelTest {
         assertEquals(ReaderPhase.Reading, model.phase)
         assertEquals(listOf("0.jpg", "1.jpg", "2.jpg"), model.pageNames)
         assertTrue(ReflectionHelpers.getField<CoroutineScope>(complete, "scope").isActive)
+    }
+
+    @Test
+    fun aBookStillBeingLocatedIsPreparing() = runBlocking(main) {
+        val gate = CompletableDeferred<Unit>()
+        val model = reader {
+            gate.await()
+            BookResult.Opened(archive(1, null))
+        }
+        delay(200)
+        assertEquals(ReaderPhase.Opening, model.phase)
+        assertEquals(OpenStep.Preparing, model.openStep)
+        gate.complete(Unit)
+        model.awaitOpen()
+        assertEquals(ReaderPhase.Reading, model.phase)
     }
 
     @Test

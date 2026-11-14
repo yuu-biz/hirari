@@ -356,20 +356,23 @@ class ArchiveSession private constructor(
          * The formats whose entries each start from a header of their own: a jump can land on one, and a listing
          * that stops early leaves the rest of the archive unread (docs/spec.md section 4.4).
          */
-        private val OWN_HEADERS = setOf(ArchiveFormat.Rar, ArchiveFormat.Rar5, ArchiveFormat.Tar)
+        internal val OWN_HEADERS = setOf(ArchiveFormat.Rar, ArchiveFormat.Rar5, ArchiveFormat.Tar)
 
         /**
          * Opens the archive in [source] and lists its entries, as far as [need] asks in a format without an index in
          * one place. The session owns [source] from here on, and closes it with itself, or right away when opening
          * fails. A solid archive is extracted into [extractDir], the directory of this book under `cacheDir/extract/`
-         * (docs/spec.md section 7), when it is given and the listing is not [partial].
+         * (docs/spec.md section 7), when it is given and the listing is not [partial]. [listed] hears after each header
+         * the walk lists, on the session thread, how many entries there are and how far into the archive the walk is as a
+         * fraction below 1, or null when the header positions do not tell it (docs/spec.md section 4.8, 本を開いている間).
          */
         suspend fun open(
             source: ByteSource,
             extractDir: File? = null,
             password: BookPassword? = null,
             need: ListingNeed = ListingNeed.All,
-        ): OpenResult = open(source, extractDir, ::NativeArchive, password, need)
+            listed: (entries: Int, fraction: Float?) -> Unit = { _, _ -> },
+        ): OpenResult = open(source, extractDir, ::NativeArchive, password, need, listed)
 
         /** [open] with [handle] in place of libarchive. [handle] is called on the session thread, if at all. */
         internal suspend fun open(source: ByteSource, extractDir: File?, handle: (ByteSource) -> ArchiveHandle): OpenResult =
@@ -381,6 +384,7 @@ class ArchiveSession private constructor(
             handle: (ByteSource) -> ArchiveHandle,
             password: BookPassword?,
             need: ListingNeed = ListingNeed.All,
+            listed: (entries: Int, fraction: Float?) -> Unit = { _, _ -> },
         ): OpenResult {
             val libarchive = lazy(LazyThreadSafetyMode.NONE) { handle(source) }
             val executor = Executors.newSingleThreadExecutor { Thread(it, "archive-session").apply { isDaemon = true } }
@@ -393,7 +397,7 @@ class ArchiveSession private constructor(
                     val listing = listCentralDirectory(source, prefix, job) ?: try {
                         libarchive.value.let {
                             it.begin(job)
-                            list(it, need)
+                            list(it, need, source.size, listed)
                         }
                     } catch (_: OutOfMemoryError) {
                         Listing.Unopened(ArchiveFailure.ReadError)
@@ -437,14 +441,14 @@ class ArchiveSession private constructor(
             return buffer.array().copyOf(buffer.position())
         }
 
-        private fun list(archive: ArchiveHandle, need: ListingNeed): Listing {
+        private fun list(archive: ArchiveHandle, need: ListingNeed, size: Long, onListed: (Int, Float?) -> Unit): Listing {
             // Telling the format reads ahead past the end of a short file, which is no sign of truncation.
             if (!Status.succeeded(archive.open())) {
                 val failure = archive.failure()
                 return Listing.Unopened(if (failure == ArchiveFailure.Truncated) ArchiveFailure.Corrupt else failure)
             }
             val entries = ArrayList<ArchiveEntry>()
-            val positions = ArrayList<Long?>()
+            val positions = HeaderPositions()
             var format: ArchiveFormat? = null
             var filter = 0
             val met = metBy(need)
@@ -458,7 +462,7 @@ class ArchiveSession private constructor(
                 val header = archive.header!!
                 format = format ?: ArchiveFormat.of(header.format)
                 filter = header.filter
-                positions += header.position
+                positions.add(header.position)
                 val entry = ArchiveEntry(
                     entryIndex = entries.size,
                     rawName = header.name ?: ByteArray(0),
@@ -469,6 +473,7 @@ class ArchiveSession private constructor(
                     traditionalEncryption = format == ArchiveFormat.Zip && header.encrypted && compressionOf(header.formatName) != "aes",
                 )
                 entries += entry
+                onListed(entries.size, positions.fraction(format, filter, size))
                 if (format in OWN_HEADERS && met(entry)) return listed(null, partial = true)
             }
         }
@@ -487,12 +492,8 @@ class ArchiveSession private constructor(
          * The header positions a reader may jump to: those of a format whose entries start from their own header,
          * read with no filter around it, when every header gave one and each comes after the one before.
          */
-        private fun jumpable(format: ArchiveFormat?, filter: Int, positions: List<Long?>): LongArray? {
-            if (format !in OWN_HEADERS || filter != 0 || positions.size < 2) return null
-            val known = positions.filterNotNull()
-            if (known.size != positions.size || known.zipWithNext().any { (a, b) -> b <= a }) return null
-            return known.toLongArray()
-        }
+        private fun jumpable(format: ArchiveFormat?, filter: Int, positions: HeaderPositions): LongArray? =
+            if (positions.size >= 2 && positions.trusted(format, filter)) positions.toLongArray() else null
 
         private fun release(source: ByteSource, libarchive: Lazy<ArchiveHandle>, executor: ExecutorService) {
             executor.execute {
@@ -520,6 +521,39 @@ class ArchiveSession private constructor(
             val close = formatName.lastIndexOf(')')
             return if (open in 0 until close) formatName.substring(open + 1, close) else null
         }
+    }
+}
+
+/** The positions of the headers a walk has read, and whether each one so far came after the one before it. */
+private class HeaderPositions {
+    private val known = ArrayList<Long>()
+    private var every = true
+    private var rising = true
+
+    val size: Int get() = known.size
+
+    fun add(position: Long?) {
+        if (position == null) {
+            every = false
+        } else {
+            if (known.isNotEmpty() && position <= known.last()) rising = false
+            known += position
+        }
+    }
+
+    /** Whether the positions say how far into the archive the walk is, and a reader can jump to them. */
+    fun trusted(format: ArchiveFormat?, filter: Int): Boolean = every && rising && filter == 0 && format in ArchiveSession.OWN_HEADERS
+
+    /** How far the last header is into [archiveSize] bytes, kept below 1 as the walk has not read the end, or null when untrusted. */
+    fun fraction(format: ArchiveFormat?, filter: Int, archiveSize: Long): Float? {
+        if (!trusted(format, filter) || archiveSize <= 0) return null
+        return (known.last().toDouble() / archiveSize).toFloat().coerceIn(0f, MAX_FRACTION)
+    }
+
+    fun toLongArray(): LongArray = known.toLongArray()
+
+    private companion object {
+        const val MAX_FRACTION = 0.99f
     }
 }
 

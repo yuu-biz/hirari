@@ -76,7 +76,7 @@ object Books {
      * Opens the archive in [source], which the book owns from here on. A solid archive is extracted into
      * [extractDir], the book's directory under `cacheDir/extract/` (docs/spec.md section 3.3), when it is given.
      * The entries of any other archive go into [stash] once read, when it is given (section 5.3). A RAR or a tar is
-     * listed as far as [need] asks (section 4.4).
+     * listed as far as [need] asks (section 4.4). [progress] hears the listing, on the thread of the archive session.
      */
     suspend fun openArchive(
         source: ByteSource,
@@ -86,8 +86,10 @@ object Books {
         stash: DiskStash? = null,
         password: BookPassword? = null,
         need: ListingNeed = ListingNeed.All,
+        progress: (OpenStep) -> Unit = {},
     ): BookResult {
-        val session = when (val opened = ArchiveSession.open(source, extractDir, password, need)) {
+        progress(OpenStep.Listing(entries = 0, fraction = null))
+        val session = when (val opened = ArchiveSession.open(source, extractDir, password, need) { entries, fraction -> progress(OpenStep.Listing(entries, fraction)) }) {
             is OpenResult.Failed -> return BookResult.Failed(opened.reason.bookFailure())
             OpenResult.Encrypted -> return BookResult.Failed(BookFailure.Encrypted)
             is OpenResult.Opened -> opened.session
@@ -148,7 +150,7 @@ object Books {
      * Opens the book in [source], which the book owns from here on: a single image when its first bytes show an
      * image, a PDF when `%PDF-` starts within its first 1024 bytes (docs/spec.md section 3.2), and otherwise an
      * archive, extracted into [extractDir] when solid, its entries kept in [stash] otherwise, and listed as far as
-     * [need] asks.
+     * [need] asks. [progress] hears the step before each stage that blocks (docs/spec.md section 4.8, 本を開いている間).
      */
     suspend fun openBook(
         source: ByteSource,
@@ -158,6 +160,7 @@ object Books {
         stash: DiskStash? = null,
         password: BookPassword? = null,
         need: ListingNeed = ListingNeed.All,
+        progress: (OpenStep) -> Unit = {},
     ): BookResult {
         val read = try {
             safely { readPrefix(source, PDF_SNIFF_BYTES) }
@@ -173,15 +176,16 @@ object Books {
             }
         }
         sniffImage(prefix)?.let { return openImage(source, it, decoding) }
-        return if (isPdf(prefix)) openPdf(source, decoding, password) else openArchive(source, decoding, extractDir, naming, stash, password, need)
+        return if (isPdf(prefix)) openPdf(source, decoding, password, progress) else openArchive(source, decoding, extractDir, naming, stash, password, need, progress)
     }
 
     /** Opens the PDF in [source], which the book owns from here on (docs/spec.md section 3.9). */
-    suspend fun openPdf(source: ByteSource, decoding: ImageDecoding, password: BookPassword? = null): BookResult {
+    suspend fun openPdf(source: ByteSource, decoding: ImageDecoding, password: BookPassword? = null, progress: (OpenStep) -> Unit = {}): BookResult {
         val storage = decoding.storage ?: run {
             source.close()
             return BookResult.Failed(BookFailure.ReadError)
         }
+        progress(OpenStep.OpeningPdf)
         val document = when (val opened = openPasswordPdf(source, storage, password)) {
             is PdfDocument.Opened.Document -> opened.document
             is PdfDocument.Opened.Failed -> return BookResult.Failed(opened.reason)
@@ -238,7 +242,9 @@ object Books {
         documentId: String?,
         copyDir: File,
         decoding: ImageDecoding,
+        progress: (OpenStep) -> Unit = {},
     ): BookResult {
+        progress(OpenStep.ListingFolder)
         val listed = safely { resolver.listChildren(treeUri, documentId ?: DocumentsContract.getTreeDocumentId(treeUri)) }
         val children = when (listed) {
             is Safely.Done -> listed.value
@@ -259,7 +265,9 @@ object Books {
         path: String,
         decoding: ImageDecoding,
         counted: (ByteSource) -> ByteSource = { it },
+        progress: (OpenStep) -> Unit = {},
     ): BookResult {
+        progress(OpenStep.ListingFolder)
         val entries = try {
             server.list(path)
         } catch (e: CancellationException) {

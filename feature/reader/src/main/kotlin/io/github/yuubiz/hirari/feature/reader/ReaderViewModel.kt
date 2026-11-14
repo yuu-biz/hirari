@@ -32,6 +32,7 @@ import io.github.yuubiz.hirari.core.image.EntryNaming
 import io.github.yuubiz.hirari.core.image.ImageDecoding
 import io.github.yuubiz.hirari.core.image.MarginScan
 import io.github.yuubiz.hirari.core.image.OpenBook
+import io.github.yuubiz.hirari.core.image.OpenStep
 import io.github.yuubiz.hirari.core.image.PageOrder
 import io.github.yuubiz.hirari.core.image.PixelSize
 import io.github.yuubiz.hirari.core.image.PreparedImage
@@ -78,7 +79,7 @@ import io.github.yuubiz.hirari.core.model.normalizePath
 import io.github.yuubiz.hirari.core.source.ByteSource
 import io.github.yuubiz.hirari.core.source.NoRoomForCopyException
 import io.github.yuubiz.hirari.core.source.documentInfo
-import io.github.yuubiz.hirari.core.source.documentLastModifiedMs
+import io.github.yuubiz.hirari.core.source.documentInfoOrNull
 import io.github.yuubiz.hirari.core.source.locateDocument
 import io.github.yuubiz.hirari.core.source.openByteSource
 import io.github.yuubiz.hirari.core.source.smb.SmbPrefetchCache
@@ -226,6 +227,18 @@ class ReaderViewModel internal constructor(
 
     var phase: ReaderPhase by mutableStateOf(ReaderPhase.Opening)
         private set
+
+    /**
+     * What opening the book is doing (docs/spec.md section 4.8, 本を開いている間). The steps are reported from the
+     * thread that blocks, and the screen reads this every 0.25 s, so it is not state.
+     */
+    @Volatile
+    var openStep: OpenStep = OpenStep.Preparing
+        private set
+
+    private fun report(step: OpenStep) {
+        openStep = step
+    }
 
     /** 息での操作: a settled step goes through the stops as the volume keys do (docs/spec.md section 4.8, 停止点). */
     val breath = BreathSession(viewModelScope, microphone) { if (!breathHeld) act(ReaderAction.StepStops(it), SystemClock.uptimeMillis()) }
@@ -765,6 +778,7 @@ class ReaderViewModel internal constructor(
     }
 
     private suspend fun open() {
+        report(OpenStep.Preparing)
         val services = services.await()
         val (copyDir, shareDir) = withContext(Dispatchers.IO) { File(application.cacheDir, "copy") to File(application.cacheDir, SHARE_DIR) }
         // What a reader of an earlier process shared is left only by a process that ended before closing it.
@@ -1076,7 +1090,7 @@ class ReaderViewModel internal constructor(
         source = source,
         documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId),
         folder = true,
-        result = Books.openTreeFolder(application.contentResolver, tree, documentId, opening.copyDir, opening.services.decoding),
+        result = Books.openTreeFolder(application.contentResolver, tree, documentId, opening.copyDir, opening.services.decoding, ::report),
         overrides = opening.overrides(id).first,
     )
 
@@ -1088,6 +1102,7 @@ class ReaderViewModel internal constructor(
     private suspend fun openOnServer(location: LibraryLocation.SmbShare, path: String, folder: Boolean, source: BookSource, opening: Opening): Located {
         fun failed(reason: BookFailure) = Located(BookId(""), source, Uri.EMPTY, folder, BookResult.Failed(reason))
         withContext(Dispatchers.Main) { bookPath = if (path.isEmpty()) location.displayName else "${location.displayName}/$path" }
+        report(OpenStep.Connecting)
         val server = opening.services.smb.serverOf(location) ?: return failed(BookFailure.NoPermission)
         val id = locationBookId(location, path)
         val (overrides, naming) = opening.overrides(id)
@@ -1095,7 +1110,7 @@ class ReaderViewModel internal constructor(
         val remote = Remote(server, meter)
         val serverPath = normalizePath("${location.basePath}/$path")
         if (folder) {
-            val result = Books.openServerFolder(server, serverPath, opening.services.decoding, meter::counted)
+            val result = Books.openServerFolder(server, serverPath, opening.services.decoding, meter::counted, ::report)
             return Located(id, source, Uri.EMPTY, folder = true, result, remote, overrides)
         }
         val file = try {
@@ -1105,7 +1120,7 @@ class ReaderViewModel internal constructor(
         }
         val stash = opening.services.smbCache?.let { DiskStash(it, id, file.size, file.modified) }
         val extractDir = ExtractionCache.directory(application.cacheDir, id, file.size, file.lastModifiedMs)
-        val result = Books.openBook(meter.counted(file), opening.services.decoding, extractDir, naming, stash, passwordPrompt.forBook(id, opening.services.storage.bookPasswords))
+        val result = Books.openBook(meter.counted(file), opening.services.decoding, extractDir, naming, stash, passwordPrompt.forBook(id, opening.services.storage.bookPasswords), progress = ::report)
         return Located(id, source, Uri.EMPTY, folder = false, result, remote, overrides, fileSize = file.size)
     }
 
@@ -1114,8 +1129,9 @@ class ReaderViewModel internal constructor(
         fun failed(e: Exception) = Located(BookId(""), source, uri, folder = false, BookResult.Failed(e.openFailure()))
         val bytes = try {
             val resolver = application.contentResolver
-            val modified = resolver.documentLastModifiedMs(uri)
-            resolver.openByteSource(uri, opening.copyDir, modified)
+            val info = resolver.documentInfoOrNull(uri)
+            val total = info?.size?.takeIf { it > 0 }
+            resolver.openByteSource(uri, opening.copyDir, info?.lastModifiedMs) { copied -> report(OpenStep.Copying(copied, total)) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1134,7 +1150,7 @@ class ReaderViewModel internal constructor(
             throw e
         }
         val extractDir = ExtractionCache.directory(application.cacheDir, bookId, bytes.size, bytes.lastModifiedMs)
-        val result = Books.openBook(bytes, opening.services.decoding, extractDir, naming, password = passwordPrompt.forBook(bookId, opening.services.storage.bookPasswords))
+        val result = Books.openBook(bytes, opening.services.decoding, extractDir, naming, password = passwordPrompt.forBook(bookId, opening.services.storage.bookPasswords), progress = ::report)
         return Located(bookId, source, uri, folder = false, result, overrides = overrides)
     }
 

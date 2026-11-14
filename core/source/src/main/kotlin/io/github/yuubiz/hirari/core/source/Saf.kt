@@ -24,7 +24,8 @@ class NoRoomForCopyException(val reserveBytes: Long) : IOException("not enough f
  * instead of a file, copies the document into [copyDir] first. The copy has no name on disk once it is open, so
  * it disappears when the source closes. [lastModifiedMs] is the provider's time, also for a copied document.
  * Blocks on Binder and disk, so never call it on the main thread. A copy stops before the next 64 KB once [isActive]
- * is false (docs/spec.md section 4.4), as when the cover it is read for is no longer wanted.
+ * is false (docs/spec.md section 4.4), as when the cover it is read for is no longer wanted. [onCopied] hears the
+ * bytes copied so far after each chunk, on the calling thread.
  *
  * @throws java.io.FileNotFoundException when the document is gone.
  * @throws SecurityException when the permission to read it is gone.
@@ -37,14 +38,18 @@ fun ContentResolver.openByteSource(
     copyDir: File,
     lastModifiedMs: Long? = null,
     isActive: () -> Boolean = { true },
+    onCopied: (bytes: Long) -> Unit = {},
 ): ByteSource {
     val descriptor = openFileDescriptor(uri, "r") ?: throw IOException("the provider returned no descriptor")
     if (descriptor.statSize >= 0) return descriptor.asByteSource(lastModifiedMs)
-    return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input -> copied(input, copyDir, lastModifiedMs, isActive) }
+    return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input -> copied(input, copyDir, lastModifiedMs, isActive, onCopied) }
 }
 
-/** [input] copied into a file in [copyDir] that has no name once open, checking [isActive] before each chunk. */
-internal fun copied(input: InputStream, copyDir: File, lastModifiedMs: Long?, isActive: () -> Boolean): ByteSource {
+/**
+ * [input] copied into a file in [copyDir] that has no name once open, checking [isActive] before each chunk and
+ * telling [onCopied] the running total after it.
+ */
+internal fun copied(input: InputStream, copyDir: File, lastModifiedMs: Long?, isActive: () -> Boolean, onCopied: (Long) -> Unit = {}): ByteSource {
     copyDir.mkdirs()
     val file = File.createTempFile("copy", null, copyDir)
     val copy = try {
@@ -55,6 +60,7 @@ internal fun copied(input: InputStream, copyDir: File, lastModifiedMs: Long?, is
     try {
         val buffer = ByteArray(COPY_CHUNK)
         var sinceCheck = Long.MAX_VALUE
+        var total = 0L
         while (true) {
             if (!isActive()) throw CancellationException("cancelled while copying")
             val read = input.read(buffer)
@@ -67,6 +73,8 @@ internal fun copied(input: InputStream, copyDir: File, lastModifiedMs: Long?, is
             }
             copy.write(buffer, 0, read)
             sinceCheck += read
+            total += read
+            onCopied(total)
         }
         return FileChannelSource(copy.channel, lastModifiedMs)
     } catch (e: Throwable) {
@@ -165,8 +173,11 @@ suspend fun ContentResolver.locateDocument(treeUri: Uri, path: String): String? 
 class DocumentInfo(val name: String?, val size: Long?, val lastModifiedMs: Long?)
 
 /** Optional cache metadata, queried off the main thread. Failure leaves the time unknown, cancellation propagates. */
-suspend fun ContentResolver.documentLastModifiedMs(uri: Uri): Long? = try {
-    documentInfo(uri)?.lastModifiedMs
+suspend fun ContentResolver.documentLastModifiedMs(uri: Uri): Long? = documentInfoOrNull(uri)?.lastModifiedMs
+
+/** [documentInfo], or null when the query fails. Cancellation propagates. */
+suspend fun ContentResolver.documentInfoOrNull(uri: Uri): DocumentInfo? = try {
+    documentInfo(uri)
 } catch (e: CancellationException) {
     throw e
 } catch (_: Exception) {
